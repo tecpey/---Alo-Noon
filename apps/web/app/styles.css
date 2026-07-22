@@ -1,0 +1,23 @@
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f6f1e7;
+  color: #25190f;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { min-height: 100vh; padding: 24px; }
+.hero, .grid, .principles { max-width: 1100px; margin: 0 auto; }
+.hero { padding: 88px 0 56px; }
+.eyebrow { display: inline-block; padding: 8px 12px; border: 1px solid currentColor; border-radius: 999px; }
+h1 { font-size: clamp(64px, 12vw, 144px); line-height: .9; margin: 24px 0; letter-spacing: -0.06em; }
+.hero p { font-size: clamp(20px, 3vw, 34px); max-width: 760px; line-height: 1.6; }
+.actions { display: flex; gap: 16px; align-items: center; margin-top: 32px; flex-wrap: wrap; }
+button, .actions a { padding: 14px 20px; border-radius: 14px; font: inherit; }
+button { background: #25190f; color: #fff; border: 0; }
+.actions a { color: inherit; border: 1px solid currentColor; text-decoration: none; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+article { background: rgba(255,255,255,.55); padding: 24px; border-radius: 24px; min-height: 190px; }
+article p, .principles p { line-height: 1.9; }
+.principles { margin-top: 56px; padding: 40px; background: #25190f; color: #fff; border-radius: 32px; }
+@media (max-width: 600px) { main { padding: 16px; } .hero { padding-top: 56px; } }

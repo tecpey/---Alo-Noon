@@ -1,0 +1,70 @@
+openapi: 3.1.0
+info:
+  title: Alo Noon API
+  version: 0.1.0
+  description: API-first contract for the Alo Noon platform foundation.
+servers:
+  - url: http://localhost:4000/api/v1
+paths:
+  /meta:
+    get:
+      operationId: getPlatformMeta
+      responses:
+        "200":
+          description: Platform metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [platform, apiVersion, architecture, status]
+                properties:
+                  platform: { type: string }
+                  apiVersion: { type: string }
+                  launchCity: { type: string }
+                  architecture: { type: string }
+                  status: { type: string }
+  /logistics/quotes:
+    post:
+      operationId: createLogisticsQuote
+      summary: Calculate a time-limited delivery quote.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogisticsQuoteRequest"
+      responses:
+        "200":
+          description: Delivery quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogisticsQuote"
+        "400":
+          description: Validation error
+components:
+  schemas:
+    LogisticsQuoteRequest:
+      type: object
+      required: [cityCode, routeDistanceMeters, routeDurationSeconds, requestedAt]
+      properties:
+        cityCode: { type: string }
+        providerId: { type: string }
+        routeDistanceMeters: { type: integer, minimum: 0 }
+        routeDurationSeconds: { type: integer, minimum: 0 }
+        trafficMultiplier: { type: number, minimum: 1, maximum: 2.5, default: 1 }
+        demandMultiplier: { type: number, minimum: 1, maximum: 2.5, default: 1 }
+        itemCount: { type: integer, minimum: 1, maximum: 100, default: 1 }
+        isFreshSignatureOrder: { type: boolean, default: false }
+        requestedAt: { type: string, format: date-time }
+    LogisticsQuote:
+      type: object
+      required: [currency, totalFee, validUntil, components, policyVersion]
+      properties:
+        currency: { type: string, const: IRR }
+        totalFee: { type: integer }
+        validUntil: { type: string, format: date-time }
+        policyVersion: { type: string }
+        components:
+          type: object
+          additionalProperties: true

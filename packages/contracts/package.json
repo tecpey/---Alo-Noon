@@ -1,0 +1,11 @@
+{
+  "name": "@alo-noon/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo contracts-ready",
+    "lint": "echo contracts-lint-ready",
+    "typecheck": "echo contracts-typecheck-ready",
+    "test": "echo contracts-test-ready"
+  }
+}

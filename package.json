@@ -1,0 +1,27 @@
+{
+  "name": "alo-noon-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API-first, multi-city platform for Alo Noon fresh signature breads, packaged breads, CRM, wallet and logistics orchestration.",
+  "packageManager": "pnpm@10.12.4",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "format": "prettier --write .",
+    "db:generate": "pnpm --filter @alo-noon/database prisma:generate",
+    "db:migrate": "pnpm --filter @alo-noon/database prisma:migrate",
+    "db:studio": "pnpm --filter @alo-noon/database prisma:studio"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3",
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  }
+}

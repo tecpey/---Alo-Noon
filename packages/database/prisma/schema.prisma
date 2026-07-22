@@ -1,0 +1,335 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProductClass {
+  FRESH_SIGNATURE
+  PACKAGED_TRADITIONAL
+  PACKAGED_SPECIALTY
+  LIMITED_DESSERT
+}
+
+enum FulfillmentMode {
+  MADE_TO_ORDER_FRESH_SIGNATURE
+  PACKAGED_TRADITIONAL_STOCK
+  PACKAGED_SPECIALTY_STOCK
+  PREORDER_LIMITED
+}
+
+enum OrderStatus {
+  DRAFT
+  QUOTED
+  PENDING_PAYMENT
+  CONFIRMED
+  ACCEPTED_BY_SUPPLIER
+  IN_PRODUCTION
+  READY_FOR_PICKUP
+  COURIER_ASSIGNED
+  PICKED_UP
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum WalletEntryType {
+  CREDIT
+  DEBIT
+}
+
+enum InteractionChannel {
+  APP
+  WEB
+  PHONE
+  SMS
+  PUSH
+  WHATSAPP
+  INTERNAL
+}
+
+model City {
+  id                String              @id @default(cuid())
+  code              String              @unique
+  nameFa            String
+  active            Boolean             @default(false)
+  timezone          String              @default("Asia/Tehran")
+  serviceZones      ServiceZone[]
+  bakeries          Bakery[]
+  logisticsProviders LogisticsProvider[]
+  orders            Order[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model ServiceZone {
+  id        String   @id @default(cuid())
+  cityId    String
+  city      City     @relation(fields: [cityId], references: [id])
+  code      String
+  nameFa    String
+  active    Boolean  @default(true)
+  geoJson   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cityId, code])
+}
+
+model Customer {
+  id           String           @id @default(cuid())
+  mobile       String           @unique
+  firstName    String?
+  lastName     String?
+  consentAt    DateTime?
+  households   HouseholdMember[]
+  addresses    Address[]
+  orders       Order[]
+  wallet       Wallet?
+  interactions CrmInteraction[]
+  tickets      SupportTicket[]
+  telephonyCalls TelephonyCall[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model Household {
+  id        String            @id @default(cuid())
+  name      String
+  members   HouseholdMember[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model HouseholdMember {
+  id          String    @id @default(cuid())
+  householdId String
+  customerId  String
+  role        String
+  spendLimit  Decimal?  @db.Decimal(20, 0)
+  household   Household @relation(fields: [householdId], references: [id])
+  customer    Customer  @relation(fields: [customerId], references: [id])
+
+  @@unique([householdId, customerId])
+}
+
+model Address {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  label       String
+  fullAddress String
+  latitude    Decimal  @db.Decimal(10, 7)
+  longitude   Decimal  @db.Decimal(10, 7)
+  deliveryNote String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Bakery {
+  id           String           @id @default(cuid())
+  cityId       String
+  city         City             @relation(fields: [cityId], references: [id])
+  code         String
+  nameFa       String
+  active       Boolean          @default(false)
+  phone        String?
+  address      String
+  latitude     Decimal          @db.Decimal(10, 7)
+  longitude    Decimal          @db.Decimal(10, 7)
+  offerings    BakeryOffering[]
+  orders       Order[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([cityId, code])
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  nameFa      String
+  description String?
+  class       ProductClass
+  active      Boolean       @default(false)
+  skus        ProductSku[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model ProductSku {
+  id               String           @id @default(cuid())
+  productId        String
+  product          Product          @relation(fields: [productId], references: [id])
+  code             String           @unique
+  nameFa           String
+  fulfillmentMode  FulfillmentMode
+  shelfLifeMinutes Int?
+  ingredients      Json?
+  allergenInfo     Json?
+  active           Boolean          @default(false)
+  offerings        BakeryOffering[]
+  orderItems       OrderItem[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model BakeryOffering {
+  id                  String     @id @default(cuid())
+  bakeryId            String
+  skuId               String
+  bakery              Bakery     @relation(fields: [bakeryId], references: [id])
+  sku                  ProductSku @relation(fields: [skuId], references: [id])
+  priceIrr             Decimal    @db.Decimal(20, 0)
+  dailyCapacity        Int?
+  preparationMinutes  Int
+  qualityPolicyVersion String
+  active               Boolean    @default(false)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@unique([bakeryId, skuId])
+}
+
+model Order {
+  id                  String       @id @default(cuid())
+  publicId            String       @unique
+  cityId              String
+  customerId          String
+  bakeryId            String?
+  deliveryAddressId   String
+  status              OrderStatus  @default(DRAFT)
+  sourceChannel       InteractionChannel
+  subtotalIrr         Decimal      @db.Decimal(20, 0)
+  deliveryFeeIrr      Decimal      @db.Decimal(20, 0)
+  packagingFeeIrr     Decimal      @db.Decimal(20, 0)
+  discountIrr         Decimal      @default(0) @db.Decimal(20, 0)
+  totalIrr            Decimal      @db.Decimal(20, 0)
+  requestedFor        DateTime?
+  city                City         @relation(fields: [cityId], references: [id])
+  customer            Customer     @relation(fields: [customerId], references: [id])
+  bakery              Bakery?      @relation(fields: [bakeryId], references: [id])
+  items               OrderItem[]
+  deliveryMission     DeliveryMission?
+  supportTickets      SupportTicket[]
+  interactions        CrmInteraction[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+model OrderItem {
+  id            String     @id @default(cuid())
+  orderId       String
+  skuId         String
+  quantity      Int
+  unitPriceIrr  Decimal    @db.Decimal(20, 0)
+  order         Order      @relation(fields: [orderId], references: [id])
+  sku           ProductSku @relation(fields: [skuId], references: [id])
+}
+
+model LogisticsProvider {
+  id            String            @id @default(cuid())
+  cityId        String
+  city          City              @relation(fields: [cityId], references: [id])
+  code          String
+  name          String
+  integrationType String
+  active        Boolean           @default(false)
+  missions      DeliveryMission[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([cityId, code])
+}
+
+model DeliveryMission {
+  id                   String             @id @default(cuid())
+  orderId              String             @unique
+  providerId           String
+  externalMissionId    String?
+  courierName          String?
+  courierPhone         String?
+  quotedFeeIrr         Decimal            @db.Decimal(20, 0)
+  status               String
+  pickupEta            DateTime?
+  deliveredAt          DateTime?
+  order                 Order              @relation(fields: [orderId], references: [id])
+  provider              LogisticsProvider  @relation(fields: [providerId], references: [id])
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+}
+
+model Wallet {
+  id          String        @id @default(cuid())
+  customerId  String        @unique
+  customer    Customer      @relation(fields: [customerId], references: [id])
+  currency    String        @default("IRR")
+  entries     WalletEntry[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model WalletEntry {
+  id             String          @id @default(cuid())
+  walletId       String
+  type           WalletEntryType
+  amountIrr      Decimal         @db.Decimal(20, 0)
+  referenceType  String
+  referenceId    String
+  idempotencyKey String          @unique
+  description    String?
+  wallet         Wallet          @relation(fields: [walletId], references: [id])
+  createdAt      DateTime        @default(now())
+
+  @@index([walletId, createdAt])
+}
+
+model CrmInteraction {
+  id          String             @id @default(cuid())
+  customerId  String?
+  orderId     String?
+  channel     InteractionChannel
+  direction   String
+  subject     String
+  summary     String?
+  metadata    Json?
+  customer    Customer?          @relation(fields: [customerId], references: [id])
+  order       Order?             @relation(fields: [orderId], references: [id])
+  createdAt   DateTime           @default(now())
+}
+
+model TelephonyCall {
+  id                  String    @id @default(cuid())
+  customerId          String?
+  externalCallId      String?   @unique
+  direction           String
+  fromNumberMasked    String?
+  toNumberMasked      String?
+  startedAt           DateTime
+  endedAt             DateTime?
+  recordingUriEncrypted String?
+  transcriptEncrypted String?
+  consentCapturedAt   DateTime?
+  disposition         String?
+  customer            Customer? @relation(fields: [customerId], references: [id])
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model SupportTicket {
+  id          String    @id @default(cuid())
+  customerId  String?
+  orderId     String?
+  category    String
+  priority    String
+  status      String
+  subject     String
+  resolution  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  order       Order?    @relation(fields: [orderId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
