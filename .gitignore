@@ -5,8 +5,10 @@ node_modules/
 # Build outputs
 .next/
 dist/
+build/
 .turbo/
 out/
+.cache/
 
 # Environment files (keep .env.example)
 .env
@@ -14,10 +16,15 @@ out/
 .env.development
 .env.production
 .env.test
+.env.*
+!.env.example
 
 # IDE
 .idea/
 .vscode/
+.claude/
+.agents/
+.eslintcache
 *.swp
 *.swo
 *~
@@ -40,10 +47,16 @@ coverage/
 # Prisma
 packages/database/prisma/*.db
 packages/database/prisma/*.db-journal
+packages/database/prisma/*.db-shm
+packages/database/prisma/*.db-wal
+packages/database/prisma/*.sqlite*
+packages/database/generated/
+packages/database/prisma/generated/
 
 # Expo
 apps/customer-mobile/.expo/
 apps/courier-mobile/.expo/
+.expo/
 
 # TypeScript cache
 *.tsbuildinfo

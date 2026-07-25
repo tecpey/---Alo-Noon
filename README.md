@@ -40,6 +40,17 @@ The API listens on `http://localhost:3001`. Its operational endpoints are:
 - `GET /ready` — traffic readiness; returns HTTP 503 while PostgreSQL is
   unavailable.
 
+## Product and architecture references
+
+The [documentation map](docs/README.md) preserves the product vision, Babol
+pilot model, CRM and logistics blueprints, security baseline, roadmap, and
+architecture decisions. These documents describe the intended product and target
+architecture; [the Phase 0 architecture](docs/architecture/README.md) describes
+what the current foundation implements.
+
+Repository policy is documented in [CONTRIBUTING.md](CONTRIBUTING.md),
+[SECURITY.md](SECURITY.md), and [AGENTS.md](AGENTS.md).
+
 ## Quality gates
 
 ```bash
