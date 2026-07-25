@@ -1,6 +1,6 @@
 {
-  "name": "@alo-noon/contracts",
-  "version": "0.0.1",
+  "name": "@alo-noon/domain",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -15,9 +15,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "clean": "rm -f tsconfig.tsbuildinfo"
-  },
-  "dependencies": {
-    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@alo-noon/eslint-config": "workspace:*",

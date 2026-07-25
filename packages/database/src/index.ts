@@ -1,2 +1,22 @@
 export { Prisma, PrismaClient } from '@prisma/client'
-export type { Bakery, Courier, Customer, Order, OrderItem, Product } from '@prisma/client'
+export type {
+  Address,
+  Bakery,
+  BakeryBranch,
+  BakeryProductOffering,
+  City,
+  Courier,
+  Customer,
+  DeliveryTask,
+  DomainEventOutbox,
+  Fulfillment,
+  Household,
+  HouseholdMember,
+  OperationalZone,
+  Order,
+  OrderItem,
+  OrderStateTransition,
+  Product,
+  ProductVariant,
+  Vehicle,
+} from '@prisma/client'

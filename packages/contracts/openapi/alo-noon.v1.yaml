@@ -1,0 +1,53 @@
+openapi: 3.1.0
+info:
+  title: Alo Noon API
+  version: 0.1.0
+  description: >-
+    Phase 1 contract foundation. Only operational endpoints are implemented;
+    domain endpoints are intentionally absent until reviewed.
+servers:
+  - url: http://localhost:3001
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Process liveness independent of external services.
+      responses:
+        '200':
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /ready:
+    get:
+      operationId: getReadiness
+      summary: Traffic readiness including required dependencies.
+      responses:
+        '200':
+          description: Required dependencies are available.
+        '503':
+          description: At least one required dependency is unavailable.
+components:
+  schemas:
+    ResponseMeta:
+      type: object
+      required: [requestId, timestamp, version]
+      properties:
+        requestId: { type: string, format: uuid }
+        timestamp: { type: string, format: date-time }
+        version: { type: string, const: v1 }
+    HealthResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: object
+          required: [status, uptime, version, checks]
+          properties:
+            status: { type: string, enum: [healthy, degraded, unhealthy] }
+            uptime: { type: number, minimum: 0 }
+            version: { type: string }
+            checks: { type: array, items: { type: object } }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }

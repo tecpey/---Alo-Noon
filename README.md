@@ -3,18 +3,23 @@
 Persian-first platform foundation for fresh-bread ordering, bakery fulfillment,
 and courier delivery.
 
+Phase 1 establishes domain language, catalog/freshness rules, order state
+policy, versioned contracts, and a normalized PostgreSQL model. It does **not**
+provide a finished commerce flow, real payments, or production authentication.
+
 ## Workspace
 
-| Project                  | Purpose                             | Local command              |
-| ------------------------ | ----------------------------------- | -------------------------- |
-| `apps/web`               | Next.js customer web experience     | `pnpm dev:web`             |
-| `apps/api`               | Fastify HTTP API                    | `pnpm dev:api`             |
-| `apps/customer-mobile`   | Expo customer application           | `pnpm dev:customer-mobile` |
-| `apps/courier-mobile`    | Expo courier application            | `pnpm dev:courier-mobile`  |
-| `packages/database`      | PostgreSQL schema and Prisma client | `pnpm db:studio`           |
-| `packages/contracts`     | Framework-neutral API contracts     | —                          |
-| `packages/config`        | Validated runtime configuration     | —                          |
-| `packages/design-tokens` | Shared Persian-first design tokens  | —                          |
+| Project                  | Purpose                              | Local command              |
+| ------------------------ | ------------------------------------ | -------------------------- |
+| `apps/web`               | Next.js customer web experience      | `pnpm dev:web`             |
+| `apps/api`               | Fastify HTTP API                     | `pnpm dev:api`             |
+| `apps/customer-mobile`   | Expo customer application            | `pnpm dev:customer-mobile` |
+| `apps/courier-mobile`    | Expo courier application             | `pnpm dev:courier-mobile`  |
+| `packages/database`      | PostgreSQL schema and Prisma client  | `pnpm db:studio`           |
+| `packages/domain`        | Framework-independent business rules | —                          |
+| `packages/contracts`     | Framework-neutral API contracts      | —                          |
+| `packages/config`        | Validated runtime configuration      | —                          |
+| `packages/design-tokens` | Shared Persian-first design tokens   | —                          |
 
 ## Prerequisites
 
@@ -50,6 +55,12 @@ what the current foundation implements.
 
 Repository policy is documented in [CONTRIBUTING.md](CONTRIBUTING.md),
 [SECURITY.md](SECURITY.md), and [AGENTS.md](AGENTS.md).
+
+Start Phase 1 reading with
+[product requirements](docs/product/PRODUCT_REQUIREMENTS.md) and the
+[domain-boundary index](docs/architecture/DOMAIN_BOUNDARIES.md). The
+[repository documentation map](docs/README.md) distinguishes current
+implementation from plans and retained Persian product context.
 
 ## Quality gates
 

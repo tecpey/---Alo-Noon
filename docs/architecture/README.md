@@ -1,4 +1,4 @@
-# Phase 0 architecture
+# Platform foundation architecture
 
 ## System context
 
@@ -29,10 +29,14 @@ Expo courier ────────┘
 required dependencies are available and returns HTTP 503 otherwise. Containers
 should use health for liveness and readiness for traffic admission.
 
-PostgreSQL is the system of record. Monetary amounts use integer Iranian rials;
-timestamps are stored as PostgreSQL timestamps through Prisma. Phase 0 models
-customers, bakeries, products, couriers, orders, and immutable order-item
-prices.
+PostgreSQL is the system of record. Phase 1 uses bigint integer minor units and
+currency for money, UUID persistence IDs, immutable order/address/product/price
+snapshots, explicit order transition history, and separate domain outbox, audit,
+and engagement records.
+
+`packages/domain` owns framework-independent money, catalog/freshness, order
+transition, and event-envelope rules. `packages/contracts/src/v1` owns runtime
+Zod transport schemas. Neither exposes Prisma models.
 
 ## Evolution rules
 
@@ -42,3 +46,14 @@ prices.
 - Treat migrations as forward-only production artifacts and test them in CI.
 - Add observability exporters through validated configuration, without coupling
   business logic to a vendor SDK.
+
+## Status
+
+- **Implemented:** Phase 0 application surfaces plus Phase 1 domain, contract,
+  persistence, migration, tests, and authoritative documentation.
+- **Planned:** Phase 2 application services and the first read-only catalog and
+  serviceability APIs.
+- **Deferred:** transactional orders, payments, authentication, dispatch, CRM
+  UI, and external providers.
+- **Open:** Babol service polygons, cancellation policy, PostGIS, and settlement
+  provider decisions.
