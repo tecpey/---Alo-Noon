@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "آلو نون",
+    "slug": "alo-noon-customer",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "ir.alonoon.customer" },
+    "android": { "package": "ir.alonoon.customer" },
+    "web": { "bundler": "metro" }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@alo-noon/design-tokens",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -f tsconfig.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@alo-noon/eslint-config": "workspace:*",
+    "@alo-noon/typescript-config": "workspace:*",
+    "eslint": "^9.24.0",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}

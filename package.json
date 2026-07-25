@@ -1,0 +1,39 @@
+{
+  "name": "alo-noon",
+  "version": "0.0.1",
+  "description": "API-first bread e-commerce, fulfillment, bakery-partner, and delivery platform",
+  "private": true,
+  "prettier": "@alo-noon/prettier-config",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=26.3.0",
+    "pnpm": ">=11.17.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=@alo-noon/web",
+    "dev:api": "turbo run dev --filter=@alo-noon/api",
+    "dev:customer-mobile": "turbo run dev --filter=@alo-noon/customer-mobile",
+    "dev:courier-mobile": "turbo run dev --filter=@alo-noon/courier-mobile",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "turbo run clean",
+    "db:generate": "turbo run db:generate",
+    "db:push": "turbo run db:push",
+    "db:migrate": "turbo run db:migrate",
+    "db:studio": "pnpm --filter @alo-noon/database dev"
+  },
+  "devDependencies": {
+    "@alo-noon/eslint-config": "workspace:*",
+    "@alo-noon/prettier-config": "workspace:*",
+    "@alo-noon/typescript-config": "workspace:*",
+    "prettier": "^3.5.3",
+    "turbo": "^2.5.3",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}

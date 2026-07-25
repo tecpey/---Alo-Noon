@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "آلو نون پیک",
+    "slug": "alo-noon-courier",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "supportsTablet": false, "bundleIdentifier": "ir.alonoon.courier" },
+    "android": { "package": "ir.alonoon.courier" },
+    "web": { "bundler": "metro" }
+  }
+}

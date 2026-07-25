@@ -1,0 +1,31 @@
+{
+  "name": "@alo-noon/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist coverage"
+  },
+  "dependencies": {
+    "@alo-noon/config": "workspace:*",
+    "@alo-noon/contracts": "workspace:*",
+    "@alo-noon/database": "workspace:*",
+    "@fastify/cors": "^11.2.0",
+    "fastify": "^5.10.0"
+  },
+  "devDependencies": {
+    "@alo-noon/eslint-config": "workspace:*",
+    "@alo-noon/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.24.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}

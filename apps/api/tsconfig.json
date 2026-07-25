@@ -1,0 +1,8 @@
+{
+  "extends": "@alo-noon/typescript-config/base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

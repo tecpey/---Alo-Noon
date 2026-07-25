@@ -1,0 +1,16 @@
+{
+  "name": "@alo-noon/prettier-config",
+  "version": "0.0.1",
+  "private": true,
+  "main": "index.json",
+  "exports": "./index.json",
+  "files": [
+    "index.json"
+  ],
+  "scripts": {
+    "clean": "rm -f *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "prettier": "^3.0.0"
+  }
+}

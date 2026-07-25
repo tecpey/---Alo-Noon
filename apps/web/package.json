@@ -1,0 +1,32 @@
+{
+  "name": "@alo-noon/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf .next coverage"
+  },
+  "dependencies": {
+    "@alo-noon/config": "workspace:*",
+    "@alo-noon/design-tokens": "workspace:*",
+    "next": "16.2.11",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@alo-noon/eslint-config": "workspace:*",
+    "@alo-noon/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.24.0",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}
