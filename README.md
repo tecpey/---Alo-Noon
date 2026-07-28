@@ -1,28 +1,216 @@
-# Alo Noon
+# الو نون — Alo Noon
 
-Persian-first platform foundation for fresh-bread ordering, bakery fulfillment,
-and courier delivery.
+**پلتفرم هوشمند تجارت، تولید، بسته‌بندی و توزیع نان و محصولات ویژه نانوایی**
+
+وب‌سایت رسمی: **https://www.alonon.ir**
+
+الو نون صرفاً یک فروشگاه اینترنتی یا سرویس پیک نان نیست. این پروژه یک پلتفرم API-first و Persian-first برای مدیریت یکپارچه تجربه مشتری، نانوایی‌ها، محصولات، پیش‌سفارش، اشتراک، تولید، بسته‌بندی، چاپ لیبل، پیک، مسیریابی، اعلان، CRM و عملیات شهری است.
+
+## مأموریت
+
+ایجاد قابل‌اعتمادترین و ساده‌ترین راه دسترسی خانواده‌ها به نان‌های بسته‌بندی‌شده، نان‌های تازه امضادار، محصولات رژیمی، حجیم، کیک، دسر و ساندویچ‌های ویژه؛ همراه با کنترل کیفیت، زمان‌بندی تولید، رهگیری سفارش و تحویل قابل پیش‌بینی.
+
+## مدل محصول
+
+### ۱. نان‌های سنتی بسته‌بندی‌شده
+
+نان‌های بربری، سنگک، تافتون و ساندویچی سنتی با بسته‌بندی اختصاصی الو نون و عرضه در ساعات گسترده:
+
+- حالت عادی
+- حالت **Oven Finish**؛ گرم و برشته‌شدن کنترل‌شده پیش از بسته‌بندی و ارسال
+- Batch تولید، تاریخ و زمان آماده‌سازی، شرایط نگهداری و دستور مصرف
+- بدون ادعای «نان داغ»؛ تازگی برای هر SKU به‌صورت شفاف تعریف می‌شود
+
+### ۲. نان‌های تازه امضادار و ویژه
+
+محصولات اختصاصی هر نانوایی، مانند سنگک دو رو کنجدی، بربری کنجدی و سیاه‌دانه، بربری تبریزی و سایر محصولات محدود:
+
+- ساعات و ظرفیت مشخص تولید
+- رزرو ظرفیت یا پیش‌سفارش
+- ETA بر اساس صف تولید، زمان آماده‌سازی، موقعیت پیک، توقف‌ها، مسیر و ترافیک
+- پیک اختصاصی یا جریان تحویل کنترل‌شده
+- کنترل کیفیت و Freshness SLA
+
+### ۳. محصولات توسعه‌ای
+
+- نان‌های حجیم، فانتزی، رژیمی و تخصصی
+- کیک، دسر و شیرینی محدود یا مناسبتی
+- ساندویچ‌ها و محصولات ویژه محلی هر شهر
+- محصولات جدید نانوایی‌ها و تولیدکنندگان تاییدشده
+
+الو نون نباید به یک سوپرمارکت عمومی تبدیل شود؛ هر دسته جدید باید با جایگاه تخصصی برند، استاندارد کیفیت و توان عملیاتی پلتفرم هم‌راستا باشد.
+
+## قابلیت‌های اصلی پلتفرم
+
+### تجربه مشتری
+
+- ثبت‌نام و ورود امن با شماره تلفن
+- مدیریت خانوار، گیرنده و چند آدرس
+- مشاهده موجودی، ظرفیت، نوبت پخت و زمان تقریبی تحویل
+- سفارش فوری، پیش‌سفارش و سفارش اشتراکی
+- انتخاب عادی یا Oven Finish برای محصولات واجد شرایط
+- پرداخت، سفارش مجدد، پشتیبانی و امتیازدهی
+- رهگیری وضعیت آماده‌سازی، پیک و ETA
+- اعلان‌های هوشمند و دستی در اپ، وب، پیامک و کانال‌های تاییدشده
+
+### پنل نانوایی و تولیدکننده
+
+- ثبت درخواست همکاری، مجوزها، شعب، ساعات کاری و ظرفیت
+- مدیریت محصولات، Offering، قیمت، موجودی، Batch و نوبت تولید
+- پذیرش، رد یا توقف سفارش با دلیل قابل ممیزی
+- صف تولید و بسته‌بندی
+- دریافت اعلان صوتی/تصویری برای سفارش جدید و تاخیرها
+- چاپ خودکار برگه سفارش و لیبل چسبی پس از تایید سفارش
+- گزارش عملکرد، کیفیت، فروش و تسویه
+- مدیریت چند کاربر با سطح دسترسی تفکیک‌شده
+
+### اپ و پنل پیک
+
+- شیفت، وضعیت فعالیت، ماموریت و تحویل گرفتن مرسوله
+- مسیریابی چندمقصدی و اولویت‌بندی توقف‌ها
+- مدیریت هم‌زمان چند بسته و تشخیص سریع هر مرسوله با QR/Barcode و لیبل
+- رهگیری زنده، ETA، اثبات تحویل و مدیریت عدم حضور مشتری
+- اعلان ماموریت جدید، تغییر مسیر، تاخیر و هشدارهای عملیاتی
+- پشتیبانی از پیک‌های شریک و ناوگان اختصاصی الو نون
+
+### پنل مدیریت و عملیات
+
+- مدیریت چندسطحی و محدوده‌محور: کل پلتفرم، شهر، منطقه، نانوایی و شعبه
+- مدیریت مشتری، نانوایی، پیک، سفارش، قیمت، تسویه، محتوا و CRM
+- مرکز اعلان دستی و Rule-based برای مشتری، نانوا، پیک و اپراتور
+- مشاهده عملیات زنده، تاخیرها، ظرفیت، خطاهای چاپ و وضعیت تحویل
+- Audit Log برای تمام اقدامات حساس
+- داشبوردهای مالی، عملیاتی، کیفیت و رشد
+
+## چاپ خودکار سفارش و لیبل
+
+پس از تایید معتبر سفارش، سامانه یک رویداد قابل تکرار و قابل ممیزی ایجاد می‌کند. سرویس چاپ نانوایی بر اساس سیاست شعبه، موارد زیر را چاپ می‌کند:
+
+1. **Kitchen Order Ticket** برای صف تولید و بسته‌بندی
+2. **Adhesive Package Label** برای چسباندن روی بسته
+
+لیبل باید حداقل شامل این اطلاعات باشد:
+
+- شماره سفارش کوتاه و شناسه یکتا
+- نام مشتری یا گیرنده با سیاست حفظ حریم خصوصی
+- شماره تماس ماسک‌شده یا مسیر تماس امن
+- آدرس ساختاریافته و دستور تحویل
+- فهرست اقلام، تعداد، نوع پخت و گزینه Oven Finish
+- نانوایی، شعبه، Batch و زمان آماده‌سازی
+- ترتیب بسته در مسیر و شماره توقف پیک
+- QR Code یا Barcode برای دریافت، تفکیک و تحویل
+- آلرژن یا هشدار نگهداری در صورت نیاز
+- زمان چاپ، نسخه قالب و شناسه چاپگر
+
+چاپ باید idempotent باشد؛ چاپ مجدد ثبت شود و از تولید بی‌نهایت لیبل در اثر Retry جلوگیری شود. خرابی چاپگر نباید سفارش را گم کند و باید در پنل عملیات هشدار، صف Retry و مسیر چاپ دستی کنترل‌شده وجود داشته باشد.
+
+جزئیات کامل در [Notification, Print & Label Architecture](docs/operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md) ثبت شده است.
+
+## معماری محصول
+
+```text
+Customer Web / Customer Mobile / Courier Mobile / Bakery Portal / Admin Console
+                              │
+                         HTTPS / API
+                              │
+                 Modular Fastify Application
+                              │
+ Identity · Geography · Catalog · Bakery · Production · Order · Subscription
+ Payment · Dispatch · Routing · ETA · Notification · Printing · CRM · Audit
+                              │
+                   PostgreSQL · Redis · Object Storage
+```
+
+### اصول دائمی
+
+- PostgreSQL منبع حقیقت است؛ مرورگر و موبایل منبع اصلی داده نیستند.
+- معماری از ابتدا API-first و آماده چند شهر است.
+- شهر، نانوایی، پیک، قیمت و محدوده سرویس نباید هاردکد شوند.
+- Modular Monolith تا زمانی حفظ می‌شود که شواهد مقیاس استخراج سرویس را توجیه کند.
+- عملیات مالی، وضعیت سفارش و چاپ باید idempotent و قابل ممیزی باشند.
+- اطلاعات شخصی بر اساس کمترین سطح دسترسی نمایش داده می‌شوند.
+- هر تغییر دامنه‌ای نیازمند Migration، تست، مستندات و برنامه بازگشت است.
 
 ## Workspace
 
-| Project                  | Purpose                             | Local command              |
-| ------------------------ | ----------------------------------- | -------------------------- |
-| `apps/web`               | Next.js customer web experience     | `pnpm dev:web`             |
-| `apps/api`               | Fastify HTTP API                    | `pnpm dev:api`             |
-| `apps/customer-mobile`   | Expo customer application           | `pnpm dev:customer-mobile` |
-| `apps/courier-mobile`    | Expo courier application            | `pnpm dev:courier-mobile`  |
-| `packages/database`      | PostgreSQL schema and Prisma client | `pnpm db:studio`           |
-| `packages/contracts`     | Framework-neutral API contracts     | —                          |
-| `packages/config`        | Validated runtime configuration     | —                          |
-| `packages/design-tokens` | Shared Persian-first design tokens  | —                          |
+| Project | Purpose | Local command |
+|---|---|---|
+| `apps/web` | تجربه وب مشتری و صفحات عمومی | `pnpm dev:web` |
+| `apps/api` | API و orchestration دامنه | `pnpm dev:api` |
+| `apps/customer-mobile` | اپ مشتری | `pnpm dev:customer-mobile` |
+| `apps/courier-mobile` | اپ پیک | `pnpm dev:courier-mobile` |
+| `packages/database` | PostgreSQL schema و Prisma client | `pnpm db:studio` |
+| `packages/contracts` | قراردادهای مستقل API و event | — |
+| `packages/config` | تنظیمات runtime اعتبارسنجی‌شده | — |
+| `packages/design-tokens` | منبع مشترک Design Token | — |
 
-## Prerequisites
+## دامنه‌های هدف
 
-- Node.js 26.3 or newer
-- pnpm 11.17 or newer
-- PostgreSQL 16 (or Docker)
+```text
+Identity & Access
+Customer & Household
+Geography & Service Zones
+Bakery, Branch & Partner Onboarding
+Catalog, Product Variant & Bakery Offering
+Production, Capacity & Batch
+Cart, Checkout & Order Orchestration
+Pre-order & Subscription
+Payment, Refund & Settlement
+Courier, Fleet, Dispatch, Route & Stops
+ETA & Live Tracking
+Notification, Print & Label
+CRM, Support & Quality
+CMS, SEO, AEO & GEO
+Audit, Compliance & Analytics
+```
 
-## Local setup
+## MVP کنترل‌شده بابل
+
+- محدوده فشرده و قابل کنترل، نه کل شهر
+- ۲ تا ۴ نانوایی منتخب
+- یک شریک اصلی پیک و مسیر پشتیبان
+- چند بسته نان سنتی و ۲ تا ۳ نان ویژه
+- سفارش، پرداخت، پنل مشتری، نانوایی و عملیات
+- اعلان چندنقشی و چاپ خودکار لیبل
+- تخصیص دستی/نیمه‌خودکار پیک و ETA نسخه اول
+- CRM پایه، Audit Log و SEO محلی
+
+Batch delivery ده‌مقصدی از ابتدا در مدل دامنه دیده می‌شود، اما فعال‌سازی خودکار آن پس از پایدارشدن تحویل تک‌سفارش انجام خواهد شد.
+
+## امنیت و مدیریت دسترسی
+
+- RBAC همراه با scope شهر، منطقه، نانوایی و شعبه
+- MFA اجباری برای نقش‌های مدیریتی و مالی
+- Session و device management
+- Rate limiting و حفاظت در برابر سوءاستفاده OTP
+- Encryption in transit و حفاظت داده حساس
+- Secret management و جداسازی محیط‌ها
+- Audit trail برای تغییر وضعیت، چاپ مجدد، بازپرداخت و دسترسی ویژه
+- عدم نمایش غیرضروری شماره تماس و اطلاعات مشتری روی لیبل یا پنل پیک
+
+## SEO، AEO و GEO
+
+- URL و landing page ساختاریافته برای شهر، دسته و محصول
+- Structured Data برای Product، Offer، LocalBusiness، Breadcrumb و FAQ
+- Canonical، Sitemap تفکیک‌شده و کنترل Indexation
+- Core Web Vitals، Accessibility و rendering مناسب
+- Entity-based content برای برند، نانوایی، محصول و شهر
+- محتوای پاسخ‌محور و قابل استناد برای موتورهای جست‌وجو و سامانه‌های هوش مصنوعی
+- مدیریت محتوای محلی بدون تولید صفحات تکراری یا کم‌کیفیت
+
+## وضعیت فعلی
+
+ریپو در **Phase 0 Foundation** قرار دارد. ساختار monorepo، API، وب، دو اپ موبایل، PostgreSQL/Prisma، قراردادها، Design Tokens و CI ایجاد شده‌اند؛ اما قابلیت‌های تراکنشی اصلی، احراز هویت، پنل‌ها، Dispatch، پرداخت، اعلان و چاپ هنوز باید پیاده‌سازی شوند.
+
+مستندات، معماری هدف را توصیف می‌کنند و نباید با قابلیت پیاده‌سازی‌شده اشتباه گرفته شوند.
+
+## راه‌اندازی محلی
+
+### پیش‌نیازها
+
+- Node.js 26.3+
+- pnpm 11.17+
+- PostgreSQL 16 یا Docker
 
 ```bash
 cp .env.example .env
@@ -34,32 +222,32 @@ pnpm db:migrate
 pnpm dev
 ```
 
-The API listens on `http://localhost:3001`. Its operational endpoints are:
+API روی `http://localhost:3001` اجرا می‌شود:
 
-- `GET /health` — process liveness; does not depend on external services.
-- `GET /ready` — traffic readiness; returns HTTP 503 while PostgreSQL is
-  unavailable.
+- `GET /health` برای liveness
+- `GET /ready` برای readiness وابستگی‌ها
 
-## Product and architecture references
-
-The [documentation map](docs/README.md) preserves the product vision, Babol
-pilot model, CRM and logistics blueprints, security baseline, roadmap, and
-architecture decisions. These documents describe the intended product and target
-architecture; [the Phase 0 architecture](docs/architecture/README.md) describes
-what the current foundation implements.
-
-Repository policy is documented in [CONTRIBUTING.md](CONTRIBUTING.md),
-[SECURITY.md](SECURITY.md), and [AGENTS.md](AGENTS.md).
-
-## Quality gates
+## Quality Gates
 
 ```bash
+pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
 ```
 
-These are the same gates enforced by GitHub Actions. See
-[the architecture overview](docs/architecture/README.md) for boundaries and
-deployment assumptions.
+## مستندات مرجع
+
+- [نقشه مستندات](docs/README.md)
+- [چشم‌انداز محصول](docs/product/PRODUCT_VISION_FA.md)
+- [کاتالوگ و تازگی](docs/product/CATALOG_AND_FRESHNESS_FA.md)
+- [مدل پایلوت بابل](docs/operations/BABOL_PILOT_OPERATING_MODEL_FA.md)
+- [معماری اعلان، چاپ و لیبل](docs/operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md)
+- [نقشه دامنه و اجرای فاز ۱](docs/architecture/PHASE_1_DOMAIN_FOUNDATION.md)
+- [امنیت](SECURITY.md)
+- [مشارکت](CONTRIBUTING.md)
+
+## حقوق مالکیت
+
+این ریپو خصوصی، محرمانه و نرم‌افزار اختصاصی الو نون است. هیچ مجوزی برای کپی، انتشار، استقرار یا ایجاد اثر مشتق بدون مجوز کتبی مالک صادر نشده است.
