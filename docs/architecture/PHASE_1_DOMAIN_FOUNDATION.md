@@ -2,11 +2,14 @@
 
 ## هدف
 
-تبدیل Phase 0 از یک اسکلت فنی به پایه‌ای قابل اتکا برای ساخت محصول واقعی الو نون، بدون ورود زودهنگام به پیچیدگی Microservice یا UIهای نمایشی.
+تبدیل Phase 0 از یک اسکلت فنی به پایه‌ای قابل اتکا برای ساخت محصول واقعی الو
+نون، بدون ورود زودهنگام به پیچیدگی Microservice یا UIهای نمایشی.
 
 ## وضعیت ورودی
 
-Phase 0 شامل Monorepo، وب، API، دو اپ موبایل، PostgreSQL/Prisma، قراردادها، تنظیمات، Design Tokens و CI است. مدل داده فعلی تنها Customer، Bakery، Product، Courier، Order و OrderItem را پوشش می‌دهد و برای عملیات واقعی کافی نیست.
+Phase 0 شامل Monorepo، وب، API، دو اپ موبایل، PostgreSQL/Prisma، قراردادها،
+تنظیمات، Design Tokens و CI است. مدل داده فعلی تنها Customer، Bakery، Product،
+Courier، Order و OrderItem را پوشش می‌دهد و برای عملیات واقعی کافی نیست.
 
 ## اصول طراحی
 
@@ -65,7 +68,8 @@ AddressPoint
 DeliveryConstraint
 ```
 
-آدرس باید ساختاریافته، دارای مختصات، دستور تحویل و نسخه normalized باشد. Serviceability بر اساس polygon/zone و سیاست محصول ارزیابی می‌شود.
+آدرس باید ساختاریافته، دارای مختصات، دستور تحویل و نسخه normalized باشد.
+Serviceability بر اساس polygon/zone و سیاست محصول ارزیابی می‌شود.
 
 ### Bakery & Partner
 
@@ -80,7 +84,8 @@ ComplianceDocument
 PartnerAgreement
 ```
 
-درخواست همکاری شامل محصول ویژه، ظرفیت، مجوز، تصاویر، شهر و قابلیت‌های تولید/بسته‌بندی است.
+درخواست همکاری شامل محصول ویژه، ظرفیت، مجوز، تصاویر، شهر و قابلیت‌های
+تولید/بسته‌بندی است.
 
 ### Catalog & Offering
 
@@ -97,7 +102,8 @@ PackagingPolicy
 FreshnessPolicy
 ```
 
-Product تعریف عمومی است؛ BakeryOffering عرضه واقعی یک Variant توسط یک شعبه با قیمت، ظرفیت و SLA مشخص است.
+Product تعریف عمومی است؛ BakeryOffering عرضه واقعی یک Variant توسط یک شعبه با
+قیمت، ظرفیت و SLA مشخص است.
 
 ### Production & Capacity
 
@@ -110,7 +116,8 @@ PackagingTask
 QualityCheck
 ```
 
-نان تازه، محصول بسته‌بندی، Oven Finish و پیش‌سفارش Workflow و ظرفیت‌های متفاوت دارند.
+نان تازه، محصول بسته‌بندی، Oven Finish و پیش‌سفارش Workflow و ظرفیت‌های متفاوت
+دارند.
 
 ### Cart, Checkout & Order
 
@@ -170,7 +177,8 @@ LocationPing
 ProofOfDelivery
 ```
 
-یک Route می‌تواند چند Shipment/Package و حداقل ۱۰ توقف را پشتیبانی کند. ترتیب توقف versioned است.
+یک Route می‌تواند چند Shipment/Package و حداقل ۱۰ توقف را پشتیبانی کند. ترتیب
+توقف versioned است.
 
 ### ETA & Tracking
 
@@ -181,7 +189,8 @@ TrackingSession
 TrackingEvent
 ```
 
-ETA نسخه اول ترکیبی از زمان تولید، بسته‌بندی، انتظار پیک، مسیر، توقف‌ها و buffer عملیاتی است.
+ETA نسخه اول ترکیبی از زمان تولید، بسته‌بندی، انتظار پیک، مسیر، توقف‌ها و buffer
+عملیاتی است.
 
 ### Notification, Print & Label
 
@@ -273,7 +282,8 @@ src/modules/content
 src/modules/audit
 ```
 
-هر ماژول شامل domain، application، infrastructure و transport است؛ وابستگی مستقیم ماژول‌ها به Prisma باید محدود به لایه repository باشد.
+هر ماژول شامل domain، application، infrastructure و transport است؛ وابستگی
+مستقیم ماژول‌ها به Prisma باید محدود به لایه repository باشد.
 
 ## امنیت پایه
 
