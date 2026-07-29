@@ -4,8 +4,8 @@
 نباید فقط در گفتگو، کد یا حافظه افراد باقی بمانند.
 
 > اسناد هدف و معماری آینده را از قابلیت‌های پیاده‌سازی‌شده تفکیک می‌کنند. وضعیت
-> واقعی Phase 1 در `architecture/README.md`، `architecture/DOMAIN_BOUNDARIES.md`
-> و اسناد محصول انگلیسی ثبت شده است.
+> واقعی هر فاز در `architecture/README.md`، `architecture/DOMAIN_BOUNDARIES.md`
+> و اسناد فاز انگلیسی ثبت شده است.
 
 ## ترتیب مطالعه برای مدیر محصول و عملیات
 
@@ -23,9 +23,10 @@
 2. `03-architecture/API_FIRST_ARCHITECTURE_FA.md`
 3. `03-architecture/DOMAIN_MODEL_FA.md`
 4. `architecture/PHASE_1_DOMAIN_FOUNDATION.md`
-5. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
-6. `06-security/SECURITY_BASELINE_FA.md`
-7. `decisions/`
+5. `architecture/PHASE_2B_IDENTITY_ACCESS.md`
+6. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
+7. `06-security/SECURITY_BASELINE_FA.md`
+8. `decisions/`
 
 ## اسناد جدید مرجع
 
@@ -39,6 +40,11 @@ Idempotency، Migration، تست و ترتیب PRهای فاز یک را تعر�
 اعلان‌های هوشمند و دستی برای مشتری، نانوا، پیک و عملیات؛ چاپ خودکار Kitchen
 Ticket و لیبل چسبی؛ Print Agent، مدل داده، حریم خصوصی، Retry، خطا و معیار پذیرش
 MVP را تعریف می‌کند.
+
+### `architecture/PHASE_2B_IDENTITY_ACCESS.md`
+
+OTP امن، Session opaque و قابل ابطال، مدل نقش/مجوز/Scope، Audit بدون افشای
+Secret یا PII و مرز اتصال آینده ارائه‌دهنده پیامک را تعریف می‌کند.
 
 ## طبقه‌بندی اسناد
 
@@ -60,12 +66,13 @@ MVP را تعریف می‌کند.
 
 ## وضعیت فعلی
 
-ریپو در Phase 1 Domain Foundation است. مدل دامنه و دیتابیس، قراردادهای نسخه‌دار،
-قواعد سفارش/تازگی، Migration، Outbox و Audit foundation همراه تست‌ها پیاده‌سازی
-شده‌اند. احراز هویت و RBAC عملیاتی، Commerce تراکنشی، پرداخت، اعلان delivery و
-چاپ اجرایی هنوز برنامه‌ریزی‌شده‌اند و نباید قابلیت تحویل‌شده معرفی شوند.
+ریپو در Phase 2B Identity & Access است. مدل دامنه و دیتابیس، قراردادهای
+نسخه‌دار، API کاتالوگ/محدوده سرویس، OTP، Session سروری قابل ابطال، RBAC
+محدوده‌محور، Migration، Outbox و Audit foundation همراه تست‌ها پیاده‌سازی
+شده‌اند. ارائه‌دهنده production پیامک، Commerce تراکنشی، پرداخت، اعلان delivery
+و چاپ اجرایی هنوز برنامه‌ریزی‌شده‌اند و نباید قابلیت تحویل‌شده معرفی شوند.
 
-## منابع معتبر Phase 1
+## منابع معتبر وضعیت فعلی
 
 1. `product/PRODUCT_REQUIREMENTS.md`
 2. `architecture/DOMAIN_BOUNDARIES.md`
@@ -74,3 +81,4 @@ MVP را تعریف می‌کند.
 5. `architecture/DATA_OWNERSHIP.md`
 6. `architecture/SERVICE_BOUNDARIES.md`
 7. `decisions/ADR-0004` تا `ADR-0007`
+8. `architecture/PHASE_2B_IDENTITY_ACCESS.md`

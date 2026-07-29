@@ -1,6 +1,10 @@
 export { Prisma, PrismaClient } from '@prisma/client'
 export type {
   Address,
+  AccessGrant,
+  AuthSession,
+  AuthorizationPermission,
+  AuthorizationRole,
   Bakery,
   BakeryBranch,
   BakeryProductOffering,
@@ -12,10 +16,12 @@ export type {
   Fulfillment,
   Household,
   HouseholdMember,
+  IdentityAccount,
   OperationalZone,
   Order,
   OrderItem,
   OrderStateTransition,
+  OtpChallenge,
   Product,
   ProductVariant,
   Vehicle,

@@ -257,6 +257,27 @@ enum IncidentSeverity {
   CRITICAL
 }
 
+enum IdentityAccountStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum OtpChallengeStatus {
+  PENDING
+  CONSUMED
+  INVALIDATED
+}
+
+enum AuthorizationScopeType {
+  GLOBAL
+  CITY
+  OPERATIONAL_ZONE
+  BAKERY_BRANCH
+  COURIER_PARTNER
+  SELF
+}
+
 model City {
   id               String            @id @default(uuid()) @db.Uuid
   code             String            @unique @db.VarChar(32)
@@ -319,10 +340,105 @@ model Customer {
   orders                 Order[]
   customerEvents         CustomerEvent[]
   supportCases           SupportCase[]
+  identityAccount        IdentityAccount?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
   @@index([lifecycleStatus, createdAt])
+}
+
+model IdentityAccount {
+  id           String                @id @default(uuid()) @db.Uuid
+  mobileE164   String                @unique @db.VarChar(16)
+  customerId   String?               @unique @db.Uuid
+  customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  status       IdentityAccountStatus @default(ACTIVE)
+  verifiedAt   DateTime?
+  sessions     AuthSession[]
+  accessGrants AccessGrant[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model OtpChallenge {
+  id                String             @id @default(uuid()) @db.Uuid
+  mobileE164        String             @db.VarChar(16)
+  codeDigest        String             @db.VarChar(64)
+  status            OtpChallengeStatus @default(PENDING)
+  attempts          Int                @default(0)
+  maxAttempts       Int                @default(5)
+  expiresAt         DateTime
+  resendAvailableAt DateTime
+  consumedAt        DateTime?
+  invalidatedAt     DateTime?
+  createdAt         DateTime           @default(now())
+
+  @@index([mobileE164, createdAt])
+  @@index([status, expiresAt])
+}
+
+model AuthSession {
+  id          String          @id @default(uuid()) @db.Uuid
+  accountId   String          @db.Uuid
+  account     IdentityAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tokenDigest String          @unique @db.VarChar(64)
+  expiresAt   DateTime
+  lastSeenAt  DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([accountId, revokedAt, expiresAt])
+}
+
+model AuthorizationRole {
+  id          String           @id @default(uuid()) @db.Uuid
+  code        String           @unique @db.VarChar(64)
+  name        String
+  permissions RolePermission[]
+  grants      AccessGrant[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model AuthorizationPermission {
+  id          String           @id @default(uuid()) @db.Uuid
+  code        String           @unique @db.VarChar(100)
+  description String
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model RolePermission {
+  roleId       String                  @db.Uuid
+  role         AuthorizationRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String                  @db.Uuid
+  permission   AuthorizationPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime                @default(now())
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model AccessGrant {
+  id        String                 @id @default(uuid()) @db.Uuid
+  accountId String                 @db.Uuid
+  account   IdentityAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  roleId    String                 @db.Uuid
+  role      AuthorizationRole      @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  scopeType AuthorizationScopeType
+  scopeId   String?                @db.Uuid
+  activeAt  DateTime               @default(now())
+  expiresAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@index([accountId, revokedAt, expiresAt])
+  @@index([scopeType, scopeId])
 }
 
 model Household {

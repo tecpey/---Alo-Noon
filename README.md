@@ -216,12 +216,12 @@ Batch delivery ده‌مقصدی از ابتدا در مدل دامنه دیده
 
 ## وضعیت فعلی
 
-ریپو در **Phase 1 Domain Foundation** قرار دارد. علاوه بر زیرساخت Phase 0،
-واژگان دامنه، قواعد کاتالوگ و تازگی، مدل چندبعدی وضعیت سفارش، قراردادهای
-نسخه‌دار Zod، مدل نرمال‌شده PostgreSQL/Prisma، Migration ایمن، Outbox/Audit
-foundation و تست‌های دامنه پیاده‌سازی شده‌اند؛ اما احراز هویت production، جریان
-تراکنشی Commerce، پرداخت و Ledger، پنل‌های کامل، Dispatch، ارسال اعلان و اجرای
-چاپ هنوز باید در فازهای بعدی ساخته شوند.
+ریپو در **Phase 2B Identity & Access** قرار دارد. علاوه بر زیرساخت Phase 0 و
+Domain Foundation، API فقط‌خواندنی کاتالوگ و بررسی محدوده سرویس، OTP امن،
+Session سروری قابل ابطال، RBAC محدوده‌محور، Migrationهای PostgreSQL/Prisma،
+OpenAPI، Outbox/Audit foundation و تست‌های امنیتی پیاده‌سازی شده‌اند. اتصال
+ارائه‌دهنده تاییدشده پیامک، Commerce تراکنشی، پرداخت و Ledger، پنل‌های کامل،
+Dispatch، ارسال اعلان و اجرای چاپ هنوز باید در فازهای بعدی ساخته شوند.
 
 مستندات، معماری هدف را توصیف می‌کنند و نباید با قابلیت پیاده‌سازی‌شده اشتباه
 گرفته شوند.
@@ -248,6 +248,14 @@ API روی `http://localhost:3001` اجرا می‌شود:
 
 - `GET /health` برای liveness
 - `GET /ready` برای readiness وابستگی‌ها
+- `GET /api/v1/catalog/products` برای کاتالوگ فعال
+- `POST /api/v1/serviceability/check` برای ارزیابی محدوده سرویس
+- `POST /api/v1/auth/otp/request` برای درخواست کد تایید
+- `POST /api/v1/auth/otp/verify` برای تایید و ایجاد Session
+- `GET|DELETE /api/v1/auth/session` برای مشاهده یا ابطال Session
+
+تا زمان انتخاب و پیکربندی ارائه‌دهنده تاییدشده پیامک، endpoint درخواست OTP عمداً
+با خطای کنترل‌شده `503` پاسخ می‌دهد و هیچ fallback ساختگی production وجود ندارد.
 
 ## Quality Gates
 

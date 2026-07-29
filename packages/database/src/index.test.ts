@@ -17,6 +17,12 @@ describe('database package', () => {
         'DeliveryTask',
         'DomainEventOutbox',
         'AuditEvent',
+        'IdentityAccount',
+        'OtpChallenge',
+        'AuthSession',
+        'AuthorizationRole',
+        'AuthorizationPermission',
+        'AccessGrant',
       ]),
     )
   })
@@ -36,5 +42,19 @@ describe('database package', () => {
     )
     expect(sql).toContain('CREATE TABLE "DomainEventOutbox"')
     expect(sql).toContain('ADD CONSTRAINT "ProductVariant_classification_check"')
+  })
+
+  it('includes the reviewed Phase 2B identity migration', () => {
+    const migration = new URL(
+      '../prisma/migrations/20260729020000_phase_2b_identity_access/migration.sql',
+      import.meta.url,
+    )
+    expect(existsSync(migration)).toBe(true)
+
+    const sql = readFileSync(migration, 'utf8')
+    expect(sql).toContain('CREATE TABLE "OtpChallenge"')
+    expect(sql).toContain('CREATE TABLE "AuthSession"')
+    expect(sql).toContain('CREATE TABLE "AccessGrant"')
+    expect(sql).toContain('AccessGrant_scope_shape_check')
   })
 })

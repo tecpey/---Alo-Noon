@@ -6,9 +6,15 @@ import {
   createPrismaCatalogRepository,
   createPrismaServiceabilityRepository,
 } from './modules/discovery.js'
+import { createPrismaAuthRepository, type OtpDeliveryProvider } from './modules/auth.js'
 
 const env = getEnv()
 const prisma = new PrismaClient()
+const unavailableOtpDeliveryProvider: OtpDeliveryProvider = {
+  send: async () => {
+    throw new Error('No approved OTP delivery provider is configured')
+  },
+}
 const app = await buildApp({
   logger: true,
   readinessCheck: async () => {
@@ -17,6 +23,13 @@ const app = await buildApp({
   },
   catalogRepository: createPrismaCatalogRepository(prisma),
   serviceabilityRepository: createPrismaServiceabilityRepository(prisma),
+  auth: {
+    repository: createPrismaAuthRepository(prisma),
+    deliveryProvider: unavailableOtpDeliveryProvider,
+    otpPepper: env.AUTH_OTP_PEPPER ?? randomBytes(32).toString('hex'),
+    sessionPepper: env.AUTH_SESSION_PEPPER ?? randomBytes(32).toString('hex'),
+    secureCookie: env.NODE_ENV === 'production',
+  },
 })
 
 const close = async (signal: string): Promise<void> => {
@@ -31,3 +44,4 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 await app.listen({ host: '0.0.0.0', port: env.API_PORT })
+import { randomBytes } from 'node:crypto'

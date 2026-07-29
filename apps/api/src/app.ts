@@ -8,11 +8,13 @@ import {
   type CatalogRepository,
   type ServiceabilityRepository,
 } from './modules/discovery.js'
+import { registerAuthRoutes, type AuthDependencies } from './modules/auth.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
   catalogRepository?: CatalogRepository
   serviceabilityRepository?: ServiceabilityRepository
+  auth?: AuthDependencies
   logger?: boolean
 }
 
@@ -41,6 +43,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     serviceabilityRepository:
       options.serviceabilityRepository ?? unavailableServiceabilityRepository,
   })
+  if (options.auth) registerAuthRoutes(app, options.auth)
 
   app.get('/health', async (): Promise<HealthResponse> => ({
     success: true,
