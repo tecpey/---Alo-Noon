@@ -3,9 +3,32 @@ import Fastify, { type FastifyInstance } from 'fastify'
 
 import type { HealthResponse, ReadyResponse, ResponseMeta } from '@alo-noon/contracts'
 
+import {
+  registerDiscoveryRoutes,
+  type CatalogRepository,
+  type ServiceabilityRepository,
+} from './modules/discovery.js'
+
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
+  catalogRepository?: CatalogRepository
+  serviceabilityRepository?: ServiceabilityRepository
   logger?: boolean
+}
+
+const unavailableCatalogRepository: CatalogRepository = {
+  listProducts: async () => {
+    throw new Error('Catalog repository unavailable')
+  },
+}
+
+const unavailableServiceabilityRepository: ServiceabilityRepository = {
+  isCityActive: async () => {
+    throw new Error('Serviceability repository unavailable')
+  },
+  listAreas: async () => {
+    throw new Error('Serviceability repository unavailable')
+  },
 }
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
@@ -13,6 +36,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const readinessCheck = options.readinessCheck ?? (async () => true)
 
   await app.register(cors, { origin: false })
+  registerDiscoveryRoutes(app, {
+    catalogRepository: options.catalogRepository ?? unavailableCatalogRepository,
+    serviceabilityRepository:
+      options.serviceabilityRepository ?? unavailableServiceabilityRepository,
+  })
 
   app.get('/health', async (): Promise<HealthResponse> => ({
     success: true,

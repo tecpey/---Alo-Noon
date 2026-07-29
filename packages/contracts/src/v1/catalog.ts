@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { moneySchema, uuidSchema } from './common'
+import { moneySchema, paginationParamsSchema, uuidSchema } from './common'
 
 export const productFulfillmentClassSchema = z.enum([
   'SIGNATURE_FRESH',
@@ -51,3 +51,11 @@ export const bakeryBranchSummarySchema = z.object({
   qualityStatus: z.enum(['PENDING_REVIEW', 'APPROVED', 'WATCHLIST', 'SUSPENDED']),
 })
 export type BakeryBranchSummary = z.infer<typeof bakeryBranchSummarySchema>
+
+export const catalogListQuerySchema = paginationParamsSchema
+  .pick({ page: true, pageSize: true })
+  .extend({
+    cityId: uuidSchema,
+    operationalZoneId: uuidSchema.optional(),
+  })
+export type CatalogListQuery = z.infer<typeof catalogListQuerySchema>
