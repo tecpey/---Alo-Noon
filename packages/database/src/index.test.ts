@@ -23,6 +23,10 @@ describe('database package', () => {
         'AuthorizationRole',
         'AuthorizationPermission',
         'AccessGrant',
+        'Cart',
+        'CartItem',
+        'Quote',
+        'QuoteItem',
       ]),
     )
   })
@@ -56,5 +60,19 @@ describe('database package', () => {
     expect(sql).toContain('CREATE TABLE "AuthSession"')
     expect(sql).toContain('CREATE TABLE "AccessGrant"')
     expect(sql).toContain('AccessGrant_scope_shape_check')
+  })
+
+  it('includes the reviewed Phase 2D cart and quote migration', () => {
+    const migration = new URL(
+      '../prisma/migrations/20260729030000_phase_2d_cart_quote/migration.sql',
+      import.meta.url,
+    )
+    expect(existsSync(migration)).toBe(true)
+
+    const sql = readFileSync(migration, 'utf8')
+    expect(sql).toContain('CREATE TABLE "Cart"')
+    expect(sql).toContain('CREATE TABLE "Quote"')
+    expect(sql).toContain('Cart_one_active_per_customer_key')
+    expect(sql).toContain('QuoteItem_amounts_check')
   })
 })

@@ -675,7 +675,7 @@ async function loadSessionContext(
   }
 }
 
-async function authenticateRequest(
+export async function authenticateRequest(
   request: FastifyRequest,
   dependencies: AuthDependencies,
 ): Promise<SessionContext | null> {

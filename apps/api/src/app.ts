@@ -10,6 +10,11 @@ import {
   type ServiceabilityRepository,
 } from './modules/discovery.js'
 import { registerAuthRoutes, type AuthDependencies } from './modules/auth.js'
+import {
+  registerCommerceRoutes,
+  type CommerceDependencies,
+  type CommerceRepository,
+} from './modules/commerce.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -17,6 +22,7 @@ export interface AppOptions {
   cityRepository?: CityRepository
   serviceabilityRepository?: ServiceabilityRepository
   auth?: AuthDependencies
+  commerceRepository?: CommerceRepository
   corsOrigins?: string[]
   logger?: boolean
 }
@@ -57,6 +63,13 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       options.serviceabilityRepository ?? unavailableServiceabilityRepository,
   })
   if (options.auth) registerAuthRoutes(app, options.auth)
+  if (options.auth && options.commerceRepository) {
+    const commerce: CommerceDependencies = {
+      repository: options.commerceRepository,
+      auth: options.auth,
+    }
+    registerCommerceRoutes(app, commerce)
+  }
 
   app.get('/health', async (): Promise<HealthResponse> => ({
     success: true,

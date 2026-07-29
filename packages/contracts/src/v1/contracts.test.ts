@@ -3,11 +3,15 @@ import { describe, expect, it } from 'vitest'
 import {
   addressInputSchema,
   activeCitiesEnvelopeSchema,
+  cartEnvelopeSchema,
+  cartItemMutationSchema,
   catalogPageSchema,
   eventEnvelopeSchema,
   otpRequestEnvelopeSchema,
   otpRequestSchema,
   otpVerifySchema,
+  quoteCreateSchema,
+  quoteEnvelopeSchema,
   orderDraftInputSchema,
   serviceabilityEnvelopeSchema,
   serviceabilityRequestSchema,
@@ -195,6 +199,7 @@ describe('v1 catalog response contracts', () => {
         data: [
           {
             id: 'c787d489-c7f1-4677-8302-b0120fd35ff5',
+            offeringId: '0d908503-5bd2-41e6-a627-b7165e3956e0',
             variantId: 'e42c44e3-f380-4544-875b-ec95f06f1ba2',
             sku: 'ALO-SIGNATURE-001',
             nameFa: 'بربری ویژه',
@@ -217,6 +222,85 @@ describe('v1 catalog response contracts', () => {
             hasPreviousPage: false,
           },
         },
+      }),
+    ).toBeDefined()
+  })
+})
+
+describe('v1 cart and quote contracts', () => {
+  const item = {
+    id: '11111111-1111-4111-8111-111111111111',
+    bakeryProductOfferingId: '22222222-2222-4222-8222-222222222222',
+    productVariantId: '33333333-3333-4333-8333-333333333333',
+    bakeryBranchId: '44444444-4444-4444-8444-444444444444',
+    sku: 'ALO-SIGNATURE-001',
+    nameFa: 'بربری ویژه',
+    fulfillmentClass: 'SIGNATURE_FRESH',
+    freshnessClaim: 'FRESHLY_PRODUCED',
+    quantity: 2,
+    unitPrice: { amount: '250000', currency: 'IRR' },
+    lineTotal: { amount: '500000', currency: 'IRR' },
+  } as const
+  const meta = {
+    requestId: '55555555-5555-4555-8555-555555555555',
+    timestamp: '2026-07-29T12:00:00.000Z',
+    version: 'v1',
+  } as const
+
+  it('validates bounded mutations and idempotent quote commands', () => {
+    expect(
+      cartItemMutationSchema.parse({
+        cityId: '66666666-6666-4666-8666-666666666666',
+        operationalZoneId: '77777777-7777-4777-8777-777777777777',
+        quantity: 2,
+        expectedCartVersion: 1,
+      }),
+    ).toBeDefined()
+    expect(() =>
+      cartItemMutationSchema.parse({
+        cityId: '66666666-6666-4666-8666-666666666666',
+        operationalZoneId: '77777777-7777-4777-8777-777777777777',
+        quantity: 101,
+      }),
+    ).toThrow()
+    expect(
+      quoteCreateSchema.parse({
+        expectedCartVersion: 1,
+        idempotencyKey: 'quote-command-0001',
+      }),
+    ).toBeDefined()
+  })
+
+  it('validates server-calculated cart and immutable quote snapshots', () => {
+    const cart = {
+      id: '88888888-8888-4888-8888-888888888888',
+      cityId: '66666666-6666-4666-8666-666666666666',
+      operationalZoneId: '77777777-7777-4777-8777-777777777777',
+      bakeryBranchId: item.bakeryBranchId,
+      version: 1,
+      subtotal: item.lineTotal,
+      items: [item],
+      updatedAt: meta.timestamp,
+    }
+    expect(cartEnvelopeSchema.parse({ success: true, data: cart, meta })).toBeDefined()
+    expect(
+      quoteEnvelopeSchema.parse({
+        success: true,
+        data: {
+          id: '99999999-9999-4999-8999-999999999999',
+          publicId: 'quote-public-001',
+          cartId: cart.id,
+          cartVersion: cart.version,
+          status: 'ACTIVE',
+          expiresAt: '2026-07-29T12:10:00.000Z',
+          subtotal: item.lineTotal,
+          deliveryFee: { amount: '0', currency: 'IRR' },
+          discount: { amount: '0', currency: 'IRR' },
+          total: item.lineTotal,
+          items: [item],
+          createdAt: meta.timestamp,
+        },
+        meta,
       }),
     ).toBeDefined()
   })

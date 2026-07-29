@@ -278,6 +278,19 @@ enum AuthorizationScopeType {
   SELF
 }
 
+enum CartState {
+  ACTIVE
+  CONVERTED
+  ABANDONED
+}
+
+enum QuoteStatus {
+  ACTIVE
+  SUPERSEDED
+  EXPIRED
+  ACCEPTED
+}
+
 model City {
   id               String            @id @default(uuid()) @db.Uuid
   code             String            @unique @db.VarChar(32)
@@ -287,6 +300,7 @@ model City {
   operationalZones OperationalZone[]
   addresses        Address[]
   bakeryBranches   BakeryBranch[]
+  carts            Cart[]
   orders           Order[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
@@ -303,6 +317,7 @@ model OperationalZone {
   addresses      Address[]
   bakeryBranches BakeryBranch[]
   orders         Order[]
+  carts          Cart[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -341,6 +356,8 @@ model Customer {
   customerEvents         CustomerEvent[]
   supportCases           SupportCase[]
   identityAccount        IdentityAccount?
+  carts                  Cart[]
+  quotes                 Quote[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
@@ -528,6 +545,7 @@ model BakeryBranch {
   offerings          BakeryProductOffering[]
   orders             Order[]
   fulfillments       Fulfillment[]
+  carts              Cart[]
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
 
@@ -607,6 +625,7 @@ model ProductVariant {
   lifecycle               ProductLifecycleStatus  @default(DRAFT)
   offerings               BakeryProductOffering[]
   orderItems              OrderItem[]
+  quoteItems              QuoteItem[]
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt
 
@@ -627,11 +646,95 @@ model BakeryProductOffering {
   availableFrom      DateTime?
   availableUntil     DateTime?
   orderItems         OrderItem[]
+  cartItems          CartItem[]
+  quoteItems         QuoteItem[]
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
 
   @@unique([bakeryBranchId, productVariantId])
   @@index([bakeryBranchId, availability])
+}
+
+model Cart {
+  id                String          @id @default(uuid()) @db.Uuid
+  customerId        String          @db.Uuid
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cityId            String          @db.Uuid
+  city              City            @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  operationalZoneId String          @db.Uuid
+  operationalZone   OperationalZone @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
+  bakeryBranchId    String          @db.Uuid
+  bakeryBranch      BakeryBranch    @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  state             CartState       @default(ACTIVE)
+  version           Int             @default(1)
+  items             CartItem[]
+  quotes            Quote[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([customerId, state, updatedAt])
+  @@index([cityId, operationalZoneId, bakeryBranchId, state])
+}
+
+model CartItem {
+  id                       String                @id @default(uuid()) @db.Uuid
+  cartId                   String                @db.Uuid
+  cart                     Cart                  @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  bakeryProductOfferingId  String                @db.Uuid
+  bakeryProductOffering    BakeryProductOffering @relation(fields: [bakeryProductOfferingId], references: [id], onDelete: Restrict)
+  quantity                 Int
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  @@unique([cartId, bakeryProductOfferingId])
+  @@index([bakeryProductOfferingId])
+}
+
+model Quote {
+  id                String      @id @default(uuid()) @db.Uuid
+  publicId          String      @unique @default(cuid()) @db.VarChar(32)
+  idempotencyKey    String      @unique @db.VarChar(128)
+  cartId            String      @db.Uuid
+  cart              Cart        @relation(fields: [cartId], references: [id], onDelete: Restrict)
+  customerId        String      @db.Uuid
+  customer          Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cartVersion       Int
+  status            QuoteStatus @default(ACTIVE)
+  expiresAt         DateTime
+  subtotalAmount    BigInt
+  deliveryFeeAmount BigInt      @default(0)
+  discountAmount    BigInt      @default(0)
+  totalAmount       BigInt
+  currency          Currency    @default(IRR)
+  items             QuoteItem[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([customerId, status, expiresAt])
+  @@index([cartId, cartVersion, status])
+}
+
+model QuoteItem {
+  id                       String                  @id @default(uuid()) @db.Uuid
+  quoteId                  String                  @db.Uuid
+  quote                    Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  bakeryProductOfferingId  String                  @db.Uuid
+  bakeryProductOffering    BakeryProductOffering   @relation(fields: [bakeryProductOfferingId], references: [id], onDelete: Restrict)
+  productVariantId         String                  @db.Uuid
+  productVariant           ProductVariant          @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  bakeryBranchId           String                  @db.Uuid
+  skuSnapshot              String                  @db.VarChar(64)
+  nameFaSnapshot           String
+  fulfillmentClassSnapshot ProductFulfillmentClass
+  freshnessClaimSnapshot   FreshnessClaim
+  quantity                 Int
+  unitPriceAmount          BigInt
+  lineTotalAmount          BigInt
+  currency                 Currency                @default(IRR)
+
+  @@index([quoteId])
+  @@index([bakeryProductOfferingId])
+  @@index([productVariantId])
 }
 
 model Order {

@@ -1,5 +1,6 @@
 export * from './auth'
 export * from './catalog'
+export * from './commerce'
 export * from './common'
 export * from './events'
 export * from './geography'
