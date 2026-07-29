@@ -1,13 +1,17 @@
 import {
   activeCitiesEnvelopeSchema,
+  cartEnvelopeSchema,
   catalogPageSchema,
   errorEnvelopeSchema,
   otpRequestEnvelopeSchema,
+  quoteEnvelopeSchema,
   serviceabilityEnvelopeSchema,
   sessionEnvelopeSchema,
   type ActiveCitySummary,
+  type CartSummary,
   type OtpRequestAccepted,
   type ProductSummary,
+  type QuoteSummary,
   type ServiceabilityResponse,
   type SessionContext,
 } from '@alo-noon/contracts'
@@ -40,6 +44,18 @@ export interface CustomerApiClient {
     longitude: number
   }): Promise<ServiceabilityResponse>
   listCatalog(input: { cityId: string; operationalZoneId: string }): Promise<ProductSummary[]>
+  getCart(): Promise<CartSummary | null>
+  setCartItem(
+    offeringId: string,
+    input: {
+      cityId: string
+      operationalZoneId: string
+      quantity: number
+      expectedCartVersion?: number
+    },
+  ): Promise<CartSummary>
+  removeCartItem(offeringId: string, expectedCartVersion?: number): Promise<CartSummary>
+  createQuote(expectedCartVersion: number, idempotencyKey: string): Promise<QuoteSummary>
 }
 
 export function createCustomerApiClient(
@@ -114,7 +130,30 @@ export function createCustomerApiClient(
       })
       return request(`/api/v1/catalog/products?${query.toString()}`, catalogPageSchema)
     },
+    getCart: async () => request('/api/v1/cart', cartEnvelopeSchema),
+    setCartItem: async (offeringId, input) =>
+      request(`/api/v1/cart/items/${encodeURIComponent(offeringId)}`, cartEnvelopeSchema, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }).then(requireCart),
+    removeCartItem: async (offeringId, expectedCartVersion) =>
+      request(`/api/v1/cart/items/${encodeURIComponent(offeringId)}`, cartEnvelopeSchema, {
+        method: 'DELETE',
+        body: JSON.stringify({
+          ...(expectedCartVersion !== undefined && { expectedCartVersion }),
+        }),
+      }).then(requireCart),
+    createQuote: async (expectedCartVersion, idempotencyKey) =>
+      request('/api/v1/cart/quote', quoteEnvelopeSchema, {
+        method: 'POST',
+        body: JSON.stringify({ expectedCartVersion, idempotencyKey }),
+      }),
   }
+}
+
+function requireCart(cart: CartSummary | null): CartSummary {
+  if (!cart) throw new CustomerApiError('INVALID_API_RESPONSE', 200)
+  return cart
 }
 
 function normalizeBaseUrl(value: string): string {

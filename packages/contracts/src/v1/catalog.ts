@@ -20,6 +20,7 @@ export const productLifecycleSchema = z.enum(['DRAFT', 'ACTIVE', 'SUSPENDED', 'R
 
 export const productSummarySchema = z.object({
   id: uuidSchema,
+  offeringId: uuidSchema,
   variantId: uuidSchema,
   sku: z.string().min(3).max(64),
   nameFa: z.string().min(1).max(200),

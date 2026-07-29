@@ -12,7 +12,13 @@ import {
   View,
 } from 'react-native'
 
-import type { ActiveCitySummary, ProductSummary, SessionContext } from '@alo-noon/contracts'
+import type {
+  ActiveCitySummary,
+  CartSummary,
+  ProductSummary,
+  QuoteSummary,
+  SessionContext,
+} from '@alo-noon/contracts'
 import { colors } from '@alo-noon/design-tokens'
 
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
@@ -42,7 +48,11 @@ export default function App() {
   const [session, setSession] = useState<SessionContext | null>(null)
   const [cities, setCities] = useState<ActiveCitySummary[]>([])
   const [selectedCityId, setSelectedCityId] = useState<string>()
+  const [operationalZoneId, setOperationalZoneId] = useState<string>()
   const [products, setProducts] = useState<ProductSummary[]>([])
+  const [cart, setCart] = useState<CartSummary | null>(null)
+  const [quote, setQuote] = useState<QuoteSummary | null>(null)
+  const [quoteCommandKey, setQuoteCommandKey] = useState<string>()
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
   const [challengeId, setChallengeId] = useState<string>()
@@ -67,7 +77,7 @@ export default function App() {
         }
         setScreen('location')
         try {
-          await loadCities(api, active)
+          await Promise.all([loadCities(api, active), loadCart(api, active)])
         } catch (error) {
           if (active) setMessage(errorMessage(error))
         }
@@ -83,6 +93,11 @@ export default function App() {
       if (!stillActive) return
       setCities(activeCities)
       setSelectedCityId(activeCities[0]?.id)
+    }
+
+    async function loadCart(client: CustomerApiClient, stillActive: boolean) {
+      const activeCart = await client.getCart()
+      if (stillActive) setCart(activeCart)
     }
 
     return () => {
@@ -131,8 +146,10 @@ export default function App() {
       setScreen('location')
       try {
         const activeCities = await api.listActiveCities()
+        const activeCart = await api.getCart()
         setCities(activeCities)
         setSelectedCityId(activeCities[0]?.id)
+        setCart(activeCart)
       } catch (error) {
         setMessage(errorMessage(error))
       }
@@ -186,8 +203,64 @@ export default function App() {
         cityId: selectedCityId,
         operationalZoneId: decision.operationalZoneId,
       })
+      setOperationalZoneId(decision.operationalZoneId)
       setProducts(catalog)
+      setQuote(null)
       setScreen('catalog')
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const addProduct = async (product: ProductSummary) => {
+    if (!api || !selectedCityId || !operationalZoneId || busy) return
+    const currentQuantity =
+      cart?.items.find((item) => item.bakeryProductOfferingId === product.offeringId)?.quantity ?? 0
+    setBusy(true)
+    setMessage(undefined)
+    setQuote(null)
+    try {
+      const updated = await api.setCartItem(product.offeringId, {
+        cityId: selectedCityId,
+        operationalZoneId,
+        quantity: currentQuantity + 1,
+        ...(cart && { expectedCartVersion: cart.version }),
+      })
+      setCart(updated)
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeCartItem = async (offeringId: string) => {
+    if (!api || !cart || busy) return
+    setBusy(true)
+    setMessage(undefined)
+    setQuote(null)
+    try {
+      setCart(await api.removeCartItem(offeringId, cart.version))
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createQuote = async () => {
+    if (!api || !cart || cart.items.length === 0 || busy) return
+    const idempotencyKey =
+      quoteCommandKey ??
+      `mobile-quote-${Date.now()}-${Math.random().toString(36).slice(2, 12).padEnd(10, '0')}`
+    setQuoteCommandKey(idempotencyKey)
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      setQuote(await api.createQuote(cart.version, idempotencyKey))
+      setQuoteCommandKey(undefined)
     } catch (error) {
       handleAuthenticatedError(error)
     } finally {
@@ -204,7 +277,11 @@ export default function App() {
       setSession(null)
       setCities([])
       setSelectedCityId(undefined)
+      setOperationalZoneId(undefined)
       setProducts([])
+      setCart(null)
+      setQuote(null)
+      setQuoteCommandKey(undefined)
       setChallengeId(undefined)
       setScreen('phone')
       setMessage(undefined)
@@ -220,7 +297,11 @@ export default function App() {
       setSession(null)
       setCities([])
       setSelectedCityId(undefined)
+      setOperationalZoneId(undefined)
       setProducts([])
+      setCart(null)
+      setQuote(null)
+      setQuoteCommandKey(undefined)
       setChallengeId(undefined)
       setScreen('phone')
     }
@@ -332,11 +413,22 @@ export default function App() {
             <View style={styles.productList}>
               {products.map((product) => (
                 <ProductCard
-                  key={`${product.variantId}:${product.bakeryBranchId ?? 'platform'}`}
+                  key={product.offeringId}
                   product={product}
+                  busy={busy}
+                  onAdd={() => void addProduct(product)}
                 />
               ))}
             </View>
+          )}
+          {cart && (
+            <CartCard
+              cart={cart}
+              quote={quote}
+              busy={busy}
+              onRemove={(offeringId) => void removeCartItem(offeringId)}
+              onQuote={() => void createQuote()}
+            />
           )}
           {message && <InlineMessage text={message} />}
           <Pressable
@@ -344,6 +436,8 @@ export default function App() {
             style={styles.secondaryButton}
             onPress={() => {
               setMessage(undefined)
+              setOperationalZoneId(undefined)
+              setQuote(null)
               setScreen('location')
             }}
           >
@@ -469,7 +563,15 @@ function PrimaryButton({
   )
 }
 
-function ProductCard({ product }: { product: ProductSummary }) {
+function ProductCard({
+  product,
+  busy,
+  onAdd,
+}: {
+  product: ProductSummary
+  busy: boolean
+  onAdd: () => void
+}) {
   const promise = productPromiseLabel(product)
   const isFresh =
     product.fulfillmentClass === 'SIGNATURE_FRESH' && product.freshnessClaim === 'FRESHLY_PRODUCED'
@@ -482,6 +584,73 @@ function ProductCard({ product }: { product: ProductSummary }) {
         </View>
       </View>
       <Text style={styles.price}>{formatRials(product.price.amount)}</Text>
+      <PrimaryButton label="افزودن به سبد" busy={busy} onPress={onAdd} />
+    </View>
+  )
+}
+
+function CartCard({
+  cart,
+  quote,
+  busy,
+  onRemove,
+  onQuote,
+}: {
+  cart: CartSummary
+  quote: QuoteSummary | null
+  busy: boolean
+  onRemove: (offeringId: string) => void
+  onQuote: () => void
+}) {
+  return (
+    <View style={styles.cartCard}>
+      <View style={styles.cartTitleRow}>
+        <Text style={styles.cartVersion}>نسخه {cart.version.toLocaleString('fa-IR')}</Text>
+        <Text style={styles.cartTitle}>سبد خرید سروری</Text>
+      </View>
+      {cart.items.length === 0 ? (
+        <Text style={styles.emptyText}>سبد خرید خالی است.</Text>
+      ) : (
+        cart.items.map((item) => (
+          <View key={item.id} style={styles.cartItem}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={() => onRemove(item.bakeryProductOfferingId)}
+            >
+              <Text style={styles.removeText}>حذف</Text>
+            </Pressable>
+            <View style={styles.cartItemCopy}>
+              <Text style={styles.cartItemName}>{item.nameFa}</Text>
+              <Text style={styles.cartItemMeta}>
+                {item.quantity.toLocaleString('fa-IR')} عدد · {formatRials(item.lineTotal.amount)}
+              </Text>
+            </View>
+          </View>
+        ))
+      )}
+      <View style={styles.totalRow}>
+        <Text style={styles.price}>{formatRials(cart.subtotal.amount)}</Text>
+        <Text style={styles.totalLabel}>جمع سبد</Text>
+      </View>
+      <PrimaryButton
+        label="دریافت قیمت نهایی"
+        busy={busy}
+        disabled={cart.items.length === 0}
+        onPress={onQuote}
+      />
+      {quote && (
+        <View style={styles.quoteCard}>
+          <Text style={styles.quoteTitle}>قیمت تا زمان درج‌شده معتبر است</Text>
+          <Text style={styles.quoteMeta}>
+            انقضا: {new Date(quote.expiresAt).toLocaleTimeString('fa-IR')}
+          </Text>
+          <Text style={styles.quoteTotal}>{formatRials(quote.total.amount)}</Text>
+          <Text style={styles.quoteNotice}>
+            این مرحله هنوز سفارش یا پرداخت ایجاد نمی‌کند و ظرفیت را دائمی رزرو نمی‌کند.
+          </Text>
+        </View>
+      )}
     </View>
   )
 }
@@ -528,6 +697,19 @@ function errorMessage(error: unknown): string {
       return 'کد واردشده نادرست یا منقضی شده است.'
     case 'SESSION_UNAUTHORIZED':
       return 'نشست شما منقضی شده است؛ دوباره وارد شوید.'
+    case 'CART_VERSION_CONFLICT':
+      return 'سبد خرید تغییر کرده است؛ صفحه را تازه کنید و دوباره تلاش کنید.'
+    case 'CART_CONTEXT_MISMATCH':
+      return 'محصولات یک سبد باید از یک محدوده و یک شعبه باشند.'
+    case 'OFFERING_NOT_FOUND':
+    case 'OFFERING_UNAVAILABLE':
+      return 'این محصول فعلاً برای سفارش در دسترس نیست.'
+    case 'CAPACITY_UNAVAILABLE':
+      return 'ظرفیت این شعبه برای دریافت قیمت فعلاً تکمیل است.'
+    case 'CART_EMPTY':
+      return 'برای دریافت قیمت، ابتدا محصولی به سبد اضافه کنید.'
+    case 'COMMERCE_UNAVAILABLE':
+      return 'سبد خرید موقتاً در دسترس نیست؛ دوباره تلاش کنید.'
     case 'CITY_DISCOVERY_UNAVAILABLE':
     case 'SERVICEABILITY_UNAVAILABLE':
     case 'CATALOG_UNAVAILABLE':
@@ -683,4 +865,53 @@ const styles = StyleSheet.create({
   freshBadge: { backgroundColor: '#ECFCCB' },
   freshText: { color: '#3F6212' },
   price: { color: colors.primary[800], fontSize: 16, fontWeight: '800', textAlign: 'right' },
+  cartCard: {
+    gap: 14,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: colors.primary[200],
+    borderRadius: 22,
+    backgroundColor: colors.cream,
+  },
+  cartTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cartTitle: { color: colors.neutral[900], fontSize: 20, fontWeight: '800' },
+  cartVersion: { color: colors.neutral[500], fontSize: 12 },
+  cartItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primary[100],
+  },
+  cartItemCopy: { flex: 1, gap: 4, alignItems: 'flex-end' },
+  cartItemName: { color: colors.neutral[900], fontWeight: '800', textAlign: 'right' },
+  cartItemMeta: { color: colors.neutral[600], fontSize: 13, textAlign: 'right' },
+  removeText: { color: colors.error, fontSize: 13, fontWeight: '700' },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  totalLabel: { color: colors.neutral[700], fontWeight: '800' },
+  quoteCard: {
+    gap: 8,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colors.neutral[50],
+  },
+  quoteTitle: { color: colors.success, fontWeight: '800', textAlign: 'right' },
+  quoteMeta: { color: colors.neutral[600], textAlign: 'right' },
+  quoteTotal: {
+    color: colors.primary[800],
+    fontSize: 22,
+    fontWeight: '900',
+    textAlign: 'right',
+  },
+  quoteNotice: { color: colors.neutral[600], fontSize: 12, lineHeight: 20, textAlign: 'right' },
 })

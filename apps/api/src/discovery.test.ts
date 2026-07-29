@@ -28,6 +28,7 @@ const city: ActiveCitySummary = {
 
 const product: ProductSummary = {
   id: productId,
+  offeringId: '77777777-7777-4777-8777-777777777777',
   variantId,
   sku: 'ALO-SIGNATURE-001',
   nameFa: 'بربری امضادار',

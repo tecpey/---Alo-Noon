@@ -8,6 +8,8 @@ export type {
   Bakery,
   BakeryBranch,
   BakeryProductOffering,
+  Cart,
+  CartItem,
   City,
   Courier,
   Customer,
@@ -24,5 +26,7 @@ export type {
   OtpChallenge,
   Product,
   ProductVariant,
+  Quote,
+  QuoteItem,
   Vehicle,
 } from '@prisma/client'

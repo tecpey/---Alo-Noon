@@ -116,4 +116,84 @@ describe('customer API client', () => {
       expect.objectContaining({ credentials: 'include', method: 'DELETE' }),
     )
   })
+
+  it('uses authenticated server cart endpoints without sending a client price', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          id: '11111111-1111-4111-8111-111111111111',
+          cityId: '22222222-2222-4222-8222-222222222222',
+          operationalZoneId: '33333333-3333-4333-8333-333333333333',
+          bakeryBranchId: '44444444-4444-4444-8444-444444444444',
+          version: 1,
+          subtotal: { amount: '250000', currency: 'IRR' },
+          items: [],
+          updatedAt: meta.timestamp,
+        },
+        meta,
+      }),
+    )
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    await client.setCartItem('55555555-5555-4555-8555-555555555555', {
+      cityId: '22222222-2222-4222-8222-222222222222',
+      operationalZoneId: '33333333-3333-4333-8333-333333333333',
+      quantity: 1,
+    })
+
+    const call = fetchMock.mock.calls[0]
+    expect(call?.[0]).toBe(
+      'https://api.alonoon.ir/api/v1/cart/items/55555555-5555-4555-8555-555555555555',
+    )
+    expect(call?.[1]).toMatchObject({ method: 'PUT', credentials: 'include' })
+    expect(call?.[1]?.body).not.toContain('price')
+    expect(call?.[1]?.headers).not.toHaveProperty('Authorization')
+  })
+
+  it('validates immutable quote responses and keeps idempotency in the command body', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          id: '11111111-1111-4111-8111-111111111111',
+          publicId: 'quote-public-001',
+          cartId: '22222222-2222-4222-8222-222222222222',
+          cartVersion: 3,
+          status: 'ACTIVE',
+          expiresAt: '2026-07-29T12:10:00.000Z',
+          subtotal: { amount: '500000', currency: 'IRR' },
+          deliveryFee: { amount: '0', currency: 'IRR' },
+          discount: { amount: '0', currency: 'IRR' },
+          total: { amount: '500000', currency: 'IRR' },
+          items: [
+            {
+              id: '33333333-3333-4333-8333-333333333333',
+              bakeryProductOfferingId: '44444444-4444-4444-8444-444444444444',
+              productVariantId: '55555555-5555-4555-8555-555555555555',
+              bakeryBranchId: '66666666-6666-4666-8666-666666666666',
+              sku: 'ALO-SIGNATURE-001',
+              nameFa: 'بربری ویژه',
+              fulfillmentClass: 'SIGNATURE_FRESH',
+              freshnessClaim: 'FRESHLY_PRODUCED',
+              quantity: 2,
+              unitPrice: { amount: '250000', currency: 'IRR' },
+              lineTotal: { amount: '500000', currency: 'IRR' },
+            },
+          ],
+          createdAt: meta.timestamp,
+        },
+        meta,
+      }),
+    )
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    await expect(client.createQuote(3, 'mobile-quote-command-0001')).resolves.toMatchObject({
+      cartVersion: 3,
+      total: { amount: '500000' },
+    })
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({ expectedCartVersion: 3, idempotencyKey: 'mobile-quote-command-0001' }),
+    )
+  })
 })

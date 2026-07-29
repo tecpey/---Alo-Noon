@@ -43,6 +43,9 @@ importers:
       '@alo-noon/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@alo-noon/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@fastify/cors':
         specifier: ^11.2.0
         version: 11.3.0

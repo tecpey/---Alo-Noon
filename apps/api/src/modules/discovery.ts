@@ -125,6 +125,7 @@ export function createPrismaCatalogRepository(prisma: PrismaClient): CatalogRepo
         totalItems,
         items: offerings.map((offering) => ({
           id: offering.productVariant.product.id,
+          offeringId: offering.id,
           variantId: offering.productVariant.id,
           sku: offering.productVariant.sku,
           nameFa: offering.productVariant.product.nameFa,
