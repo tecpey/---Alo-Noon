@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Alo Noon API
-  version: 0.1.0
+  version: 0.2.0
   description: >-
-    Phase 1 contract foundation. Only operational endpoints are implemented;
-    domain endpoints are intentionally absent until reviewed.
+    Phase 2A contract. Operational endpoints, read-only catalog discovery, and
+    geographic serviceability evaluation are implemented.
 servers:
   - url: http://localhost:3001
 paths:
@@ -28,6 +28,56 @@ paths:
           description: Required dependencies are available.
         '503':
           description: At least one required dependency is unavailable.
+  /api/v1/catalog/products:
+    get:
+      operationId: listCatalogProducts
+      summary: List active and currently available bakery offerings.
+      parameters:
+        - in: query
+          name: cityId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: operationalZoneId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Paginated active catalog offerings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPage'
+        '400':
+          description: Invalid query parameters.
+        '503':
+          description: Catalog persistence is unavailable.
+  /api/v1/serviceability/check:
+    post:
+      operationId: checkServiceability
+      summary: Evaluate a coordinate against active city service polygons.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceabilityRequest'
+      responses:
+        '200':
+          description: Serviceability decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceabilityEnvelope'
+        '400':
+          description: Invalid request.
+        '503':
+          description: Serviceability persistence is unavailable.
 components:
   schemas:
     ResponseMeta:
@@ -37,6 +87,88 @@ components:
         requestId: { type: string, format: uuid }
         timestamp: { type: string, format: date-time }
         version: { type: string, const: v1 }
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, totalItems, totalPages, hasNextPage, hasPreviousPage]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        totalItems: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+        hasNextPage: { type: boolean }
+        hasPreviousPage: { type: boolean }
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: string, pattern: '^\\d+$' }
+        currency: { type: string, enum: [IRR] }
+    ProductSummary:
+      type: object
+      required: [id, variantId, sku, nameFa, fulfillmentClass, freshnessClaim, price, lifecycle]
+      properties:
+        id: { type: string, format: uuid }
+        variantId: { type: string, format: uuid }
+        sku: { type: string }
+        nameFa: { type: string }
+        fulfillmentClass:
+          type: string
+          enum:
+            [
+              SIGNATURE_FRESH,
+              PACKAGED_TRADITIONAL,
+              PACKAGED_FANTASY,
+              PACKAGED_DIETARY,
+              LIMITED_EDITION,
+            ]
+        freshnessClaim:
+          type: string
+          enum: [FRESHLY_PRODUCED, PACKAGED, SHELF_STABLE, NONE]
+        price: { $ref: '#/components/schemas/Money' }
+        bakeryBranchId: { type: string, format: uuid }
+        mediaRef: { type: string }
+        lifecycle: { type: string, enum: [DRAFT, ACTIVE, SUSPENDED, RETIRED] }
+    CatalogPage:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProductSummary' }
+        meta:
+          allOf:
+            - { $ref: '#/components/schemas/ResponseMeta' }
+            - type: object
+              required: [pagination]
+              properties:
+                pagination: { $ref: '#/components/schemas/PaginationMeta' }
+    ServiceabilityRequest:
+      type: object
+      required: [cityId, latitude, longitude]
+      properties:
+        cityId: { type: string, format: uuid }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        requestedAt: { type: string, format: date-time }
+    ServiceabilityDecision:
+      type: object
+      required: [serviceable, evaluatedAt]
+      properties:
+        serviceable: { type: boolean }
+        operationalZoneId: { type: string, format: uuid }
+        serviceAreaId: { type: string, format: uuid }
+        reason:
+          type: string
+          enum: [OUTSIDE_CITY, OUTSIDE_SERVICE_AREA, ZONE_SUSPENDED]
+        evaluatedAt: { type: string, format: date-time }
+    ServiceabilityEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/ServiceabilityDecision' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     HealthResponse:
       type: object
       required: [success, data, meta]

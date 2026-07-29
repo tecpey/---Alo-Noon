@@ -2,6 +2,10 @@ import { getEnv } from '@alo-noon/config'
 import { PrismaClient } from '@alo-noon/database'
 
 import { buildApp } from './app.js'
+import {
+  createPrismaCatalogRepository,
+  createPrismaServiceabilityRepository,
+} from './modules/discovery.js'
 
 const env = getEnv()
 const prisma = new PrismaClient()
@@ -11,6 +15,8 @@ const app = await buildApp({
     await prisma.$queryRaw`SELECT 1`
     return true
   },
+  catalogRepository: createPrismaCatalogRepository(prisma),
+  serviceabilityRepository: createPrismaServiceabilityRepository(prisma),
 })
 
 const close = async (signal: string): Promise<void> => {
