@@ -167,8 +167,16 @@ export function registerDiscoveryRoutes(
     }
 
     try {
-      const page = await dependencies.catalogRepository.listProducts(parsed.data)
-      const totalPages = Math.ceil(page.totalItems / parsed.data.pageSize)
+      const input: CatalogListInput = {
+        cityId: parsed.data.cityId,
+        page: parsed.data.page,
+        pageSize: parsed.data.pageSize,
+        ...(parsed.data.operationalZoneId && {
+          operationalZoneId: parsed.data.operationalZoneId,
+        }),
+      }
+      const page = await dependencies.catalogRepository.listProducts(input)
+      const totalPages = Math.ceil(page.totalItems / input.pageSize)
 
       const response: PaginatedResponse<ProductSummary> = {
         success: true,
