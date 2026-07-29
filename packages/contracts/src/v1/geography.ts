@@ -1,6 +1,21 @@
 import { z } from 'zod'
 
-import { uuidSchema } from './common'
+import { responseMetaSchema, uuidSchema } from './common'
+
+export const activeCitySummarySchema = z.object({
+  id: uuidSchema,
+  code: z.string().min(1).max(32),
+  nameFa: z.string().min(1).max(120),
+  timezone: z.string().min(1).max(64),
+})
+export type ActiveCitySummary = z.infer<typeof activeCitySummarySchema>
+
+export const activeCitiesEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.array(activeCitySummarySchema),
+  meta: responseMetaSchema,
+})
+export type ActiveCitiesEnvelope = z.infer<typeof activeCitiesEnvelopeSchema>
 
 export const addressInputSchema = z.object({
   cityId: uuidSchema,
@@ -35,3 +50,10 @@ export const serviceabilityResponseSchema = z.object({
   evaluatedAt: z.string().datetime({ offset: true }),
 })
 export type ServiceabilityResponse = z.infer<typeof serviceabilityResponseSchema>
+
+export const serviceabilityEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: serviceabilityResponseSchema,
+  meta: responseMetaSchema,
+})
+export type ServiceabilityEnvelope = z.infer<typeof serviceabilityEnvelopeSchema>

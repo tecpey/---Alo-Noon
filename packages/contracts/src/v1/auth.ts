@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { isoDateTimeSchema, uuidSchema } from './common'
+import { isoDateTimeSchema, responseMetaSchema, uuidSchema } from './common'
 
 export const mobileE164Schema = z
   .string()
@@ -17,6 +17,13 @@ export const otpRequestAcceptedSchema = z.object({
   retryAfterSeconds: z.number().int().min(0),
 })
 export type OtpRequestAccepted = z.infer<typeof otpRequestAcceptedSchema>
+
+export const otpRequestEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: otpRequestAcceptedSchema,
+  meta: responseMetaSchema,
+})
+export type OtpRequestEnvelope = z.infer<typeof otpRequestEnvelopeSchema>
 
 export const otpVerifySchema = z.object({
   challengeId: uuidSchema,
@@ -50,3 +57,10 @@ export const sessionContextSchema = z.object({
   grants: z.array(accessGrantSchema),
 })
 export type SessionContext = z.infer<typeof sessionContextSchema>
+
+export const sessionEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: sessionContextSchema,
+  meta: responseMetaSchema,
+})
+export type SessionEnvelope = z.infer<typeof sessionEnvelopeSchema>

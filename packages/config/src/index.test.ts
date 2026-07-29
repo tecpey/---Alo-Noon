@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { validateEnv } from './index'
+import { parseCorsOrigins, validateEnv } from './index'
 
 describe('environment configuration', () => {
   it('applies safe local defaults', () => {
@@ -20,5 +20,14 @@ describe('environment configuration', () => {
       AUTH_SESSION_PEPPER: 's'.repeat(32),
     })
     expect(configured.success).toBe(true)
+  })
+
+  it('parses exact credential-safe CORS origins', () => {
+    expect(parseCorsOrigins('http://localhost:3000, https://app.alonoon.ir')).toEqual([
+      'http://localhost:3000',
+      'https://app.alonoon.ir',
+    ])
+    expect(() => parseCorsOrigins('*')).toThrow('wildcard')
+    expect(() => parseCorsOrigins('https://app.alonoon.ir/path')).toThrow('path')
   })
 })

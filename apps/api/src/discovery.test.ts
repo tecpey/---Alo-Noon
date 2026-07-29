@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ProductSummary } from '@alo-noon/contracts'
+import type { ActiveCitySummary, ProductSummary } from '@alo-noon/contracts'
 
 import { buildApp } from './app'
 import {
@@ -8,6 +8,7 @@ import {
   geoJsonContainsPoint,
   type CatalogListInput,
   type CatalogRepository,
+  type CityRepository,
   type ServiceabilityRepository,
 } from './modules/discovery'
 
@@ -17,6 +18,13 @@ const areaId = '33333333-3333-4333-8333-333333333333'
 const productId = '44444444-4444-4444-8444-444444444444'
 const variantId = '55555555-5555-4555-8555-555555555555'
 const branchId = '66666666-6666-4666-8666-666666666666'
+
+const city: ActiveCitySummary = {
+  id: cityId,
+  code: 'BABOL',
+  nameFa: 'بابل',
+  timezone: 'Asia/Tehran',
+}
 
 const product: ProductSummary = {
   id: productId,
@@ -47,6 +55,68 @@ const apps: Awaited<ReturnType<typeof buildApp>>[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
   await Promise.all(apps.splice(0).map(async (app) => app.close()))
+})
+
+describe('active city discovery API', () => {
+  it('returns only repository-approved active service cities', async () => {
+    const repository: CityRepository = {
+      listActiveCities: async () => [city],
+    }
+    const app = await buildApp({ cityRepository: repository })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/serviceability/cities',
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      success: true,
+      data: [{ id: cityId, code: 'BABOL', nameFa: 'بابل' }],
+    })
+  })
+
+  it('returns a safe error when city persistence is unavailable', async () => {
+    const app = await buildApp({
+      cityRepository: {
+        listActiveCities: async () => {
+          throw new Error('postgresql://secret@database/internal')
+        },
+      },
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/serviceability/cities',
+    })
+
+    expect(response.statusCode).toBe(503)
+    expect(response.body).not.toContain('postgresql')
+    expect(response.json()).toMatchObject({
+      error: { code: 'CITY_DISCOVERY_UNAVAILABLE' },
+    })
+  })
+
+  it('rejects repository output that violates the public city contract', async () => {
+    const app = await buildApp({
+      cityRepository: {
+        listActiveCities: async () => [{ ...city, timezone: '' }],
+      },
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/serviceability/cities',
+    })
+
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toMatchObject({
+      error: { code: 'CITY_DISCOVERY_UNAVAILABLE' },
+    })
+  })
 })
 
 describe('catalog discovery API', () => {

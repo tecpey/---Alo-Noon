@@ -5,8 +5,25 @@
     "version": "0.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "ios": { "supportsTablet": true, "bundleIdentifier": "ir.alonoon.customer" },
-    "android": { "package": "ir.alonoon.customer" },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ir.alonoon.customer",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "برای نمایش نان‌های قابل ارسال در محدوده شما، موقعیت مکانی لازم است."
+      }
+    },
+    "android": {
+      "package": "ir.alonoon.customer",
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "برای نمایش نان‌های قابل ارسال در محدوده شما، موقعیت مکانی لازم است."
+        }
+      ]
+    ],
     "web": { "bundler": "metro" }
   }
 }

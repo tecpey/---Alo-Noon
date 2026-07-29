@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 
 import {
+  activeCitySummarySchema,
   catalogListQuerySchema,
   serviceabilityRequestSchema,
+  type ActiveCitySummary,
   type ErrorEnvelope,
   type PaginatedResponse,
   type ProductSummary,
@@ -28,6 +30,10 @@ export interface CatalogRepository {
   listProducts(input: CatalogListInput): Promise<CatalogPage>
 }
 
+export interface CityRepository {
+  listActiveCities(): Promise<ActiveCitySummary[]>
+}
+
 export interface ServiceAreaRecord {
   id: string
   operationalZoneId: string
@@ -43,7 +49,33 @@ export interface ServiceabilityRepository {
 
 export interface DiscoveryDependencies {
   catalogRepository: CatalogRepository
+  cityRepository: CityRepository
   serviceabilityRepository: ServiceabilityRepository
+}
+
+export function createPrismaCityRepository(prisma: PrismaClient): CityRepository {
+  return {
+    async listActiveCities() {
+      return prisma.city.findMany({
+        where: {
+          isActive: true,
+          operationalZones: {
+            some: {
+              isActive: true,
+              serviceAreas: { some: { isActive: true } },
+            },
+          },
+        },
+        select: {
+          id: true,
+          code: true,
+          nameFa: true,
+          timezone: true,
+        },
+        orderBy: [{ nameFa: 'asc' }, { id: 'asc' }],
+      })
+    },
+  }
 }
 
 export function createPrismaCatalogRepository(prisma: PrismaClient): CatalogRepository {
@@ -152,6 +184,26 @@ export function registerDiscoveryRoutes(
   app: FastifyInstance,
   dependencies: DiscoveryDependencies,
 ): void {
+  app.get('/api/v1/serviceability/cities', async (request, reply) => {
+    try {
+      const cities = activeCitySummarySchema
+        .array()
+        .parse(await dependencies.cityRepository.listActiveCities())
+      return {
+        success: true,
+        data: cities,
+        meta: responseMeta(),
+      }
+    } catch (error) {
+      request.log.error({ err: error }, 'Active city discovery failed')
+      return reply
+        .code(503)
+        .send(
+          errorEnvelope('CITY_DISCOVERY_UNAVAILABLE', 'City discovery is temporarily unavailable.'),
+        )
+    }
+  })
+
   app.get('/api/v1/catalog/products', async (request, reply) => {
     const parsed = catalogListQuerySchema.safeParse(request.query)
     if (!parsed.success) {

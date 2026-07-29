@@ -71,6 +71,26 @@ export function getEnv(): Env {
   return result.data
 }
 
+export function parseCorsOrigins(value: string): string[] {
+  const origins = value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
+
+  return origins.map((origin) => {
+    if (origin === '*') throw new Error('CORS_ORIGINS cannot contain a wildcard')
+
+    const url = new URL(origin)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error(`CORS origin is invalid: ${origin}`)
+    }
+    if (url.origin !== origin) {
+      throw new Error(`CORS origin must not include a path: ${origin}`)
+    }
+    return url.origin
+  })
+}
+
 // App metadata
 export const appMeta = {
   name: 'Alo Noon',

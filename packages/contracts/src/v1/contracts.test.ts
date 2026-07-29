@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 
 import {
   addressInputSchema,
+  activeCitiesEnvelopeSchema,
+  catalogPageSchema,
   eventEnvelopeSchema,
+  otpRequestEnvelopeSchema,
   otpRequestSchema,
   otpVerifySchema,
   orderDraftInputSchema,
+  serviceabilityEnvelopeSchema,
   serviceabilityRequestSchema,
+  sessionEnvelopeSchema,
   sessionContextSchema,
 } from './index'
 
@@ -38,6 +43,39 @@ describe('v1 geography contracts', () => {
     expect(() =>
       addressInputSchema.parse({ ...validAddress, recipientPhone: '09110000000' }),
     ).toThrow()
+  })
+
+  it('validates active-city and serviceability response envelopes', () => {
+    const meta = {
+      requestId: 'bde6b5bd-f377-493b-a6c0-71dc3837ad88',
+      timestamp: '2026-07-29T12:00:00.000Z',
+      version: 'v1',
+    } as const
+    expect(
+      activeCitiesEnvelopeSchema.parse({
+        success: true,
+        data: [
+          {
+            id: validAddress.cityId,
+            code: 'BABOL',
+            nameFa: 'بابل',
+            timezone: 'Asia/Tehran',
+          },
+        ],
+        meta,
+      }),
+    ).toBeDefined()
+    expect(
+      serviceabilityEnvelopeSchema.parse({
+        success: true,
+        data: {
+          serviceable: false,
+          reason: 'OUTSIDE_SERVICE_AREA',
+          evaluatedAt: meta.timestamp,
+        },
+        meta,
+      }),
+    ).toBeDefined()
   })
 })
 
@@ -107,6 +145,37 @@ describe('v1 identity contracts', () => {
     ).toBeDefined()
   })
 
+  it('validates OTP and session success envelopes', () => {
+    const meta = {
+      requestId: 'bde6b5bd-f377-493b-a6c0-71dc3837ad88',
+      timestamp: '2026-07-29T12:00:00.000Z',
+      version: 'v1',
+    } as const
+    expect(
+      otpRequestEnvelopeSchema.parse({
+        success: true,
+        data: {
+          challengeId: '5ec50854-4e4f-4cb7-b51a-cabf39dfe26f',
+          expiresAt: '2026-07-29T12:05:00.000Z',
+          retryAfterSeconds: 60,
+        },
+        meta,
+      }),
+    ).toBeDefined()
+    expect(
+      sessionEnvelopeSchema.parse({
+        success: true,
+        data: {
+          accountId: 'bde6b5bd-f377-493b-a6c0-71dc3837ad88',
+          customerId: '0af09971-0ef8-4033-912d-238b68b8feb1',
+          expiresAt: '2026-08-28T12:00:00.000Z',
+          grants: [],
+        },
+        meta,
+      }),
+    ).toBeDefined()
+  })
+
   it('rejects local phone formats and malformed OTP codes', () => {
     expect(() => otpRequestSchema.parse({ mobileE164: '09111234567' })).toThrow()
     expect(() =>
@@ -115,5 +184,40 @@ describe('v1 identity contracts', () => {
         code: '12345',
       }),
     ).toThrow()
+  })
+})
+
+describe('v1 catalog response contracts', () => {
+  it('validates a paginated catalog response', () => {
+    expect(
+      catalogPageSchema.parse({
+        success: true,
+        data: [
+          {
+            id: 'c787d489-c7f1-4677-8302-b0120fd35ff5',
+            variantId: 'e42c44e3-f380-4544-875b-ec95f06f1ba2',
+            sku: 'ALO-SIGNATURE-001',
+            nameFa: 'بربری ویژه',
+            fulfillmentClass: 'SIGNATURE_FRESH',
+            freshnessClaim: 'FRESHLY_PRODUCED',
+            price: { amount: '250000', currency: 'IRR' },
+            lifecycle: 'ACTIVE',
+          },
+        ],
+        meta: {
+          requestId: 'bde6b5bd-f377-493b-a6c0-71dc3837ad88',
+          timestamp: '2026-07-29T12:00:00.000Z',
+          version: 'v1',
+          pagination: {
+            page: 1,
+            pageSize: 20,
+            totalItems: 1,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          },
+        },
+      }),
+    ).toBeDefined()
   })
 })
