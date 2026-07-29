@@ -7,88 +7,826 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum OrderStatus {
-  PENDING
+enum Currency {
+  IRR
+}
+
+enum CustomerLifecycleStatus {
+  PROSPECT
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum HouseholdMemberRole {
+  OWNER
+  ADULT
+  DEPENDENT
+  RECIPIENT
+}
+
+enum AddressVerificationState {
+  UNVERIFIED
+  CUSTOMER_CONFIRMED
+  OPERATIONS_VERIFIED
+  REJECTED
+}
+
+enum BakeryPartnerStatus {
+  PROSPECT
+  ONBOARDING
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+enum BranchOperationalStatus {
+  ONBOARDING
+  ACTIVE
+  TEMPORARILY_SUSPENDED
+  CLOSED
+}
+
+enum QualityStatus {
+  PENDING_REVIEW
+  APPROVED
+  WATCHLIST
+  SUSPENDED
+}
+
+enum ProductFulfillmentClass {
+  SIGNATURE_FRESH
+  PACKAGED_TRADITIONAL
+  PACKAGED_FANTASY
+  PACKAGED_DIETARY
+  LIMITED_EDITION
+}
+
+enum FreshnessClaim {
+  FRESHLY_PRODUCED
+  PACKAGED
+  SHELF_STABLE
+  NONE
+}
+
+enum ProductionMode {
+  MADE_TO_ORDER
+  SCHEDULED_BATCH
+  READY_STOCK
+  EXTERNAL_PACKAGED_SUPPLY
+}
+
+enum FulfillmentControl {
+  CONTROLLED_PICKUP
+  PARTNER_HANDOFF
+  PLATFORM_STOCK
+  THIRD_PARTY_SUPPLY
+}
+
+enum PackagingType {
+  ALO_NOON_SEALED
+  PARTNER_SEALED
+  MANUFACTURER_PACKAGED
+}
+
+enum ProductLifecycleStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  RETIRED
+}
+
+enum OfferingAvailabilityStatus {
+  DRAFT
+  AVAILABLE
+  PAUSED
+  SOLD_OUT
+  RETIRED
+}
+
+enum OrderState {
+  DRAFT
+  PENDING_CONFIRMATION
   CONFIRMED
-  PREPARING
-  READY_FOR_PICKUP
-  OUT_FOR_DELIVERY
-  DELIVERED
+  IN_FULFILLMENT
+  CANCEL_REQUESTED
+  DELIVERY_FAILED
+  COMPLETED
   CANCELLED
 }
 
+enum PaymentState {
+  NOT_STARTED
+  PENDING
+  PAID
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum ProductionState {
+  NOT_REQUIRED
+  UNSCHEDULED
+  SCHEDULED
+  IN_PRODUCTION
+  READY
+  HANDED_OFF
+}
+
+enum DeliveryState {
+  NOT_REQUIRED
+  UNASSIGNED
+  ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+}
+
+enum ActorType {
+  CUSTOMER
+  STAFF
+  BAKERY
+  COURIER
+  SYSTEM
+}
+
+enum FulfillmentType {
+  BAKERY_PICKUP_DELIVERY
+  PLATFORM_STOCK_DELIVERY
+  CUSTOMER_PICKUP
+}
+
+enum FulfillmentState {
+  PLANNED
+  PREPARING
+  READY
+  HANDED_OFF
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CourierStatus {
+  ONBOARDING
+  AVAILABLE
+  UNAVAILABLE
+  SUSPENDED
+  OFFBOARDED
+}
+
+enum VehicleType {
+  BICYCLE
+  MOTORCYCLE
+  ELECTRIC_MOTORCYCLE
+  CAR
+  VAN
+  ON_FOOT
+}
+
+enum VehicleStatus {
+  PENDING_REVIEW
+  ACTIVE
+  MAINTENANCE
+  SUSPENDED
+  RETIRED
+}
+
+enum DeliveryTaskState {
+  UNASSIGNED
+  ASSIGNMENT_PENDING
+  ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum DeliveryAssignmentState {
+  OFFERED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum EventPurpose {
+  DOMAIN
+  AUDIT
+  ENGAGEMENT
+}
+
+enum ConsentBasis {
+  NOT_REQUIRED
+  TRANSACTIONAL
+  EXPLICIT_CONSENT
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+enum SupportCaseStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum SupportCasePriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum IncidentStatus {
+  OPEN
+  MITIGATING
+  RESOLVED
+  CLOSED
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model City {
+  id               String            @id @default(uuid()) @db.Uuid
+  code             String            @unique @db.VarChar(32)
+  nameFa           String
+  timezone         String            @default("Asia/Tehran") @db.VarChar(64)
+  isActive         Boolean           @default(false)
+  operationalZones OperationalZone[]
+  addresses        Address[]
+  bakeryBranches   BakeryBranch[]
+  orders           Order[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model OperationalZone {
+  id             String         @id @default(uuid()) @db.Uuid
+  cityId         String         @db.Uuid
+  city           City           @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  code           String         @db.VarChar(32)
+  nameFa         String
+  isActive       Boolean        @default(false)
+  serviceAreas   ServiceArea[]
+  addresses      Address[]
+  bakeryBranches BakeryBranch[]
+  orders         Order[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([cityId, code])
+  @@index([cityId, isActive])
+}
+
+model ServiceArea {
+  id                String          @id @default(uuid()) @db.Uuid
+  operationalZoneId String          @db.Uuid
+  operationalZone   OperationalZone @relation(fields: [operationalZoneId], references: [id], onDelete: Cascade)
+  code              String          @db.VarChar(32)
+  nameFa            String
+  boundaryGeoJson   Json
+  isActive          Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([operationalZoneId, code])
+  @@index([operationalZoneId, isActive])
+}
+
 model Customer {
-  id        String   @id @default(cuid())
-  phone     String   @unique
-  name      String?
-  orders    Order[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                     String                  @id @default(uuid()) @db.Uuid
+  mobileE164             String                  @unique @db.VarChar(16)
+  firstName              String?
+  lastName               String?
+  lifecycleStatus        CustomerLifecycleStatus @default(PROSPECT)
+  crmProfileRef          String?                 @unique @db.VarChar(128)
+  transactionalConsentAt DateTime?
+  marketingConsentAt     DateTime?
+  marketingOptOutAt      DateTime?
+  householdMemberships   HouseholdMember[]
+  addresses              Address[]
+  orders                 Order[]
+  customerEvents         CustomerEvent[]
+  supportCases           SupportCase[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  @@index([lifecycleStatus, createdAt])
+}
+
+model Household {
+  id        String            @id @default(uuid()) @db.Uuid
+  name      String
+  members   HouseholdMember[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model HouseholdMember {
+  id          String              @id @default(uuid()) @db.Uuid
+  householdId String              @db.Uuid
+  household   Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  customerId  String?             @db.Uuid
+  customer    Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  displayName String
+  mobileE164  String?             @db.VarChar(16)
+  role        HouseholdMemberRole
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([householdId, customerId])
+  @@index([householdId, role])
+}
+
+model Address {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  customerId           String                   @db.Uuid
+  customer             Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cityId               String                   @db.Uuid
+  city                 City                     @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  operationalZoneId    String?                  @db.Uuid
+  operationalZone      OperationalZone?         @relation(fields: [operationalZoneId], references: [id], onDelete: SetNull)
+  label                String
+  recipientName        String
+  recipientPhoneE164   String                   @db.VarChar(16)
+  addressLine          String
+  postalCode           String?                  @db.VarChar(10)
+  latitude             Decimal                  @db.Decimal(10, 7)
+  longitude            Decimal                  @db.Decimal(10, 7)
+  deliveryInstructions String?
+  verificationState    AddressVerificationState @default(UNVERIFIED)
+  verifiedAt           DateTime?
+  archivedAt           DateTime?
+  orders               Order[]
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@index([customerId, archivedAt])
+  @@index([cityId, operationalZoneId, verificationState])
 }
 
 model Bakery {
-  id        String    @id @default(cuid())
-  name      String
-  slug      String    @unique
-  isActive  Boolean   @default(true)
+  id            String              @id @default(uuid()) @db.Uuid
+  legalName     String
+  displayNameFa String
+  partnerStatus BakeryPartnerStatus @default(PROSPECT)
+  agreementRef  String?             @unique @db.VarChar(128)
+  branches      BakeryBranch[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([partnerStatus])
+}
+
+model BakeryBranch {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  bakeryId           String                  @db.Uuid
+  bakery             Bakery                  @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
+  cityId             String                  @db.Uuid
+  city               City                    @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  operationalZoneId  String                  @db.Uuid
+  operationalZone    OperationalZone         @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
+  code               String                  @db.VarChar(32)
+  nameFa             String
+  addressLine        String
+  latitude           Decimal                 @db.Decimal(10, 7)
+  longitude          Decimal                 @db.Decimal(10, 7)
+  pickupInstructions String?
+  operationalStatus  BranchOperationalStatus @default(ONBOARDING)
+  qualityStatus      QualityStatus           @default(PENDING_REVIEW)
+  suspendedUntil     DateTime?
+  suspensionReason   String?
+  operatingHours     BakeryOperatingHours[]
+  capacitySlots      BakeryCapacitySlot[]
+  offerings          BakeryProductOffering[]
+  orders             Order[]
+  fulfillments       Fulfillment[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@unique([cityId, code])
+  @@index([operationalZoneId, operationalStatus, qualityStatus])
+}
+
+model BakeryOperatingHours {
+  id             String       @id @default(uuid()) @db.Uuid
+  bakeryBranchId String       @db.Uuid
+  bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
+  dayOfWeek      Int
+  opensAtMinute  Int
+  closesAtMinute Int
+  isClosed       Boolean      @default(false)
+
+  @@unique([bakeryBranchId, dayOfWeek])
+}
+
+model BakeryCapacitySlot {
+  id             String       @id @default(uuid()) @db.Uuid
+  bakeryBranchId String       @db.Uuid
+  bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
+  serviceDate    DateTime     @db.Date
+  maxOrders      Int
+  reservedOrders Int          @default(0)
+  suspended      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([bakeryBranchId, serviceDate])
+}
+
+model ProductCategory {
+  id        String    @id @default(uuid()) @db.Uuid
+  code      String    @unique @db.VarChar(32)
+  nameFa    String
   products  Product[]
-  orders    Order[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
 
 model Product {
-  id          String      @id @default(cuid())
-  bakeryId    String
-  bakery      Bakery      @relation(fields: [bakeryId], references: [id], onDelete: Cascade)
-  name        String
-  priceRials  Int
-  isAvailable Boolean     @default(true)
-  orderItems  OrderItem[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id            String                 @id @default(uuid()) @db.Uuid
+  categoryId    String                 @db.Uuid
+  category      ProductCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  slug          String                 @unique @db.VarChar(100)
+  nameFa        String
+  descriptionFa String?
+  mediaRef      String?                @db.VarChar(500)
+  lifecycle     ProductLifecycleStatus @default(DRAFT)
+  variants      ProductVariant[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
 
-  @@index([bakeryId, isAvailable])
+  @@index([categoryId, lifecycle])
 }
 
-model Courier {
-  id        String   @id @default(cuid())
-  phone     String   @unique
-  name      String
-  isActive  Boolean  @default(true)
-  orders    Order[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model ProductVariant {
+  id                      String                  @id @default(uuid()) @db.Uuid
+  productId               String                  @db.Uuid
+  product                 Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sku                     String                  @unique @db.VarChar(64)
+  nameFa                  String
+  fulfillmentClass        ProductFulfillmentClass
+  freshnessClaim          FreshnessClaim
+  productionMode          ProductionMode
+  fulfillmentControl      FulfillmentControl
+  packagingType           PackagingType?
+  shelfLifeMinutes        Int?
+  productionWindowMinutes Int?
+  pickupWithinMinutes     Int?
+  freshnessWindowMinutes  Int?
+  ingredients             String[]
+  allergens               String[]
+  dietaryAttributes       String[]
+  lifecycle               ProductLifecycleStatus  @default(DRAFT)
+  offerings               BakeryProductOffering[]
+  orderItems              OrderItem[]
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  @@index([fulfillmentClass, lifecycle])
+}
+
+model BakeryProductOffering {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  bakeryBranchId     String                     @db.Uuid
+  bakeryBranch       BakeryBranch               @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  productVariantId   String                     @db.Uuid
+  productVariant     ProductVariant             @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  priceAmount        BigInt
+  priceCurrency      Currency                   @default(IRR)
+  availability       OfferingAvailabilityStatus @default(DRAFT)
+  dailyCapacity      Int?
+  preparationMinutes Int?
+  availableFrom      DateTime?
+  availableUntil     DateTime?
+  orderItems         OrderItem[]
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  @@unique([bakeryBranchId, productVariantId])
+  @@index([bakeryBranchId, availability])
 }
 
 model Order {
-  id              String      @id @default(cuid())
-  customerId      String
-  customer        Customer    @relation(fields: [customerId], references: [id])
-  bakeryId        String
-  bakery          Bakery      @relation(fields: [bakeryId], references: [id])
-  courierId       String?
-  courier         Courier?    @relation(fields: [courierId], references: [id])
-  status          OrderStatus @default(PENDING)
-  deliveryAddress String
-  totalRials      Int
-  items           OrderItem[]
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id                           String                 @id @default(uuid()) @db.Uuid
+  publicId                     String                 @unique @default(cuid()) @db.VarChar(32)
+  idempotencyKey               String                 @unique @db.VarChar(128)
+  customerId                   String                 @db.Uuid
+  customer                     Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cityId                       String                 @db.Uuid
+  city                         City                   @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  operationalZoneId            String                 @db.Uuid
+  operationalZone              OperationalZone        @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
+  bakeryBranchId               String                 @db.Uuid
+  bakeryBranch                 BakeryBranch           @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  savedAddressId               String?                @db.Uuid
+  savedAddress                 Address?               @relation(fields: [savedAddressId], references: [id], onDelete: SetNull)
+  state                        OrderState             @default(DRAFT)
+  paymentState                 PaymentState           @default(NOT_STARTED)
+  productionState              ProductionState        @default(UNSCHEDULED)
+  deliveryState                DeliveryState          @default(UNASSIGNED)
+  recipientNameSnapshot        String
+  recipientPhoneSnapshot       String                 @db.VarChar(16)
+  deliveryAddressSnapshot      String
+  deliveryLatitudeSnapshot     Decimal                @db.Decimal(10, 7)
+  deliveryLongitudeSnapshot    Decimal                @db.Decimal(10, 7)
+  deliveryInstructionsSnapshot String?
+  bakeryNameSnapshot           String
+  bakeryPickupSnapshot         String?
+  subtotalAmount               BigInt
+  deliveryFeeAmount            BigInt                 @default(0)
+  discountAmount               BigInt                 @default(0)
+  totalAmount                  BigInt
+  currency                     Currency               @default(IRR)
+  customerNotes                String?
+  cancellationReasonCode       String?                @db.VarChar(64)
+  cancellationNotes            String?
+  requestedDeliveryAt          DateTime?
+  items                        OrderItem[]
+  transitions                  OrderStateTransition[]
+  fulfillment                  Fulfillment?
+  supportCases                 SupportCase[]
+  incidents                    OperationalIncident[]
+  createdAt                    DateTime               @default(now())
+  updatedAt                    DateTime               @updatedAt
 
   @@index([customerId, createdAt])
-  @@index([bakeryId, status])
-  @@index([courierId, status])
+  @@index([cityId, operationalZoneId, state])
+  @@index([bakeryBranchId, productionState, createdAt])
 }
 
 model OrderItem {
-  id             String  @id @default(cuid())
-  orderId        String
-  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId      String
-  product        Product @relation(fields: [productId], references: [id])
-  quantity       Int
-  unitPriceRials Int
+  id                       String                  @id @default(uuid()) @db.Uuid
+  orderId                  String                  @db.Uuid
+  order                    Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productVariantId         String                  @db.Uuid
+  productVariant           ProductVariant          @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  bakeryProductOfferingId  String                  @db.Uuid
+  bakeryProductOffering    BakeryProductOffering   @relation(fields: [bakeryProductOfferingId], references: [id], onDelete: Restrict)
+  skuSnapshot              String                  @db.VarChar(64)
+  productNameFaSnapshot    String
+  variantNameFaSnapshot    String
+  fulfillmentClassSnapshot ProductFulfillmentClass
+  freshnessClaimSnapshot   FreshnessClaim
+  packagingTypeSnapshot    PackagingType?
+  quantity                 Int
+  unitPriceAmount          BigInt
+  lineTotalAmount          BigInt
+  currency                 Currency                @default(IRR)
 
-  @@unique([orderId, productId])
+  @@index([orderId])
+  @@index([productVariantId])
+}
+
+model OrderStateTransition {
+  id             String     @id @default(uuid()) @db.Uuid
+  orderId        String     @db.Uuid
+  order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromState      OrderState
+  toState        OrderState
+  actorType      ActorType
+  actorId        String?    @db.Uuid
+  reasonCode     String?    @db.VarChar(64)
+  notes          String?
+  idempotencyKey String     @unique @db.VarChar(128)
+  correlationId  String     @db.Uuid
+  occurredAt     DateTime
+  createdAt      DateTime   @default(now())
+
+  @@index([orderId, occurredAt])
+  @@index([correlationId])
+}
+
+model Fulfillment {
+  id                    String                @id @default(uuid()) @db.Uuid
+  orderId               String                @unique @db.Uuid
+  order                 Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  bakeryBranchId        String?               @db.Uuid
+  bakeryBranch          BakeryBranch?         @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  type                  FulfillmentType
+  state                 FulfillmentState      @default(PLANNED)
+  scheduledProductionAt DateTime?
+  readyAtEstimate       DateTime?
+  readyAt               DateTime?
+  pickupDeadline        DateTime?
+  freshnessDeadline     DateTime?
+  packagingCompletedAt  DateTime?
+  handoffAt             DateTime?
+  pickupProofRef        String?               @db.VarChar(500)
+  deliveryProofRef      String?               @db.VarChar(500)
+  deliveryTask          DeliveryTask?
+  incidents             OperationalIncident[]
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@index([bakeryBranchId, state, readyAtEstimate])
+}
+
+model CourierPartner {
+  id          String    @id @default(uuid()) @db.Uuid
+  code        String    @unique @db.VarChar(32)
+  displayName String
+  isActive    Boolean   @default(false)
+  couriers    Courier[]
+  vehicles    Vehicle[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Courier {
+  id               String               @id @default(uuid()) @db.Uuid
+  courierPartnerId String               @db.Uuid
+  courierPartner   CourierPartner       @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
+  externalRef      String?              @db.VarChar(128)
+  mobileE164       String               @db.VarChar(16)
+  displayName      String
+  status           CourierStatus        @default(ONBOARDING)
+  assignments      DeliveryAssignment[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@unique([courierPartnerId, externalRef])
+  @@index([courierPartnerId, status])
+}
+
+model Vehicle {
+  id               String               @id @default(uuid()) @db.Uuid
+  courierPartnerId String               @db.Uuid
+  courierPartner   CourierPartner       @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
+  type             VehicleType
+  plateMasked      String?              @db.VarChar(32)
+  status           VehicleStatus        @default(PENDING_REVIEW)
+  assignments      DeliveryAssignment[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([courierPartnerId, type, status])
+}
+
+model DeliveryTask {
+  id                String                @id @default(uuid()) @db.Uuid
+  fulfillmentId     String                @unique @db.Uuid
+  fulfillment       Fulfillment           @relation(fields: [fulfillmentId], references: [id], onDelete: Restrict)
+  state             DeliveryTaskState     @default(UNASSIGNED)
+  pickupAfter       DateTime?
+  pickupBefore      DateTime?
+  deliverBefore     DateTime?
+  attemptCount      Int                   @default(0)
+  failureReasonCode String?               @db.VarChar(64)
+  assignments       DeliveryAssignment[]
+  incidents         OperationalIncident[]
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([state, pickupBefore])
+}
+
+model DeliveryAssignment {
+  id             String                  @id @default(uuid()) @db.Uuid
+  deliveryTaskId String                  @db.Uuid
+  deliveryTask   DeliveryTask            @relation(fields: [deliveryTaskId], references: [id], onDelete: Cascade)
+  courierId      String                  @db.Uuid
+  courier        Courier                 @relation(fields: [courierId], references: [id], onDelete: Restrict)
+  vehicleId      String?                 @db.Uuid
+  vehicle        Vehicle?                @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  state          DeliveryAssignmentState @default(OFFERED)
+  offeredAt      DateTime
+  respondedAt    DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@index([deliveryTaskId, state])
+  @@index([courierId, state, offeredAt])
+}
+
+model CustomerEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  eventId       String       @unique @db.Uuid
+  customerId    String       @db.Uuid
+  customer      Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  name          String       @db.VarChar(100)
+  version       Int          @default(1)
+  purpose       EventPurpose @default(ENGAGEMENT)
+  consentBasis  ConsentBasis
+  subjectType   String       @db.VarChar(80)
+  subjectId     String       @db.Uuid
+  correlationId String       @db.Uuid
+  causationId   String?      @db.Uuid
+  properties    Json
+  occurredAt    DateTime
+  createdAt     DateTime     @default(now())
+
+  @@index([customerId, occurredAt])
+  @@index([name, occurredAt])
+  @@index([correlationId])
+}
+
+model DomainEventOutbox {
+  id              String       @id @default(uuid()) @db.Uuid
+  eventId         String       @unique @db.Uuid
+  name            String       @db.VarChar(100)
+  version         Int          @default(1)
+  aggregateType   String       @db.VarChar(80)
+  aggregateId     String       @db.Uuid
+  actorType       ActorType
+  actorId         String?      @db.Uuid
+  correlationId   String       @db.Uuid
+  causationId     String?      @db.Uuid
+  consentBasis    ConsentBasis
+  payload         Json
+  status          OutboxStatus @default(PENDING)
+  publishAttempts Int          @default(0)
+  occurredAt      DateTime
+  publishedAt     DateTime?
+  lastErrorCode   String?      @db.VarChar(64)
+  createdAt       DateTime     @default(now())
+
+  @@index([status, createdAt])
+  @@index([aggregateType, aggregateId, occurredAt])
+  @@index([correlationId])
+}
+
+model AuditEvent {
+  id            String    @id @default(uuid()) @db.Uuid
+  actorType     ActorType
+  actorId       String?   @db.Uuid
+  action        String    @db.VarChar(100)
+  entityType    String    @db.VarChar(80)
+  entityId      String    @db.Uuid
+  summary       String
+  correlationId String    @db.Uuid
+  metadata      Json?
+  occurredAt    DateTime
+  createdAt     DateTime  @default(now())
+
+  @@index([entityType, entityId, occurredAt])
+  @@index([actorType, actorId, occurredAt])
+  @@index([correlationId])
+}
+
+model SupportCase {
+  id              String              @id @default(uuid()) @db.Uuid
+  publicId        String              @unique @default(cuid()) @db.VarChar(32)
+  customerId      String?             @db.Uuid
+  customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  orderId         String?             @db.Uuid
+  order           Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  status          SupportCaseStatus   @default(OPEN)
+  priority        SupportCasePriority @default(NORMAL)
+  category        String              @db.VarChar(64)
+  subject         String
+  assignedStaffId String?             @db.Uuid
+  notes           SupportCaseNote[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([status, priority, createdAt])
+  @@index([customerId, createdAt])
+  @@index([orderId])
+}
+
+model SupportCaseNote {
+  id            String      @id @default(uuid()) @db.Uuid
+  supportCaseId String      @db.Uuid
+  supportCase   SupportCase @relation(fields: [supportCaseId], references: [id], onDelete: Cascade)
+  actorType     ActorType
+  actorId       String?     @db.Uuid
+  body          String
+  isInternal    Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+
+  @@index([supportCaseId, createdAt])
+}
+
+model OperationalIncident {
+  id             String           @id @default(uuid()) @db.Uuid
+  orderId        String?          @db.Uuid
+  order          Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  fulfillmentId  String?          @db.Uuid
+  fulfillment    Fulfillment?     @relation(fields: [fulfillmentId], references: [id], onDelete: SetNull)
+  deliveryTaskId String?          @db.Uuid
+  deliveryTask   DeliveryTask?    @relation(fields: [deliveryTaskId], references: [id], onDelete: SetNull)
+  status         IncidentStatus   @default(OPEN)
+  severity       IncidentSeverity
+  category       String           @db.VarChar(64)
+  summary        String
+  resolution     String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([status, severity, createdAt])
+  @@index([orderId])
+  @@index([deliveryTaskId])
 }

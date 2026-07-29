@@ -1,7 +1,7 @@
 import cors from '@fastify/cors'
 import Fastify, { type FastifyInstance } from 'fastify'
 
-import type { HealthResponse, ReadyResponse } from '@alo-noon/contracts'
+import type { HealthResponse, ReadyResponse, ResponseMeta } from '@alo-noon/contracts'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -48,7 +48,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   return app
 }
 
-function responseMeta() {
+function responseMeta(): ResponseMeta {
   return {
     requestId: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
