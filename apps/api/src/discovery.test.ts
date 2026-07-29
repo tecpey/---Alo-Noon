@@ -200,6 +200,41 @@ describe('GeoJSON evaluation', () => {
     expect(geoJsonContainsPoint(square, 53, 36.6)).toBe(false)
   })
 
+  it('supports MultiPolygon geometry and excludes polygon holes', () => {
+    const multiPolygon = {
+      type: 'MultiPolygon',
+      coordinates: [
+        square.coordinates,
+        [
+          [
+            [53, 36.5],
+            [53.2, 36.5],
+            [53.2, 36.7],
+            [53, 36.7],
+            [53, 36.5],
+          ],
+        ],
+      ],
+    }
+    const polygonWithHole = {
+      type: 'Polygon',
+      coordinates: [
+        square.coordinates[0],
+        [
+          [52.65, 36.55],
+          [52.75, 36.55],
+          [52.75, 36.65],
+          [52.65, 36.65],
+          [52.65, 36.55],
+        ],
+      ],
+    }
+
+    expect(geoJsonContainsPoint(multiPolygon, 53.1, 36.6)).toBe(true)
+    expect(geoJsonContainsPoint(polygonWithHole, 52.7, 36.6)).toBe(false)
+    expect(geoJsonContainsPoint(polygonWithHole, 52.62, 36.52)).toBe(true)
+  })
+
   it('rejects unsupported or malformed geometry', () => {
     expect(geoJsonContainsPoint({ type: 'Point', coordinates: [52.7, 36.6] }, 52.7, 36.6)).toBe(
       false,

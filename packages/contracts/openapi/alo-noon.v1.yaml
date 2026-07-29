@@ -1,185 +1,331 @@
-openapi: 3.1.0
-info:
-  title: Alo Noon API
-  version: 0.2.0
-  description: >-
-    Phase 2A contract. Operational endpoints, read-only catalog discovery, and
-    geographic serviceability evaluation are implemented.
-servers:
-  - url: http://localhost:3001
-paths:
-  /health:
-    get:
-      operationId: getHealth
-      summary: Process liveness independent of external services.
-      responses:
-        '200':
-          description: Process is alive.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-  /ready:
-    get:
-      operationId: getReadiness
-      summary: Traffic readiness including required dependencies.
-      responses:
-        '200':
-          description: Required dependencies are available.
-        '503':
-          description: At least one required dependency is unavailable.
-  /api/v1/catalog/products:
-    get:
-      operationId: listCatalogProducts
-      summary: List active and currently available bakery offerings.
-      parameters:
-        - in: query
-          name: cityId
-          required: true
-          schema: { type: string, format: uuid }
-        - in: query
-          name: operationalZoneId
-          schema: { type: string, format: uuid }
-        - in: query
-          name: page
-          schema: { type: integer, minimum: 1, default: 1 }
-        - in: query
-          name: pageSize
-          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
-      responses:
-        '200':
-          description: Paginated active catalog offerings.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CatalogPage'
-        '400':
-          description: Invalid query parameters.
-        '503':
-          description: Catalog persistence is unavailable.
-  /api/v1/serviceability/check:
-    post:
-      operationId: checkServiceability
-      summary: Evaluate a coordinate against active city service polygons.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ServiceabilityRequest'
-      responses:
-        '200':
-          description: Serviceability decision.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServiceabilityEnvelope'
-        '400':
-          description: Invalid request.
-        '503':
-          description: Serviceability persistence is unavailable.
-components:
-  schemas:
-    ResponseMeta:
-      type: object
-      required: [requestId, timestamp, version]
-      properties:
-        requestId: { type: string, format: uuid }
-        timestamp: { type: string, format: date-time }
-        version: { type: string, const: v1 }
-    PaginationMeta:
-      type: object
-      required: [page, pageSize, totalItems, totalPages, hasNextPage, hasPreviousPage]
-      properties:
-        page: { type: integer, minimum: 1 }
-        pageSize: { type: integer, minimum: 1 }
-        totalItems: { type: integer, minimum: 0 }
-        totalPages: { type: integer, minimum: 0 }
-        hasNextPage: { type: boolean }
-        hasPreviousPage: { type: boolean }
-    Money:
-      type: object
-      required: [amount, currency]
-      properties:
-        amount: { type: string, pattern: '^\\d+$' }
-        currency: { type: string, enum: [IRR] }
-    ProductSummary:
-      type: object
-      required: [id, variantId, sku, nameFa, fulfillmentClass, freshnessClaim, price, lifecycle]
-      properties:
-        id: { type: string, format: uuid }
-        variantId: { type: string, format: uuid }
-        sku: { type: string }
-        nameFa: { type: string }
-        fulfillmentClass:
-          type: string
-          enum:
-            [
-              SIGNATURE_FRESH,
-              PACKAGED_TRADITIONAL,
-              PACKAGED_FANTASY,
-              PACKAGED_DIETARY,
-              LIMITED_EDITION,
-            ]
-        freshnessClaim:
-          type: string
-          enum: [FRESHLY_PRODUCED, PACKAGED, SHELF_STABLE, NONE]
-        price: { $ref: '#/components/schemas/Money' }
-        bakeryBranchId: { type: string, format: uuid }
-        mediaRef: { type: string }
-        lifecycle: { type: string, enum: [DRAFT, ACTIVE, SUSPENDED, RETIRED] }
-    CatalogPage:
-      type: object
-      required: [success, data, meta]
-      properties:
-        success: { type: boolean, const: true }
-        data:
-          type: array
-          items: { $ref: '#/components/schemas/ProductSummary' }
-        meta:
-          allOf:
-            - { $ref: '#/components/schemas/ResponseMeta' }
-            - type: object
-              required: [pagination]
-              properties:
-                pagination: { $ref: '#/components/schemas/PaginationMeta' }
-    ServiceabilityRequest:
-      type: object
-      required: [cityId, latitude, longitude]
-      properties:
-        cityId: { type: string, format: uuid }
-        latitude: { type: number, minimum: -90, maximum: 90 }
-        longitude: { type: number, minimum: -180, maximum: 180 }
-        requestedAt: { type: string, format: date-time }
-    ServiceabilityDecision:
-      type: object
-      required: [serviceable, evaluatedAt]
-      properties:
-        serviceable: { type: boolean }
-        operationalZoneId: { type: string, format: uuid }
-        serviceAreaId: { type: string, format: uuid }
-        reason:
-          type: string
-          enum: [OUTSIDE_CITY, OUTSIDE_SERVICE_AREA, ZONE_SUSPENDED]
-        evaluatedAt: { type: string, format: date-time }
-    ServiceabilityEnvelope:
-      type: object
-      required: [success, data, meta]
-      properties:
-        success: { type: boolean, const: true }
-        data: { $ref: '#/components/schemas/ServiceabilityDecision' }
-        meta: { $ref: '#/components/schemas/ResponseMeta' }
-    HealthResponse:
-      type: object
-      required: [success, data, meta]
-      properties:
-        success: { type: boolean, const: true }
-        data:
-          type: object
-          required: [status, uptime, version, checks]
-          properties:
-            status: { type: string, enum: [healthy, degraded, unhealthy] }
-            uptime: { type: number, minimum: 0 }
-            version: { type: string }
-            checks: { type: array, items: { type: object } }
-        meta: { $ref: '#/components/schemas/ResponseMeta' }
+file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:154
+`,n)+1}return{type:e,offset:this.offset,indent:this.indent,source:this.source}}startBlockValue(e){switch(this.type){case"alias":case"scalar":case"single-quoted-scalar":case"double-quoted-scalar":return this.flowScalar(this.type);case"block-scalar-header":return{type:"block-scalar",offset:this.offset,indent:this.indent,props:[this.sourceToken],source:""};case"flow-map-start":case"flow-seq-start":return{type:"flow-collection",offset:this.offset,indent:this.indent,start:this.sourceToken,items:[],end:[]};case"seq-item-ind":return{type:"block-seq",offset:this.offset,indent:this.indent,items:[{start:[this.sourceToken]}]};case"explicit-key-ind":{this.onKeyLine=!0;let n=es(e),s=ht(n);return s.push(this.sourceToken),{type:"block-map",offset:this.offset,indent:this.indent,items:[{start:s,explicitKey:!0}]}}case"map-value-ind":{this.onKeyLine=!0;let n=es(e),s=ht(n);return{type:"block-map",offset:this.offset,indent:this.indent,items:[{start:s,key:null,sep:[this.sourceToken]}]}}}return null}atIndentedComment(e,n){return this.type!=="comment"||this.indent<=n?!1:e.every(s=>s.type==="newline"||s.type==="space")}*documentEnd(e){this.type!=="doc-mode"&&(e.end?e.end.push(this.sourceToken):e.end=[this.sourceToken],this.type==="newline"&&(yield*this.pop()))}*lineEnd(e){switch(this.type){case"comma":case"doc-start":case"doc-end":case"flow-seq-end":case"flow-map-end":case"map-value-ind":yield*this.pop(),yield*this.step();break;case"newline":this.onKeyLine=!1;default:e.end?e.end.push(this.sourceToken):e.end=[this.sourceToken],this.type==="newline"&&(yield*this.pop())}}};function Ji(t){let e=t.prettyErrors!==!1;return{lineCounter:t.lineCounter||e&&new qe||null,prettyErrors:e}}function Wi(t,e={}){let{lineCounter:n,prettyErrors:s}=Ji(e),r=new Ie(n?.addNewLine),i=new _e(e),o=Array.from(i.compose(r.parse(t)));if(s&&n)for(let a of o)a.errors.forEach(Kt(t,n)),a.warnings.forEach(Kt(t,n));return o.length>0?o:Object.assign([],{empty:!0},i.streamInfo())}function Vs(t,e={}){let{lineCounter:n,prettyErrors:s}=Ji(e),r=new Ie(n?.addNewLine),i=new _e(e),o=null;for(let a of i.compose(r.parse(t),!0,t.length))if(!o)o=a;else if(o.options.logLevel!=="silent"){o.errors.push(new te(a.range.slice(0,2),"MULTIPLE_DOCS","Source contains multiple documents; please use YAML.parseAllDocuments()"));break}return s&&n&&(o.errors.forEach(Kt(t,n)),o.warnings.forEach(Kt(t,n))),o}function Xi(t,e,n){let s;typeof e=="function"?s=e:n===void 0&&e&&typeof e=="object"&&(n=e);let r=Vs(t,n);if(!r)return null;if(r.warnings.forEach(i=>In(r.options.logLevel,i)),r.errors.length>0){if(r.options.logLevel!=="silent")throw r.errors[0];r.errors=[]}return r.toJS(Object.assign({reviver:s},n))}function zi(t,e,n){let s=null;if(typeof e=="function"||Array.isArray(e)?s=e:n===void 0&&e&&(n=e),typeof n=="string"&&(n=n.length),typeof n=="number"){let r=Math.round(n);n=r<1?void 0:r>8?{indent:8}:{indent:r}}if(t===void 0){let{keepUndefined:r}=n??e??{};if(!r)return}return ne(t)&&!s?t.toString(n):new ye(t,s,n).toString(n)}var Zi=Gs;function eo(t,e,n){let s=t.srcToken;if(!s||s.type!=="flow-collection")throw new Error("Expected flow-collection CST node for flow sequence");let r=t.items.map((o,a)=>{let l=s.items[a];if(Ga(o,l))return Ce(ie(o.items),l,e,_t);if(T(o))return Ce(o,l,e,_t);{let c=[];for(let f of q(l.start)){if(Ee(f)){c.push(f);continue}if(f.type==="comma")continue;throw new Error(`Unexpected token type in sequence item start: ${f.type}`)}let u=e.transformNode(o,{tokens:c});return ti(Z(u.position.start,u.position.end),u)}});if(t.items.length<s.items.length)for(let o=t.items.length;o<s.items.length;o++){let a=s.items[o];for(let l of D(a.start,e)){if(l.type==="comma")continue;throw new Error(`Unexpected token type in collection item start: ${l.type}`)}}let i=null;for(let o of q(s.end)){if(o.type==="comment"){e.transformComment(o);continue}if(o.type==="flow-seq-end"){i=o;continue}throw new Error(`Unexpected token type in flow seq end: ${o.type}`)}if(!i)throw new Error("Expected flow-seq-end token");return ei(e.transformRange([s.start.offset,i.offset+i.source.length]),e.transformContentProperties(t,n.tokens),r)}function Ga(t,e){if(t.srcToken)return!1;if(!U(t))return!1;return t.items.length!==1?!1:t.items[0].srcToken===e}function ss(t,e,n){return{type:"mapping",position:t,leadingComments:[],...e,children:n}}function rs(t,e,n){return{type:"mappingItem",position:t,leadingComments:[],children:[e,n]}}function to(t,e,n){let s=t.srcToken;if(!s||s.type!=="block-map")throw new Error("Expected block mapping srcToken");let r=t.items.map((i,o)=>{let a=s.items[o];return Ce(i,a,e,rs)});if(t.items.length<s.items.length)for(let i=t.items.length;i<s.items.length;i++){let o=s.items[i];for(let a of D(o.start,e))throw new Error(`Unexpected token type in collection item start: ${a.type}`)}return ss(Z(r[0].position.start,ie(r).position.end),e.transformContentProperties(t,n.tokens),r)}function Qs(t,e,n){return{type:"plain",position:t,leadingComments:[],trailingComment:null,...e,value:n}}function no(t,e,n){for(let s=e;s>=0;s--)if(n.test(t[s]))return s;return-1}function so(t,e,n){if(t.range[0]===t.range[1]){let r=no(e.text,t.range[0]-1,/\S/u)+1;return Qs(e.transformRange([r,r]),e.transformContentProperties(t,n.tokens),"")}let s=t.srcToken;if(!s||s.type!=="scalar")throw new Error("Expected plain scalar srcToken");for(let r of D(s.end,e))throw new Error(`Unexpected token type in plain scalar end: ${r.type}`);return Qs(e.transformRange(t.range),e.transformContentProperties(t,n.tokens),t.source)}function ro(t){return{...t,type:"quoteDouble"}}function io(t,e,n){return{type:"quoteValue",position:t,...e,leadingComments:[],trailingComment:null,value:n}}function is(t,e,n,s){for(let r of D(e.end,n))throw new Error(`Unexpected token type in quote value end: ${r.type}`);return io(n.transformRange(t.range),n.transformContentProperties(t,s.tokens),t.source)}function oo(t,e,n){let s=t.srcToken;if(!s||s.type!=="double-quoted-scalar")throw new Error("Expected double-quoted scalar srcToken");return ro(is(t,s,e,n))}function ao(t){return{...t,type:"quoteSingle"}}function lo(t,e,n){let s=t.srcToken;if(!s||s.type!=="single-quoted-scalar")throw new Error("Expected single-quoted scalar srcToken");return ao(is(t,s,e,n))}function co(t,e,n){return{type:"sequence",position:t,leadingComments:[],endComments:[],...e,children:n}}function fo(t,e){return{type:"sequenceItem",position:t,leadingComments:[],trailingComment:null,endComments:[],children:e?[e]:[]}}function uo(t,e,n){let s=t.srcToken;if(!s||s.type!=="block-seq")throw new Error("Expected block sequence srcToken");let r=t.items.map((i,o)=>{let a=s.items[o],l=[],c=null;for(let f of q(a.start)){if(Ee(f)){l.push(f);continue}if(f.type==="seq-item-ind"){c=f;continue}throw new Error(`Unexpected token type in sequence item start: ${f.type}`)}let u=Qa(i,e,{tokens:l});return fo(Z(c?e.transformOffset(c.offset):u.position.start,u?.position.end??e.transformOffset(c.offset+c.source.length)),u)});if(t.items.length<s.items.length)for(let i=t.items.length;i<s.items.length;i++){let o=s.items[i];for(let a of D(o.start,e))throw new Error(`Unexpected token type in collection item start: ${a.type}`)}return co(Z(r[0].position.start,ie(r).position.end),e.transformContentProperties(t,n.tokens),r)}function Qa(t,e,n){if(!T(t))return It(t,n)?(D(n.tokens,e),null):e.transformNode(t,n);let s=t.srcToken,r=Ce(t,s,e,rs);return ss(r.position,e.transformContentProperties(t.key,n.tokens),[r])}function po(t,e,n){if(t==null)return null;if(H(t))return Vr(t,e,n);if(U(t))return t.flow?Zr(t,e,n):to(t,e,n);if(J(t))return t.flow?eo(t,e,n):uo(t,e,n);if(C(t)){switch(t.type){case"BLOCK_FOLDED":return Hr(t,e,n);case"BLOCK_LITERAL":return Wr(t,e,n);case"PLAIN":return so(t,e,n);case"QUOTE_DOUBLE":return oo(t,e,n);case"QUOTE_SINGLE":return lo(t,e,n)}throw new Error(`Unexpected scalar type: ${t.type}`)}throw new Error("Unexpected unknown node type")}function It(t,e){return!t||t.range[0]===t.range[1]&&e.tokens.every(n=>n.type==="comment")}var Ha=class{text;comments=[];#e;constructor(t,e){this.text=t,this.#e=e}transformOffset(t){let{line:e,col:n}=this.#e.linePos(t);return{line:e,column:n,offset:t}}transformRange(t){let[e,n]=t.map(s=>this.transformOffset(s));return Z(e,n)}transformNode(t,e){return po(t,this,e)}transformComment(t){let e=qr(t,this);return this.comments.push(e),e}transformContentProperties(t,e){return Ur(t,e,this)}},mo=Ha;function ho(t,e,n,s,r,i){return{type:"document",position:t,trailingComment:i,directivesEndMarker:e,documentEndMarker:n,children:[s,r]}}function go(t,e,n){return{type:"documentBody",position:t,endComments:n,children:e?[e]:[]}}function yo(t,e,n){for(let s=e;s<t.length;s++)if(n.test(t[s]))return s;return null}function wo(t,e,n,s,r,i,o){let{documentTrailingComment:a,endComments:l,propTokens:c}=Ja(e,n,r,i,o),u=s.contents&&(s.contents.range[0]<s.contents.range[1]||c.some(g=>g.type==="tag"||g.type==="anchor")),f=u?o.transformNode(s.contents,{tokens:c}):null;if(!u)for(let g of D(c,o))throw new Error(`Unexpected token type in empty document body: ${g.type}`);let{position:p,documentEndPoint:h}=Wa(t,s,f,i,o);return{documentBody:go(p,f,l),documentEndPoint:h,documentTrailingComment:a}}function Ja(t,e,n,s,r){let i=[],o=[],a=[];for(let c of t){if(Ee(c)){a.push(c);continue}throw new Error(`Unexpected token type: ${c.type}`)}for(let c of D(n,r))throw new Error(`Unexpected token type: ${c.type}`);let l=s?r.transformOffset(s.offset):null;if(e)for(let c of q(e.end,s?.end)){if(c.type==="comment"){let u=r.transformComment(c);l?l.line===u.position.start.line?o.push(u):u.position.start.line<l.line&&i.push(u):i.push(u);continue}throw new Error(`Unexpected token type: ${c.type}`)}if(o.length>1)throw new Error(`Unexpected multiple document trailing comments at ${ve(o[1].position.start)}`);return{propTokens:a,endComments:i,documentTrailingComment:ie(o)||null}}function Wa(t,e,n,s,r){let i=s?Math.max(0,s.offset-1):yo(r.text,e.range[2],/\S/u)??r.text.length;r.text[i-1]==="\r"&&i--;let o=n!==null?n.position.start.offset:i;if(t){let l=t.offset+t.source.length+1;o<l&&l<=i&&(o=l)}let a=r.transformRange([o,i]);return{position:a,documentEndPoint:s?r.transformOffset(s.offset+s.source.length):a.end}}function bo(t,e,n,s){return{type:"documentHead",position:t,endComments:n,trailingComment:s,children:e}}function ko(t,e,n){return{type:"directive",position:t,leadingComments:[],trailingComment:null,name:e,parameters:n}}function So(t,e){let n=t.source.trim().split(/[\t ]+/),s=n.shift().replace(/^%/,"");return ko(e.transformRange([t.offset,t.offset+t.source.length]),s,n)}function Eo(t,e,n,s){let{directives:r,endCommentCandidates:i}=Xa(t,s),o=[],a=null;if(e){for(let u of q(e.start))if(o.push(u),!a&&u.type==="doc-start"){for(let f of o)if(f.type==="comment"){let p=s.transformComment(f);i.push(p)}o=[],a=u}}let l=za(r,n,a,s),c=null;if(a&&o.length>0){let u=o[0];u.type==="comment"&&s.transformOffset(u.offset).line===l.end.line&&(c=s.transformComment(u),o.shift())}return{documentHead:bo(l,r,a?i:[],c),docStart:a,tokensBeforeBody:o}}function Xa(t,e){let n=[],s=[],r=null;for(let i of t)if(i.type==="comment"){let o=e.transformComment(i);r&&r.position.end.line===o.position.start.line&&!r.trailingComment?(r.trailingComment=o,r.position.end=o.position.end):s.push(o)}else{let o=So(i,e);n.push(o),r=o,s=[]}return{directives:n,endCommentCandidates:s}}function za(t,e,n,s){let r=n?[n.offset,n.offset+n.source.length]:e.contents?[e.contents.range[0],e.contents.range[0]]:[e.range[0],e.range[0]];return t.length!==0&&(r[0]=t[0].position.start.offset),s.transformRange(r)}function Co(t,e){let{documentHead:n,tokensBeforeBody:s,docStart:r}=Eo(t.tokensBeforeBody,t.cstNode,t.node,e),{documentBody:i,documentEndPoint:o,documentTrailingComment:a}=wo(r,s,t.cstNode,t.node,t.tokensAfterBody,t.documentEnd,e);return ho(Z(n.position.start,o),!!r,!!t.documentEnd,n,i,a)}function No(t,e,n){if(t.length===0)return[];let s=[],r=[],i=[],o=null,a=l=>{let c={tokensBeforeBody:[...i,...r],cstNode:l,node:t[s.length],tokensAfterBody:[],documentEnd:null};return s.push(c),i.length=0,r.length=0,c};for(let l of q(e)){if(l.type==="document"){if(s.length>=t.length)throw new Error(`Unexpected 'document' token at ${ve(n.transformOffset(l.offset))}`);o=a(l);continue}if(l.type==="comment"){r.push(l);continue}if(l.type==="directive"){i.push(...r,l),r.length=0;continue}if(l.type==="doc-end"){if(!o||o.documentEnd)throw new Error(`Unexpected 'doc-end' token at ${ve(n.transformOffset(l.offset))}`);o.tokensAfterBody=[...r],r.length=0,o.documentEnd=l;continue}}if(i.length>0){let[l]=i;throw new Error(`Unexpected '${l.type}' token at ${ve(n.transformOffset(l.offset))}`)}return r.length>0&&(o||(o=a(null)),r.length>0&&(o.tokensAfterBody.push(...r),r.length=0)),s.map(l=>Co(l,n))}function Hs(t,e,n,s){let r=e(t);return i=>{s(r,i)&&n(t,r=i)}}function Js(t){if(t===null||!("children"in t))return;let e=t.children;if(e.forEach(Js),t.type==="document"){let[i,o]=t.children;i.position.start.offset===i.position.end.offset?i.position.start=i.position.end=o.position.start:o.position.start.offset===o.position.end.offset&&(o.position.start=o.position.end=i.position.end)}let n=Hs(t.position,Za,el,sl),s=Hs(t.position,tl,nl,rl);"endComments"in t&&t.endComments.length!==0&&(n(t.endComments[0].position.start),s(ie(t.endComments).position.end));let r=e.filter(i=>i!==null);if(r.length!==0){let i=r[0],o=ie(r);n(i.position.start),s(o.position.end),"leadingComments"in i&&i.leadingComments.length!==0&&n(i.leadingComments[0].position.start),"tag"in i&&i.tag&&n(i.tag.position.start),"anchor"in i&&i.anchor&&n(i.anchor.position.start),"trailingComment"in o&&o.trailingComment&&s(o.trailingComment.position.end)}}function Za(t){return t.start}function el(t,e){t.start=e}function tl(t){return t.end}function nl(t,e){t.end=e}function sl(t,e){return e.offset<t.offset}function rl(t,e){return e.offset>t.offset}function Ws(t,e){let n=new qe,s=new mo(t,n),r=new Ie(n.addNewLine),i=new _e({keepSourceTokens:!0,uniqueKeys:e?.uniqueKeys,lineCounter:n,merge:!0}),o=[],a=[...r.parse(t)];for(let f of i.compose(a,!0,t.length)){let{errors:p}=f;if(p.length>0)throw new Ot(s,p[0]);o.push(f)}let l=No(o,a,s),c=s.comments.sort((f,p)=>f.position.start.offset-p.position.end.offset),u=Br(s.transformRange([0,t.length]),l,c);return xr(u),Js(u),u}function il(t,e){let n=new SyntaxError(t+" ("+e.loc.start.line+":"+e.loc.start.column+")");return Object.assign(n,e)}var Ao=il;var ol={uniqueKeys:!1};function al(t){let e;try{e=Ws(t,ol)}catch(n){throw n instanceof Ot?Ao(n.message,{loc:n.position,cause:n}):n}return delete e.comments,e}var ll={astFormat:"yaml",parse:al,hasPragma:br,hasIgnorePragma:kr,locStart:Nt,locEnd:mr};var cl={yaml:Pr};var fl=Zi.parse;export{fl as __parsePrettierYamlConfig,To as default,vr as languages,Dr as options,Xs as parsers,cl as printers};
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+
+SyntaxError: Missing closing 'quote (104:49)
+  102 |       required: [amount, currency]
+  103 |       properties:
+> 104 |         amount: { type: string, pattern: '^\d+ }
+      |                                                 ^
+> 105 |         currency: { type: string, enum: [IRR] }
+      | ^
+  106 |     ProductSummary:
+  107 |       type: object
+  108 |       required: [id, variantId, sku, nameFa, fulfillmentClass, freshnessClaim, price, lifecycle]
+    at il (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:154:14248)
+    at Object.al [as parse] (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:154:14442)
+    at parse8 (file:///tmp/alo-noon-format/node_modules/prettier/index.mjs:17739:24)
+    ... 4 lines matching cause stack trace ...
+    at async file:///workspace/scratch/3907317bc251/[eval1]:1:104 {
+  loc: {
+    start: { line: 104, column: 49, offset: 3346 },
+    end: { line: 105, column: 1, offset: 3347 }
+  },
+  cause: Ot [YAMLSyntaxError]: Missing closing 'quote
+      at Ws (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:154:14050)
+      at Object.al [as parse] (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:154:14402)
+      at parse8 (file:///tmp/alo-noon-format/node_modules/prettier/index.mjs:17739:24)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async coreFormat (file:///tmp/alo-noon-format/node_modules/prettier/index.mjs:18282:7)
+      at async formatWithCursor (file:///tmp/alo-noon-format/node_modules/prettier/index.mjs:18502:14)
+      at async Module.format2 (file:///tmp/alo-noon-format/node_modules/prettier/index.mjs:19010:25)
+      at async file:///workspace/scratch/3907317bc251/[eval1]:1:104 {
+    code: 'MISSING_CHAR',
+    source: 'openapi: 3.1.0\n' +
+      'info:\n' +
+      '  title: Alo Noon API\n' +
+      '  version: 0.2.0\n' +
+      '  description: >-\n' +
+      '    Phase 2A contract. Operational endpoints, read-only catalog discovery, and\n' +
+      '    geographic serviceability evaluation are implemented.\n' +
+      'servers:\n' +
+      '  - url: http://localhost:3001\n' +
+      'paths:\n' +
+      '  /health:\n' +
+      '    get:\n' +
+      '      operationId: getHealth\n' +
+      '      summary: Process liveness independent of external services.\n' +
+      '      responses:\n' +
+      "        '200':\n" +
+      '          description: Process is alive.\n' +
+      '          content:\n' +
+      '            application/json:\n' +
+      '              schema:\n' +
+      "                $ref: '#/components/schemas/HealthResponse'\n" +
+      '  /ready:\n' +
+      '    get:\n' +
+      '      operationId: getReadiness\n' +
+      '      summary: Traffic readiness including required dependencies.\n' +
+      '      responses:\n' +
+      "        '200':\n" +
+      '          description: Required dependencies are available.\n' +
+      "        '503':\n" +
+      '          description: At least one required dependency is unavailable.\n' +
+      '  /api/v1/catalog/products:\n' +
+      '    get:\n' +
+      '      operationId: listCatalogProducts\n' +
+      '      summary: List active and currently available bakery offerings.\n' +
+      '      parameters:\n' +
+      '        - in: query\n' +
+      '          name: cityId\n' +
+      '          required: true\n' +
+      '          schema: { type: string, format: uuid }\n' +
+      '        - in: query\n' +
+      '          name: operationalZoneId\n' +
+      '          schema: { type: string, format: uuid }\n' +
+      '        - in: query\n' +
+      '          name: page\n' +
+      '          schema: { type: integer, minimum: 1, default: 1 }\n' +
+      '        - in: query\n' +
+      '          name: pageSize\n' +
+      '          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }\n' +
+      '      responses:\n' +
+      "        '200':\n" +
+      '          description: Paginated active catalog offerings.\n' +
+      '          content:\n' +
+      '            application/json:\n' +
+      '              schema:\n' +
+      "                $ref: '#/components/schemas/CatalogPage'\n" +
+      "        '400':\n" +
+      '          description: Invalid query parameters.\n' +
+      "        '503':\n" +
+      '          description: Catalog persistence is unavailable.\n' +
+      '  /api/v1/serviceability/check:\n' +
+      '    post:\n' +
+      '      operationId: checkServiceability\n' +
+      '      summary: Evaluate a coordinate against active city service polygons.\n' +
+      '      requestBody:\n' +
+      '        required: true\n' +
+      '        content:\n' +
+      '          application/json:\n' +
+      '            schema:\n' +
+      "              $ref: '#/components/schemas/ServiceabilityRequest'\n" +
+      '      responses:\n' +
+      "        '200':\n" +
+      '          description: Serviceability decision.\n' +
+      '          content:\n' +
+      '            application/json:\n' +
+      '              schema:\n' +
+      "                $ref: '#/components/schemas/ServiceabilityEnvelope'\n" +
+      "        '400':\n" +
+      '          description: Invalid request.\n' +
+      "        '503':\n" +
+      '          description: Serviceability persistence is unavailable.\n' +
+      'components:\n' +
+      '  schemas:\n' +
+      '    ResponseMeta:\n' +
+      '      type: object\n' +
+      '      required: [requestId, timestamp, version]\n' +
+      '      properties:\n' +
+      '        requestId: { type: string, format: uuid }\n' +
+      '        timestamp: { type: string, format: date-time }\n' +
+      '        version: { type: string, const: v1 }\n' +
+      '    PaginationMeta:\n' +
+      '      type: object\n' +
+      '      required: [page, pageSize, totalItems, totalPages, hasNextPage, hasPreviousPage]\n' +
+      '      properties:\n' +
+      '        page: { type: integer, minimum: 1 }\n' +
+      '        pageSize: { type: integer, minimum: 1 }\n' +
+      '        totalItems: { type: integer, minimum: 0 }\n' +
+      '        totalPages: { type: integer, minimum: 0 }\n' +
+      '        hasNextPage: { type: boolean }\n' +
+      '        hasPreviousPage: { type: boolean }\n' +
+      '    Money:\n' +
+      '      type: object\n' +
+      '      required: [amount, currency]\n' +
+      '      properties:\n' +
+      "        amount: { type: string, pattern: '^\\d+ }\n" +
+      '        currency: { type: string, enum: [IRR] }\n' +
+      '    ProductSummary:\n' +
+      '      type: object\n' +
+      '      required: [id, variantId, sku, nameFa, fulfillmentClass, freshnessClaim, price, lifecycle]\n' +
+      '      properties:\n' +
+      '        id: { type: string, format: uuid }\n' +
+      '        variantId: { type: string, format: uuid }\n' +
+      '        sku: { type: string }\n' +
+      '        nameFa: { type: string }\n' +
+      '        fulfillmentClass:\n' +
+      '          type: string\n' +
+      '          enum:\n' +
+      '            [\n' +
+      '              SIGNATURE_FRESH,\n' +
+      '              PACKAGED_TRADITIONAL,\n' +
+      '              PACKAGED_FANTASY,\n' +
+      '              PACKAGED_DIETARY,\n' +
+      '              LIMITED_EDITION,\n' +
+      '            ]\n' +
+      '        freshnessClaim:\n' +
+      '          type: string\n' +
+      '          enum: [FRESHLY_PRODUCED, PACKAGED, SHELF_STABLE, NONE]\n' +
+      "        price: { $ref: '#/components/schemas/Money' }\n" +
+      '        bakeryBranchId: { type: string, format: uuid }\n' +
+      '        mediaRef: { type: string }\n' +
+      '        lifecycle: { type: string, enum: [DRAFT, ACTIVE, SUSPENDED, RETIRED] }\n' +
+      '    CatalogPage:\n' +
+      '      type: object\n' +
+      '      required: [success, data, meta]\n' +
+      '      properties:\n' +
+      '        success: { type: boolean, const: true }\n' +
+      '        data:\n' +
+      '          type: array\n' +
+      "          items: { $ref: '#/components/schemas/ProductSummary' }\n" +
+      '        meta:\n' +
+      '          allOf:\n' +
+      "            - { $ref: '#/components/schemas/ResponseMeta' }\n" +
+      '            - type: object\n' +
+      '              required: [pagination]\n' +
+      '              properties:\n' +
+      "                pagination: { $ref: '#/components/schemas/PaginationMeta' }\n" +
+      '    ServiceabilityRequest:\n' +
+      '      type: object\n' +
+      '      required: [cityId, latitude, longitude]\n' +
+      '      properties:\n' +
+      '        cityId: { type: string, format: uuid }\n' +
+      '        latitude: { type: number, minimum: -90, maximum: 90 }\n' +
+      '        longitude: { type: number, minimum: -180, maximum: 180 }\n' +
+      '        requestedAt: { type: string, format: date-time }\n' +
+      '    ServiceabilityDecision:\n' +
+      '      type: object\n' +
+      '      required: [serviceable, evaluatedAt]\n' +
+      '      properties:\n' +
+      '        serviceable: { type: boolean }\n' +
+      '        operationalZoneId: { type: string, format: uuid }\n' +
+      '        serviceAreaId: { type: string, format: uuid }\n' +
+      '        reason:\n' +
+      '          type: string\n' +
+      '          enum: [OUTSIDE_CITY, OUTSIDE_SERVICE_AREA, ZONE_SUSPENDED]\n' +
+      '        evaluatedAt: { type: string, format: date-time }\n' +
+      '    ServiceabilityEnvelope:\n' +
+      '      type: object\n' +
+      '      required: [success, data, meta]\n' +
+      '      properties:\n' +
+      '        success: { type: boolean, const: true }\n' +
+      "        data: { $ref: '#/components/schemas/ServiceabilityDecision' }\n" +
+      "        meta: { $ref: '#/components/schemas/ResponseMeta' }\n" +
+      '    HealthResponse:\n' +
+      '      type: object\n' +
+      '      required: [success, data, meta]\n' +
+      '      properties:\n' +
+      '        success: { type: boolean, const: true }\n' +
+      '        data:\n' +
+      '          type: object\n' +
+      '          required: [status, uptime, version, checks]\n' +
+      '          properties:\n' +
+      '            status: { type: string, enum: [healthy, degraded, unhealthy] }\n' +
+      '            uptime: { type: number, minimum: 0 }\n' +
+      '            version: { type: string }\n' +
+      '            checks: { type: array, items: { type: object } }\n' +
+      "        meta: { $ref: '#/components/schemas/ResponseMeta' }\n" +
+      ' }\n' +
+      '        currency: { type: string, enum: [IRR] }\n' +
+      '    ProductSummary:\n' +
+      '      type: object\n' +
+      '      required: [id, variantId, sku, nameFa, fulfillmentClass, freshnessClaim, price, lifecycle]\n' +
+      '      properties:\n' +
+      '        id: { type: string, format: uuid }\n' +
+      '        variantId: { type: string, format: uuid }\n' +
+      '        sku: { type: string }\n' +
+      '        nameFa: { type: string }\n' +
+      '        fulfillmentClass:\n' +
+      '          type: string\n' +
+      '          enum:\n' +
+      '            [\n' +
+      '              SIGNATURE_FRESH,\n' +
+      '              PACKAGED_TRADITIONAL,\n' +
+      '              PACKAGED_FANTASY,\n' +
+      '              PACKAGED_DIETARY,\n' +
+      '              LIMITED_EDITION,\n' +
+      '            ]\n' +
+      '        freshnessClaim:\n' +
+      '          type: string\n' +
+      '          enum: [FRESHLY_PRODUCED, PACKAGED, SHELF_STABLE, NONE]\n' +
+      "        price: { $ref: '#/components/schemas/Money' }\n" +
+      '        bakeryBranchId: { type: string, format: uuid }\n' +
+      '        mediaRef: { type: string }\n' +
+      '        lifecycle: { type: string, enum: [DRAFT, ACTIVE, SUSPENDED, RETIRED] }\n' +
+      '    CatalogPage:\n' +
+      '      type: object\n' +
+      '      required: [success, data, meta]\n' +
+      '      properties:\n' +
+      '        success: { type: boolean, const: true }\n' +
+      '        data:\n' +
+      '          type: array\n' +
+      "          items: { $ref: '#/components/schemas/ProductSummary' }\n" +
+      '        meta:\n' +
+      '          allOf:\n' +
+      "            - { $ref: '#/components/schemas/ResponseMeta' }\n" +
+      '            - type: object\n' +
+      '              required: [pagination]\n' +
+      '              properties:\n' +
+      "                pagination: { $ref: '#/components/schemas/PaginationMeta' }\n" +
+      '    ServiceabilityRequest:\n' +
+      '      type: object\n' +
+      '      required: [cityId, latitude, longitude]\n' +
+      '      properties:\n' +
+      '        cityId: { type: string, format: uuid }\n' +
+      '        latitude: { type: number, minimum: -90, maximum: 90 }\n' +
+      '        longitude: { type: number, minimum: -180, maximum: 180 }\n' +
+      '        requestedAt: { type: string, format: date-time }\n' +
+      '    ServiceabilityDecision:\n' +
+      '      type: object\n' +
+      '      required: [serviceable, evaluatedAt]\n' +
+      '      properties:\n' +
+      '        serviceable: { type: boolean }\n' +
+      '        operationalZoneId: { type: string, format: uuid }\n' +
+      '        serviceAreaId: { type: string, format: uuid }\n' +
+      '        reason:\n' +
+      '          type: string\n' +
+      '          enum: [OUTSIDE_CITY, OUTSIDE_SERVICE_AREA, ZONE_SUSPENDED]\n' +
+      '        evaluatedAt: { type: string, format: date-time }\n' +
+      '    ServiceabilityEnvelope:\n' +
+      '      type: object\n' +
+      '      required: [success, data, meta]\n' +
+      '      properties:\n' +
+      '        success: { type: boolean, const: true }\n' +
+      "        data: { $ref: '#/components/schemas/ServiceabilityDecision' }\n" +
+      "        meta: { $ref: '#/components/schemas/ResponseMeta' }\n" +
+      '    HealthResponse:\n' +
+      '      type: object\n' +
+      '      required: [success, data, meta]\n' +
+      '      properties:\n' +
+      '        success: { type: boolean, const: true }\n' +
+      '        data:\n' +
+      '          type: object\n' +
+      '          required: [status, uptime, version, checks]\n' +
+      '          properties:\n' +
+      '            status: { type: string, enum: [healthy, degraded, unhealthy] }\n' +
+      '            uptime: { type: number, minimum: 0 }\n' +
+      '            version: { type: string }\n' +
+      '            checks: { type: array, items: { type: object } }\n' +
+      "        meta: { $ref: '#/components/schemas/ResponseMeta' }\n",
+    position: {
+      start: { line: 104, column: 49, offset: 3346 },
+      end: { line: 105, column: 1, offset: 3347 }
+    },
+    [cause]: te [YAMLParseError]: Missing closing 'quote
+        at onError (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:117:350)
+        at c (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:99:1282)
+        at La (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:99:2124)
+        at Jn (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:99:1388)
+        at Rs (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:114:429)
+        at qs (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:114:2250)
+        at vi (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:82:963)
+        at Bs (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:84:202)
+        at Di (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:84:763)
+        at qs (file:///tmp/alo-noon-format/node_modules/prettier/plugins/yaml.mjs:114:2364) {
+      code: 'MISSING_CHAR',
+      pos: [ 3346, 3347 ]
+    }
+  },
+  codeFrame: '  102 |       required: [amount, currency]\n' +
+    '  103 |       properties:\n' +
+    "> 104 |         amount: { type: string, pattern: '^\\d+ }\n" +
+    '      |                                                 ^\n' +
+    '> 105 |         currency: { type: string, enum: [IRR] }\n' +
+    '      | ^\n' +
+    '  106 |     ProductSummary:\n' +
+    '  107 |       type: object\n' +
+    '  108 |       required: [id, variantId, sku, nameFa, fulfillmentClass, freshnessClaim, price, lifecycle]'
+}
+
+Node.js v24.14.0
