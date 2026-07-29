@@ -42,7 +42,9 @@ are first-class user experience requirements.
 
 ## Deferred
 
-- Production authentication and authorization.
+- Approved production SMS-provider integration and provider-specific delivery
+  operations. The Phase 2B OTP, session, RBAC, and audit foundations are
+  implemented independently of a provider.
 - Ordering UI and transactional ordering endpoints.
 - Payment provider, wallet, ledger, refunds, or settlement execution.
 - External CRM, notification, analytics, maps, or courier integrations.

@@ -1,10 +1,11 @@
 openapi: 3.1.0
 info:
   title: Alo Noon API
-  version: 0.2.0
+  version: 0.3.0
   description: >-
-    Phase 2A contract. Operational endpoints, read-only catalog discovery, and
-    geographic serviceability evaluation are implemented.
+    Phase 2B contract. Operational endpoints, read-only discovery,
+    serviceability, OTP identity verification, revocable sessions, and scoped
+    authorization foundations are implemented.
 servers:
   - url: http://localhost:3001
 paths:
@@ -57,6 +58,78 @@ paths:
           description: Invalid query parameters.
         '503':
           description: Catalog persistence is unavailable.
+  /api/v1/auth/otp/request:
+    post:
+      operationId: requestOtp
+      summary: Request a generic mobile verification challenge.
+      description: >-
+        Responses never disclose whether the mobile number already belongs to
+        an account. Delivery depends on an approved provider configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpRequest' }
+      responses:
+        '202':
+          description: Challenge accepted for delivery.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpRequestEnvelope' }
+        '400':
+          description: Invalid E.164 mobile number.
+        '429':
+          description: Cooldown or bounded request limit is active.
+          headers:
+            Retry-After:
+              schema: { type: integer, minimum: 1 }
+        '503':
+          description: Verification delivery is unavailable.
+  /api/v1/auth/otp/verify:
+    post:
+      operationId: verifyOtp
+      summary: Consume a verification challenge and create a server-side session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpVerifyRequest' }
+      responses:
+        '200':
+          description: >-
+            Verification succeeded. A hashed server-side session is issued by
+            HttpOnly cookie; no token is returned in the response body.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionEnvelope' }
+        '400':
+          description: Malformed challenge or code.
+        '401':
+          description: Challenge is invalid, expired, consumed, or over-attempted.
+  /api/v1/auth/session:
+    get:
+      operationId: getCurrentSession
+      summary: Inspect the current authenticated and authorized session.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current session and active scoped grants.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionEnvelope' }
+        '401':
+          description: Session is missing, expired, revoked, or unauthorized.
+    delete:
+      operationId: revokeCurrentSession
+      summary: Revoke the current server-side session.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Session is revoked or was already absent.
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -79,6 +152,15 @@ paths:
         '503':
           description: Serviceability persistence is unavailable.
 components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: alo_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
   schemas:
     ResponseMeta:
       type: object
@@ -103,6 +185,69 @@ components:
       properties:
         amount: { type: string, pattern: '^\d+$' }
         currency: { type: string, enum: [IRR] }
+    OtpRequest:
+      type: object
+      required: [mobileE164]
+      properties:
+        mobileE164:
+          type: string
+          pattern: '^\+[1-9]\d{7,14}$'
+    OtpRequestAccepted:
+      type: object
+      required: [challengeId, expiresAt, retryAfterSeconds]
+      properties:
+        challengeId: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time }
+        retryAfterSeconds: { type: integer, minimum: 0 }
+    OtpRequestEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/OtpRequestAccepted' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    OtpVerifyRequest:
+      type: object
+      required: [challengeId, code]
+      properties:
+        challengeId: { type: string, format: uuid }
+        code: { type: string, pattern: '^\d{6}$' }
+    AccessGrant:
+      type: object
+      required: [roleCode, permissions, scopeType, scopeId, expiresAt]
+      properties:
+        roleCode: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+        scopeType:
+          type: string
+          enum: [GLOBAL, CITY, OPERATIONAL_ZONE, BAKERY_BRANCH, COURIER_PARTNER, SELF]
+        scopeId:
+          type: [string, 'null']
+          format: uuid
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+    SessionContext:
+      type: object
+      required: [accountId, customerId, expiresAt, grants]
+      properties:
+        accountId: { type: string, format: uuid }
+        customerId:
+          type: [string, 'null']
+          format: uuid
+        expiresAt: { type: string, format: date-time }
+        grants:
+          type: array
+          items: { $ref: '#/components/schemas/AccessGrant' }
+    SessionEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/SessionContext' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     ProductSummary:
       type: object
       required: [id, variantId, sku, nameFa, fulfillmentClass, freshnessClaim, price, lifecycle]

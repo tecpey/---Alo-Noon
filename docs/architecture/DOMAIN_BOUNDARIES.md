@@ -15,12 +15,14 @@ This is the routing index; it does not duplicate detailed rules.
 | Promotions/loyalty  | [`SERVICE_BOUNDARIES.md`](SERVICE_BOUNDARIES.md)                                                         | documented only                                |
 | Notifications       | [`SERVICE_BOUNDARIES.md`](SERVICE_BOUNDARIES.md)                                                         | outbox-ready; provider deferred                |
 
-Identity roles are future authorities referenced by actor types; no production
-authentication or authorization is implemented.
+Identity accounts, OTP challenges, revocable sessions, roles, permissions, and
+scope grants are implemented in Phase 2B. Provider-specific SMS delivery and
+administrative grant-management interfaces remain deferred.
 
 ## Status
 
 - **Implemented:** the routed boundaries and Phase 1 foundations shown above.
-- **Planned:** Phase 2 application services within these boundaries.
-- **Deferred:** production authentication, providers, and independent services.
+- **Planned:** further Phase 2 application services within these boundaries.
+- **Deferred:** approved SMS delivery and other providers, grant-management UI,
+  and independent services.
 - **Open:** extraction thresholds and any future multi-tenant isolation model.

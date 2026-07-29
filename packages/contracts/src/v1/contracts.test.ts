@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   addressInputSchema,
   eventEnvelopeSchema,
+  otpRequestSchema,
+  otpVerifySchema,
   orderDraftInputSchema,
   serviceabilityRequestSchema,
+  sessionContextSchema,
 } from './index'
 
 const validAddress = {
@@ -72,5 +75,45 @@ describe('v1 order and event contracts', () => {
         payload: { state: 'DRAFT' },
       }),
     ).toBeDefined()
+  })
+})
+
+describe('v1 identity contracts', () => {
+  it('accepts E.164 OTP input and a scoped session context', () => {
+    expect(otpRequestSchema.parse({ mobileE164: '+989111234567' })).toEqual({
+      mobileE164: '+989111234567',
+    })
+    expect(
+      otpVerifySchema.parse({
+        challengeId: '5ec50854-4e4f-4cb7-b51a-cabf39dfe26f',
+        code: '004231',
+      }),
+    ).toBeDefined()
+    expect(
+      sessionContextSchema.parse({
+        accountId: 'bde6b5bd-f377-493b-a6c0-71dc3837ad88',
+        customerId: '0af09971-0ef8-4033-912d-238b68b8feb1',
+        expiresAt: '2026-08-28T12:00:00.000Z',
+        grants: [
+          {
+            roleCode: 'CUSTOMER',
+            permissions: ['session.self.read'],
+            scopeType: 'SELF',
+            scopeId: 'bde6b5bd-f377-493b-a6c0-71dc3837ad88',
+            expiresAt: null,
+          },
+        ],
+      }),
+    ).toBeDefined()
+  })
+
+  it('rejects local phone formats and malformed OTP codes', () => {
+    expect(() => otpRequestSchema.parse({ mobileE164: '09111234567' })).toThrow()
+    expect(() =>
+      otpVerifySchema.parse({
+        challengeId: '5ec50854-4e4f-4cb7-b51a-cabf39dfe26f',
+        code: '12345',
+      }),
+    ).toThrow()
   })
 })
