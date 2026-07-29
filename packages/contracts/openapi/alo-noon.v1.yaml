@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: Alo Noon API
-  version: 0.3.0
+  version: 0.4.0
   description: >-
-    Phase 2B contract. Operational endpoints, read-only discovery,
-    serviceability, OTP identity verification, revocable sessions, and scoped
-    authorization foundations are implemented.
+    Phase 2C contract. Operational endpoints, active-city and catalog
+    discovery, serviceability, OTP identity verification, revocable sessions,
+    scoped authorization, and the first customer application integration are
+    implemented.
 servers:
   - url: http://localhost:3001
 paths:
@@ -58,6 +59,18 @@ paths:
           description: Invalid query parameters.
         '503':
           description: Catalog persistence is unavailable.
+  /api/v1/serviceability/cities:
+    get:
+      operationId: listActiveServiceCities
+      summary: List active cities with at least one active service area.
+      responses:
+        '200':
+          description: Public cities currently eligible for service discovery.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActiveCitiesEnvelope' }
+        '503':
+          description: City persistence is unavailable.
   /api/v1/auth/otp/request:
     post:
       operationId: requestOtp
@@ -185,6 +198,23 @@ components:
       properties:
         amount: { type: string, pattern: '^\d+$' }
         currency: { type: string, enum: [IRR] }
+    ActiveCitySummary:
+      type: object
+      required: [id, code, nameFa, timezone]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, maxLength: 32 }
+        nameFa: { type: string, maxLength: 120 }
+        timezone: { type: string, maxLength: 64 }
+    ActiveCitiesEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ActiveCitySummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     OtpRequest:
       type: object
       required: [mobileE164]

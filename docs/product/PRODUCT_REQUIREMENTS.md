@@ -20,7 +20,7 @@ Initial catalog families are signature fresh, packaged traditional, packaged
 fantasy, packaged dietary, and future limited edition products. Persian and RTL
 are first-class user experience requirements.
 
-## Implemented in Phase 1
+## Implemented through Phase 2C
 
 - Framework-independent product classification and order transition policy.
 - Versioned runtime contracts for catalog, branch, address, serviceability,
@@ -29,12 +29,16 @@ are first-class user experience requirements.
   delivery, customer events, outbox, audit, support, and incidents.
 - CRM timeline/event persistence foundations with consent and PII-minimization
   rules.
+- Read-only active-city, serviceability, and catalog APIs under the reviewed
+  OpenAPI contract.
+- OTP identity, revocable server-side sessions, scoped RBAC, and the first
+  Persian-first customer application flow through location and catalog display.
 
 ## Planned
 
 - Babol zone configuration through operations tools.
-- Read-only catalog and serviceability APIs after an OpenAPI contract is
-  reviewed.
+- Approved production SMS-provider integration, address persistence, cart, and
+  server-side quote.
 - Scheduled delivery, subscriptions, loyalty, promotions, dispatch, partner
   settlement, and multi-city operations.
 - Electric-motorcycle operations and an inclusive women courier employment
@@ -45,7 +49,7 @@ are first-class user experience requirements.
 - Approved production SMS-provider integration and provider-specific delivery
   operations. The Phase 2B OTP, session, RBAC, and audit foundations are
   implemented independently of a provider.
-- Ordering UI and transactional ordering endpoints.
+- Transactional ordering endpoints and post-quote ordering UI.
 - Payment provider, wallet, ledger, refunds, or settlement execution.
 - External CRM, notification, analytics, maps, or courier integrations.
 - Multi-tenancy and white-label data partitioning until a real tenant boundary

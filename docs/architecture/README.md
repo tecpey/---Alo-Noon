@@ -53,10 +53,12 @@ Zod transport schemas. Neither exposes Prisma models.
   domain/contract/persistence foundations, and the Phase 2A read-only catalog
   and serviceability application slice. Phase 2B adds OTP contracts, revocable
   server-side sessions, deny-by-default scoped RBAC, and audit-safe identity
-  persistence.
-- **Planned:** cart/quote application services and scoped administrative catalog
-  management.
-- **Deferred:** transactional orders, payments, approved SMS-provider
-  integration, dispatch, CRM UI, and other external providers.
+  persistence. Phase 2C connects the customer application to active-city
+  discovery, foreground-location serviceability, the catalog, and revocable
+  identity sessions through a contract-validating client.
+- **Planned:** approved SMS-provider integration, cart/quote application
+  services, and scoped administrative catalog management.
+- **Deferred:** transactional orders, payments, dispatch, CRM UI, and other
+  external providers.
 - **Open:** Babol service polygons, cancellation policy, PostGIS, and settlement
   provider decisions.

@@ -24,9 +24,10 @@
 3. `03-architecture/DOMAIN_MODEL_FA.md`
 4. `architecture/PHASE_1_DOMAIN_FOUNDATION.md`
 5. `architecture/PHASE_2B_IDENTITY_ACCESS.md`
-6. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
-7. `06-security/SECURITY_BASELINE_FA.md`
-8. `decisions/`
+6. `architecture/PHASE_2C_CUSTOMER_APP_INTEGRATION.md`
+7. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
+8. `06-security/SECURITY_BASELINE_FA.md`
+9. `decisions/`
 
 ## اسناد جدید مرجع
 
@@ -45,6 +46,11 @@ MVP را تعریف می‌کند.
 
 OTP امن، Session opaque و قابل ابطال، مدل نقش/مجوز/Scope، Audit بدون افشای
 Secret یا PII و مرز اتصال آینده ارائه‌دهنده پیامک را تعریف می‌کند.
+
+### `architecture/PHASE_2C_CUSTOMER_APP_INTEGRATION.md`
+
+اتصال واقعی اپ مشتری به Session، شهرهای فعال، مجوز موقعیت، محدوده سرویس و
+کاتالوگ و همچنین قواعد CORS و برچسب‌گذاری دقیق تازگی محصول را تعریف می‌کند.
 
 ## طبقه‌بندی اسناد
 
@@ -66,9 +72,9 @@ Secret یا PII و مرز اتصال آینده ارائه‌دهنده پیام
 
 ## وضعیت فعلی
 
-ریپو در Phase 2B Identity & Access است. مدل دامنه و دیتابیس، قراردادهای
-نسخه‌دار، API کاتالوگ/محدوده سرویس، OTP، Session سروری قابل ابطال، RBAC
-محدوده‌محور، Migration، Outbox و Audit foundation همراه تست‌ها پیاده‌سازی
+ریپو در Phase 2C Customer App Integration است. مدل دامنه و دیتابیس، قراردادهای
+نسخه‌دار، API شهرهای فعال/کاتالوگ/محدوده سرویس، OTP، Session سروری قابل ابطال،
+RBAC محدوده‌محور و اتصال واقعی اپ مشتری به این جریان‌ها همراه تست‌ها پیاده‌سازی
 شده‌اند. ارائه‌دهنده production پیامک، Commerce تراکنشی، پرداخت، اعلان delivery
 و چاپ اجرایی هنوز برنامه‌ریزی‌شده‌اند و نباید قابلیت تحویل‌شده معرفی شوند.
 
@@ -82,3 +88,4 @@ Secret یا PII و مرز اتصال آینده ارائه‌دهنده پیام
 6. `architecture/SERVICE_BOUNDARIES.md`
 7. `decisions/ADR-0004` تا `ADR-0007`
 8. `architecture/PHASE_2B_IDENTITY_ACCESS.md`
+9. `architecture/PHASE_2C_CUSTOMER_APP_INTEGRATION.md`

@@ -6,6 +6,7 @@ import type { HealthResponse, ReadyResponse, ResponseMeta } from '@alo-noon/cont
 import {
   registerDiscoveryRoutes,
   type CatalogRepository,
+  type CityRepository,
   type ServiceabilityRepository,
 } from './modules/discovery.js'
 import { registerAuthRoutes, type AuthDependencies } from './modules/auth.js'
@@ -13,8 +14,10 @@ import { registerAuthRoutes, type AuthDependencies } from './modules/auth.js'
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
   catalogRepository?: CatalogRepository
+  cityRepository?: CityRepository
   serviceabilityRepository?: ServiceabilityRepository
   auth?: AuthDependencies
+  corsOrigins?: string[]
   logger?: boolean
 }
 
@@ -33,13 +36,23 @@ const unavailableServiceabilityRepository: ServiceabilityRepository = {
   },
 }
 
+const unavailableCityRepository: CityRepository = {
+  listActiveCities: async () => {
+    throw new Error('City repository unavailable')
+  },
+}
+
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? false })
   const readinessCheck = options.readinessCheck ?? (async () => true)
 
-  await app.register(cors, { origin: false })
+  await app.register(cors, {
+    origin: options.corsOrigins?.length ? options.corsOrigins : false,
+    credentials: true,
+  })
   registerDiscoveryRoutes(app, {
     catalogRepository: options.catalogRepository ?? unavailableCatalogRepository,
+    cityRepository: options.cityRepository ?? unavailableCityRepository,
     serviceabilityRepository:
       options.serviceabilityRepository ?? unavailableServiceabilityRepository,
   })

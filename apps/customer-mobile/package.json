@@ -16,8 +16,11 @@
     "clean": "rm -rf dist .expo coverage"
   },
   "dependencies": {
+    "@alo-noon/contracts": "workspace:*",
+    "@alo-noon/design-tokens": "workspace:*",
     "@expo/metro-runtime": "57.0.7",
     "expo": "57.0.8",
+    "expo-location": "57.0.6",
     "expo-status-bar": "57.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",

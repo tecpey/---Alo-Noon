@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
-import { moneySchema, paginationParamsSchema, uuidSchema } from './common'
+import {
+  moneySchema,
+  paginationMetaSchema,
+  paginationParamsSchema,
+  responseMetaSchema,
+  uuidSchema,
+} from './common'
 
 export const productFulfillmentClassSchema = z.enum([
   'SIGNATURE_FRESH',
@@ -59,3 +65,12 @@ export const catalogListQuerySchema = paginationParamsSchema
     operationalZoneId: uuidSchema.optional(),
   })
 export type CatalogListQuery = z.infer<typeof catalogListQuerySchema>
+
+export const catalogPageSchema = z.object({
+  success: z.literal(true),
+  data: z.array(productSummarySchema),
+  meta: responseMetaSchema.extend({
+    pagination: paginationMetaSchema,
+  }),
+})
+export type CatalogPageContract = z.infer<typeof catalogPageSchema>

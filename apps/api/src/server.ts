@@ -1,9 +1,10 @@
-import { getEnv } from '@alo-noon/config'
+import { getEnv, parseCorsOrigins } from '@alo-noon/config'
 import { PrismaClient } from '@alo-noon/database'
 
 import { buildApp } from './app.js'
 import {
   createPrismaCatalogRepository,
+  createPrismaCityRepository,
   createPrismaServiceabilityRepository,
 } from './modules/discovery.js'
 import { createPrismaAuthRepository, type OtpDeliveryProvider } from './modules/auth.js'
@@ -22,7 +23,9 @@ const app = await buildApp({
     return true
   },
   catalogRepository: createPrismaCatalogRepository(prisma),
+  cityRepository: createPrismaCityRepository(prisma),
   serviceabilityRepository: createPrismaServiceabilityRepository(prisma),
+  corsOrigins: parseCorsOrigins(env.CORS_ORIGINS),
   auth: {
     repository: createPrismaAuthRepository(prisma),
     deliveryProvider: unavailableOtpDeliveryProvider,
