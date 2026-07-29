@@ -366,16 +366,20 @@ function pointOnSegment(
   start: Position,
   end: Position,
 ): boolean {
-  const cross =
-    (latitude - start[1]) * (end[0] - start[0]) - (longitude - start[0]) * (end[1] - start[1])
+  const deltaLongitude = end[0] - start[0]
+  const deltaLatitude = end[1] - start[1]
+  const lengthSquared = deltaLongitude ** 2 + deltaLatitude ** 2
+
+  if (lengthSquared <= 1e-20) {
+    const pointDistanceSquared = (longitude - start[0]) ** 2 + (latitude - start[1]) ** 2
+    return pointDistanceSquared <= 1e-20
+  }
+
+  const cross = (latitude - start[1]) * deltaLongitude - (longitude - start[0]) * deltaLatitude
   if (Math.abs(cross) > 1e-10) return false
 
-  const dot =
-    (longitude - start[0]) * (end[0] - start[0]) + (latitude - start[1]) * (end[1] - start[1])
-  if (dot < 0) return false
-
-  const lengthSquared = (end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2
-  return dot <= lengthSquared
+  const dot = (longitude - start[0]) * deltaLongitude + (latitude - start[1]) * deltaLatitude
+  return dot >= 0 && dot <= lengthSquared
 }
 
 function responseMeta(): ResponseMeta {
