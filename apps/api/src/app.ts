@@ -42,19 +42,16 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       options.serviceabilityRepository ?? unavailableServiceabilityRepository,
   })
 
-  app.get(
-    '/health',
-    async (): Promise<HealthResponse> => ({
-      success: true,
-      data: {
-        status: 'healthy',
-        uptime: process.uptime(),
-        version: process.env['npm_package_version'] ?? '0.0.1',
-        checks: [{ name: 'process', status: 'pass' }],
-      },
-      meta: responseMeta(),
-    }),
-  )
+  app.get('/health', async (): Promise<HealthResponse> => ({
+    success: true,
+    data: {
+      status: 'healthy',
+      uptime: process.uptime(),
+      version: process.env['npm_package_version'] ?? '0.0.1',
+      checks: [{ name: 'process', status: 'pass' }],
+    },
+    meta: responseMeta(),
+  }))
 
   app.get('/ready', async (_request, reply): Promise<ReadyResponse> => {
     const databaseReady = await readinessCheck().catch(() => false)
