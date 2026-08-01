@@ -12,3 +12,4 @@ This directory set is the implementation authority for Issue #12.
 ## Status
 
 These documents are proposed architecture, not implemented capability. Phase 2E remains blocked until the acceptance and exit criteria are proven.
+
