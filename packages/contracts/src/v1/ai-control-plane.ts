@@ -81,12 +81,24 @@ export const aiProposalAdmissionRequestSchema = z.object({
   requestedAt: isoDateTimeSchema,
 })
 
-export const aiProposalAdmissionDecisionSchema = z.object({
-  outcome: z.enum(['ADMIT_ADVISORY_PROPOSAL', 'ADMIT_APPROVED_PROPOSAL', 'DENY']),
+const admittedDecisionSchema = z.object({
+  outcome: z.enum(['ADMIT_ADVISORY_PROPOSAL', 'ADMIT_APPROVED_PROPOSAL']),
+  policyVersion: z.string().min(1).max(64),
+  reasons: z.array(z.never()).default([]),
+  executionAuthorized: z.literal(false),
+})
+
+const deniedDecisionSchema = z.object({
+  outcome: z.literal('DENY'),
   policyVersion: z.string().min(1).max(64),
   reasons: z.array(z.string().min(1)).min(1),
   executionAuthorized: z.literal(false),
 })
+
+export const aiProposalAdmissionDecisionSchema = z.discriminatedUnion('outcome', [
+  admittedDecisionSchema,
+  deniedDecisionSchema,
+])
 
 export type AiProposalAdmissionRequest = z.infer<typeof aiProposalAdmissionRequestSchema>
 export type AiProposalAdmissionDecision = z.infer<typeof aiProposalAdmissionDecisionSchema>
