@@ -135,6 +135,7 @@ describe('v1 identity contracts', () => {
       sessionContextSchema.parse({
         tenantId: '00000000-0000-4000-8000-000000000001',
         accountId: 'bde6b5bd-f377-493b-a6c0-71dc3837ad88',
+          tenantId: '719f89ae-84bf-4f57-83a6-573ffe0ac9c6',
         customerId: '0af09971-0ef8-4033-912d-238b68b8feb1',
         expiresAt: '2026-08-28T12:00:00.000Z',
         grants: [
@@ -173,6 +174,7 @@ describe('v1 identity contracts', () => {
         data: {
           tenantId: '00000000-0000-4000-8000-000000000001',
         accountId: 'bde6b5bd-f377-493b-a6c0-71dc3837ad88',
+          tenantId: '719f89ae-84bf-4f57-83a6-573ffe0ac9c6',
           customerId: '0af09971-0ef8-4033-912d-238b68b8feb1',
           expiresAt: '2026-08-28T12:00:00.000Z',
           grants: [],
