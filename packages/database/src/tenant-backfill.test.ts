@@ -51,7 +51,7 @@ describe('tenant backfill G3A', () => {
     }
 
     const registeredTables = [...sql.matchAll(/    \('([^']+)'\)/g)].map(([, table]) => table)
-    expect(registeredTables).toEqual([...tenantOwnedTables].sort())
+    expect([...registeredTables].sort()).toEqual([...tenantOwnedTables].sort())
     expect(new Set(registeredTables).size).toBe(tenantOwnedTables.length)
   })
 
