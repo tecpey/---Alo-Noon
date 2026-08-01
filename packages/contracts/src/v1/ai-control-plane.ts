@@ -66,12 +66,14 @@ export const aiProposalAdmissionRequestSchema = z.object({
   proposalId: uuidSchema,
   tenantId: uuidSchema,
   requestedByAccountId: uuidSchema,
-  agent: z.object({
-    role: aiAgentRoleSchema,
-    charterVersion: z.string().min(1).max(64),
-    modelProvider: z.string().min(1).max(64),
-    modelVersion: z.string().min(1).max(128),
-  }),
+  agent: z
+    .object({
+      role: aiAgentRoleSchema,
+      charterVersion: z.string().min(1).max(64),
+      modelProvider: z.string().min(1).max(64),
+      modelVersion: z.string().min(1).max(128),
+    })
+    .strict(),
   action: aiActionSchema,
   purpose: z.string().min(1).max(200),
   policyVersion: z.string().min(1).max(64),
@@ -79,7 +81,7 @@ export const aiProposalAdmissionRequestSchema = z.object({
   evidence: z.array(aiEvidenceReferenceSchema).min(1),
   approvalId: uuidSchema.optional(),
   requestedAt: isoDateTimeSchema,
-})
+}).strict()
 
 const admittedDecisionSchema = z.object({
   outcome: z.enum(['ADMIT_ADVISORY_PROPOSAL', 'ADMIT_APPROVED_PROPOSAL']),
