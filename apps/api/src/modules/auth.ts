@@ -12,7 +12,7 @@ import {
   type ResponseMeta,
   type SessionContext,
 } from '@alo-noon/contracts'
-import type { PrismaClient } from '@alo-noon/database'
+import type { Prisma, PrismaClient } from '@alo-noon/database'
 
 const OTP_TTL_MS = 5 * 60 * 1000
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000
