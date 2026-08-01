@@ -65,19 +65,19 @@ export const aiHumanApprovalSchema = z.object({
 export const aiProposalAdmissionRequestSchema = z.object({
   proposalId: uuidSchema,
   tenantId: uuidSchema,
+  requestedByAccountId: uuidSchema,
   agent: z.object({
     role: aiAgentRoleSchema,
     charterVersion: z.string().min(1).max(64),
     modelProvider: z.string().min(1).max(64),
     modelVersion: z.string().min(1).max(128),
-    allowedActions: z.array(aiActionSchema).min(1),
   }),
   action: aiActionSchema,
   purpose: z.string().min(1).max(200),
   policyVersion: z.string().min(1).max(64),
   promptInjectionAssessment: z.enum(['PASS', 'FAIL', 'NOT_EVALUATED']),
   evidence: z.array(aiEvidenceReferenceSchema).min(1),
-  approval: aiHumanApprovalSchema.optional(),
+  approvalId: uuidSchema.optional(),
   requestedAt: isoDateTimeSchema,
 })
 
