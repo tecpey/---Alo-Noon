@@ -1,5 +1,6 @@
 export * from './ai-control-plane'
 export * from './ai-observability'
+export * from './ai-sandbox'
 export * from './auth'
 export * from './catalog'
 export * from './commerce'
