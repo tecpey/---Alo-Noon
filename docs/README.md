@@ -9,25 +9,27 @@
 
 ## ترتیب مطالعه برای مدیر محصول و عملیات
 
-1. `00-vision/PRODUCT_VISION_FA.md`
-2. `01-product/CATALOG_AND_FRESHNESS_MODEL_FA.md`
-3. `02-operations/BABOL_PILOT_OPERATING_MODEL_FA.md`
-4. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
-5. `04-crm/CRM_BLUEPRINT_FA.md`
-6. `05-logistics/LOGISTICS_PRICING_AND_PROVIDER_MODEL_FA.md`
-7. `07-roadmap/MVP_ROADMAP_FA.md`
+1. `00-governance/ALO_NOON_PROJECT_GOVERNANCE_FA.md`
+2. `00-vision/PRODUCT_VISION_FA.md`
+3. `01-product/CATALOG_AND_FRESHNESS_MODEL_FA.md`
+4. `02-operations/BABOL_PILOT_OPERATING_MODEL_FA.md`
+5. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
+6. `04-crm/CRM_BLUEPRINT_FA.md`
+7. `05-logistics/LOGISTICS_PRICING_AND_PROVIDER_MODEL_FA.md`
+8. `07-roadmap/MVP_ROADMAP_FA.md`
 
 ## ترتیب مطالعه برای مهندسی
 
-1. `architecture/README.md`
-2. `03-architecture/API_FIRST_ARCHITECTURE_FA.md`
-3. `03-architecture/DOMAIN_MODEL_FA.md`
-4. `architecture/PHASE_1_DOMAIN_FOUNDATION.md`
-5. `architecture/PHASE_2B_IDENTITY_ACCESS.md`
-6. `architecture/PHASE_2C_CUSTOMER_APP_INTEGRATION.md`
-7. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
-8. `06-security/SECURITY_BASELINE_FA.md`
-9. `decisions/`
+1. `00-governance/ALO_NOON_PROJECT_GOVERNANCE_FA.md`
+2. `architecture/README.md`
+3. `03-architecture/API_FIRST_ARCHITECTURE_FA.md`
+4. `03-architecture/DOMAIN_MODEL_FA.md`
+5. `architecture/PHASE_1_DOMAIN_FOUNDATION.md`
+6. `architecture/PHASE_2B_IDENTITY_ACCESS.md`
+7. `architecture/PHASE_2C_CUSTOMER_APP_INTEGRATION.md`
+8. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
+9. `06-security/SECURITY_BASELINE_FA.md`
+10. `decisions/`
 
 ## اسناد جدید مرجع
 
@@ -72,11 +74,13 @@ Secret یا PII و مرز اتصال آینده ارائه‌دهنده پیام
 
 ## وضعیت فعلی
 
-ریپو در Phase 2C Customer App Integration است. مدل دامنه و دیتابیس، قراردادهای
-نسخه‌دار، API شهرهای فعال/کاتالوگ/محدوده سرویس، OTP، Session سروری قابل ابطال،
-RBAC محدوده‌محور و اتصال واقعی اپ مشتری به این جریان‌ها همراه تست‌ها پیاده‌سازی
-شده‌اند. ارائه‌دهنده production پیامک، Commerce تراکنشی، پرداخت، اعلان delivery
-و چاپ اجرایی هنوز برنامه‌ریزی‌شده‌اند و نباید قابلیت تحویل‌شده معرفی شوند.
+ریپو پس از Phase 2D Commerce و Phase G2 Tenant Foundation قرار دارد. Cart و
+Quote سروری، OTP، Session قابل ابطال، RBAC، قراردادهای نسخه‌دار،
+PostgreSQL/Prisma و Tenant foundation افزایشی پیاده‌سازی و در CI تایید شده‌اند.
+Phase G3A برای Backfill کنترل‌شده داده‌های پیش از چندمستاجری در حال بررسی است.
+TenantContext اجباری، تست‌های منفی Cross-tenant، RLS، پرداخت، Quote-to-Order،
+اعلان Delivery و چاپ اجرایی هنوز تکمیل نشده‌اند و نباید قابلیت تحویل‌شده معرفی
+شوند.
 
 ## منابع معتبر وضعیت فعلی
 
