@@ -9,7 +9,6 @@ export interface AiSandboxPatchValidationRequest {
   readonly baseCommitSha: string
   readonly patchArtifactUri: string
   readonly patchDigest: string
-  readonly changedPaths: ReadonlyArray<string>
   readonly requestedAt: Date
 }
 
@@ -29,6 +28,7 @@ export interface AiSandboxPatchValidationTrustContext {
     readonly sandboxProfileVersion: string
     readonly baseCommitSha: string
     readonly patchDigest: string
+    readonly changedPaths: ReadonlyArray<string>
     readonly attestationDigest: string
     readonly completedAt: Date
     readonly networkAccess: false
@@ -41,6 +41,7 @@ export interface AiSandboxPatchValidationTrustContext {
     readonly requiredChecks: ReadonlyArray<string>
     readonly allowedPathPrefixes: ReadonlyArray<string>
     readonly deniedPathPrefixes: ReadonlyArray<string>
+    readonly maxAttestationAgeMs: number
   }
 }
 
@@ -78,18 +79,31 @@ export function evaluateAiSandboxPatchValidation(
   const reasons: string[] = []
   const attestation = trust.attestation
 
-  if (!isValidDate(request.requestedAt) || !isValidDate(trust.evaluatedAt)) {
+  const requestTimeValid = isValidDate(request.requestedAt)
+  const evaluationTimeValid = isValidDate(trust.evaluatedAt)
+  const completionTimeValid = isValidDate(attestation.completedAt)
+  if (!requestTimeValid || !evaluationTimeValid) {
     reasons.push('Request and trusted evaluation timestamps must be valid')
   } else if (request.requestedAt.getTime() > trust.evaluatedAt.getTime()) {
     reasons.push('Request timestamp cannot be later than trusted evaluation time')
   }
-  if (!isValidDate(attestation.completedAt)) {
+  if (!completionTimeValid) {
     reasons.push('Runner completion timestamp must be valid')
+  } else if (requestTimeValid && attestation.completedAt.getTime() < request.requestedAt.getTime()) {
+    reasons.push('Runner completion cannot precede the validation request')
   } else if (
-    isValidDate(trust.evaluatedAt) &&
+    evaluationTimeValid &&
     attestation.completedAt.getTime() > trust.evaluatedAt.getTime()
   ) {
     reasons.push('Runner completion cannot be later than trusted evaluation time')
+  } else if (
+    evaluationTimeValid &&
+    (!Number.isSafeInteger(trust.policy.maxAttestationAgeMs) ||
+      trust.policy.maxAttestationAgeMs <= 0 ||
+      trust.evaluatedAt.getTime() - attestation.completedAt.getTime() >
+        trust.policy.maxAttestationAgeMs)
+  ) {
+    reasons.push('Trusted runner attestation is stale or has an invalid freshness policy')
   }
 
   const identityMatches =
@@ -122,17 +136,17 @@ export function evaluateAiSandboxPatchValidation(
     reasons.push('Sandbox must have no network, secrets, production credentials, or writes')
   }
 
-  if (request.changedPaths.length === 0) reasons.push('Patch must change at least one path')
-  for (const path of request.changedPaths) {
+  if (attestation.changedPaths.length === 0) reasons.push('Attested patch must change at least one path')
+  for (const path of attestation.changedPaths) {
     if (path.startsWith('/') || path.split('/').includes('..')) {
       reasons.push('Absolute paths and traversal are forbidden')
       continue
     }
     if (!trust.policy.allowedPathPrefixes.some((prefix) => pathWithin(path, prefix))) {
-      reasons.push('Changed path is outside the authoritative allow-list')
+      reasons.push('Attested changed path is outside the authoritative allow-list')
     }
     if (trust.policy.deniedPathPrefixes.some((prefix) => pathWithin(path, prefix))) {
-      reasons.push('Changed path is denied by authoritative policy')
+      reasons.push('Attested changed path is denied by authoritative policy')
     }
   }
 
