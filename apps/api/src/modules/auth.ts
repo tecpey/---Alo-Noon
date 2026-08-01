@@ -432,7 +432,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           })
           return { status: 'CREATED', challengeId: input.id }
         },
-        { isolationLevel: 'Serializable' },
+        'Serializable',
       )
     },
 
@@ -597,7 +597,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           })
           return { accountId: account.id, customerId: customer.id }
         },
-        { isolationLevel: 'Serializable' },
+        'Serializable',
       )
     },
 
@@ -630,14 +630,12 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           },
         })
         return loadSessionContext(
-          prisma,
+          transaction,
           input.tokenDigest,
           input.tenantId,
           input.now,
           input.expiresAt,
         )
-    },
-
       })
     },
 
@@ -684,7 +682,6 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
   }
 }
 
-
 async function tenantTransaction<T>(
   prisma: PrismaClient,
   tenantId: string,
@@ -696,7 +693,7 @@ async function tenantTransaction<T>(
       await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
       return operation(transaction)
     },
-    ...(isolationLevel ? [{ isolationLevel }] : []),
+    isolationLevel ? { isolationLevel } : undefined,
   )
 }
 
