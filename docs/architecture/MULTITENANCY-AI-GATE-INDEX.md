@@ -11,5 +11,6 @@ This directory set is the implementation authority for Issue #12.
 
 ## Status
 
-These documents are proposed architecture, not implemented capability. Phase 2E
-remains blocked until the acceptance and exit criteria are proven.
+ADRs are accepted and Phase G2 is implemented. Phase G3A is under review; G3B,
+G4 and G5 remain unimplemented. Phase 2E remains blocked until the acceptance
+and isolation exit criteria are proven.
