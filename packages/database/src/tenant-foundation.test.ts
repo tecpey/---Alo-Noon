@@ -27,10 +27,42 @@ describe('tenant foundation G2', () => {
 
   it('adds tenant indexes to every currently implemented tenant-owned aggregate', () => {
     const sql = readFileSync(migrationUrl, 'utf8')
-    const tables = ["City","OperationalZone","ServiceArea","Customer","Household","HouseholdMember","Address","Bakery","BakeryBranch","BakeryOperatingHours","BakeryCapacitySlot","ProductCategory","Product","ProductVariant","BakeryProductOffering","Cart","CartItem","Quote","QuoteItem","Order","OrderItem","OrderStateTransition","CourierPartner","Courier","Vehicle","DeliveryTask","DeliveryAssignment","Fulfillment","CustomerEvent","SupportCase","DomainEventOutbox","AuditEvent"]
+    const tables = [
+      'City',
+      'OperationalZone',
+      'ServiceArea',
+      'Customer',
+      'Household',
+      'HouseholdMember',
+      'Address',
+      'Bakery',
+      'BakeryBranch',
+      'BakeryOperatingHours',
+      'BakeryCapacitySlot',
+      'ProductCategory',
+      'Product',
+      'ProductVariant',
+      'BakeryProductOffering',
+      'Cart',
+      'CartItem',
+      'Quote',
+      'QuoteItem',
+      'Order',
+      'OrderItem',
+      'OrderStateTransition',
+      'CourierPartner',
+      'Courier',
+      'Vehicle',
+      'DeliveryTask',
+      'DeliveryAssignment',
+      'Fulfillment',
+      'CustomerEvent',
+      'SupportCase',
+      'DomainEventOutbox',
+      'AuditEvent',
+    ]
     for (const table of tables) {
       expect(sql).toContain(`CREATE INDEX "${table}_tenantId_idx" ON "${table}"("tenantId");`)
     }
   })
 })
-
