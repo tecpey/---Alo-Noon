@@ -1,6 +1,7 @@
 # ADR-0003: Tenant-aware identity and authorization
 
-- Status: Proposed
+- Status: Accepted
+- Accepted: 2026-08-01
 - Gate: Issue #12
 - Depends on: ADR-0002
 
