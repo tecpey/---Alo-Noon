@@ -26,7 +26,9 @@ class MemoryAuthRepository implements AuthRepository {
   sessionDigest: string | null = null
   createResult: CreateChallengeResult | null = null
 
-  async resolveTenantByHost(): Promise<string | null> { return this.resolvedTenantId }
+  async resolveTenantByHost(): Promise<string | null> {
+    return this.resolvedTenantId
+  }
 
   async createChallenge(
     input: Parameters<AuthRepository['createChallenge']>[0],
@@ -351,7 +353,12 @@ describe('OTP authentication API', () => {
     repository.resolvedTenantId = null
     const app = await buildApp({ auth: dependencies })
     apps.push(app)
-    const response = await app.inject({ method: 'POST', url: '/api/v1/auth/otp/request', headers: { host: 'forged.example', 'x-tenant-id': tenantId }, payload: { mobileE164: '+989111234567', tenantId } })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/request',
+      headers: { host: 'forged.example', 'x-tenant-id': tenantId },
+      payload: { mobileE164: '+989111234567', tenantId },
+    })
     expect(response.statusCode).toBe(404)
     expect(deliveredCodes).toEqual([])
   })
