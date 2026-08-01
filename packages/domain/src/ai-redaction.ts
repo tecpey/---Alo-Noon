@@ -20,6 +20,10 @@ const piiKey =
 const credentialValue = /(?:bearer\s+[a-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i
 const redacted = '[REDACTED]'
 
+function isRedactableObject(value: RedactableValue): value is RedactableObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
 export function redactAiTelemetry(
   input: Readonly<Record<string, RedactableValue>>,
 ): Readonly<RedactionResult> {
@@ -37,7 +41,7 @@ export function redactAiTelemetry(
       )
     }
     if (Array.isArray(value)) return value.map((item, index) => visit(item, `${path}[${index}]`))
-    if (value !== null && typeof value === 'object') {
+    if (isRedactableObject(value)) {
       const result: Record<string, RedactableValue> = {}
       for (const [key, nested] of Object.entries(value)) {
         const nestedPath = path ? `${path}.${key}` : key
@@ -60,7 +64,7 @@ export function redactAiTelemetry(
   }
 
   const value = visit(input, '')
-  if (value === null || Array.isArray(value) || typeof value !== 'object') {
+  if (!isRedactableObject(value)) {
     throw new DomainError('AI_TELEMETRY_BLOCKED', 'AI telemetry root must be an object')
   }
 
