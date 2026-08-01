@@ -4,8 +4,7 @@ export type RedactableScalar = string | number | boolean | null
 export interface RedactableObject {
   readonly [key: string]: RedactableValue
 }
-export type RedactableValue =
-  RedactableScalar | ReadonlyArray<RedactableValue> | RedactableObject
+export type RedactableValue = RedactableScalar | ReadonlyArray<RedactableValue> | RedactableObject
 
 export interface RedactionResult {
   value: Readonly<Record<string, RedactableValue>>
