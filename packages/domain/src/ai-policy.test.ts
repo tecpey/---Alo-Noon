@@ -20,7 +20,6 @@ const evidence = {
 const base = {
   proposalId: 'proposal-1',
   tenantId,
-  requestedByAccountId: requesterId,
   agentCharterVersion: 'ciso-v1',
   modelVersion: 'model-v1',
   action: AiAction.DETECT,
@@ -31,6 +30,7 @@ const base = {
 }
 const trust: AiProposalAdmissionTrustContext = {
   evaluatedAt,
+  authenticatedRequesterAccountId: requesterId,
   authoritativeCharter: {
     version: 'ciso-v1',
     allowedActions: [AiAction.DETECT, AiAction.DEPLOY],
