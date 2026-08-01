@@ -14,7 +14,7 @@ export interface RedactionResult {
 }
 
 const blockedKey =
-  /(?:password|passwd|secret|token|api.?key|private.?key|authorization|cookie|session)/i
+  /(?:raw.?prompt|raw.?conversation|raw.?tool.?output|password|passwd|secret|token|credential|api.?key|private.?key|authorization|cookie|session)/i
 const piiKey =
   /(?:email|phone|mobile|address|postal|latitude|longitude|first.?name|last.?name|full.?name)/i
 const credentialValue = /(?:bearer\s+[a-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i
