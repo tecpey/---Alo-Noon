@@ -367,7 +367,9 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
     },
 
     async createChallenge(input) {
-      return tenantTransaction(prisma, input.tenantId,
+      return tenantTransaction(
+        prisma,
+        input.tenantId,
         async (transaction) => {
           const recent = await transaction.otpChallenge.findFirst({
             where: {
@@ -493,7 +495,9 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
     },
 
     async consumeChallenge(challengeId, mobileE164, tenantId, now, correlationId) {
-      return tenantTransaction(prisma, tenantId,
+      return tenantTransaction(
+        prisma,
+        tenantId,
         async (transaction) => {
           const existingAccount = await transaction.identityAccount.findUnique({
             where: { mobileE164 },
