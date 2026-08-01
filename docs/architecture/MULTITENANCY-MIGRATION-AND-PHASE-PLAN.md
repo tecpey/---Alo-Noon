@@ -22,9 +22,9 @@ internal Alo Noon tenant with an immutable ID. No behavior switches yet.
 ### G3A — data backfill (under review)
 
 Backfill all existing pre-tenancy Babol records transactionally. Record counts
-before and after, abort on missing authority or any conflicting tenant ownership,
-and prove that no tenant-less row remains. This step is data-only and preserves
-nullable columns so runtime behavior does not switch prematurely.
+before and after, abort on missing authority or any conflicting tenant
+ownership, and prove that no tenant-less row remains. This step is data-only and
+preserves nullable columns so runtime behavior does not switch prematurely.
 
 ### G3B — relational tenant integrity (pending)
 
