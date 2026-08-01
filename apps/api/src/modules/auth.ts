@@ -367,7 +367,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
     },
 
     async createChallenge(input) {
-      return prisma.$transaction(
+      return tenantTransaction(prisma, input.tenantId,
         async (transaction) => {
           const recent = await transaction.otpChallenge.findFirst({
             where: {
@@ -437,12 +437,12 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
     },
 
     async invalidateChallenge(challengeId, tenantId, now, correlationId) {
-      await prisma.$transaction([
-        prisma.otpChallenge.updateMany({
+      await tenantTransaction(prisma, tenantId, async (transaction) => {
+        await transaction.otpChallenge.updateMany({
           where: { id: challengeId, status: 'PENDING' },
           data: { status: 'INVALIDATED', invalidatedAt: now },
-        }),
-        prisma.auditEvent.create({
+        })
+        await transaction.auditEvent.create({
           data: {
             tenantId,
             actorType: 'SYSTEM',
@@ -453,8 +453,8 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
             correlationId,
             occurredAt: now,
           },
-        }),
-      ])
+        })
+      })
     },
 
     async findChallenge(challengeId) {
@@ -493,7 +493,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
     },
 
     async consumeChallenge(challengeId, mobileE164, tenantId, now, correlationId) {
-      return prisma.$transaction(
+      return tenantTransaction(prisma, tenantId,
         async (transaction) => {
           const existingAccount = await transaction.identityAccount.findUnique({
             where: { mobileE164 },
@@ -602,43 +602,49 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
     },
 
     async createSession(input) {
-      const session = await prisma.authSession.create({
-        data: {
-          accountId: input.accountId,
-          activeTenantId: input.tenantId,
-          tokenDigest: input.tokenDigest,
-          expiresAt: input.expiresAt,
-          lastSeenAt: input.now,
-        },
-        select: {
-          id: true,
-          account: { select: { customerId: true } },
-        },
+      return tenantTransaction(prisma, input.tenantId, async (transaction) => {
+        const session = await transaction.authSession.create({
+          data: {
+            accountId: input.accountId,
+            activeTenantId: input.tenantId,
+            tokenDigest: input.tokenDigest,
+            expiresAt: input.expiresAt,
+            lastSeenAt: input.now,
+          },
+          select: {
+            id: true,
+            account: { select: { customerId: true } },
+          },
+        })
+        await transaction.auditEvent.create({
+          data: {
+            tenantId: input.tenantId,
+            actorType: 'CUSTOMER',
+            actorId: session.account.customerId,
+            action: 'auth.session.created',
+            entityType: 'auth_session',
+            entityId: session.id,
+            summary: 'Authenticated session created',
+            correlationId: input.correlationId,
+            occurredAt: input.now,
+          },
+        })
+        return loadSessionContext(
+          prisma,
+          input.tokenDigest,
+          input.tenantId,
+          input.now,
+          input.expiresAt,
+        )
+    },
+
       })
-      await prisma.auditEvent.create({
-        data: {
-          tenantId: input.tenantId,
-          actorType: 'CUSTOMER',
-          actorId: session.account.customerId,
-          action: 'auth.session.created',
-          entityType: 'auth_session',
-          entityId: session.id,
-          summary: 'Authenticated session created',
-          correlationId: input.correlationId,
-          occurredAt: input.now,
-        },
-      })
-      return loadSessionContext(
-        prisma,
-        input.tokenDigest,
-        input.tenantId,
-        input.now,
-        input.expiresAt,
-      )
     },
 
     async findSession(tokenDigest, tenantId, now) {
-      return loadSessionContext(prisma, tokenDigest, tenantId, now)
+      return tenantTransaction(prisma, tenantId, (transaction) =>
+        loadSessionContext(transaction, tokenDigest, tenantId, now),
+      )
     },
 
     async revokeSession(tokenDigest, now, correlationId) {
@@ -653,31 +659,49 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
       })
       if (!session || session.revokedAt) return false
 
-      const revoked = await prisma.authSession.updateMany({
-        where: { id: session.id, revokedAt: null },
-        data: { revokedAt: now },
+      return tenantTransaction(prisma, session.activeTenantId, async (transaction) => {
+        const revoked = await transaction.authSession.updateMany({
+          where: { id: session.id, revokedAt: null },
+          data: { revokedAt: now },
+        })
+        if (revoked.count !== 1) return false
+        await transaction.auditEvent.create({
+          data: {
+            tenantId: session.activeTenantId,
+            actorType: 'CUSTOMER',
+            actorId: session.account.customerId,
+            action: 'auth.session.revoked',
+            entityType: 'auth_session',
+            entityId: session.id,
+            summary: 'Authenticated session revoked',
+            correlationId,
+            occurredAt: now,
+          },
+        })
+        return true
       })
-      if (revoked.count !== 1) return false
-      await prisma.auditEvent.create({
-        data: {
-          tenantId: session.activeTenantId,
-          actorType: 'CUSTOMER',
-          actorId: session.account.customerId,
-          action: 'auth.session.revoked',
-          entityType: 'auth_session',
-          entityId: session.id,
-          summary: 'Authenticated session revoked',
-          correlationId,
-          occurredAt: now,
-        },
-      })
-      return true
     },
   }
 }
 
-async function loadSessionContext(
+
+async function tenantTransaction<T>(
   prisma: PrismaClient,
+  tenantId: string,
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+  isolationLevel?: Prisma.TransactionIsolationLevel,
+): Promise<T> {
+  return prisma.$transaction(
+    async (transaction) => {
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+      return operation(transaction)
+    },
+    ...(isolationLevel ? [{ isolationLevel }] : []),
+  )
+}
+
+async function loadSessionContext(
+  prisma: Prisma.TransactionClient,
   tokenDigest: string,
   tenantId: string,
   now: Date,
