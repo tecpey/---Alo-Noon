@@ -1,4 +1,5 @@
 export * from './ai-control-plane'
+export * from './ai-observability'
 export * from './auth'
 export * from './catalog'
 export * from './commerce'
