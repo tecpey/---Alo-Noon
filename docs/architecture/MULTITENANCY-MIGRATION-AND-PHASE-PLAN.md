@@ -19,14 +19,14 @@ internal Alo Noon tenant with an immutable ID. No behavior switches yet.
 
 ## Phase G3 — backfill and verification
 
-### G3A — data backfill (under review)
+### G3A — data backfill ✅ implemented
 
 Backfill all existing pre-tenancy Babol records transactionally. Record counts
 before and after, abort on missing authority or any conflicting tenant
 ownership, and prove that no tenant-less row remains. This step is data-only and
 preserves nullable columns so runtime behavior does not switch prematurely.
 
-### G3B — relational tenant integrity (pending)
+### G3B — relational tenant integrity (implemented in this change)
 
 Add reviewed composite tenant parent/child foreign keys and tenant-aware
 uniqueness constraints by aggregate dependency. Reject cross-tenant joins at the
