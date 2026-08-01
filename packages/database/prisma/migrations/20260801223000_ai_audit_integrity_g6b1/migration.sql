@@ -1,13 +1,13 @@
 -- Phase G6B.1: harden the already-deployed AI audit ledger without rewriting history.
 -- Enforces payload sanitation and a contiguous per-tenant/per-proposal predecessor chain.
 
-CREATE FUNCTION ai_audit_payload_is_safe(value jsonb) RETURNS boolean AS $audit_payload$
+CREATE FUNCTION ai_audit_payload_is_safe(payload_value jsonb) RETURNS boolean AS $audit_payload$
 DECLARE
   member record;
 BEGIN
-  CASE jsonb_typeof(value)
+  CASE jsonb_typeof(payload_value)
     WHEN 'object' THEN
-      FOR member IN SELECT key, value AS nested FROM jsonb_each(value)
+      FOR member IN SELECT key, value AS nested FROM jsonb_each(payload_value)
       LOOP
         IF member.key ~* '^(raw.?prompt|raw.?conversation|raw.?tool.?output|password|passwd|secret|token|api.?key|private.?key|authorization|cookie|session)$'
            OR NOT ai_audit_payload_is_safe(member.nested) THEN
@@ -15,14 +15,14 @@ BEGIN
         END IF;
       END LOOP;
     WHEN 'array' THEN
-      FOR member IN SELECT element AS nested FROM jsonb_array_elements(value) AS element
+      FOR member IN SELECT element AS nested FROM jsonb_array_elements(payload_value) AS element
       LOOP
         IF NOT ai_audit_payload_is_safe(member.nested) THEN
           RETURN false;
         END IF;
       END LOOP;
     WHEN 'string' THEN
-      IF trim(both '"' from value::text) ~* '(bearer[[:space:]]+[a-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)' THEN
+      IF trim(both '"' from payload_value::text) ~* '(bearer[[:space:]]+[a-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)' THEN
         RETURN false;
       END IF;
   END CASE;
