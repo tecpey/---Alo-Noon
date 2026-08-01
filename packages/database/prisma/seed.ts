@@ -1,24 +1,28 @@
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
+const internalTenantId = '00000000-0000-4000-8000-000000000001'
 
 async function main(): Promise<void> {
-  const city = await prisma.city.upsert({
+  await transaction.$transaction(async (transaction) => {
+    await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${internalTenantId}, true)`
+  const city = await transaction.city.upsert({
     where: { code: 'BABOL' },
     update: {},
-    create: { code: 'BABOL', nameFa: 'بابل', isActive: true },
+    create: { tenantId: internalTenantId, code: 'BABOL', nameFa: 'بابل', isActive: true },
   })
 
-  const zone = await prisma.operationalZone.upsert({
+  const zone = await transaction.operationalZone.upsert({
     where: { cityId_code: { cityId: city.id, code: 'BABOL-PILOT' } },
     update: {},
-    create: { cityId: city.id, code: 'BABOL-PILOT', nameFa: 'محدوده پایلوت بابل', isActive: true },
+    create: { tenantId: internalTenantId, cityId: city.id, code: 'BABOL-PILOT', nameFa: 'محدوده پایلوت بابل', isActive: true },
   })
 
-  await prisma.serviceArea.upsert({
+  await transaction.serviceArea.upsert({
     where: { operationalZoneId_code: { operationalZoneId: zone.id, code: 'PILOT-CORE' } },
     update: {},
     create: {
+      tenantId: internalTenantId,
       operationalZoneId: zone.id,
       code: 'PILOT-CORE',
       nameFa: 'هسته آزمایشی پایلوت',
@@ -38,10 +42,11 @@ async function main(): Promise<void> {
     },
   })
 
-  const bakery = await prisma.bakery.upsert({
+  const bakery = await transaction.bakery.upsert({
     where: { agreementRef: 'development-bakery-agreement' },
     update: {},
     create: {
+      tenantId: internalTenantId,
       legalName: 'Development Bakery Partner',
       displayNameFa: 'نانوایی آزمایشی توسعه',
       partnerStatus: 'ONBOARDING',
@@ -49,10 +54,11 @@ async function main(): Promise<void> {
     },
   })
 
-  const branch = await prisma.bakeryBranch.upsert({
+  const branch = await transaction.bakeryBranch.upsert({
     where: { cityId_code: { cityId: city.id, code: 'DEV-BRANCH' } },
     update: {},
     create: {
+      tenantId: internalTenantId,
       bakeryId: bakery.id,
       cityId: city.id,
       operationalZoneId: zone.id,
@@ -66,16 +72,17 @@ async function main(): Promise<void> {
     },
   })
 
-  const category = await prisma.productCategory.upsert({
+  const category = await transaction.productCategory.upsert({
     where: { code: 'SIGNATURE_BREAD' },
     update: {},
-    create: { code: 'SIGNATURE_BREAD', nameFa: 'نان امضادار' },
+    create: { tenantId: internalTenantId, code: 'SIGNATURE_BREAD', nameFa: 'نان امضادار' },
   })
 
-  const product = await prisma.product.upsert({
+  const product = await transaction.product.upsert({
     where: { slug: 'development-signature-bread' },
     update: {},
     create: {
+      tenantId: internalTenantId,
       categoryId: category.id,
       slug: 'development-signature-bread',
       nameFa: 'نان امضادار آزمایشی',
@@ -84,10 +91,11 @@ async function main(): Promise<void> {
     },
   })
 
-  const variant = await prisma.productVariant.upsert({
+  const variant = await transaction.productVariant.upsert({
     where: { sku: 'DEV-SIGNATURE-001' },
     update: {},
     create: {
+      tenantId: internalTenantId,
       productId: product.id,
       sku: 'DEV-SIGNATURE-001',
       nameFa: 'نسخه آزمایشی',
@@ -105,7 +113,7 @@ async function main(): Promise<void> {
     },
   })
 
-  await prisma.bakeryProductOffering.upsert({
+  await transaction.bakeryProductOffering.upsert({
     where: {
       bakeryBranchId_productVariantId: {
         bakeryBranchId: branch.id,
@@ -114,6 +122,7 @@ async function main(): Promise<void> {
     },
     update: {},
     create: {
+      tenantId: internalTenantId,
       bakeryBranchId: branch.id,
       productVariantId: variant.id,
       priceAmount: 250_000n,
@@ -124,6 +133,7 @@ async function main(): Promise<void> {
     },
   })
 
+  })
   console.log('Seeded development-only Babol domain references')
 }
 
