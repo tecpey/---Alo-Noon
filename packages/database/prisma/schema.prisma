@@ -314,6 +314,7 @@ model Tenant {
   domains        TenantDomain[]
   memberships    TenantMembership[]
   activeSessions AuthSession[]
+  aiAuditEvents  AiControlPlaneAuditEvent[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -1303,4 +1304,39 @@ model OperationalIncident {
   @@index([status, severity, createdAt])
   @@index([orderId])
   @@index([deliveryTaskId])
+}
+
+
+model AiControlPlaneAuditEvent {
+  id                    String   @id @db.Uuid
+  tenantId              String   @db.Uuid
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  eventId               String   @unique @db.Uuid
+  proposalId            String   @db.Uuid
+  sequence              Int
+  eventType             String   @db.VarChar(64)
+  agentRole             String   @db.VarChar(32)
+  action                String   @db.VarChar(64)
+  classification        String   @db.VarChar(32)
+  redactionStatus       String   @db.VarChar(32)
+  correlationId         String   @db.Uuid
+  traceId               String   @db.VarChar(64)
+  actorAccountId        String?  @db.Uuid
+  charterVersion        String   @db.VarChar(64)
+  policyVersion         String   @db.VarChar(64)
+  modelProvider         String   @db.VarChar(64)
+  modelVersion          String   @db.VarChar(128)
+  provenanceUri         String   @db.VarChar(500)
+  payload               Json
+  payloadDigest         String   @db.VarChar(71)
+  previousEventDigest   String?  @db.VarChar(71)
+  eventDigest           String   @unique @db.VarChar(71)
+  occurredAt            DateTime @db.Timestamptz(6)
+  retainedUntil         DateTime @db.Timestamptz(6)
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([tenantId, proposalId, sequence], map: "AiControlPlaneAuditEvent_proposal_sequence_key")
+  @@index([tenantId, occurredAt], map: "AiControlPlaneAuditEvent_tenant_occurred_idx")
+  @@index([tenantId, proposalId, sequence], map: "AiControlPlaneAuditEvent_proposal_idx")
+  @@index([tenantId, correlationId], map: "AiControlPlaneAuditEvent_correlation_idx")
 }
