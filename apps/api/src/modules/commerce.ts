@@ -222,15 +222,17 @@ export function registerCommerceRoutes(
 export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRepository {
   return {
     async getCart(tenantId, customerId) {
-      const cart = await prisma.cart.findFirst({
-        where: { tenantId, customerId, state: 'ACTIVE' },
-        include: cartInclude,
+      return serializable(prisma, tenantId, async (transaction) => {
+        const cart = await transaction.cart.findFirst({
+          where: { tenantId, customerId, state: 'ACTIVE' },
+          include: cartInclude,
+        })
+        return cart ? mapCart(cart) : null
       })
-      return cart ? mapCart(cart) : null
     },
 
     async upsertItem(tenantId, customerId, offeringId, input, now, correlationId) {
-      return serializable(prisma, async (transaction) => {
+      return serializable(prisma, tenantId, async (transaction) => {
         const offering = await loadOffering(transaction, tenantId, offeringId)
         assertOfferingAvailable(offering, now)
         assertOfferingQuantityCapacity(offering, input.quantity)
@@ -316,7 +318,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
     },
 
     async removeItem(tenantId, customerId, offeringId, expectedVersion, now, correlationId) {
-      return serializable(prisma, async (transaction) => {
+      return serializable(prisma, tenantId, async (transaction) => {
         const cart = await transaction.cart.findFirst({
           where: { tenantId, customerId, state: 'ACTIVE' },
           select: {
@@ -356,7 +358,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
     },
 
     async createQuote(tenantId, customerId, input, now, correlationId) {
-      return serializable(prisma, async (transaction) => {
+      return serializable(prisma, tenantId, async (transaction) => {
         const replay = await transaction.quote.findFirst({
           where: { idempotencyKey: input.idempotencyKey, tenantId },
           include: quoteInclude,
@@ -462,10 +464,17 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
 
 async function serializable<T>(
   prisma: PrismaClient,
+  tenantId: string,
   operation: (transaction: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
   try {
-    return await prisma.$transaction(operation, { isolationLevel: 'Serializable' })
+    return await prisma.$transaction(
+      async (transaction) => {
+        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+        return operation(transaction)
+      },
+      { isolationLevel: 'Serializable' },
+    )
   } catch (error) {
     if (error && typeof error === 'object' && Reflect.get(error, 'code') === 'P2034') {
       throw new CommerceError('CART_VERSION_CONFLICT', 409)

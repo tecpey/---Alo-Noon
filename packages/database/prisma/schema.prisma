@@ -353,7 +353,7 @@ model TenantMembership {
 
 model City {
   id               String            @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   code             String            @unique @db.VarChar(32)
   nameFa           String
   timezone         String            @default("Asia/Tehran") @db.VarChar(64)
@@ -373,7 +373,7 @@ model City {
 
 model OperationalZone {
   id             String         @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   cityId         String         @db.Uuid
   city           City           @relation(fields: [cityId], references: [id], onDelete: Restrict)
   code           String         @db.VarChar(32)
@@ -398,7 +398,7 @@ model OperationalZone {
 
 model ServiceArea {
   id                String          @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   operationalZoneId String          @db.Uuid
   operationalZone   OperationalZone @relation(fields: [operationalZoneId], references: [id], onDelete: Cascade)
   code              String          @db.VarChar(32)
@@ -418,7 +418,7 @@ model ServiceArea {
 
 model Customer {
   id                     String                  @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   mobileE164             String                  @unique @db.VarChar(16)
   firstName              String?
   lastName               String?
@@ -482,8 +482,8 @@ model AuthSession {
   id          String          @id @default(uuid()) @db.Uuid
   accountId   String          @db.Uuid
   account     IdentityAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  activeTenantId String?         @db.Uuid
-  activeTenant   Tenant?         @relation(fields: [activeTenantId], references: [id], onDelete: SetNull)
+  activeTenantId String         @db.Uuid
+  activeTenant   Tenant         @relation(fields: [activeTenantId], references: [id], onDelete: Restrict)
   tokenDigest String          @unique @db.VarChar(64)
   expiresAt   DateTime
   lastSeenAt  DateTime
@@ -544,7 +544,7 @@ model AccessGrant {
 
 model Household {
   id        String            @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   name      String
   members   HouseholdMember[]
   createdAt DateTime          @default(now())
@@ -557,7 +557,7 @@ model Household {
 
 model HouseholdMember {
   id          String              @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   householdId String              @db.Uuid
   household   Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
   customerId  String?             @db.Uuid
@@ -579,7 +579,7 @@ model HouseholdMember {
 
 model Address {
   id                   String                   @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   customerId           String                   @db.Uuid
   customer             Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cityId               String                   @db.Uuid
@@ -614,7 +614,7 @@ model Address {
 
 model Bakery {
   id            String              @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   legalName     String
   displayNameFa String
   partnerStatus BakeryPartnerStatus @default(PROSPECT)
@@ -632,7 +632,7 @@ model Bakery {
 
 model BakeryBranch {
   id                 String                  @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   bakeryId           String                  @db.Uuid
   bakery             Bakery                  @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
   cityId             String                  @db.Uuid
@@ -671,7 +671,7 @@ model BakeryBranch {
 
 model BakeryOperatingHours {
   id             String       @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   bakeryBranchId String       @db.Uuid
   bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
   dayOfWeek      Int
@@ -688,7 +688,7 @@ model BakeryOperatingHours {
 
 model BakeryCapacitySlot {
   id             String       @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   bakeryBranchId String       @db.Uuid
   bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
   serviceDate    DateTime     @db.Date
@@ -707,7 +707,7 @@ model BakeryCapacitySlot {
 
 model ProductCategory {
   id        String    @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   code      String    @unique @db.VarChar(32)
   nameFa    String
   products  Product[]
@@ -721,7 +721,7 @@ model ProductCategory {
 
 model Product {
   id            String                 @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   categoryId    String                 @db.Uuid
   category      ProductCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   slug          String                 @unique @db.VarChar(100)
@@ -743,7 +743,7 @@ model Product {
 
 model ProductVariant {
   id                      String                  @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   productId               String                  @db.Uuid
   product                 Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
   sku                     String                  @unique @db.VarChar(64)
@@ -777,7 +777,7 @@ model ProductVariant {
 
 model BakeryProductOffering {
   id                 String                     @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   bakeryBranchId     String                     @db.Uuid
   bakeryBranch       BakeryBranch               @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
   productVariantId   String                     @db.Uuid
@@ -807,7 +807,7 @@ model BakeryProductOffering {
 
 model Cart {
   id                String          @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   customerId        String          @db.Uuid
   customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cityId            String          @db.Uuid
@@ -837,7 +837,7 @@ model Cart {
 
 model CartItem {
   id                       String                @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   cartId                   String                @db.Uuid
   cart                     Cart                  @relation(fields: [cartId], references: [id], onDelete: Cascade)
   bakeryProductOfferingId  String                @db.Uuid
@@ -857,7 +857,7 @@ model CartItem {
 
 model Quote {
   id                String      @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   publicId          String      @unique @default(cuid()) @db.VarChar(32)
   idempotencyKey    String      @unique @db.VarChar(128)
   cartId            String      @db.Uuid
@@ -888,7 +888,7 @@ model Quote {
 
 model QuoteItem {
   id                       String                  @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   quoteId                  String                  @db.Uuid
   quote                    Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   bakeryProductOfferingId  String                  @db.Uuid
@@ -918,7 +918,7 @@ model QuoteItem {
 
 model Order {
   id                           String                 @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   publicId                     String                 @unique @default(cuid()) @db.VarChar(32)
   idempotencyKey               String                 @unique @db.VarChar(128)
   customerId                   String                 @db.Uuid
@@ -976,7 +976,7 @@ model Order {
 
 model OrderItem {
   id                       String                  @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   orderId                  String                  @db.Uuid
   order                    Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productVariantId         String                  @db.Uuid
@@ -1006,7 +1006,7 @@ model OrderItem {
 
 model OrderStateTransition {
   id             String     @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   orderId        String     @db.Uuid
   order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   fromState      OrderState
@@ -1030,7 +1030,7 @@ model OrderStateTransition {
 
 model Fulfillment {
   id                    String                @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   orderId               String                @unique @db.Uuid
   order                 Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
   bakeryBranchId        String?               @db.Uuid
@@ -1062,7 +1062,7 @@ model Fulfillment {
 
 model CourierPartner {
   id          String    @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   code        String    @unique @db.VarChar(32)
   displayName String
   isActive    Boolean   @default(false)
@@ -1078,7 +1078,7 @@ model CourierPartner {
 
 model Courier {
   id               String               @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   courierPartnerId String               @db.Uuid
   courierPartner   CourierPartner       @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
   externalRef      String?              @db.VarChar(128)
@@ -1100,7 +1100,7 @@ model Courier {
 
 model Vehicle {
   id               String               @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   courierPartnerId String               @db.Uuid
   courierPartner   CourierPartner       @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
   type             VehicleType
@@ -1120,7 +1120,7 @@ model Vehicle {
 
 model DeliveryTask {
   id                String                @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   fulfillmentId     String                @unique @db.Uuid
   fulfillment       Fulfillment           @relation(fields: [fulfillmentId], references: [id], onDelete: Restrict)
   state             DeliveryTaskState     @default(UNASSIGNED)
@@ -1144,7 +1144,7 @@ model DeliveryTask {
 
 model DeliveryAssignment {
   id             String                  @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   deliveryTaskId String                  @db.Uuid
   deliveryTask   DeliveryTask            @relation(fields: [deliveryTaskId], references: [id], onDelete: Cascade)
   courierId      String                  @db.Uuid
@@ -1170,7 +1170,7 @@ model DeliveryAssignment {
 
 model CustomerEvent {
   id            String       @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   eventId       String       @unique @db.Uuid
   customerId    String       @db.Uuid
   customer      Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
@@ -1197,7 +1197,7 @@ model CustomerEvent {
 
 model DomainEventOutbox {
   id              String       @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   eventId         String       @unique @db.Uuid
   name            String       @db.VarChar(100)
   version         Int          @default(1)
@@ -1225,7 +1225,7 @@ model DomainEventOutbox {
 
 model AuditEvent {
   id            String    @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   actorType     ActorType
   actorId       String?   @db.Uuid
   action        String    @db.VarChar(100)
@@ -1246,7 +1246,7 @@ model AuditEvent {
 
 model SupportCase {
   id              String              @id @default(uuid()) @db.Uuid
-  tenantId          String? @db.Uuid
+  tenantId          String @db.Uuid
   publicId        String              @unique @default(cuid()) @db.VarChar(32)
   customerId      String?             @db.Uuid
   customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
