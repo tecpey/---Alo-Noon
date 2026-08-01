@@ -26,23 +26,34 @@ before and after, abort on missing authority or any conflicting tenant
 ownership, and prove that no tenant-less row remains. This step is data-only and
 preserves nullable columns so runtime behavior does not switch prematurely.
 
-### G3B — relational tenant integrity (implemented in this change)
+### G3B — relational tenant integrity ✅ implemented
 
 Add reviewed composite tenant parent/child foreign keys and tenant-aware
 uniqueness constraints by aggregate dependency. Reject cross-tenant joins at the
 database boundary without enabling RLS or making columns non-null yet.
 
-## Phase G4 — application enforcement (under review in PR)
+## Phase G4 — application enforcement ✅ implemented
 
 Require `TenantContext` in HTTP repositories, transactions, cache, files, events
 and worker jobs. Add negative cross-tenant integration tests. Make new writes
 require non-null tenant ownership.
 
-## Phase G5 — database defense
+## Phase G5 — database defense (under review in PR #18)
 
-Enable and test PostgreSQL RLS for tenant-owned tables. Make `tenantId`
-non-null. Remove transitional fallbacks. Validate backup/export/restore and
-support-access controls.
+Make all 32 implemented business-table `tenantId` columns and
+`AuthSession.activeTenantId` non-null. Enable and force deny-by-default
+PostgreSQL RLS with transaction-local `app.tenant_id` policies. Auth, Commerce
+and development Seed operations set that context only inside their database
+transaction so pooled connections cannot leak tenant authority.
+
+The CI isolation proof uses a temporary non-owner, non-superuser,
+non-`BYPASSRLS` role. It verifies that missing context returns no business rows,
+the selected tenant cannot read another tenant, and cross-tenant writes fail at
+the PostgreSQL boundary. Tenant bootstrap tables remain outside business-row RLS
+because Host-to-Tenant resolution must occur before authentication.
+
+Backup/export/restore procedures and audited support-access controls remain
+separate operational exit criteria before Issue #12 may close.
 
 ## Phase G6 — reconcile Phase 2E
 
