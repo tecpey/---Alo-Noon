@@ -27,7 +27,7 @@ function tenantRelationsFromSchema(schema: string): TenantRelation[] {
 
   const tenantOwnedModels = new Set(
     [...models.entries()]
-      .filter(([, body]) => /^\s*tenantId\s+String\?/m.test(body))
+      .filter(([, body]) => /^\s*tenantId\s+String\??\s+@db\.Uuid/m.test(body))
       .map(([name]) => name),
   )
   const relations: TenantRelation[] = []
