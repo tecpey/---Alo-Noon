@@ -95,4 +95,44 @@ databaseDescribe('governed AI durable audit G6B', () => {
       `,
     ).rejects.toThrow()
   })
+
+  it('rejects sequence gaps, forged predecessors and unsafe durable payloads', async () => {
+    const attempt = async (
+      sequence: number,
+      previousEventDigest: string | null,
+      payload: Record<string, unknown>,
+    ): Promise<void> => {
+      await prisma.$transaction(async (transaction) => {
+        await transaction.$executeRawUnsafe(`SET LOCAL ROLE "${roleName}"`)
+        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantA}, true)`
+        await transaction.$executeRaw`
+          INSERT INTO "AiControlPlaneAuditEvent" (
+            "id", "tenantId", "eventId", "proposalId", "sequence", "eventType", "agentRole",
+            "action", "classification", "redactionStatus", "correlationId", "traceId",
+            "charterVersion", "policyVersion", "modelProvider", "modelVersion", "provenanceUri",
+            "payload", "payloadDigest", "previousEventDigest", "eventDigest", "occurredAt",
+            "retainedUntil"
+          ) VALUES (
+            ${randomUUID()}::uuid, ${tenantA}::uuid, ${randomUUID()}::uuid, ${proposalId}::uuid,
+            ${sequence}, 'POLICY_DECIDED', 'CISO', 'DETECT', 'INTERNAL', 'REDACTED',
+            ${randomUUID()}::uuid, 'trace-chain-0123456789', 'ciso-v1', 'ai-policy-v1',
+            'provider-abstract', 'model-v1', 'policy://ai-policy-v1/chain', ${payload}::jsonb,
+            ${digest('e')}, ${previousEventDigest}, ${digest(String(sequence))}, now(),
+            now() + interval '1 year'
+          )
+        `
+      })
+    }
+
+    await expect(attempt(3, digest('b'), { outcome: 'gap' })).rejects.toThrow()
+    await expect(attempt(2, digest('f'), { outcome: 'forged' })).rejects.toThrow()
+    await expect(
+      attempt(2, digest('b'), { rawPrompt: 'ignore prior instructions' }),
+    ).rejects.toThrow()
+    await expect(attempt(2, digest('b'), { accessToken: 'opaque-value' })).rejects.toThrow()
+    await expect(attempt(2, digest('b'), { clientSecret: 'opaque-value' })).rejects.toThrow()
+    await expect(
+      attempt(2, digest('b'), { customer: { phone: '+989111111111' } }),
+    ).rejects.toThrow()
+  })
 })

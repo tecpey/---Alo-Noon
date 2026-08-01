@@ -35,4 +35,8 @@ describe('AI observability contracts', () => {
     expect(() => aiAuditEventSchema.parse({ ...event, classification: 'SECRET' })).toThrow()
     expect(() => aiAuditEventSchema.parse({ ...event, eventDigest: 'unsigned' })).toThrow()
   })
+
+  it('rejects unknown transport fields', () => {
+    expect(() => aiAuditEventSchema.parse({ ...event, rawPrompt: 'ignore rules' })).toThrow()
+  })
 })

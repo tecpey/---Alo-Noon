@@ -23,8 +23,14 @@ describe('AI telemetry redaction', () => {
     })
   })
 
-  it('fails closed for secret fields and credential-shaped values', () => {
-    expect(() => redactAiTelemetry({ apiKey: 'not-even-a-real-key' })).toThrowError(DomainError)
+  it.each(['apiKey', 'accessToken', 'refresh_token', 'clientSecret', 'credentials'])(
+    'fails closed for secret field %s',
+    (key) => {
+      expect(() => redactAiTelemetry({ [key]: 'opaque-value' })).toThrowError(DomainError)
+    },
+  )
+
+  it('fails closed for credential-shaped values', () => {
     expect(() => redactAiTelemetry({ header: 'Bearer abc.def.ghi' })).toThrowError(DomainError)
   })
 

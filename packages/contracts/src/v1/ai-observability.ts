@@ -24,31 +24,33 @@ export const aiAuditEventTypeSchema = z.enum([
 
 const sha256Schema = z.string().regex(/^sha256:[a-f0-9]{64}$/)
 
-export const aiAuditEventSchema = z.object({
-  eventId: uuidSchema,
-  tenantId: uuidSchema,
-  proposalId: uuidSchema,
-  sequence: z.number().int().positive(),
-  eventType: aiAuditEventTypeSchema,
-  agentRole: aiAgentRoleSchema,
-  action: aiActionSchema,
-  classification: aiDataClassificationSchema.exclude(['SECRET']),
-  redactionStatus: z.enum(['NOT_REQUIRED', 'REDACTED']),
-  correlationId: uuidSchema,
-  traceId: z.string().min(16).max(64),
-  actorAccountId: uuidSchema.optional(),
-  charterVersion: z.string().min(1).max(64),
-  policyVersion: z.string().min(1).max(64),
-  modelProvider: z.string().min(1).max(64),
-  modelVersion: z.string().min(1).max(128),
-  provenanceUri: z.string().min(1).max(500),
-  payload: z.record(z.unknown()),
-  payloadDigest: sha256Schema,
-  previousEventDigest: sha256Schema.optional(),
-  eventDigest: sha256Schema,
-  occurredAt: isoDateTimeSchema,
-  retainedUntil: isoDateTimeSchema,
-})
+export const aiAuditEventSchema = z
+  .object({
+    eventId: uuidSchema,
+    tenantId: uuidSchema,
+    proposalId: uuidSchema,
+    sequence: z.number().int().positive(),
+    eventType: aiAuditEventTypeSchema,
+    agentRole: aiAgentRoleSchema,
+    action: aiActionSchema,
+    classification: aiDataClassificationSchema.exclude(['SECRET']),
+    redactionStatus: z.enum(['NOT_REQUIRED', 'REDACTED']),
+    correlationId: uuidSchema,
+    traceId: z.string().min(16).max(64),
+    actorAccountId: uuidSchema.optional(),
+    charterVersion: z.string().min(1).max(64),
+    policyVersion: z.string().min(1).max(64),
+    modelProvider: z.string().min(1).max(64),
+    modelVersion: z.string().min(1).max(128),
+    provenanceUri: z.string().min(1).max(500),
+    payload: z.record(z.unknown()),
+    payloadDigest: sha256Schema,
+    previousEventDigest: sha256Schema.optional(),
+    eventDigest: sha256Schema,
+    occurredAt: isoDateTimeSchema,
+    retainedUntil: isoDateTimeSchema,
+  })
+  .strict()
 
 export type AiAuditEvent = z.infer<typeof aiAuditEventSchema>
 export type AiAuditEventType = z.infer<typeof aiAuditEventTypeSchema>
