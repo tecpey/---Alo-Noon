@@ -8,7 +8,6 @@ import {
 const request = {
   proposalId: '10000000-0000-4000-8000-000000000001',
   tenantId: '20000000-0000-4000-8000-000000000002',
-  requestedByAccountId: '40000000-0000-4000-8000-000000000004',
   agent: {
     role: 'CISO',
     charterVersion: 'ciso-v1',
@@ -39,15 +38,21 @@ describe('AI control-plane contracts', () => {
     expect(aiProposalAdmissionRequestSchema.parse(request)).toBeDefined()
   })
 
-  it('accepts only an approval reference from an untrusted proposal', () => {
+  it('accepts only authority references from an untrusted proposal', () => {
     const approvalId = '50000000-0000-4000-8000-000000000005'
     expect(aiProposalAdmissionRequestSchema.parse({ ...request, approvalId })).toBeDefined()
     expect(() =>
       aiProposalAdmissionRequestSchema.parse({
         ...request,
+        requestedByAccountId: '40000000-0000-4000-8000-000000000004',
+      }),
+    ).toThrow()
+    expect(() =>
+      aiProposalAdmissionRequestSchema.parse({
+        ...request,
         approval: {
           approvalId,
-          approvedByAccountId: request.requestedByAccountId,
+          approvedByAccountId: '40000000-0000-4000-8000-000000000004',
         },
       }),
     ).toThrow()
