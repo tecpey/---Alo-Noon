@@ -53,7 +53,6 @@ export interface AiHumanApproval {
 export interface AiProposalAdmissionRequest {
   proposalId: string
   tenantId: string
-  requestedByAccountId: string
   agentCharterVersion: string
   modelVersion: string
   action: AiAction
@@ -66,6 +65,7 @@ export interface AiProposalAdmissionRequest {
 
 export interface AiProposalAdmissionTrustContext {
   evaluatedAt: Date
+  authenticatedRequesterAccountId: string
   authoritativeCharter: {
     version: string
     allowedActions: ReadonlyArray<AiAction>
@@ -95,7 +95,7 @@ export function evaluateAiProposalAdmission(
 
   if (!request.tenantId) reasons.push('Tenant context is required')
   if (!request.proposalId) reasons.push('Proposal ID is required')
-  if (!request.requestedByAccountId) reasons.push('Authenticated requester is required')
+  if (!trust.authenticatedRequesterAccountId) reasons.push('Authenticated requester is required')
   if (!request.agentCharterVersion) reasons.push('Versioned agent charter is required')
   if (!request.modelVersion) reasons.push('Model version is required')
   if (!request.policyVersion) reasons.push('Policy version is required')
@@ -167,7 +167,7 @@ export function evaluateAiProposalAdmission(
   ) {
     deny(['Verified approval scope does not match the proposal'])
   }
-  if (approval.approvedByAccountId === request.requestedByAccountId) {
+  if (approval.approvedByAccountId === trust.authenticatedRequesterAccountId) {
     deny(['Proposal requester cannot approve their own privileged action'])
   }
   if (!approval.approvedByAccountId || !approval.reason || !approval.ticketReference) {
