@@ -15,7 +15,6 @@ const request = {
   baseCommitSha: 'a'.repeat(40),
   patchArtifactUri: 'artifact://patches/1',
   patchDigest: `sha256:${'b'.repeat(64)}`,
-  changedPaths: ['packages/domain/src/order.ts'],
   requestedAt: new Date('2026-08-01T14:00:00.000Z'),
 }
 const pass = (check: string) => ({
@@ -33,6 +32,7 @@ const trust: AiSandboxPatchValidationTrustContext = {
     sandboxProfileVersion: request.sandboxProfileVersion,
     baseCommitSha: request.baseCommitSha,
     patchDigest: request.patchDigest,
+    changedPaths: ['packages/domain/src/order.ts'],
     attestationDigest: `sha256:${'d'.repeat(64)}`,
     completedAt: new Date('2026-08-01T14:04:00.000Z'),
     networkAccess: false,
@@ -45,6 +45,7 @@ const trust: AiSandboxPatchValidationTrustContext = {
     requiredChecks: ['format', 'lint', 'typecheck', 'test', 'build'],
     allowedPathPrefixes: ['packages'],
     deniedPathPrefixes: ['.github', 'infra/production'],
+    maxAttestationAgeMs: 10 * 60 * 1000,
   },
 }
 
@@ -91,30 +92,45 @@ describe('AI sandbox patch validation policy', () => {
     ).toThrowError(DomainError)
   })
 
-  it('rejects traversal, paths outside policy, and explicitly denied paths', () => {
-    for (const changedPaths of [['../secret'], ['apps/api/src/main.ts'], ['packages/../.env']]) {
+  it('enforces the trusted changed-path manifest instead of agent claims', () => {
+    for (const changedPaths of [
+      ['../secret'],
+      ['apps/api/src/main.ts'],
+      ['packages/../.env'],
+      [],
+    ]) {
       expect(() =>
-        evaluateAiSandboxPatchValidation({ ...request, changedPaths }, trust),
+        evaluateAiSandboxPatchValidation(request, {
+          ...trust,
+          attestation: { ...trust.attestation, changedPaths },
+        }),
       ).toThrowError(DomainError)
     }
     expect(() =>
-      evaluateAiSandboxPatchValidation(
-        { ...request, changedPaths: ['.github/workflows/deploy.yml'] },
-        {
-          ...trust,
-          policy: { ...trust.policy, allowedPathPrefixes: ['.github', 'packages'] },
+      evaluateAiSandboxPatchValidation(request, {
+        ...trust,
+        attestation: {
+          ...trust.attestation,
+          changedPaths: ['.github/workflows/deploy.yml'],
         },
-      ),
+        policy: { ...trust.policy, allowedPathPrefixes: ['.github', 'packages'] },
+      }),
     ).toThrowError(DomainError)
   })
 
-  it('rejects replayed timestamps and altered runner capability claims at runtime', () => {
-    expect(() =>
-      evaluateAiSandboxPatchValidation(
-        { ...request, requestedAt: new Date('2026-08-01T15:00:00.000Z') },
-        trust,
-      ),
-    ).toThrowError(DomainError)
+  it('rejects pre-request, stale, future, and capability-altered attestations', () => {
+    for (const completedAt of [
+      new Date('2026-08-01T13:59:59.000Z'),
+      new Date('2026-08-01T13:00:00.000Z'),
+      new Date('2026-08-01T15:00:00.000Z'),
+    ]) {
+      expect(() =>
+        evaluateAiSandboxPatchValidation(request, {
+          ...trust,
+          attestation: { ...trust.attestation, completedAt },
+        }),
+      ).toThrowError(DomainError)
+    }
     expect(() =>
       evaluateAiSandboxPatchValidation(request, {
         ...trust,
