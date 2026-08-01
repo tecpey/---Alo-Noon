@@ -357,7 +357,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
 
     async createQuote(tenantId, customerId, input, now, correlationId) {
       return serializable(prisma, async (transaction) => {
-        const replay = await transaction.quote.findUnique({
+        const replay = await transaction.quote.findFirst({
           where: { idempotencyKey: input.idempotencyKey, tenantId },
           include: quoteInclude,
         })
@@ -477,7 +477,7 @@ async function serializable<T>(
 async function authenticatedCustomer(
   request: Parameters<typeof authenticateRequest>[0],
   auth: AuthDependencies,
-): Promise<{ customerId: string; session: SessionContext } | null> {
+): Promise<{ tenantId: string; customerId: string; session: SessionContext } | null> {
   const session = await authenticateRequest(request, auth)
   return session?.customerId
     ? { tenantId: session.tenantId, customerId: session.customerId, session }
