@@ -59,7 +59,7 @@ describe('Quote-to-Order authorization', () => {
     [{ totalAmount: 114_999n }, 'QUOTE_TOTAL_MISMATCH'],
     [{ discountAmount: 120_001n }, 'QUOTE_TOTAL_MISMATCH'],
     [{ deliveryFeeAmount: -1n }, 'QUOTE_TOTAL_MISMATCH'],
-  ])('fails closed for %j', (override, code) => {
+  ])('fails closed with the expected domain error', (override, code) => {
     expect(() => authorizeQuoteToOrder(candidate(override), now)).toThrow(
       expect.objectContaining({ code }),
     )
