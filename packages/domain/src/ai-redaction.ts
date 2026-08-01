@@ -2,9 +2,7 @@ import { DomainError } from './errors'
 
 export type RedactableScalar = string | number | boolean | null
 export type RedactableValue =
-  | RedactableScalar
-  | ReadonlyArray<RedactableValue>
-  | Readonly<Record<string, RedactableValue>>
+  RedactableScalar | ReadonlyArray<RedactableValue> | Readonly<Record<string, RedactableValue>>
 
 export interface RedactionResult {
   value: Readonly<Record<string, RedactableValue>>
@@ -13,8 +11,10 @@ export interface RedactionResult {
   redactionStatus: 'NOT_REQUIRED' | 'REDACTED'
 }
 
-const blockedKey = /(?:password|passwd|secret|token|api.?key|private.?key|authorization|cookie|session)/i
-const piiKey = /(?:email|phone|mobile|address|postal|latitude|longitude|first.?name|last.?name|full.?name)/i
+const blockedKey =
+  /(?:password|passwd|secret|token|api.?key|private.?key|authorization|cookie|session)/i
+const piiKey =
+  /(?:email|phone|mobile|address|postal|latitude|longitude|first.?name|last.?name|full.?name)/i
 const credentialValue = /(?:bearer\s+[a-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i
 const redacted = '[REDACTED]'
 
@@ -26,9 +26,13 @@ export function redactAiTelemetry(
 
   function visit(value: RedactableValue, path: string): RedactableValue {
     if (typeof value === 'string' && credentialValue.test(value)) {
-      throw new DomainError('AI_TELEMETRY_BLOCKED', 'Credential material cannot enter AI telemetry', {
-        path,
-      })
+      throw new DomainError(
+        'AI_TELEMETRY_BLOCKED',
+        'Credential material cannot enter AI telemetry',
+        {
+          path,
+        },
+      )
     }
     if (Array.isArray(value)) return value.map((item, index) => visit(item, `${path}[${index}]`))
     if (value !== null && typeof value === 'object') {
