@@ -94,7 +94,10 @@ class MemoryCommerceRepository implements CommerceRepository {
   }
 }
 
-function authFixture(resolvedTenantId: string | null = tenantId, sessionTenantId = tenantId): AuthDependencies {
+function authFixture(
+  resolvedTenantId: string | null = tenantId,
+  sessionTenantId = tenantId,
+): AuthDependencies {
   const context: SessionContext = {
     tenantId: sessionTenantId,
     accountId,
@@ -105,7 +108,8 @@ function authFixture(resolvedTenantId: string | null = tenantId, sessionTenantId
   const expectedDigest = createHmac('sha256', sessionPepper).update(token).digest('hex')
   const repository = {
     resolveTenantByHost: async () => resolvedTenantId,
-    findSession: async (digest: string, requestedTenantId: string) => digest === expectedDigest && requestedTenantId === context.tenantId ? context : null,
+    findSession: async (digest: string, requestedTenantId: string) =>
+      digest === expectedDigest && requestedTenantId === context.tenantId ? context : null,
   } as unknown as AuthRepository
   return {
     repository,
@@ -228,9 +232,16 @@ describe('server cart and quote API', () => {
 
   it('rejects a token when the verified host tenant differs from the session tenant', async () => {
     const repository = new MemoryCommerceRepository()
-    const app = await buildApp({ auth: authFixture(otherTenantId, tenantId), commerceRepository: repository })
+    const app = await buildApp({
+      auth: authFixture(otherTenantId, tenantId),
+      commerceRepository: repository,
+    })
     apps.push(app)
-    const response = await app.inject({ method: 'GET', url: '/api/v1/cart', headers: { cookie: `alo_session=${token}`, host: 'other.example', 'x-tenant-id': tenantId } })
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/cart',
+      headers: { cookie: `alo_session=${token}`, host: 'other.example', 'x-tenant-id': tenantId },
+    })
     expect(response.statusCode).toBe(401)
     expect(repository.customerIds).toEqual([])
   })
