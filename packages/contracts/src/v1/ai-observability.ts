@@ -27,9 +27,17 @@ const forbiddenPayloadKey =
   /^(?:raw.?prompt|raw.?conversation|raw.?tool.?output|password|passwd|secret|token|api.?key|private.?key|authorization|cookie|session)$/i
 const credentialValue = /(?:bearer\s+[a-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i
 
-function assertSanitizedPayload(value: unknown, context: z.RefinementCtx, path: PropertyKey[] = []): void {
+function assertSanitizedPayload(
+  value: unknown,
+  context: z.RefinementCtx,
+  path: PropertyKey[] = [],
+): void {
   if (typeof value === 'string' && credentialValue.test(value)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Credential material is forbidden', path })
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Credential material is forbidden',
+      path,
+    })
     return
   }
   if (Array.isArray(value)) {
@@ -53,28 +61,28 @@ function assertSanitizedPayload(value: unknown, context: z.RefinementCtx, path: 
 
 export const aiAuditEventSchema = z
   .object({
-  eventId: uuidSchema,
-  tenantId: uuidSchema,
-  proposalId: uuidSchema,
-  sequence: z.number().int().positive(),
-  eventType: aiAuditEventTypeSchema,
-  agentRole: aiAgentRoleSchema,
-  action: aiActionSchema,
-  classification: aiDataClassificationSchema.exclude(['SECRET']),
-  redactionStatus: z.enum(['NOT_REQUIRED', 'REDACTED']),
-  correlationId: uuidSchema,
-  traceId: z.string().min(16).max(64),
-  actorAccountId: uuidSchema.optional(),
-  charterVersion: z.string().min(1).max(64),
-  policyVersion: z.string().min(1).max(64),
-  modelProvider: z.string().min(1).max(64),
-  modelVersion: z.string().min(1).max(128),
-  provenanceUri: z.string().min(1).max(500),
-  payload: z.record(z.unknown()),
-  payloadDigest: sha256Schema,
-  previousEventDigest: sha256Schema.optional(),
-  eventDigest: sha256Schema,
-  occurredAt: isoDateTimeSchema,
+    eventId: uuidSchema,
+    tenantId: uuidSchema,
+    proposalId: uuidSchema,
+    sequence: z.number().int().positive(),
+    eventType: aiAuditEventTypeSchema,
+    agentRole: aiAgentRoleSchema,
+    action: aiActionSchema,
+    classification: aiDataClassificationSchema.exclude(['SECRET']),
+    redactionStatus: z.enum(['NOT_REQUIRED', 'REDACTED']),
+    correlationId: uuidSchema,
+    traceId: z.string().min(16).max(64),
+    actorAccountId: uuidSchema.optional(),
+    charterVersion: z.string().min(1).max(64),
+    policyVersion: z.string().min(1).max(64),
+    modelProvider: z.string().min(1).max(64),
+    modelVersion: z.string().min(1).max(128),
+    provenanceUri: z.string().min(1).max(500),
+    payload: z.record(z.unknown()),
+    payloadDigest: sha256Schema,
+    previousEventDigest: sha256Schema.optional(),
+    eventDigest: sha256Schema,
+    occurredAt: isoDateTimeSchema,
     retainedUntil: isoDateTimeSchema,
   })
   .strict()
