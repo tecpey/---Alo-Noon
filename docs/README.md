@@ -74,13 +74,13 @@ Secret یا PII و مرز اتصال آینده ارائه‌دهنده پیام
 
 ## وضعیت فعلی
 
-ریپو پس از Phase 2D Commerce و Phase G2 Tenant Foundation قرار دارد.
-Cart و Quote سروری، OTP، Session قابل ابطال، RBAC، قراردادهای نسخه‌دار،
-PostgreSQL/Prisma و Tenant foundation افزایشی پیاده‌سازی و در CI تایید
-شده‌اند. Phase G3A برای Backfill کنترل‌شده داده‌های پیش از چندمستاجری در حال
-بررسی است. TenantContext اجباری، تست‌های منفی Cross-tenant، RLS، پرداخت،
-Quote-to-Order، اعلان Delivery و چاپ اجرایی هنوز تکمیل نشده‌اند و نباید
-قابلیت تحویل‌شده معرفی شوند.
+ریپو پس از Phase 2D Commerce و Phase G2 Tenant Foundation قرار دارد. Cart و
+Quote سروری، OTP، Session قابل ابطال، RBAC، قراردادهای نسخه‌دار،
+PostgreSQL/Prisma و Tenant foundation افزایشی پیاده‌سازی و در CI تایید شده‌اند.
+Phase G3A برای Backfill کنترل‌شده داده‌های پیش از چندمستاجری در حال بررسی است.
+TenantContext اجباری، تست‌های منفی Cross-tenant، RLS، پرداخت، Quote-to-Order،
+اعلان Delivery و چاپ اجرایی هنوز تکمیل نشده‌اند و نباید قابلیت تحویل‌شده معرفی
+شوند.
 
 ## منابع معتبر وضعیت فعلی
 
