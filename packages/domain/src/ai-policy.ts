@@ -39,6 +39,7 @@ export interface AiEvidenceReference {
 }
 
 export interface AiHumanApproval {
+  approvalId: string
   proposalId: string
   tenantId: string
   action: AiAction
@@ -54,13 +55,22 @@ export interface AiProposalAdmissionRequest {
   tenantId: string
   agentCharterVersion: string
   modelVersion: string
-  allowedActions: ReadonlyArray<AiAction>
   action: AiAction
   policyVersion: string
   promptInjectionAssessment: 'PASS' | 'FAIL' | 'NOT_EVALUATED'
   evidence: ReadonlyArray<AiEvidenceReference>
-  approval?: AiHumanApproval
+  approvalId?: string
   requestedAt: Date
+}
+
+export interface AiProposalAdmissionTrustContext {
+  evaluatedAt: Date
+  authenticatedRequesterAccountId: string
+  authoritativeCharter: {
+    version: string
+    allowedActions: ReadonlyArray<AiAction>
+  }
+  verifiedApproval?: AiHumanApproval
 }
 
 export interface AiProposalAdmissionDecision {
@@ -69,27 +79,46 @@ export interface AiProposalAdmissionDecision {
   executionAuthorized: false
 }
 
+function isValidDate(value: Date): boolean {
+  return value instanceof Date && Number.isFinite(value.getTime())
+}
+
 function deny(reasons: ReadonlyArray<string>): never {
   throw new DomainError('AI_POLICY_DENIED', 'AI proposal admission denied', { reasons })
 }
 
 export function evaluateAiProposalAdmission(
   request: AiProposalAdmissionRequest,
+  trust: AiProposalAdmissionTrustContext,
 ): Readonly<AiProposalAdmissionDecision> {
   const reasons: string[] = []
 
   if (!request.tenantId) reasons.push('Tenant context is required')
   if (!request.proposalId) reasons.push('Proposal ID is required')
+  if (!trust.authenticatedRequesterAccountId) reasons.push('Authenticated requester is required')
   if (!request.agentCharterVersion) reasons.push('Versioned agent charter is required')
   if (!request.modelVersion) reasons.push('Model version is required')
   if (!request.policyVersion) reasons.push('Policy version is required')
-  if (!request.allowedActions.includes(request.action)) {
-    reasons.push('Action is outside the agent allow-list')
+  if (!isValidDate(request.requestedAt)) reasons.push('Request timestamp must be valid')
+  if (!isValidDate(trust.evaluatedAt)) reasons.push('Trusted evaluation timestamp must be valid')
+
+  if (request.agentCharterVersion !== trust.authoritativeCharter.version) {
+    reasons.push('Requested charter does not match the authoritative charter')
+  }
+  if (!trust.authoritativeCharter.allowedActions.includes(request.action)) {
+    reasons.push('Action is outside the authoritative agent allow-list')
   }
   if (request.promptInjectionAssessment !== 'PASS') {
     reasons.push('Prompt-injection assessment must pass')
   }
   if (request.evidence.length === 0) reasons.push('At least one evidence reference is required')
+
+  const evaluatedAtMs = trust.evaluatedAt.getTime()
+  if (isValidDate(request.requestedAt) && isValidDate(trust.evaluatedAt)) {
+    if (request.requestedAt.getTime() > evaluatedAtMs) {
+      reasons.push('Request timestamp cannot be later than trusted evaluation time')
+    }
+  }
 
   for (const evidence of request.evidence) {
     if (evidence.tenantId !== request.tenantId) {
@@ -104,7 +133,12 @@ export function evaluateAiProposalAdmission(
     if (evidence.classification === 'PII' && evidence.redactionStatus !== 'REDACTED') {
       reasons.push('PII evidence must be redacted')
     }
-    if (evidence.retainedUntil.getTime() <= request.requestedAt.getTime()) {
+    if (!isValidDate(evidence.retainedUntil)) {
+      reasons.push('Evidence retention timestamp must be valid')
+    } else if (
+      isValidDate(trust.evaluatedAt) &&
+      evidence.retainedUntil.getTime() <= evaluatedAtMs
+    ) {
       reasons.push('Expired evidence cannot be used')
     }
   }
@@ -119,24 +153,34 @@ export function evaluateAiProposalAdmission(
     })
   }
 
-  const approval = request.approval
-  if (!approval) deny(['Privileged proposals require explicit human approval'])
+  if (!request.approvalId) deny(['Privileged proposals require an approval reference'])
+
+  const approval = trust.verifiedApproval
+  if (!approval || approval.approvalId !== request.approvalId) {
+    deny(['Approval reference was not verified by an authoritative source'])
+  }
 
   if (
     approval.proposalId !== request.proposalId ||
     approval.tenantId !== request.tenantId ||
     approval.action !== request.action
   ) {
-    deny(['Approval scope does not match the proposal'])
+    deny(['Verified approval scope does not match the proposal'])
+  }
+  if (approval.approvedByAccountId === trust.authenticatedRequesterAccountId) {
+    deny(['Proposal requester cannot approve their own privileged action'])
   }
   if (!approval.approvedByAccountId || !approval.reason || !approval.ticketReference) {
     deny(['Human approver, reason, and ticket reference are required'])
   }
+  if (!isValidDate(approval.approvedAt) || !isValidDate(approval.expiresAt)) {
+    deny(['Approval timestamps must be valid'])
+  }
   if (
-    approval.approvedAt.getTime() > request.requestedAt.getTime() ||
-    approval.expiresAt.getTime() <= request.requestedAt.getTime()
+    approval.approvedAt.getTime() > evaluatedAtMs ||
+    approval.expiresAt.getTime() <= evaluatedAtMs
   ) {
-    deny(['Approval is not active at proposal admission time'])
+    deny(['Approval is not active at trusted evaluation time'])
   }
 
   return Object.freeze({

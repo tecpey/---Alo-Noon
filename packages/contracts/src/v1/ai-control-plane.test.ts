@@ -13,7 +13,6 @@ const request = {
     charterVersion: 'ciso-v1',
     modelProvider: 'provider-abstract',
     modelVersion: 'model-v1',
-    allowedActions: ['DETECT', 'EXPLAIN'],
   },
   action: 'DETECT',
   purpose: 'Detect anomalous authorization patterns',
@@ -37,6 +36,26 @@ const request = {
 describe('AI control-plane contracts', () => {
   it('accepts a traceable tenant-scoped advisory proposal', () => {
     expect(aiProposalAdmissionRequestSchema.parse(request)).toBeDefined()
+  })
+
+  it('accepts only authority references from an untrusted proposal', () => {
+    const approvalId = '50000000-0000-4000-8000-000000000005'
+    expect(aiProposalAdmissionRequestSchema.parse({ ...request, approvalId })).toBeDefined()
+    expect(() =>
+      aiProposalAdmissionRequestSchema.parse({
+        ...request,
+        requestedByAccountId: '40000000-0000-4000-8000-000000000004',
+      }),
+    ).toThrow()
+    expect(() =>
+      aiProposalAdmissionRequestSchema.parse({
+        ...request,
+        approval: {
+          approvalId,
+          approvedByAccountId: '40000000-0000-4000-8000-000000000004',
+        },
+      }),
+    ).toThrow()
   })
 
   it('rejects missing evidence and unverifiable provenance digests', () => {
