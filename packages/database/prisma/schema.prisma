@@ -838,8 +838,10 @@ model DeliveryPricingRule {
   updatedAt             DateTime                       @updatedAt
 
   @@unique([tenantId, cityId, operationalZoneId, version], map: "DeliveryPricingRule_scope_version_key")
-  @@unique([id, tenantId], map: "DeliveryPricingRule_id_tenant_key")
+  @@unique([id, tenantId], map: "g3b_DeliveryPricingRule_id_tenant_key")
   @@index([tenantId, cityId, operationalZoneId, isActive, effectiveFrom], map: "DeliveryPricingRule_active_scope_idx")
+  @@index([cityId, tenantId], map: "g3b_DeliveryPricingRule_cityId_tenant_idx")
+  @@index([operationalZoneId, tenantId], map: "g3b_DeliveryPricingRule_operationalZoneId_tenant_idx")
 }
 
 model Cart {
@@ -929,6 +931,8 @@ model Quote {
   @@index([cartId, cartVersion, status])
   @@index([deliveryAddressId])
   @@index([deliveryPricingRuleId])
+  @@index([deliveryAddressId, tenantId], map: "g3b_Quote_deliveryAddressId_tenant_idx")
+  @@index([deliveryPricingRuleId, tenantId], map: "g3b_Quote_deliveryPricingRuleId_tenant_idx")
 
   @@index([tenantId])
 
@@ -1025,6 +1029,7 @@ model Order {
   @@index([operationalZoneId, tenantId], map: "g3b_Order_operationalZoneId_tenant_idx")
   @@index([bakeryBranchId, tenantId], map: "g3b_Order_bakeryBranchId_tenant_idx")
   @@index([savedAddressId, tenantId], map: "g3b_Order_savedAddressId_tenant_idx")
+  @@index([quoteId, tenantId], map: "g3b_Order_quoteId_tenant_idx")
 }
 
 model OrderItem {
