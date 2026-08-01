@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { aiProposalAdmissionRequestSchema } from './ai-control-plane'
+import {
+  aiProposalAdmissionDecisionSchema,
+  aiProposalAdmissionRequestSchema,
+} from './ai-control-plane'
 
 const request = {
   proposalId: '10000000-0000-4000-8000-000000000001',
@@ -42,6 +45,24 @@ describe('AI control-plane contracts', () => {
       aiProposalAdmissionRequestSchema.parse({
         ...request,
         evidence: [{ ...request.evidence[0], contentDigest: 'unverified' }],
+      }),
+    ).toThrow()
+  })
+
+  it('requires denial reasons while keeping admitted proposals reason-free', () => {
+    expect(
+      aiProposalAdmissionDecisionSchema.parse({
+        outcome: 'ADMIT_ADVISORY_PROPOSAL',
+        policyVersion: 'ai-policy-v1',
+        executionAuthorized: false,
+      }),
+    ).toMatchObject({ reasons: [] })
+    expect(() =>
+      aiProposalAdmissionDecisionSchema.parse({
+        outcome: 'DENY',
+        policyVersion: 'ai-policy-v1',
+        reasons: [],
+        executionAuthorized: false,
       }),
     ).toThrow()
   })
