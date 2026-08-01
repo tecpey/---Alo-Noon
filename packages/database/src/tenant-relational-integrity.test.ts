@@ -2,10 +2,16 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const schemaUrl = new URL('../prisma/schema.prisma', import.meta.url)
-const migrationUrl = new URL(
-  '../prisma/migrations/20260801170000_tenant_relational_integrity_g3b/migration.sql',
-  import.meta.url,
-)
+const migrationUrls = [
+  new URL(
+    '../prisma/migrations/20260801170000_tenant_relational_integrity_g3b/migration.sql',
+    import.meta.url,
+  ),
+  new URL(
+    '../prisma/migrations/20260801234500_phase_2e_delivery_quote_foundation/migration.sql',
+    import.meta.url,
+  ),
+]
 
 type TenantRelation = {
   child: string
@@ -74,12 +80,12 @@ function registeredRelationsFromMigration(sql: string): TenantRelation[] {
 
 describe('tenant relational integrity G3B', () => {
   const schema = readFileSync(schemaUrl, 'utf8')
-  const sql = readFileSync(migrationUrl, 'utf8')
+  const sql = migrationUrls.map((migrationUrl) => readFileSync(migrationUrl, 'utf8')).join('\n')
   const schemaRelations = tenantRelationsFromSchema(schema)
   const registeredRelations = registeredRelationsFromMigration(sql)
 
   it('covers every implemented tenant-owned relation exactly once', () => {
-    expect(schemaRelations).toHaveLength(47)
+    expect(schemaRelations).toHaveLength(52)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
       new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,
