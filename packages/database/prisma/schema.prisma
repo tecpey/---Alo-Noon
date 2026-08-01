@@ -367,6 +367,8 @@ model City {
   updatedAt        DateTime          @updatedAt
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_City_id_tenant_key")
 }
 
 model OperationalZone {
@@ -389,6 +391,9 @@ model OperationalZone {
   @@index([cityId, isActive])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_OperationalZone_id_tenant_key")
+  @@index([cityId, tenantId], map: "g3b_OperationalZone_cityId_tenant_idx")
 }
 
 model ServiceArea {
@@ -407,6 +412,8 @@ model ServiceArea {
   @@index([operationalZoneId, isActive])
 
   @@index([tenantId])
+
+  @@index([operationalZoneId, tenantId], map: "g3b_ServiceArea_operationalZoneId_tenant_idx")
 }
 
 model Customer {
@@ -434,6 +441,8 @@ model Customer {
   @@index([lifecycleStatus, createdAt])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Customer_id_tenant_key")
 }
 
 model IdentityAccount {
@@ -542,6 +551,8 @@ model Household {
   updatedAt DateTime          @updatedAt
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Household_id_tenant_key")
 }
 
 model HouseholdMember {
@@ -561,6 +572,9 @@ model HouseholdMember {
   @@index([householdId, role])
 
   @@index([tenantId])
+
+  @@index([householdId, tenantId], map: "g3b_HouseholdMember_householdId_tenant_idx")
+  @@index([customerId, tenantId], map: "g3b_HouseholdMember_customerId_tenant_idx")
 }
 
 model Address {
@@ -591,6 +605,11 @@ model Address {
   @@index([cityId, operationalZoneId, verificationState])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Address_id_tenant_key")
+  @@index([customerId, tenantId], map: "g3b_Address_customerId_tenant_idx")
+  @@index([cityId, tenantId], map: "g3b_Address_cityId_tenant_idx")
+  @@index([operationalZoneId, tenantId], map: "g3b_Address_operationalZoneId_tenant_idx")
 }
 
 model Bakery {
@@ -607,6 +626,8 @@ model Bakery {
   @@index([partnerStatus])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Bakery_id_tenant_key")
 }
 
 model BakeryBranch {
@@ -641,6 +662,11 @@ model BakeryBranch {
   @@index([operationalZoneId, operationalStatus, qualityStatus])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_BakeryBranch_id_tenant_key")
+  @@index([bakeryId, tenantId], map: "g3b_BakeryBranch_bakeryId_tenant_idx")
+  @@index([cityId, tenantId], map: "g3b_BakeryBranch_cityId_tenant_idx")
+  @@index([operationalZoneId, tenantId], map: "g3b_BakeryBranch_operationalZoneId_tenant_idx")
 }
 
 model BakeryOperatingHours {
@@ -656,6 +682,8 @@ model BakeryOperatingHours {
   @@unique([bakeryBranchId, dayOfWeek])
 
   @@index([tenantId])
+
+  @@index([bakeryBranchId, tenantId], map: "g3b_BakeryOperatingHours_bakeryBranchId_tenant_idx")
 }
 
 model BakeryCapacitySlot {
@@ -673,6 +701,8 @@ model BakeryCapacitySlot {
   @@unique([bakeryBranchId, serviceDate])
 
   @@index([tenantId])
+
+  @@index([bakeryBranchId, tenantId], map: "g3b_BakeryCapacitySlot_bakeryBranchId_tenant_idx")
 }
 
 model ProductCategory {
@@ -685,6 +715,8 @@ model ProductCategory {
   updatedAt DateTime  @updatedAt
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_ProductCategory_id_tenant_key")
 }
 
 model Product {
@@ -704,6 +736,9 @@ model Product {
   @@index([categoryId, lifecycle])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Product_id_tenant_key")
+  @@index([categoryId, tenantId], map: "g3b_Product_categoryId_tenant_idx")
 }
 
 model ProductVariant {
@@ -735,6 +770,9 @@ model ProductVariant {
   @@index([fulfillmentClass, lifecycle])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_ProductVariant_id_tenant_key")
+  @@index([productId, tenantId], map: "g3b_ProductVariant_productId_tenant_idx")
 }
 
 model BakeryProductOffering {
@@ -761,6 +799,10 @@ model BakeryProductOffering {
   @@index([bakeryBranchId, availability])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_BakeryProductOffering_id_tenant_key")
+  @@index([bakeryBranchId, tenantId], map: "g3b_BakeryProductOffering_bakeryBranchId_tenant_idx")
+  @@index([productVariantId, tenantId], map: "g3b_BakeryProductOffering_productVariantId_tenant_idx")
 }
 
 model Cart {
@@ -785,6 +827,12 @@ model Cart {
   @@index([cityId, operationalZoneId, bakeryBranchId, state])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Cart_id_tenant_key")
+  @@index([customerId, tenantId], map: "g3b_Cart_customerId_tenant_idx")
+  @@index([cityId, tenantId], map: "g3b_Cart_cityId_tenant_idx")
+  @@index([operationalZoneId, tenantId], map: "g3b_Cart_operationalZoneId_tenant_idx")
+  @@index([bakeryBranchId, tenantId], map: "g3b_Cart_bakeryBranchId_tenant_idx")
 }
 
 model CartItem {
@@ -802,6 +850,9 @@ model CartItem {
   @@index([bakeryProductOfferingId])
 
   @@index([tenantId])
+
+  @@index([cartId, tenantId], map: "g3b_CartItem_cartId_tenant_idx")
+  @@index([bakeryProductOfferingId, tenantId], map: "g3b_CartItem_bakeryProductOfferingId_tenant_idx")
 }
 
 model Quote {
@@ -829,6 +880,10 @@ model Quote {
   @@index([cartId, cartVersion, status])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Quote_id_tenant_key")
+  @@index([cartId, tenantId], map: "g3b_Quote_cartId_tenant_idx")
+  @@index([customerId, tenantId], map: "g3b_Quote_customerId_tenant_idx")
 }
 
 model QuoteItem {
@@ -855,6 +910,10 @@ model QuoteItem {
   @@index([productVariantId])
 
   @@index([tenantId])
+
+  @@index([quoteId, tenantId], map: "g3b_QuoteItem_quoteId_tenant_idx")
+  @@index([bakeryProductOfferingId, tenantId], map: "g3b_QuoteItem_bakeryProductOfferingId_tenant_idx")
+  @@index([productVariantId, tenantId], map: "g3b_QuoteItem_productVariantId_tenant_idx")
 }
 
 model Order {
@@ -906,6 +965,13 @@ model Order {
   @@index([bakeryBranchId, productionState, createdAt])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Order_id_tenant_key")
+  @@index([customerId, tenantId], map: "g3b_Order_customerId_tenant_idx")
+  @@index([cityId, tenantId], map: "g3b_Order_cityId_tenant_idx")
+  @@index([operationalZoneId, tenantId], map: "g3b_Order_operationalZoneId_tenant_idx")
+  @@index([bakeryBranchId, tenantId], map: "g3b_Order_bakeryBranchId_tenant_idx")
+  @@index([savedAddressId, tenantId], map: "g3b_Order_savedAddressId_tenant_idx")
 }
 
 model OrderItem {
@@ -932,6 +998,10 @@ model OrderItem {
   @@index([productVariantId])
 
   @@index([tenantId])
+
+  @@index([orderId, tenantId], map: "g3b_OrderItem_orderId_tenant_idx")
+  @@index([productVariantId, tenantId], map: "g3b_OrderItem_productVariantId_tenant_idx")
+  @@index([bakeryProductOfferingId, tenantId], map: "g3b_OrderItem_bakeryProductOfferingId_tenant_idx")
 }
 
 model OrderStateTransition {
@@ -954,6 +1024,8 @@ model OrderStateTransition {
   @@index([correlationId])
 
   @@index([tenantId])
+
+  @@index([orderId, tenantId], map: "g3b_OrderStateTransition_orderId_tenant_idx")
 }
 
 model Fulfillment {
@@ -982,6 +1054,10 @@ model Fulfillment {
   @@index([bakeryBranchId, state, readyAtEstimate])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Fulfillment_id_tenant_key")
+  @@index([orderId, tenantId], map: "g3b_Fulfillment_orderId_tenant_idx")
+  @@index([bakeryBranchId, tenantId], map: "g3b_Fulfillment_bakeryBranchId_tenant_idx")
 }
 
 model CourierPartner {
@@ -996,6 +1072,8 @@ model CourierPartner {
   updatedAt   DateTime  @updatedAt
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_CourierPartner_id_tenant_key")
 }
 
 model Courier {
@@ -1015,6 +1093,9 @@ model Courier {
   @@index([courierPartnerId, status])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Courier_id_tenant_key")
+  @@index([courierPartnerId, tenantId], map: "g3b_Courier_courierPartnerId_tenant_idx")
 }
 
 model Vehicle {
@@ -1032,6 +1113,9 @@ model Vehicle {
   @@index([courierPartnerId, type, status])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_Vehicle_id_tenant_key")
+  @@index([courierPartnerId, tenantId], map: "g3b_Vehicle_courierPartnerId_tenant_idx")
 }
 
 model DeliveryTask {
@@ -1053,6 +1137,9 @@ model DeliveryTask {
   @@index([state, pickupBefore])
 
   @@index([tenantId])
+
+  @@unique([id, tenantId], map: "g3b_DeliveryTask_id_tenant_key")
+  @@index([fulfillmentId, tenantId], map: "g3b_DeliveryTask_fulfillmentId_tenant_idx")
 }
 
 model DeliveryAssignment {
@@ -1075,6 +1162,10 @@ model DeliveryAssignment {
   @@index([courierId, state, offeredAt])
 
   @@index([tenantId])
+
+  @@index([deliveryTaskId, tenantId], map: "g3b_DeliveryAssignment_deliveryTaskId_tenant_idx")
+  @@index([courierId, tenantId], map: "g3b_DeliveryAssignment_courierId_tenant_idx")
+  @@index([vehicleId, tenantId], map: "g3b_DeliveryAssignment_vehicleId_tenant_idx")
 }
 
 model CustomerEvent {
@@ -1100,6 +1191,8 @@ model CustomerEvent {
   @@index([correlationId])
 
   @@index([tenantId])
+
+  @@index([customerId, tenantId], map: "g3b_CustomerEvent_customerId_tenant_idx")
 }
 
 model DomainEventOutbox {
@@ -1173,6 +1266,9 @@ model SupportCase {
   @@index([orderId])
 
   @@index([tenantId])
+
+  @@index([customerId, tenantId], map: "g3b_SupportCase_customerId_tenant_idx")
+  @@index([orderId, tenantId], map: "g3b_SupportCase_orderId_tenant_idx")
 }
 
 model SupportCaseNote {
