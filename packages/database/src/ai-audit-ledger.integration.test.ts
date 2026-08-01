@@ -29,7 +29,6 @@ databaseDescribe('governed AI durable audit G6B', () => {
   afterAll(async () => {
     await prisma.$executeRawUnsafe(`DROP OWNED BY "${roleName}"`)
     await prisma.$executeRawUnsafe(`DROP ROLE IF EXISTS "${roleName}"`)
-    await prisma.tenant.deleteMany({ where: { id: { in: [tenantA, tenantB] } } })
     await prisma.$disconnect()
   })
 
