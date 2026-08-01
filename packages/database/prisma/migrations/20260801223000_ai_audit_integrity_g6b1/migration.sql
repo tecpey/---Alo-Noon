@@ -9,7 +9,9 @@ BEGIN
     WHEN 'object' THEN
       FOR member IN SELECT key, value AS nested FROM jsonb_each(payload_value)
       LOOP
-        IF member.key ~* '^(raw.?prompt|raw.?conversation|raw.?tool.?output|password|passwd|secret|token|api.?key|private.?key|authorization|cookie|session)$'
+        IF member.key ~* '(raw.?prompt|raw.?conversation|raw.?tool.?output|password|passwd|secret|token|credential|api.?key|private.?key|authorization|cookie|session)'
+           OR (member.key ~* '(email|phone|mobile|address|postal|latitude|longitude|first.?name|last.?name|full.?name)'
+               AND member.nested IS DISTINCT FROM '"[REDACTED]"'::jsonb)
            OR NOT ai_audit_payload_is_safe(member.nested) THEN
           RETURN false;
         END IF;
@@ -31,6 +33,43 @@ BEGIN
 END;
 $audit_payload$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
+DO $audit_preflight$
+DECLARE
+  invalid_count bigint;
+BEGIN
+  WITH ordered_history AS (
+    SELECT
+      event.*,
+      row_number() OVER (
+        PARTITION BY "tenantId", "proposalId"
+        ORDER BY "sequence"
+      ) AS expected_sequence,
+      lag("eventDigest") OVER (
+        PARTITION BY "tenantId", "proposalId"
+        ORDER BY "sequence"
+      ) AS expected_previous_digest
+    FROM "AiControlPlaneAuditEvent" AS event
+  )
+  SELECT count(*)
+    INTO invalid_count
+    FROM ordered_history
+   WHERE NOT ai_audit_payload_is_safe("payload")
+      OR ("classification" = 'PII' AND "redactionStatus" <> 'REDACTED')
+      OR "sequence" <> expected_sequence
+      OR (expected_sequence = 1 AND "previousEventDigest" IS NOT NULL)
+      OR (
+        expected_sequence > 1
+        AND "previousEventDigest" IS DISTINCT FROM expected_previous_digest
+      );
+
+  IF invalid_count > 0 THEN
+    RAISE EXCEPTION
+      'AiControlPlaneAuditEvent preflight rejected % unsafe or non-contiguous historical rows',
+      invalid_count;
+  END IF;
+END;
+$audit_preflight$;
+
 CREATE FUNCTION enforce_ai_audit_insert_integrity() RETURNS trigger AS $audit_integrity$
 DECLARE
   predecessor record;
@@ -39,7 +78,8 @@ BEGIN
     hashtextextended(NEW."tenantId"::text || ':' || NEW."proposalId"::text, 0)
   );
 
-  IF NOT ai_audit_payload_is_safe(NEW."payload") THEN
+  IF NOT ai_audit_payload_is_safe(NEW."payload")
+     OR (NEW."classification" = 'PII' AND NEW."redactionStatus" <> 'REDACTED') THEN
     RAISE EXCEPTION 'AiControlPlaneAuditEvent payload is not sanitized';
   END IF;
 
