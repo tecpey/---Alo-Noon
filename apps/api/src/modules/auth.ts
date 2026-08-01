@@ -65,7 +65,12 @@ export interface AuthRepository {
     correlationId: string
     tenantId: string
   }): Promise<CreateChallengeResult>
-  invalidateChallenge(challengeId: string, tenantId: string, now: Date, correlationId: string): Promise<void>
+  invalidateChallenge(
+    challengeId: string,
+    tenantId: string,
+    now: Date,
+    correlationId: string,
+  ): Promise<void>
   findChallenge(challengeId: string): Promise<OtpChallengeRecord | null>
   recordFailedAttempt(challengeId: string, now: Date): Promise<void>
   consumeChallenge(
@@ -115,7 +120,10 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
   app.post('/api/v1/auth/otp/request', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
     const tenantId = await resolveTenantId(request, dependencies)
-    if (!tenantId) return reply.code(404).send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
+    if (!tenantId)
+      return reply
+        .code(404)
+        .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
     const parsed = otpRequestSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply
@@ -154,7 +162,10 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
   app.post('/api/v1/auth/otp/verify', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
     const tenantId = await resolveTenantId(request, dependencies)
-    if (!tenantId) return reply.code(404).send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
+    if (!tenantId)
+      return reply
+        .code(404)
+        .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
     const parsed = otpVerifySchema.safeParse(request.body)
     if (!parsed.success) {
       return reply
@@ -169,7 +180,12 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
     }
 
     try {
-      const result = await verifyOtp(parsed.data.challengeId, parsed.data.code, tenantId, dependencies)
+      const result = await verifyOtp(
+        parsed.data.challengeId,
+        parsed.data.code,
+        tenantId,
+        dependencies,
+      )
       reply.header(
         'Set-Cookie',
         sessionCookie(result.token, result.context.expiresAt, dependencies),
@@ -497,7 +513,10 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           })
           if (consumed.count !== 1) return null
 
-          const existingCustomer = await transaction.customer.findUnique({ where: { mobileE164 }, select: { tenantId: true } })
+          const existingCustomer = await transaction.customer.findUnique({
+            where: { mobileE164 },
+            select: { tenantId: true },
+          })
           if (existingCustomer && existingCustomer.tenantId !== tenantId) return null
           const customer = await transaction.customer.upsert({
             where: { mobileE164 },
@@ -609,7 +628,13 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           occurredAt: input.now,
         },
       })
-      return loadSessionContext(prisma, input.tokenDigest, input.tenantId, input.now, input.expiresAt)
+      return loadSessionContext(
+        prisma,
+        input.tokenDigest,
+        input.tenantId,
+        input.now,
+        input.expiresAt,
+      )
     },
 
     async findSession(tokenDigest, tenantId, now) {
@@ -619,7 +644,12 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
     async revokeSession(tokenDigest, now, correlationId) {
       const session = await prisma.authSession.findUnique({
         where: { tokenDigest },
-        select: { id: true, activeTenantId: true, account: { select: { customerId: true } }, revokedAt: true },
+        select: {
+          id: true,
+          activeTenantId: true,
+          account: { select: { customerId: true } },
+          revokedAt: true,
+        },
       })
       if (!session || session.revokedAt) return false
 
@@ -660,7 +690,12 @@ async function loadSessionContext(
       activeTenant: { is: { status: 'ACTIVE' } },
       revokedAt: null,
       expiresAt: { gt: now },
-      account: { is: { status: 'ACTIVE', tenantMemberships: { some: { tenantId, status: 'ACTIVE', revokedAt: null } } } },
+      account: {
+        is: {
+          status: 'ACTIVE',
+          tenantMemberships: { some: { tenantId, status: 'ACTIVE', revokedAt: null } },
+        },
+      },
       ...(expectedExpiry && { expiresAt: expectedExpiry }),
     },
     select: {
@@ -727,7 +762,10 @@ export async function authenticateRequest(
     .catch(() => null)
 }
 
-async function resolveTenantId(request: FastifyRequest, dependencies: AuthDependencies): Promise<string | null> {
+async function resolveTenantId(
+  request: FastifyRequest,
+  dependencies: AuthDependencies,
+): Promise<string | null> {
   return dependencies.repository.resolveTenantByHost(request.hostname).catch(() => null)
 }
 
