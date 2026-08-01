@@ -54,6 +54,7 @@ databaseDescribe('PostgreSQL tenant isolation G5', () => {
     await prisma.tenant.deleteMany({
       where: { id: { in: [tenantA, tenantB] } },
     })
+    await prisma.$executeRawUnsafe(`DROP OWNED BY "${roleName}"`)
     await prisma.$executeRawUnsafe(`DROP ROLE IF EXISTS "${roleName}"`)
     await prisma.$disconnect()
   })
