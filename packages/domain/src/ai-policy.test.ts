@@ -5,6 +5,15 @@ import { AiAction, evaluateAiProposalAdmission } from './ai-policy'
 
 const requestedAt = new Date('2026-08-01T12:00:00.000Z')
 const tenantId = 'tenant-a'
+const evidence = {
+  evidenceId: 'evidence-1',
+  tenantId,
+  classification: 'INTERNAL' as const,
+  redactionStatus: 'REDACTED' as const,
+  provenanceUri: 'evidence://logs/1',
+  contentDigest: `sha256:${'a'.repeat(64)}`,
+  retainedUntil: new Date('2026-09-01T00:00:00.000Z'),
+}
 const base = {
   proposalId: 'proposal-1',
   tenantId,
@@ -14,17 +23,7 @@ const base = {
   action: AiAction.DETECT,
   policyVersion: 'ai-policy-v1',
   promptInjectionAssessment: 'PASS' as const,
-  evidence: [
-    {
-      evidenceId: 'evidence-1',
-      tenantId,
-      classification: 'INTERNAL' as const,
-      redactionStatus: 'REDACTED' as const,
-      provenanceUri: 'evidence://logs/1',
-      contentDigest: `sha256:${'a'.repeat(64)}`,
-      retainedUntil: new Date('2026-09-01T00:00:00.000Z'),
-    },
-  ],
+  evidence: [evidence],
   requestedAt,
 }
 
@@ -41,7 +40,7 @@ describe('AI proposal admission policy', () => {
     expect(() =>
       evaluateAiProposalAdmission({
         ...base,
-        evidence: [{ ...base.evidence[0], tenantId: 'tenant-b' }],
+        evidence: [{ ...evidence, tenantId: 'tenant-b' }],
       }),
     ).toThrowError(DomainError)
     expect(() =>
@@ -49,7 +48,7 @@ describe('AI proposal admission policy', () => {
         ...base,
         evidence: [
           {
-            ...base.evidence[0],
+            ...evidence,
             classification: 'PII',
             redactionStatus: 'NOT_REQUIRED',
           },
