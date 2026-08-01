@@ -927,6 +927,8 @@ model Quote {
 
   @@index([customerId, status, expiresAt])
   @@index([cartId, cartVersion, status])
+  @@index([deliveryAddressId])
+  @@index([deliveryPricingRuleId])
 
   @@index([tenantId])
 
