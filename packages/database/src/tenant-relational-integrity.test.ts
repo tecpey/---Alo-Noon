@@ -17,7 +17,12 @@ function tenantRelationsFromSchema(schema: string): TenantRelation[] {
   const models = new Map<string, string>()
 
   for (const match of schema.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)) {
-    models.set(match[1], match[2])
+    const modelName = match[1]
+    const modelBody = match[2]
+
+    if (modelName && modelBody) {
+      models.set(modelName, modelBody)
+    }
   }
 
   const tenantOwnedModels = new Set(
@@ -35,11 +40,14 @@ function tenantRelationsFromSchema(schema: string): TenantRelation[] {
         /^\s*\w+\s+(\w+)\??\s+@relation\(fields:\s*\[(\w+)\],\s*references:\s*\[\w+\],\s*onDelete:\s*\w+\)/,
       )
 
-      if (relation && tenantOwnedModels.has(relation[1])) {
+      const parent = relation?.[1]
+      const foreignKey = relation?.[2]
+
+      if (parent && foreignKey && tenantOwnedModels.has(parent)) {
         relations.push({
           child,
-          foreignKey: relation[2],
-          parent: relation[1],
+          foreignKey,
+          parent,
         })
       }
     }
@@ -52,11 +60,13 @@ function tenantRelationsFromSchema(schema: string): TenantRelation[] {
 
 function registeredRelationsFromMigration(sql: string): TenantRelation[] {
   return [...sql.matchAll(/    \('([^']+)', '([^']+)', '([^']+)'\)/g)]
-    .map(([, child, foreignKey, parent]) => ({
-      child,
-      foreignKey,
-      parent,
-    }))
+    .flatMap((match) => {
+      const child = match[1]
+      const foreignKey = match[2]
+      const parent = match[3]
+
+      return child && foreignKey && parent ? [{ child, foreignKey, parent }] : []
+    })
     .sort((left, right) =>
       `${left.child}.${left.foreignKey}`.localeCompare(`${right.child}.${right.foreignKey}`),
     )
