@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { DomainError } from './errors'
-import {
-  AiAction,
-  AiHumanApproval,
-  AiProposalAdmissionTrustContext,
-  evaluateAiProposalAdmission,
-} from './ai-policy'
+import { AiAction, evaluateAiProposalAdmission } from './ai-policy'
+import type { AiHumanApproval, AiProposalAdmissionTrustContext } from './ai-policy'
 
 const requestedAt = new Date('2026-08-01T12:00:00.000Z')
 const evaluatedAt = new Date('2026-08-01T12:00:01.000Z')
