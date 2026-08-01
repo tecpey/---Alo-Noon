@@ -30,7 +30,7 @@ const credentialValue = /(?:bearer\s+[a-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE 
 function assertSanitizedPayload(
   value: unknown,
   context: z.RefinementCtx,
-  path: PropertyKey[] = [],
+  path: Array<string | number> = [],
 ): void {
   if (typeof value === 'string' && credentialValue.test(value)) {
     context.addIssue({
