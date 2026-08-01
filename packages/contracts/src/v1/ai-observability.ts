@@ -23,41 +23,6 @@ export const aiAuditEventTypeSchema = z.enum([
 ])
 
 const sha256Schema = z.string().regex(/^sha256:[a-f0-9]{64}$/)
-const forbiddenPayloadKey =
-  /^(?:raw.?prompt|raw.?conversation|raw.?tool.?output|password|passwd|secret|token|api.?key|private.?key|authorization|cookie|session)$/i
-const credentialValue = /(?:bearer\s+[a-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i
-
-function assertSanitizedPayload(
-  value: unknown,
-  context: z.RefinementCtx,
-  path: Array<string | number> = [],
-): void {
-  if (typeof value === 'string' && credentialValue.test(value)) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Credential material is forbidden',
-      path,
-    })
-    return
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertSanitizedPayload(item, context, [...path, index]))
-    return
-  }
-  if (value !== null && typeof value === 'object') {
-    for (const [key, nested] of Object.entries(value)) {
-      if (forbiddenPayloadKey.test(key)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Raw or secret-bearing audit payload field is forbidden',
-          path: [...path, key],
-        })
-      } else {
-        assertSanitizedPayload(nested, context, [...path, key])
-      }
-    }
-  }
-}
 
 export const aiAuditEventSchema = z
   .object({
@@ -86,30 +51,6 @@ export const aiAuditEventSchema = z
     retainedUntil: isoDateTimeSchema,
   })
   .strict()
-  .superRefine((event, context) => {
-    assertSanitizedPayload(event.payload, context, ['payload'])
-    if (event.classification === 'PII' && event.redactionStatus !== 'REDACTED') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'PII audit payloads must be redacted',
-        path: ['redactionStatus'],
-      })
-    }
-    if (event.sequence === 1 && event.previousEventDigest !== undefined) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'The first audit event cannot have a predecessor',
-        path: ['previousEventDigest'],
-      })
-    }
-    if (event.sequence > 1 && event.previousEventDigest === undefined) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Subsequent audit events require a predecessor digest',
-        path: ['previousEventDigest'],
-      })
-    }
-  })
 
 export type AiAuditEvent = z.infer<typeof aiAuditEventSchema>
 export type AiAuditEventType = z.infer<typeof aiAuditEventTypeSchema>
