@@ -70,12 +70,17 @@ export function authorizeQuoteToOrder(
     candidate.deliveryLongitudeSnapshot,
   ]
   if (
-    requiredSnapshots.some((value) => value === null || (typeof value === 'string' && !value.trim())) ||
+    requiredSnapshots.some(
+      (value) => value === null || (typeof value === 'string' && !value.trim()),
+    ) ||
     candidate.deliveryPricingRuleVersion === null ||
     !Number.isSafeInteger(candidate.deliveryPricingRuleVersion) ||
     candidate.deliveryPricingRuleVersion < 1
   ) {
-    throw new DomainError('QUOTE_DELIVERY_SNAPSHOT_INCOMPLETE', 'Quote delivery snapshot is incomplete')
+    throw new DomainError(
+      'QUOTE_DELIVERY_SNAPSHOT_INCOMPLETE',
+      'Quote delivery snapshot is incomplete',
+    )
   }
 
   if (
