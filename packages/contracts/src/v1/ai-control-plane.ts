@@ -66,8 +66,7 @@ export const aiProposalAdmissionRequestSchema = z
   .object({
     proposalId: uuidSchema,
     tenantId: uuidSchema,
-    requestedByAccountId: uuidSchema,
-    agent: z
+      agent: z
       .object({
         role: aiAgentRoleSchema,
         charterVersion: z.string().min(1).max(64),
