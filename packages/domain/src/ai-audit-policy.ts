@@ -28,14 +28,22 @@ function assertPayloadSafe(value: RedactableValue, path: string): void {
     for (const [key, nested] of Object.entries(value)) {
       const nestedPath = path ? `${path}.${key}` : key
       if (forbiddenKey.test(key)) {
-        throw new DomainError('AI_AUDIT_POLICY_VIOLATION', 'Raw or secret-bearing fields are forbidden', {
-          path: nestedPath,
-        })
+        throw new DomainError(
+          'AI_AUDIT_POLICY_VIOLATION',
+          'Raw or secret-bearing fields are forbidden',
+          {
+            path: nestedPath,
+          },
+        )
       }
       if (piiKey.test(key) && nested !== redacted) {
-        throw new DomainError('AI_AUDIT_POLICY_VIOLATION', 'PII fields must be redacted before audit', {
-          path: nestedPath,
-        })
+        throw new DomainError(
+          'AI_AUDIT_POLICY_VIOLATION',
+          'PII fields must be redacted before audit',
+          {
+            path: nestedPath,
+          },
+        )
       }
       assertPayloadSafe(nested, nestedPath)
     }
