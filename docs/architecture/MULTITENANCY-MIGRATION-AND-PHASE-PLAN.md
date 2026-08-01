@@ -11,7 +11,7 @@ Approve ADR-0002 through ADR-0004, ownership matrix and threat model. Add
 `tenantId` to event envelopes, job payloads and request context. Tenant identity
 is never accepted as authorization.
 
-## Phase G2 — additive schema
+## Phase G2 — additive schema ✅ implemented
 
 Create `Tenant`, domains, memberships and tenant-scoped grants. Add nullable
 `tenantId` columns and supporting indexes to existing business tables. Seed the
@@ -19,10 +19,18 @@ internal Alo Noon tenant with an immutable ID. No behavior switches yet.
 
 ## Phase G3 — backfill and verification
 
-Backfill all existing Babol records transactionally by aggregate dependency.
-Record counts and orphan checks before and after. Reject ambiguous ownership
-rather than guessing. Add composite tenant foreign keys and uniqueness
-constraints.
+### G3A — data backfill (under review)
+
+Backfill all existing pre-tenancy Babol records transactionally. Record counts
+before and after, abort on missing authority or any conflicting tenant ownership,
+and prove that no tenant-less row remains. This step is data-only and preserves
+nullable columns so runtime behavior does not switch prematurely.
+
+### G3B — relational tenant integrity (pending)
+
+Add reviewed composite tenant parent/child foreign keys and tenant-aware
+uniqueness constraints by aggregate dependency. Reject cross-tenant joins at the
+database boundary without enabling RLS or making columns non-null yet.
 
 ## Phase G4 — application enforcement
 
