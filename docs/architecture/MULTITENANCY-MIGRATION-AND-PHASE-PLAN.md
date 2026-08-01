@@ -32,7 +32,7 @@ Add reviewed composite tenant parent/child foreign keys and tenant-aware
 uniqueness constraints by aggregate dependency. Reject cross-tenant joins at the
 database boundary without enabling RLS or making columns non-null yet.
 
-## Phase G4 — application enforcement
+## Phase G4 — application enforcement (under review in PR)
 
 Require `TenantContext` in HTTP repositories, transactions, cache, files, events
 and worker jobs. Add negative cross-tenant integration tests. Make new writes
