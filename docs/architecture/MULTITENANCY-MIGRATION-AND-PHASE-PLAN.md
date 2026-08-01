@@ -46,3 +46,4 @@ Before enforcement, rollback is a forward migration that disables new tenant-awa
 ## Exit criteria
 
 Issue #12 may close only when ADRs are accepted, migration and rollback are rehearsed in CI, negative tests pass, Babol operates as the internal tenant without hardcoded assumptions, and Phase 2E dependencies are updated.
+
