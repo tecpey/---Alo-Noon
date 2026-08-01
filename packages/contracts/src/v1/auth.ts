@@ -51,6 +51,7 @@ export const accessGrantSchema = z.object({
 export type AccessGrantContract = z.infer<typeof accessGrantSchema>
 
 export const sessionContextSchema = z.object({
+  tenantId: uuidSchema,
   accountId: uuidSchema,
   customerId: uuidSchema.nullable(),
   expiresAt: isoDateTimeSchema,

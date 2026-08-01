@@ -11,6 +11,7 @@ import {
   type OtpChallengeRecord,
 } from './modules/auth'
 
+const tenantId = '00000000-0000-4000-8000-000000000001'
 const accountId = '11111111-1111-4111-8111-111111111111'
 const customerId = '22222222-2222-4222-8222-222222222222'
 const cityId = '33333333-3333-4333-8333-333333333333'
@@ -18,11 +19,16 @@ const otherCityId = '44444444-4444-4444-8444-444444444444'
 const now = new Date('2026-07-29T12:00:00.000Z')
 
 class MemoryAuthRepository implements AuthRepository {
+  resolvedTenantId: string | null = tenantId
   challenge: OtpChallengeRecord | null = null
   invalidated = false
   session: SessionContext | null = null
   sessionDigest: string | null = null
   createResult: CreateChallengeResult | null = null
+
+  async resolveTenantByHost(): Promise<string | null> {
+    return this.resolvedTenantId
+  }
 
   async createChallenge(
     input: Parameters<AuthRepository['createChallenge']>[0],
@@ -70,6 +76,7 @@ class MemoryAuthRepository implements AuthRepository {
   ): Promise<SessionContext> {
     this.sessionDigest = input.tokenDigest
     this.session = {
+      tenantId: input.tenantId,
       accountId,
       customerId,
       expiresAt: input.expiresAt.toISOString(),
@@ -340,6 +347,20 @@ describe('OTP authentication API', () => {
       headers: { cookie: cookie as string },
     })
     expect(revoked.statusCode).toBe(401)
+  })
+  it('fails closed for an unverified tenant host even with a forged tenant header', async () => {
+    const { dependencies, repository, deliveredCodes } = fixture()
+    repository.resolvedTenantId = null
+    const app = await buildApp({ auth: dependencies })
+    apps.push(app)
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/request',
+      headers: { host: 'forged.example', 'x-tenant-id': tenantId },
+      payload: { mobileE164: '+989111234567', tenantId },
+    })
+    expect(response.statusCode).toBe(404)
+    expect(deliveredCodes).toEqual([])
   })
 })
 

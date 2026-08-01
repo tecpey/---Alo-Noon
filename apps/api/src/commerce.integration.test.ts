@@ -7,6 +7,7 @@ import { createPrismaCommerceRepository } from './modules/commerce'
 
 const databaseDescribe = process.env['DATABASE_URL'] ? describe : describe.skip
 const prisma = new PrismaClient()
+const tenantId = '00000000-0000-4000-8000-000000000001'
 const created = {
   customerId: '',
   cityId: '',
@@ -45,21 +46,34 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     const suffix = randomUUID().slice(0, 8)
     const customer = await prisma.customer.create({
       data: {
+        tenantId,
         mobileE164: `+9891${suffix.replace(/\D/g, '').padEnd(8, '0').slice(0, 8)}`,
         lifecycleStatus: 'ACTIVE',
       },
     })
     created.customerId = customer.id
     const city = await prisma.city.create({
-      data: { code: `CITY-${suffix}`, nameFa: 'شهر تست', isActive: true },
+      data: {
+        tenantId,
+        code: `CITY-${suffix}`,
+        nameFa: 'شهر تست',
+        isActive: true,
+      },
     })
     created.cityId = city.id
     const zone = await prisma.operationalZone.create({
-      data: { cityId: city.id, code: `ZONE-${suffix}`, nameFa: 'محدوده تست', isActive: true },
+      data: {
+        tenantId,
+        cityId: city.id,
+        code: `ZONE-${suffix}`,
+        nameFa: 'محدوده تست',
+        isActive: true,
+      },
     })
     created.zoneId = zone.id
     const bakery = await prisma.bakery.create({
       data: {
+        tenantId,
         legalName: `Bakery ${suffix}`,
         displayNameFa: 'نانوایی تست',
         partnerStatus: 'ACTIVE',
@@ -68,6 +82,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     created.bakeryId = bakery.id
     const branch = await prisma.bakeryBranch.create({
       data: {
+        tenantId,
         bakeryId: bakery.id,
         cityId: city.id,
         operationalZoneId: zone.id,
@@ -82,11 +97,16 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     })
     created.branchId = branch.id
     const category = await prisma.productCategory.create({
-      data: { code: `CAT-${suffix}`, nameFa: 'دسته تست' },
+      data: {
+        tenantId,
+        code: `CAT-${suffix}`,
+        nameFa: 'دسته تست',
+      },
     })
     created.categoryId = category.id
     const product = await prisma.product.create({
       data: {
+        tenantId,
         categoryId: category.id,
         slug: `product-${suffix}`,
         nameFa: 'بربری ویژه تست',
@@ -96,6 +116,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     created.productId = product.id
     const variant = await prisma.productVariant.create({
       data: {
+        tenantId,
         productId: product.id,
         sku: `SKU-${suffix}`,
         nameFa: 'بربری ویژه تست',
@@ -115,6 +136,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     created.variantId = variant.id
     const offering = await prisma.bakeryProductOffering.create({
       data: {
+        tenantId,
         bakeryBranchId: branch.id,
         productVariantId: variant.id,
         priceAmount: 250000n,
@@ -127,6 +149,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     const repository = createPrismaCommerceRepository(prisma)
     const now = new Date('2026-07-29T12:00:00.000Z')
     const firstCart = await repository.upsertItem(
+      tenantId,
       customer.id,
       offering.id,
       { cityId: city.id, operationalZoneId: zone.id, quantity: 2 },
@@ -139,6 +162,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     })
     await expect(
       repository.upsertItem(
+        tenantId,
         customer.id,
         offering.id,
         {
@@ -154,6 +178,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
 
     const concurrent = await Promise.allSettled([
       repository.upsertItem(
+        tenantId,
         customer.id,
         offering.id,
         {
@@ -166,6 +191,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
         randomUUID(),
       ),
       repository.upsertItem(
+        tenantId,
         customer.id,
         offering.id,
         {
@@ -184,16 +210,18 @@ databaseDescribe('Prisma cart and quote transactions', () => {
       (concurrent.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason,
     ).toMatchObject({ code: 'CART_VERSION_CONFLICT' })
 
-    const currentCart = await repository.getCart(customer.id)
+    const currentCart = await repository.getCart(tenantId, customer.id)
     expect(currentCart?.version).toBe(2)
     const idempotencyKey = `quote-${randomUUID()}`
     const quote = await repository.createQuote(
+      tenantId,
       customer.id,
       { expectedCartVersion: 2, idempotencyKey },
       now,
       randomUUID(),
     )
     const replay = await repository.createQuote(
+      tenantId,
       customer.id,
       { expectedCartVersion: 2, idempotencyKey },
       now,
@@ -203,6 +231,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     expect(replay.total.amount).toMatch(/^(750000|1000000)$/)
 
     const changedCart = await repository.upsertItem(
+      tenantId,
       customer.id,
       offering.id,
       {
@@ -216,6 +245,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     )
     expect(changedCart.version).toBe(3)
     const superseded = await repository.createQuote(
+      tenantId,
       customer.id,
       { expectedCartVersion: 2, idempotencyKey },
       now,
@@ -225,6 +255,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
 
     await prisma.bakeryCapacitySlot.create({
       data: {
+        tenantId,
         bakeryBranchId: branch.id,
         serviceDate: new Date('2026-07-29T00:00:00.000Z'),
         maxOrders: 1,
@@ -233,6 +264,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     })
     await expect(
       repository.createQuote(
+        tenantId,
         customer.id,
         { expectedCartVersion: 3, idempotencyKey: `quote-${randomUUID()}` },
         now,

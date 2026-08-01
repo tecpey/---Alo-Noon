@@ -51,6 +51,7 @@ export interface AuthorizationContext {
 }
 
 export interface AuthRepository {
+  resolveTenantByHost(host: string): Promise<string | null>
   createChallenge(input: {
     id: string
     mobileE164: string
@@ -62,24 +63,32 @@ export interface AuthRepository {
     requestWindowStartedAt: Date
     requestLimit: number
     correlationId: string
+    tenantId: string
   }): Promise<CreateChallengeResult>
-  invalidateChallenge(challengeId: string, now: Date, correlationId: string): Promise<void>
+  invalidateChallenge(
+    challengeId: string,
+    tenantId: string,
+    now: Date,
+    correlationId: string,
+  ): Promise<void>
   findChallenge(challengeId: string): Promise<OtpChallengeRecord | null>
   recordFailedAttempt(challengeId: string, now: Date): Promise<void>
   consumeChallenge(
     challengeId: string,
     mobileE164: string,
+    tenantId: string,
     now: Date,
     correlationId: string,
   ): Promise<{ accountId: string; customerId: string } | null>
   createSession(input: {
+    tenantId: string
     accountId: string
     tokenDigest: string
     now: Date
     expiresAt: Date
     correlationId: string
   }): Promise<SessionContext>
-  findSession(tokenDigest: string, now: Date): Promise<SessionContext | null>
+  findSession(tokenDigest: string, tenantId: string, now: Date): Promise<SessionContext | null>
   revokeSession(tokenDigest: string, now: Date, correlationId: string): Promise<boolean>
 }
 
@@ -105,10 +114,16 @@ export class OtpThrottledError extends Error {
 
 export class InvalidOtpError extends Error {}
 export class DeliveryUnavailableError extends Error {}
+export class TenantUnavailableError extends Error {}
 
 export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDependencies): void {
   app.post('/api/v1/auth/otp/request', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
+    const tenantId = await resolveTenantId(request, dependencies)
+    if (!tenantId)
+      return reply
+        .code(404)
+        .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
     const parsed = otpRequestSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply
@@ -119,7 +134,7 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
     }
 
     try {
-      const accepted = await requestOtp(parsed.data.mobileE164, dependencies)
+      const accepted = await requestOtp(parsed.data.mobileE164, tenantId, dependencies)
       return reply.code(202).send({
         success: true,
         data: accepted,
@@ -146,6 +161,11 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
 
   app.post('/api/v1/auth/otp/verify', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
+    const tenantId = await resolveTenantId(request, dependencies)
+    if (!tenantId)
+      return reply
+        .code(404)
+        .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
     const parsed = otpVerifySchema.safeParse(request.body)
     if (!parsed.success) {
       return reply
@@ -160,7 +180,12 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
     }
 
     try {
-      const result = await verifyOtp(parsed.data.challengeId, parsed.data.code, dependencies)
+      const result = await verifyOtp(
+        parsed.data.challengeId,
+        parsed.data.code,
+        tenantId,
+        dependencies,
+      )
       reply.header(
         'Set-Cookie',
         sessionCookie(result.token, result.context.expiresAt, dependencies),
@@ -218,6 +243,7 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
 
 export async function requestOtp(
   mobileE164: string,
+  tenantId: string,
   dependencies: AuthDependencies,
 ): Promise<OtpRequestAccepted> {
   const now = currentTime(dependencies)
@@ -237,6 +263,7 @@ export async function requestOtp(
     requestWindowStartedAt: new Date(now.getTime() - OTP_REQUEST_WINDOW_MS),
     requestLimit: OTP_REQUEST_LIMIT,
     correlationId,
+    tenantId,
   })
 
   if (created.status !== 'CREATED') {
@@ -246,7 +273,7 @@ export async function requestOtp(
   try {
     await dependencies.deliveryProvider.send({ mobileE164, code, expiresAt })
   } catch {
-    await dependencies.repository.invalidateChallenge(challengeId, now, correlationId)
+    await dependencies.repository.invalidateChallenge(challengeId, tenantId, now, correlationId)
     throw new DeliveryUnavailableError()
   }
 
@@ -260,6 +287,7 @@ export async function requestOtp(
 export async function verifyOtp(
   challengeId: string,
   code: string,
+  tenantId: string,
   dependencies: AuthDependencies,
 ): Promise<{ context: SessionContext; token: string }> {
   const now = currentTime(dependencies)
@@ -283,6 +311,7 @@ export async function verifyOtp(
   const account = await dependencies.repository.consumeChallenge(
     challenge.id,
     challenge.mobileE164,
+    tenantId,
     now,
     randomUUID(),
   )
@@ -290,6 +319,7 @@ export async function verifyOtp(
 
   const token = dependencies.generateSessionToken?.() ?? randomBytes(32).toString('base64url')
   const context = await dependencies.repository.createSession({
+    tenantId,
     accountId: account.accountId,
     tokenDigest: digest(dependencies.sessionPepper, token),
     now,
@@ -328,6 +358,14 @@ export function authorizeGrants(
 
 export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository {
   return {
+    async resolveTenantByHost(host) {
+      const domain = await prisma.tenantDomain.findFirst({
+        where: { host: normalizeHost(host), tenant: { is: { status: 'ACTIVE' } } },
+        select: { tenantId: true },
+      })
+      return domain?.tenantId ?? null
+    },
+
     async createChallenge(input) {
       return prisma.$transaction(
         async (transaction) => {
@@ -382,6 +420,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           })
           await transaction.auditEvent.create({
             data: {
+              tenantId: input.tenantId,
               actorType: 'SYSTEM',
               action: 'auth.otp.requested',
               entityType: 'otp_challenge',
@@ -397,7 +436,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
       )
     },
 
-    async invalidateChallenge(challengeId, now, correlationId) {
+    async invalidateChallenge(challengeId, tenantId, now, correlationId) {
       await prisma.$transaction([
         prisma.otpChallenge.updateMany({
           where: { id: challengeId, status: 'PENDING' },
@@ -405,6 +444,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
         }),
         prisma.auditEvent.create({
           data: {
+            tenantId,
             actorType: 'SYSTEM',
             action: 'auth.otp.delivery_failed',
             entityType: 'otp_challenge',
@@ -452,7 +492,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
       })
     },
 
-    async consumeChallenge(challengeId, mobileE164, now, correlationId) {
+    async consumeChallenge(challengeId, mobileE164, tenantId, now, correlationId) {
       return prisma.$transaction(
         async (transaction) => {
           const existingAccount = await transaction.identityAccount.findUnique({
@@ -473,10 +513,15 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           })
           if (consumed.count !== 1) return null
 
+          const existingCustomer = await transaction.customer.findUnique({
+            where: { mobileE164 },
+            select: { tenantId: true },
+          })
+          if (existingCustomer && existingCustomer.tenantId !== tenantId) return null
           const customer = await transaction.customer.upsert({
             where: { mobileE164 },
             update: { lifecycleStatus: 'ACTIVE' },
-            create: { mobileE164, lifecycleStatus: 'ACTIVE' },
+            create: { tenantId, mobileE164, lifecycleStatus: 'ACTIVE' },
           })
           const account = await transaction.identityAccount.upsert({
             where: { mobileE164 },
@@ -488,6 +533,11 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
             },
           })
           if (account.status !== 'ACTIVE') return null
+          await transaction.tenantMembership.upsert({
+            where: { tenantId_accountId: { tenantId, accountId: account.id } },
+            update: { status: 'ACTIVE', activeAt: now, suspendedAt: null, revokedAt: null },
+            create: { tenantId, accountId: account.id, status: 'ACTIVE', activeAt: now },
+          })
 
           const permission = await transaction.authorizationPermission.upsert({
             where: { code: SESSION_SELF_PERMISSION },
@@ -534,6 +584,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           }
           await transaction.auditEvent.create({
             data: {
+              tenantId,
               actorType: 'CUSTOMER',
               actorId: customer.id,
               action: 'auth.identity.verified',
@@ -554,6 +605,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
       const session = await prisma.authSession.create({
         data: {
           accountId: input.accountId,
+          activeTenantId: input.tenantId,
           tokenDigest: input.tokenDigest,
           expiresAt: input.expiresAt,
           lastSeenAt: input.now,
@@ -565,6 +617,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
       })
       await prisma.auditEvent.create({
         data: {
+          tenantId: input.tenantId,
           actorType: 'CUSTOMER',
           actorId: session.account.customerId,
           action: 'auth.session.created',
@@ -575,17 +628,28 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           occurredAt: input.now,
         },
       })
-      return loadSessionContext(prisma, input.tokenDigest, input.now, input.expiresAt)
+      return loadSessionContext(
+        prisma,
+        input.tokenDigest,
+        input.tenantId,
+        input.now,
+        input.expiresAt,
+      )
     },
 
-    async findSession(tokenDigest, now) {
-      return loadSessionContext(prisma, tokenDigest, now)
+    async findSession(tokenDigest, tenantId, now) {
+      return loadSessionContext(prisma, tokenDigest, tenantId, now)
     },
 
     async revokeSession(tokenDigest, now, correlationId) {
       const session = await prisma.authSession.findUnique({
         where: { tokenDigest },
-        select: { id: true, account: { select: { customerId: true } }, revokedAt: true },
+        select: {
+          id: true,
+          activeTenantId: true,
+          account: { select: { customerId: true } },
+          revokedAt: true,
+        },
       })
       if (!session || session.revokedAt) return false
 
@@ -596,6 +660,7 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
       if (revoked.count !== 1) return false
       await prisma.auditEvent.create({
         data: {
+          tenantId: session.activeTenantId,
           actorType: 'CUSTOMER',
           actorId: session.account.customerId,
           action: 'auth.session.revoked',
@@ -614,15 +679,23 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
 async function loadSessionContext(
   prisma: PrismaClient,
   tokenDigest: string,
+  tenantId: string,
   now: Date,
   expectedExpiry?: Date,
 ): Promise<SessionContext> {
   const session = await prisma.authSession.findFirst({
     where: {
       tokenDigest,
+      activeTenantId: tenantId,
+      activeTenant: { is: { status: 'ACTIVE' } },
       revokedAt: null,
       expiresAt: { gt: now },
-      account: { is: { status: 'ACTIVE' } },
+      account: {
+        is: {
+          status: 'ACTIVE',
+          tenantMemberships: { some: { tenantId, status: 'ACTIVE', revokedAt: null } },
+        },
+      },
       ...(expectedExpiry && { expiresAt: expectedExpiry }),
     },
     select: {
@@ -662,6 +735,7 @@ async function loadSessionContext(
     data: { lastSeenAt: now },
   })
   return {
+    tenantId,
     accountId: session.accountId,
     customerId: session.account.customerId,
     expiresAt: session.expiresAt.toISOString(),
@@ -681,9 +755,22 @@ export async function authenticateRequest(
 ): Promise<SessionContext | null> {
   const token = sessionTokenFromRequest(request)
   if (!token) return null
+  const tenantId = await resolveTenantId(request, dependencies)
+  if (!tenantId) return null
   return dependencies.repository
-    .findSession(digest(dependencies.sessionPepper, token), currentTime(dependencies))
+    .findSession(digest(dependencies.sessionPepper, token), tenantId, currentTime(dependencies))
     .catch(() => null)
+}
+
+async function resolveTenantId(
+  request: FastifyRequest,
+  dependencies: AuthDependencies,
+): Promise<string | null> {
+  return dependencies.repository.resolveTenantByHost(request.hostname).catch(() => null)
+}
+
+function normalizeHost(host: string): string {
+  return host.trim().toLowerCase().replace(/\.$/, '')
 }
 
 function sessionTokenFromRequest(request: FastifyRequest): string | undefined {

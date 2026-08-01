@@ -53,8 +53,9 @@ type OfferingRecord = Prisma.BakeryProductOfferingGetPayload<{
 }>
 
 export interface CommerceRepository {
-  getCart(customerId: string): Promise<CartSummary | null>
+  getCart(tenantId: string, customerId: string): Promise<CartSummary | null>
   upsertItem(
+    tenantId: string,
     customerId: string,
     offeringId: string,
     input: CartItemMutation,
@@ -62,6 +63,7 @@ export interface CommerceRepository {
     correlationId: string,
   ): Promise<CartSummary>
   removeItem(
+    tenantId: string,
     customerId: string,
     offeringId: string,
     expectedVersion: number | undefined,
@@ -69,6 +71,7 @@ export interface CommerceRepository {
     correlationId: string,
   ): Promise<CartSummary>
   createQuote(
+    tenantId: string,
     customerId: string,
     input: QuoteCreate,
     now: Date,
@@ -107,7 +110,7 @@ export function registerCommerceRoutes(
     try {
       return {
         success: true,
-        data: await dependencies.repository.getCart(session.customerId),
+        data: await dependencies.repository.getCart(session.tenantId, session.customerId),
         meta: responseMeta(),
       }
     } catch (error) {
@@ -135,6 +138,7 @@ export function registerCommerceRoutes(
       return {
         success: true,
         data: await dependencies.repository.upsertItem(
+          session.tenantId,
           session.customerId,
           offeringId,
           parsed.data,
@@ -168,6 +172,7 @@ export function registerCommerceRoutes(
       return {
         success: true,
         data: await dependencies.repository.removeItem(
+          session.tenantId,
           session.customerId,
           offeringId,
           parsed.data.expectedCartVersion,
@@ -200,6 +205,7 @@ export function registerCommerceRoutes(
       return reply.code(201).send({
         success: true,
         data: await dependencies.repository.createQuote(
+          session.tenantId,
           session.customerId,
           parsed.data,
           currentTime(dependencies),
@@ -215,24 +221,24 @@ export function registerCommerceRoutes(
 
 export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRepository {
   return {
-    async getCart(customerId) {
+    async getCart(tenantId, customerId) {
       const cart = await prisma.cart.findFirst({
-        where: { customerId, state: 'ACTIVE' },
+        where: { tenantId, customerId, state: 'ACTIVE' },
         include: cartInclude,
       })
       return cart ? mapCart(cart) : null
     },
 
-    async upsertItem(customerId, offeringId, input, now, correlationId) {
+    async upsertItem(tenantId, customerId, offeringId, input, now, correlationId) {
       return serializable(prisma, async (transaction) => {
-        const offering = await loadOffering(transaction, offeringId)
+        const offering = await loadOffering(transaction, tenantId, offeringId)
         assertOfferingAvailable(offering, now)
         assertOfferingQuantityCapacity(offering, input.quantity)
         assertRequestedContext(offering, input.cityId, input.operationalZoneId)
         await assertBranchCapacity(transaction, offering, now)
 
         let cart = await transaction.cart.findFirst({
-          where: { customerId, state: 'ACTIVE' },
+          where: { tenantId, customerId, state: 'ACTIVE' },
           select: {
             id: true,
             cityId: true,
@@ -248,6 +254,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           }
           cart = await transaction.cart.create({
             data: {
+              tenantId,
               customerId,
               cityId: input.cityId,
               operationalZoneId: input.operationalZoneId,
@@ -286,6 +293,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             },
           },
           create: {
+            tenantId,
             cartId: cart.id,
             bakeryProductOfferingId: offeringId,
             quantity: input.quantity,
@@ -295,6 +303,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
         await invalidateQuotes(transaction, cart.id, now)
         await recordCommerceChange(
           transaction,
+          tenantId,
           customerId,
           cart.id,
           'cart.item_upserted',
@@ -306,10 +315,10 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
       })
     },
 
-    async removeItem(customerId, offeringId, expectedVersion, now, correlationId) {
+    async removeItem(tenantId, customerId, offeringId, expectedVersion, now, correlationId) {
       return serializable(prisma, async (transaction) => {
         const cart = await transaction.cart.findFirst({
-          where: { customerId, state: 'ACTIVE' },
+          where: { tenantId, customerId, state: 'ACTIVE' },
           select: {
             id: true,
             cityId: true,
@@ -334,6 +343,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
         await invalidateQuotes(transaction, cart.id, now)
         await recordCommerceChange(
           transaction,
+          tenantId,
           customerId,
           cart.id,
           'cart.item_removed',
@@ -345,10 +355,10 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
       })
     },
 
-    async createQuote(customerId, input, now, correlationId) {
+    async createQuote(tenantId, customerId, input, now, correlationId) {
       return serializable(prisma, async (transaction) => {
-        const replay = await transaction.quote.findUnique({
-          where: { idempotencyKey: input.idempotencyKey },
+        const replay = await transaction.quote.findFirst({
+          where: { idempotencyKey: input.idempotencyKey, tenantId },
           include: quoteInclude,
         })
         if (replay) {
@@ -368,7 +378,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
         }
 
         const cart = await transaction.cart.findFirst({
-          where: { customerId, state: 'ACTIVE' },
+          where: { tenantId, customerId, state: 'ACTIVE' },
           include: cartInclude,
         })
         if (!cart) throw new CommerceError('CART_NOT_FOUND', 404)
@@ -396,6 +406,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           const lineTotal = calculateCartLine(unitPrice, item.quantity)
           subtotal = subtotal.add(lineTotal)
           quoteItems.push({
+            tenantId,
             bakeryProductOfferingId: offering.id,
             productVariantId: offering.productVariantId,
             bakeryBranchId: offering.bakeryBranchId,
@@ -417,6 +428,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
 
         const quote = await transaction.quote.create({
           data: {
+            tenantId,
             idempotencyKey: input.idempotencyKey,
             cartId: cart.id,
             customerId,
@@ -430,6 +442,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
         })
         await recordCommerceChange(
           transaction,
+          tenantId,
           customerId,
           quote.id,
           'quote.created',
@@ -464,17 +477,20 @@ async function serializable<T>(
 async function authenticatedCustomer(
   request: Parameters<typeof authenticateRequest>[0],
   auth: AuthDependencies,
-): Promise<{ customerId: string; session: SessionContext } | null> {
+): Promise<{ tenantId: string; customerId: string; session: SessionContext } | null> {
   const session = await authenticateRequest(request, auth)
-  return session?.customerId ? { customerId: session.customerId, session } : null
+  return session?.customerId
+    ? { tenantId: session.tenantId, customerId: session.customerId, session }
+    : null
 }
 
 async function loadOffering(
   transaction: Prisma.TransactionClient,
+  tenantId: string,
   offeringId: string,
 ): Promise<OfferingRecord> {
-  const offering = await transaction.bakeryProductOffering.findUnique({
-    where: { id: offeringId },
+  const offering = await transaction.bakeryProductOffering.findFirst({
+    where: { id: offeringId, tenantId },
     include: {
       bakeryBranch: { include: { city: true } },
       productVariant: { include: { product: true } },
@@ -633,6 +649,7 @@ async function invalidateQuotes(
 
 async function recordCommerceChange(
   transaction: Prisma.TransactionClient,
+  tenantId: string,
   customerId: string,
   entityId: string,
   action: string,
@@ -642,6 +659,7 @@ async function recordCommerceChange(
 ): Promise<void> {
   await transaction.auditEvent.create({
     data: {
+      tenantId,
       actorType: 'CUSTOMER',
       actorId: customerId,
       action,
@@ -654,6 +672,7 @@ async function recordCommerceChange(
   })
   await transaction.domainEventOutbox.create({
     data: {
+      tenantId,
       eventId: randomUUID(),
       name: action,
       aggregateType: action.startsWith('quote.') ? 'quote' : 'cart',
