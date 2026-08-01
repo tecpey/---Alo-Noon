@@ -135,7 +135,10 @@ export function evaluateAiProposalAdmission(
     }
     if (!isValidDate(evidence.retainedUntil)) {
       reasons.push('Evidence retention timestamp must be valid')
-    } else if (isValidDate(trust.evaluatedAt) && evidence.retainedUntil.getTime() <= evaluatedAtMs) {
+    } else if (
+      isValidDate(trust.evaluatedAt) &&
+      evidence.retainedUntil.getTime() <= evaluatedAtMs
+    ) {
       reasons.push('Expired evidence cannot be used')
     }
   }
