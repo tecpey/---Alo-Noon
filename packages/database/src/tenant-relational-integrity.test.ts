@@ -1,3 +1,4 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
@@ -46,9 +47,7 @@ function tenantRelationsFromSchema(schema: string): TenantRelation[] {
   }
 
   return relations.sort((left, right) =>
-    `${left.child}.${left.foreignKey}`.localeCompare(
-      `${right.child}.${right.foreignKey}`,
-    ),
+    `${left.child}.${left.foreignKey}`.localeCompare(`${right.child}.${right.foreignKey}`),
   )
 }
 
@@ -60,9 +59,7 @@ function registeredRelationsFromMigration(sql: string): TenantRelation[] {
       parent,
     }))
     .sort((left, right) =>
-      `${left.child}.${left.foreignKey}`.localeCompare(
-        `${right.child}.${right.foreignKey}`,
-      ),
+      `${left.child}.${left.foreignKey}`.localeCompare(`${right.child}.${right.foreignKey}`),
     )
 }
 
@@ -76,25 +73,17 @@ describe('tenant relational integrity G3B', () => {
     expect(schemaRelations).toHaveLength(47)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
-      new Set(
-        registeredRelations.map(
-          ({ child, foreignKey }) => `${child}.${foreignKey}`,
-        ),
-      ).size,
+      new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,
     ).toBe(registeredRelations.length)
   })
 
   it('declares parent keys, child indexes and composite tenant foreign keys', () => {
     for (const { child, foreignKey, parent } of schemaRelations) {
-      expect(schema).toContain(
-        `@@unique([id, tenantId], map: "g3b_${parent}_id_tenant_key")`,
-      )
+      expect(schema).toContain(`@@unique([id, tenantId], map: "g3b_${parent}_id_tenant_key")`)
       expect(schema).toContain(
         `@@index([${foreignKey}, tenantId], map: "g3b_${child}_${foreignKey}_tenant_idx")`,
       )
-      expect(sql).toContain(
-        `CONSTRAINT "g3b_${child}_${foreignKey}_tenant_fk"`,
-      )
+      expect(sql).toContain(`CONSTRAINT "g3b_${child}_${foreignKey}_tenant_fk"`)
       expect(sql).toContain(
         `FOREIGN KEY ("${foreignKey}", "tenantId")\n  REFERENCES "${parent}" ("id", "tenantId")`,
       )
@@ -102,14 +91,10 @@ describe('tenant relational integrity G3B', () => {
   })
 
   it('fails closed before DDL and preserves the G4/G5 boundary', () => {
-    expect(sql.indexOf('G3B aborted:')).toBeLessThan(
-      sql.indexOf('ADD CONSTRAINT "g3b_'),
-    )
+    expect(sql.indexOf('G3B aborted:')).toBeLessThan(sql.indexOf('ADD CONSTRAINT "g3b_'))
     expect(sql).toContain('child_row."tenantId" IS NULL')
     expect(sql).toContain('parent_row."tenantId" IS NULL')
-    expect(sql).toContain(
-      'child_row."tenantId" <> parent_row."tenantId"',
-    )
+    expect(sql).toContain('child_row."tenantId" <> parent_row."tenantId"')
     expect(sql).toContain('DEFERRABLE INITIALLY IMMEDIATE')
     expect(sql).toContain('ON DELETE NO ACTION')
     expect(sql).not.toContain('SET NOT NULL')
