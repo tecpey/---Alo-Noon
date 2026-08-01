@@ -479,7 +479,9 @@ async function authenticatedCustomer(
   auth: AuthDependencies,
 ): Promise<{ customerId: string; session: SessionContext } | null> {
   const session = await authenticateRequest(request, auth)
-  return session?.customerId ? { tenantId: session.tenantId, customerId: session.customerId, session } : null
+  return session?.customerId
+    ? { tenantId: session.tenantId, customerId: session.customerId, session }
+    : null
 }
 
 async function loadOffering(
