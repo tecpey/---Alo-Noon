@@ -7,6 +7,8 @@ import { buildApp } from './app'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
 import { CommerceError, type CommerceRepository } from './modules/commerce'
 
+const tenantId = '00000000-0000-4000-8000-000000000001'
+const otherTenantId = '00000000-0000-4000-8000-000000000002'
 const customerId = '11111111-1111-4111-8111-111111111111'
 const accountId = '22222222-2222-4222-8222-222222222222'
 const cityId = '33333333-3333-4333-8333-333333333333'
@@ -65,35 +67,36 @@ class MemoryCommerceRepository implements CommerceRepository {
   customerIds: string[] = []
   failure?: CommerceError
 
-  async getCart(customer: string): Promise<CartSummary | null> {
-    this.customerIds.push(customer)
+  async getCart(tenant: string, customer: string): Promise<CartSummary | null> {
+    this.customerIds.push(`${tenant}:${customer}`)
     if (this.failure) throw this.failure
     return this.cart
   }
 
-  async upsertItem(customer: string): Promise<CartSummary> {
-    this.customerIds.push(customer)
+  async upsertItem(tenant: string, customer: string): Promise<CartSummary> {
+    this.customerIds.push(`${tenant}:${customer}`)
     if (this.failure) throw this.failure
     this.cart = cart
     return cart
   }
 
-  async removeItem(customer: string): Promise<CartSummary> {
-    this.customerIds.push(customer)
+  async removeItem(tenant: string, customer: string): Promise<CartSummary> {
+    this.customerIds.push(`${tenant}:${customer}`)
     if (this.failure) throw this.failure
     this.cart = { ...cart, version: 2, items: [], subtotal: { amount: '0', currency: 'IRR' } }
     return this.cart
   }
 
-  async createQuote(customer: string): Promise<QuoteSummary> {
-    this.customerIds.push(customer)
+  async createQuote(tenant: string, customer: string): Promise<QuoteSummary> {
+    this.customerIds.push(`${tenant}:${customer}`)
     if (this.failure) throw this.failure
     return this.quote
   }
 }
 
-function authFixture(): AuthDependencies {
+function authFixture(resolvedTenantId: string | null = tenantId, sessionTenantId = tenantId): AuthDependencies {
   const context: SessionContext = {
+    tenantId: sessionTenantId,
     accountId,
     customerId,
     expiresAt: '2026-08-29T12:00:00.000Z',
@@ -101,7 +104,8 @@ function authFixture(): AuthDependencies {
   }
   const expectedDigest = createHmac('sha256', sessionPepper).update(token).digest('hex')
   const repository = {
-    findSession: async (digest: string) => (digest === expectedDigest ? context : null),
+    resolveTenantByHost: async () => resolvedTenantId,
+    findSession: async (digest: string, requestedTenantId: string) => digest === expectedDigest && requestedTenantId === context.tenantId ? context : null,
   } as unknown as AuthRepository
   return {
     repository,
@@ -156,7 +160,7 @@ describe('server cart and quote API', () => {
     })
 
     expect(response.statusCode).toBe(200)
-    expect(repository.customerIds).toEqual([customerId])
+    expect(repository.customerIds).toEqual([`${tenantId}:${customerId}`])
     expect(response.json()).toMatchObject({
       success: true,
       data: { subtotal: { amount: '500000', currency: 'IRR' } },
@@ -220,5 +224,14 @@ describe('server cart and quote API', () => {
       expiresAt: '2026-07-29T12:10:00.000Z',
       total: { amount: '500000', currency: 'IRR' },
     })
+  })
+
+  it('rejects a token when the verified host tenant differs from the session tenant', async () => {
+    const repository = new MemoryCommerceRepository()
+    const app = await buildApp({ auth: authFixture(otherTenantId, tenantId), commerceRepository: repository })
+    apps.push(app)
+    const response = await app.inject({ method: 'GET', url: '/api/v1/cart', headers: { cookie: `alo_session=${token}`, host: 'other.example', 'x-tenant-id': tenantId } })
+    expect(response.statusCode).toBe(401)
+    expect(repository.customerIds).toEqual([])
   })
 })
