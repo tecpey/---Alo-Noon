@@ -67,13 +67,9 @@ function pathWithin(path: string, prefix: string): boolean {
 }
 
 function deny(reasons: ReadonlyArray<string>): never {
-  throw new DomainError(
-    'AI_SANDBOX_VALIDATION_DENIED',
-    'AI sandbox validation denied',
-    {
-      reasons,
-    },
-  )
+  throw new DomainError('AI_SANDBOX_VALIDATION_DENIED', 'AI sandbox validation denied', {
+    reasons,
+  })
 }
 
 export function evaluateAiSandboxPatchValidation(
@@ -89,9 +85,7 @@ export function evaluateAiSandboxPatchValidation(
   if (!requestTimeValid || !evaluationTimeValid) {
     reasons.push('Request and trusted evaluation timestamps must be valid')
   } else if (request.requestedAt.getTime() > trust.evaluatedAt.getTime()) {
-    reasons.push(
-      'Request timestamp cannot be later than trusted evaluation time',
-    )
+    reasons.push('Request timestamp cannot be later than trusted evaluation time')
   }
   if (!completionTimeValid) {
     reasons.push('Runner completion timestamp must be valid')
@@ -104,9 +98,7 @@ export function evaluateAiSandboxPatchValidation(
     evaluationTimeValid &&
     attestation.completedAt.getTime() > trust.evaluatedAt.getTime()
   ) {
-    reasons.push(
-      'Runner completion cannot be later than trusted evaluation time',
-    )
+    reasons.push('Runner completion cannot be later than trusted evaluation time')
   } else if (
     evaluationTimeValid &&
     (!Number.isSafeInteger(trust.policy.maxAttestationAgeMs) ||
@@ -114,17 +106,14 @@ export function evaluateAiSandboxPatchValidation(
       trust.evaluatedAt.getTime() - attestation.completedAt.getTime() >
         trust.policy.maxAttestationAgeMs)
   ) {
-    reasons.push(
-      'Trusted runner attestation is stale or has an invalid freshness policy',
-    )
+    reasons.push('Trusted runner attestation is stale or has an invalid freshness policy')
   }
 
   const identityMatches =
     attestation.validationId === request.validationId &&
     attestation.proposalId === request.proposalId &&
     attestation.tenantId === request.tenantId
-  if (!identityMatches)
-    reasons.push('Trusted attestation scope does not match the request')
+  if (!identityMatches) reasons.push('Trusted attestation scope does not match the request')
   if (
     attestation.policyVersion !== request.policyVersion ||
     attestation.sandboxProfileVersion !== request.sandboxProfileVersion
@@ -138,9 +127,7 @@ export function evaluateAiSandboxPatchValidation(
     attestation.patchDigest !== request.patchDigest ||
     !digest.test(attestation.attestationDigest)
   ) {
-    reasons.push(
-      'Base commit, patch digest, or attestation digest is unverified',
-    )
+    reasons.push('Base commit, patch digest, or attestation digest is unverified')
   }
 
   if (
@@ -149,9 +136,7 @@ export function evaluateAiSandboxPatchValidation(
     attestation.productionCredentials !== false ||
     attestation.productionWriteAccess !== false
   ) {
-    reasons.push(
-      'Sandbox must have no network, secrets, production credentials, or writes',
-    )
+    reasons.push('Sandbox must have no network, secrets, production credentials, or writes')
   }
 
   if (attestation.changedPaths.length === 0)
@@ -161,32 +146,18 @@ export function evaluateAiSandboxPatchValidation(
       reasons.push('Absolute paths and traversal are forbidden')
       continue
     }
-    if (
-      !trust.policy.allowedPathPrefixes.some((prefix) =>
-        pathWithin(path, prefix),
-      )
-    ) {
-      reasons.push(
-        'Attested changed path is outside the authoritative allow-list',
-      )
+    if (!trust.policy.allowedPathPrefixes.some((prefix) => pathWithin(path, prefix))) {
+      reasons.push('Attested changed path is outside the authoritative allow-list')
     }
-    if (
-      trust.policy.deniedPathPrefixes.some((prefix) => pathWithin(path, prefix))
-    ) {
+    if (trust.policy.deniedPathPrefixes.some((prefix) => pathWithin(path, prefix))) {
       reasons.push('Attested changed path is denied by authoritative policy')
     }
   }
 
-  const checks = new Map(
-    attestation.checks.map((check) => [check.check, check]),
-  )
+  const checks = new Map(attestation.checks.map((check) => [check.check, check]))
   for (const required of trust.policy.requiredChecks) {
     const check = checks.get(required)
-    if (
-      !check ||
-      check.outcome !== 'PASS' ||
-      !digest.test(check.evidenceDigest)
-    ) {
+    if (!check || check.outcome !== 'PASS' || !digest.test(check.evidenceDigest)) {
       reasons.push(`Required trusted check did not pass: ${required}`)
     }
   }
