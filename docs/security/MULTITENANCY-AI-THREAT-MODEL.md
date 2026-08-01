@@ -26,3 +26,4 @@ HTTP client to API; API to database/cache/object store; outbox to workers; obser
 ## Security acceptance gate
 
 No Phase 2E merge until the first six isolation threats have automated negative coverage and AI privileged actions fail closed without approval.
+
