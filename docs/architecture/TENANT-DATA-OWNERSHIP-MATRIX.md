@@ -29,3 +29,4 @@ This matrix classifies current and near-term aggregates. `Tenant-owned` means ev
 ## Invariant
 
 A new table, event or object-store artifact cannot be introduced until its row in this matrix is added and reviewed.
+
