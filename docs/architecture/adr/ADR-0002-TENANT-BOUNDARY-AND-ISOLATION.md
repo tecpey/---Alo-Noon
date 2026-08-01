@@ -1,6 +1,7 @@
 # ADR-0002: Tenant boundary and isolation
 
-- Status: Proposed
+- Status: Accepted
+- Accepted: 2026-08-01
 - Gate: Issue #12
 - Decision owners: Architecture, Security, Product, Operations
 - Supersedes: the Phase 1 decision to remain multi-city without tenant identifiers
