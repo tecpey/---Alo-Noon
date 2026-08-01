@@ -53,9 +53,7 @@ describe('AI audit policy', () => {
         payload: { phone: '[REDACTED]' },
       }),
     ).toThrowError(DomainError)
-    expect(() =>
-      assertAiAuditEventPolicy({ ...validEvent, sequence: 2 }),
-    ).toThrowError(DomainError)
+    expect(() => assertAiAuditEventPolicy({ ...validEvent, sequence: 2 })).toThrowError(DomainError)
     expect(() =>
       assertAiAuditEventPolicy({
         ...validEvent,
