@@ -1,6 +1,7 @@
 # ADR-0004: Governed AI control-plane trust model
 
-- Status: Proposed
+- Status: Accepted
+- Accepted: 2026-08-01
 - Gate: Issue #12
 
 ## Decision
