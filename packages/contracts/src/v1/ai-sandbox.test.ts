@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { aiSandboxPatchValidationRequestSchema } from './ai-sandbox'
+import {
+  aiSandboxPatchValidationDecisionSchema,
+  aiSandboxPatchValidationRequestSchema,
+} from './ai-sandbox'
 
 const request = {
   validationId: '10000000-0000-4000-8000-000000000001',
@@ -11,7 +14,6 @@ const request = {
   baseCommitSha: 'a'.repeat(40),
   patchArtifactUri: 'artifact://patches/1',
   patchDigest: `sha256:${'b'.repeat(64)}`,
-  changedPaths: ['packages/domain/src/order.ts'],
   requestedAt: '2026-08-01T14:00:00.000Z',
 }
 
@@ -20,16 +22,13 @@ describe('AI sandbox patch validation contract', () => {
     expect(aiSandboxPatchValidationRequestSchema.parse(request)).toBeDefined()
   })
 
-  it.each(['../secret', '/etc/passwd', 'packages/../.env'])(
-    'rejects unsafe repository path %s',
-    (path) => {
-      expect(() =>
-        aiSandboxPatchValidationRequestSchema.parse({ ...request, changedPaths: [path] }),
-      ).toThrow()
-    },
-  )
-
-  it('rejects agent-asserted runner authority and execution claims', () => {
+  it('rejects agent-asserted changed paths, runner authority, and execution claims', () => {
+    expect(() =>
+      aiSandboxPatchValidationRequestSchema.parse({
+        ...request,
+        changedPaths: ['packages/domain/src/order.ts'],
+      }),
+    ).toThrow()
     expect(() =>
       aiSandboxPatchValidationRequestSchema.parse({
         ...request,
@@ -40,6 +39,38 @@ describe('AI sandbox patch validation contract', () => {
       aiSandboxPatchValidationRequestSchema.parse({
         ...request,
         executionAuthorized: true,
+      }),
+    ).toThrow()
+  })
+
+  it('requires a trusted attestation digest for validated decisions', () => {
+    const decision = {
+      outcome: 'VALIDATED_PATCH_PROPOSAL',
+      validationId: request.validationId,
+      policyVersion: request.policyVersion,
+      reasons: [],
+      executionAuthorized: false,
+      deploymentAuthorized: false,
+    }
+
+    expect(() => aiSandboxPatchValidationDecisionSchema.parse(decision)).toThrow()
+    expect(
+      aiSandboxPatchValidationDecisionSchema.parse({
+        ...decision,
+        attestationDigest: `sha256:${'d'.repeat(64)}`,
+      }),
+    ).toBeDefined()
+  })
+
+  it('requires at least one reason for denied decisions', () => {
+    expect(() =>
+      aiSandboxPatchValidationDecisionSchema.parse({
+        outcome: 'DENY',
+        validationId: request.validationId,
+        policyVersion: request.policyVersion,
+        reasons: [],
+        executionAuthorized: false,
+        deploymentAuthorized: false,
       }),
     ).toThrow()
   })
