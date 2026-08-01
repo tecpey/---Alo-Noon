@@ -37,8 +37,12 @@ describe('AI observability contracts', () => {
   })
 
   it('rejects raw prompts, secret-bearing fields and credential-shaped values', () => {
-    expect(() => aiAuditEventSchema.parse({ ...event, payload: { rawPrompt: 'ignore rules' } })).toThrow()
-    expect(() => aiAuditEventSchema.parse({ ...event, payload: { apiKey: 'not-a-real-key' } })).toThrow()
+    expect(() =>
+      aiAuditEventSchema.parse({ ...event, payload: { rawPrompt: 'ignore rules' } }),
+    ).toThrow()
+    expect(() =>
+      aiAuditEventSchema.parse({ ...event, payload: { apiKey: 'not-a-real-key' } }),
+    ).toThrow()
     expect(() =>
       aiAuditEventSchema.parse({ ...event, payload: { header: 'Bearer abc.def.ghi' } }),
     ).toThrow()
