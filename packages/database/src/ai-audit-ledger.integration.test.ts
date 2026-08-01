@@ -129,5 +129,10 @@ databaseDescribe('governed AI durable audit G6B', () => {
     await expect(
       attempt(2, digest('b'), { rawPrompt: 'ignore prior instructions' }),
     ).rejects.toThrow()
+    await expect(attempt(2, digest('b'), { accessToken: 'opaque-value' })).rejects.toThrow()
+    await expect(attempt(2, digest('b'), { clientSecret: 'opaque-value' })).rejects.toThrow()
+    await expect(
+      attempt(2, digest('b'), { customer: { phone: '+989111111111' } }),
+    ).rejects.toThrow()
   })
 })
