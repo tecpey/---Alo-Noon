@@ -35,4 +35,36 @@ describe('AI observability contracts', () => {
     expect(() => aiAuditEventSchema.parse({ ...event, classification: 'SECRET' })).toThrow()
     expect(() => aiAuditEventSchema.parse({ ...event, eventDigest: 'unsigned' })).toThrow()
   })
+
+  it('rejects raw prompts, secret-bearing fields and credential-shaped values', () => {
+    expect(() => aiAuditEventSchema.parse({ ...event, payload: { rawPrompt: 'ignore rules' } })).toThrow()
+    expect(() => aiAuditEventSchema.parse({ ...event, payload: { apiKey: 'not-a-real-key' } })).toThrow()
+    expect(() =>
+      aiAuditEventSchema.parse({ ...event, payload: { header: 'Bearer abc.def.ghi' } }),
+    ).toThrow()
+  })
+
+  it('requires PII redaction and a structurally valid predecessor reference', () => {
+    expect(() =>
+      aiAuditEventSchema.parse({
+        ...event,
+        classification: 'PII',
+        redactionStatus: 'NOT_REQUIRED',
+      }),
+    ).toThrow()
+    expect(() =>
+      aiAuditEventSchema.parse({
+        ...event,
+        sequence: 2,
+        previousEventDigest: undefined,
+      }),
+    ).toThrow()
+    expect(() =>
+      aiAuditEventSchema.parse({
+        ...event,
+        sequence: 1,
+        previousEventDigest: `sha256:${'c'.repeat(64)}`,
+      }),
+    ).toThrow()
+  })
 })
