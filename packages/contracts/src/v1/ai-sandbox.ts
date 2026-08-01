@@ -37,9 +37,7 @@ export const aiSandboxPatchValidationDecisionSchema = z
   })
   .strict()
 
-export type AiSandboxPatchValidationRequest = z.infer<
-  typeof aiSandboxPatchValidationRequestSchema
->
+export type AiSandboxPatchValidationRequest = z.infer<typeof aiSandboxPatchValidationRequestSchema>
 export type AiSandboxPatchValidationDecision = z.infer<
   typeof aiSandboxPatchValidationDecisionSchema
 >
