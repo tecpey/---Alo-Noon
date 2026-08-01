@@ -30,3 +30,4 @@ All requests, retrieved evidence references, tool calls, approvals, outputs, cos
 ## Fail closed
 
 Missing tenant context, provenance, approval, policy result or redaction classification denies the action. An LLM cannot override this decision.
+
