@@ -14,14 +14,30 @@ databaseDescribe('PostgreSQL tenant isolation G5', () => {
   beforeAll(async () => {
     await prisma.tenant.createMany({
       data: [
-        { id: tenantA, slug: `rls-a-${tenantA.slice(0, 8)}`, name: 'RLS tenant A' },
-        { id: tenantB, slug: `rls-b-${tenantB.slice(0, 8)}`, name: 'RLS tenant B' },
+        {
+          id: tenantA,
+          slug: `rls-a-${tenantA.slice(0, 8)}`,
+          name: 'RLS tenant A',
+        },
+        {
+          id: tenantB,
+          slug: `rls-b-${tenantB.slice(0, 8)}`,
+          name: 'RLS tenant B',
+        },
       ],
     })
     await prisma.customer.createMany({
       data: [
-        { id: customerA, tenantId: tenantA, mobileE164: `+98${tenantA.replace(/\D/g, '').padEnd(10, '1').slice(0, 10)}` },
-        { id: customerB, tenantId: tenantB, mobileE164: `+98${tenantB.replace(/\D/g, '').padEnd(10, '2').slice(0, 10)}` },
+        {
+          id: customerA,
+          tenantId: tenantA,
+          mobileE164: `+98${tenantA.replace(/\D/g, '').padEnd(10, '1').slice(0, 10)}`,
+        },
+        {
+          id: customerB,
+          tenantId: tenantB,
+          mobileE164: `+98${tenantB.replace(/\D/g, '').padEnd(10, '2').slice(0, 10)}`,
+        },
       ],
     })
     await prisma.$executeRawUnsafe(`CREATE ROLE "${roleName}" NOLOGIN NOSUPERUSER NOBYPASSRLS`)
@@ -32,8 +48,12 @@ databaseDescribe('PostgreSQL tenant isolation G5', () => {
   })
 
   afterAll(async () => {
-    await prisma.customer.deleteMany({ where: { id: { in: [customerA, customerB] } } })
-    await prisma.tenant.deleteMany({ where: { id: { in: [tenantA, tenantB] } } })
+    await prisma.customer.deleteMany({
+      where: { id: { in: [customerA, customerB] } },
+    })
+    await prisma.tenant.deleteMany({
+      where: { id: { in: [tenantA, tenantB] } },
+    })
     await prisma.$executeRawUnsafe(`DROP ROLE IF EXISTS "${roleName}"`)
     await prisma.$disconnect()
   })
