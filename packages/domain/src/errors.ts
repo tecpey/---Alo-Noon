@@ -1,4 +1,5 @@
 export type DomainErrorCode =
+  | 'AI_AUDIT_POLICY_VIOLATION'
   | 'AI_POLICY_DENIED'
   | 'AI_TELEMETRY_BLOCKED'
   | 'CURRENCY_MISMATCH'
