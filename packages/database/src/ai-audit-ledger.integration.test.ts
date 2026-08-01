@@ -126,6 +126,8 @@ databaseDescribe('governed AI durable audit G6B', () => {
 
     await expect(attempt(3, digest('b'), { outcome: 'gap' })).rejects.toThrow()
     await expect(attempt(2, digest('f'), { outcome: 'forged' })).rejects.toThrow()
-    await expect(attempt(2, digest('b'), { rawPrompt: 'ignore prior instructions' })).rejects.toThrow()
+    await expect(
+      attempt(2, digest('b'), { rawPrompt: 'ignore prior instructions' }),
+    ).rejects.toThrow()
   })
 })
