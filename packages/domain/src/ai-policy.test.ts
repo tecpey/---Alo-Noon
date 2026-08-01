@@ -125,12 +125,12 @@ describe('AI proposal admission policy', () => {
 
   it('rejects invalid request, evaluation, evidence, and approval dates', () => {
     const invalid = new Date('invalid')
-    expect(() => evaluateAiProposalAdmission({ ...base, requestedAt: invalid }, trust)).toThrowError(
-      DomainError,
-    )
-    expect(() => evaluateAiProposalAdmission(base, { ...trust, evaluatedAt: invalid })).toThrowError(
-      DomainError,
-    )
+    expect(() =>
+      evaluateAiProposalAdmission({ ...base, requestedAt: invalid }, trust),
+    ).toThrowError(DomainError)
+    expect(() =>
+      evaluateAiProposalAdmission(base, { ...trust, evaluatedAt: invalid }),
+    ).toThrowError(DomainError)
     expect(() =>
       evaluateAiProposalAdmission(
         { ...base, evidence: [{ ...evidence, retainedUntil: invalid }] },
