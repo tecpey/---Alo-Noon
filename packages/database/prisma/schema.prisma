@@ -278,6 +278,19 @@ enum AuthorizationScopeType {
   SELF
 }
 
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum TenantMembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
 enum CartState {
   ACTIVE
   CONVERTED
@@ -291,8 +304,56 @@ enum QuoteStatus {
   ACCEPTED
 }
 
+model Tenant {
+  id             String             @id @default(uuid()) @db.Uuid
+  slug           String             @unique @db.VarChar(64)
+  name           String
+  status         TenantStatus       @default(ACTIVE)
+  defaultLocale  String             @default("fa-IR") @db.VarChar(16)
+  currency       Currency           @default(IRR)
+  domains        TenantDomain[]
+  memberships    TenantMembership[]
+  activeSessions AuthSession[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model TenantDomain {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  host       String   @unique @db.VarChar(253)
+  isPrimary  Boolean  @default(false)
+  verifiedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId, isPrimary])
+}
+
+model TenantMembership {
+  id          String                 @id @default(uuid()) @db.Uuid
+  tenantId    String                 @db.Uuid
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accountId   String                 @db.Uuid
+  account     IdentityAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  status      TenantMembershipStatus @default(INVITED)
+  activeAt    DateTime?
+  suspendedAt DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@unique([tenantId, accountId])
+  @@index([accountId, status])
+  @@index([tenantId, status])
+}
+
 model City {
   id               String            @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   code             String            @unique @db.VarChar(32)
   nameFa           String
   timezone         String            @default("Asia/Tehran") @db.VarChar(64)
@@ -304,10 +365,13 @@ model City {
   orders           Order[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
+
+  @@index([tenantId])
 }
 
 model OperationalZone {
   id             String         @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   cityId         String         @db.Uuid
   city           City           @relation(fields: [cityId], references: [id], onDelete: Restrict)
   code           String         @db.VarChar(32)
@@ -323,10 +387,13 @@ model OperationalZone {
 
   @@unique([cityId, code])
   @@index([cityId, isActive])
+
+  @@index([tenantId])
 }
 
 model ServiceArea {
   id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   operationalZoneId String          @db.Uuid
   operationalZone   OperationalZone @relation(fields: [operationalZoneId], references: [id], onDelete: Cascade)
   code              String          @db.VarChar(32)
@@ -338,10 +405,13 @@ model ServiceArea {
 
   @@unique([operationalZoneId, code])
   @@index([operationalZoneId, isActive])
+
+  @@index([tenantId])
 }
 
 model Customer {
   id                     String                  @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   mobileE164             String                  @unique @db.VarChar(16)
   firstName              String?
   lastName               String?
@@ -362,6 +432,8 @@ model Customer {
   updatedAt              DateTime                @updatedAt
 
   @@index([lifecycleStatus, createdAt])
+
+  @@index([tenantId])
 }
 
 model IdentityAccount {
@@ -373,6 +445,7 @@ model IdentityAccount {
   verifiedAt   DateTime?
   sessions     AuthSession[]
   accessGrants AccessGrant[]
+  tenantMemberships TenantMembership[]
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
@@ -400,6 +473,8 @@ model AuthSession {
   id          String          @id @default(uuid()) @db.Uuid
   accountId   String          @db.Uuid
   account     IdentityAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  activeTenantId String?         @db.Uuid
+  activeTenant   Tenant?         @relation(fields: [activeTenantId], references: [id], onDelete: SetNull)
   tokenDigest String          @unique @db.VarChar(64)
   expiresAt   DateTime
   lastSeenAt  DateTime
@@ -460,14 +535,18 @@ model AccessGrant {
 
 model Household {
   id        String            @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   name      String
   members   HouseholdMember[]
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
+
+  @@index([tenantId])
 }
 
 model HouseholdMember {
   id          String              @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   householdId String              @db.Uuid
   household   Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
   customerId  String?             @db.Uuid
@@ -480,10 +559,13 @@ model HouseholdMember {
 
   @@unique([householdId, customerId])
   @@index([householdId, role])
+
+  @@index([tenantId])
 }
 
 model Address {
   id                   String                   @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   customerId           String                   @db.Uuid
   customer             Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cityId               String                   @db.Uuid
@@ -507,10 +589,13 @@ model Address {
 
   @@index([customerId, archivedAt])
   @@index([cityId, operationalZoneId, verificationState])
+
+  @@index([tenantId])
 }
 
 model Bakery {
   id            String              @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   legalName     String
   displayNameFa String
   partnerStatus BakeryPartnerStatus @default(PROSPECT)
@@ -520,10 +605,13 @@ model Bakery {
   updatedAt     DateTime            @updatedAt
 
   @@index([partnerStatus])
+
+  @@index([tenantId])
 }
 
 model BakeryBranch {
   id                 String                  @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   bakeryId           String                  @db.Uuid
   bakery             Bakery                  @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
   cityId             String                  @db.Uuid
@@ -551,10 +639,13 @@ model BakeryBranch {
 
   @@unique([cityId, code])
   @@index([operationalZoneId, operationalStatus, qualityStatus])
+
+  @@index([tenantId])
 }
 
 model BakeryOperatingHours {
   id             String       @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   bakeryBranchId String       @db.Uuid
   bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
   dayOfWeek      Int
@@ -563,10 +654,13 @@ model BakeryOperatingHours {
   isClosed       Boolean      @default(false)
 
   @@unique([bakeryBranchId, dayOfWeek])
+
+  @@index([tenantId])
 }
 
 model BakeryCapacitySlot {
   id             String       @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   bakeryBranchId String       @db.Uuid
   bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
   serviceDate    DateTime     @db.Date
@@ -577,19 +671,25 @@ model BakeryCapacitySlot {
   updatedAt      DateTime     @updatedAt
 
   @@unique([bakeryBranchId, serviceDate])
+
+  @@index([tenantId])
 }
 
 model ProductCategory {
   id        String    @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   code      String    @unique @db.VarChar(32)
   nameFa    String
   products  Product[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  @@index([tenantId])
 }
 
 model Product {
   id            String                 @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   categoryId    String                 @db.Uuid
   category      ProductCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   slug          String                 @unique @db.VarChar(100)
@@ -602,10 +702,13 @@ model Product {
   updatedAt     DateTime               @updatedAt
 
   @@index([categoryId, lifecycle])
+
+  @@index([tenantId])
 }
 
 model ProductVariant {
   id                      String                  @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   productId               String                  @db.Uuid
   product                 Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
   sku                     String                  @unique @db.VarChar(64)
@@ -630,10 +733,13 @@ model ProductVariant {
   updatedAt               DateTime                @updatedAt
 
   @@index([fulfillmentClass, lifecycle])
+
+  @@index([tenantId])
 }
 
 model BakeryProductOffering {
   id                 String                     @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   bakeryBranchId     String                     @db.Uuid
   bakeryBranch       BakeryBranch               @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
   productVariantId   String                     @db.Uuid
@@ -653,10 +759,13 @@ model BakeryProductOffering {
 
   @@unique([bakeryBranchId, productVariantId])
   @@index([bakeryBranchId, availability])
+
+  @@index([tenantId])
 }
 
 model Cart {
   id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   customerId        String          @db.Uuid
   customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cityId            String          @db.Uuid
@@ -674,10 +783,13 @@ model Cart {
 
   @@index([customerId, state, updatedAt])
   @@index([cityId, operationalZoneId, bakeryBranchId, state])
+
+  @@index([tenantId])
 }
 
 model CartItem {
   id                       String                @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   cartId                   String                @db.Uuid
   cart                     Cart                  @relation(fields: [cartId], references: [id], onDelete: Cascade)
   bakeryProductOfferingId  String                @db.Uuid
@@ -688,10 +800,13 @@ model CartItem {
 
   @@unique([cartId, bakeryProductOfferingId])
   @@index([bakeryProductOfferingId])
+
+  @@index([tenantId])
 }
 
 model Quote {
   id                String      @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   publicId          String      @unique @default(cuid()) @db.VarChar(32)
   idempotencyKey    String      @unique @db.VarChar(128)
   cartId            String      @db.Uuid
@@ -712,10 +827,13 @@ model Quote {
 
   @@index([customerId, status, expiresAt])
   @@index([cartId, cartVersion, status])
+
+  @@index([tenantId])
 }
 
 model QuoteItem {
   id                       String                  @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   quoteId                  String                  @db.Uuid
   quote                    Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   bakeryProductOfferingId  String                  @db.Uuid
@@ -735,10 +853,13 @@ model QuoteItem {
   @@index([quoteId])
   @@index([bakeryProductOfferingId])
   @@index([productVariantId])
+
+  @@index([tenantId])
 }
 
 model Order {
   id                           String                 @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   publicId                     String                 @unique @default(cuid()) @db.VarChar(32)
   idempotencyKey               String                 @unique @db.VarChar(128)
   customerId                   String                 @db.Uuid
@@ -783,10 +904,13 @@ model Order {
   @@index([customerId, createdAt])
   @@index([cityId, operationalZoneId, state])
   @@index([bakeryBranchId, productionState, createdAt])
+
+  @@index([tenantId])
 }
 
 model OrderItem {
   id                       String                  @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   orderId                  String                  @db.Uuid
   order                    Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productVariantId         String                  @db.Uuid
@@ -806,10 +930,13 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productVariantId])
+
+  @@index([tenantId])
 }
 
 model OrderStateTransition {
   id             String     @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   orderId        String     @db.Uuid
   order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   fromState      OrderState
@@ -825,10 +952,13 @@ model OrderStateTransition {
 
   @@index([orderId, occurredAt])
   @@index([correlationId])
+
+  @@index([tenantId])
 }
 
 model Fulfillment {
   id                    String                @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   orderId               String                @unique @db.Uuid
   order                 Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
   bakeryBranchId        String?               @db.Uuid
@@ -850,10 +980,13 @@ model Fulfillment {
   updatedAt             DateTime              @updatedAt
 
   @@index([bakeryBranchId, state, readyAtEstimate])
+
+  @@index([tenantId])
 }
 
 model CourierPartner {
   id          String    @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   code        String    @unique @db.VarChar(32)
   displayName String
   isActive    Boolean   @default(false)
@@ -861,10 +994,13 @@ model CourierPartner {
   vehicles    Vehicle[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId])
 }
 
 model Courier {
   id               String               @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   courierPartnerId String               @db.Uuid
   courierPartner   CourierPartner       @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
   externalRef      String?              @db.VarChar(128)
@@ -877,10 +1013,13 @@ model Courier {
 
   @@unique([courierPartnerId, externalRef])
   @@index([courierPartnerId, status])
+
+  @@index([tenantId])
 }
 
 model Vehicle {
   id               String               @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   courierPartnerId String               @db.Uuid
   courierPartner   CourierPartner       @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
   type             VehicleType
@@ -891,10 +1030,13 @@ model Vehicle {
   updatedAt        DateTime             @updatedAt
 
   @@index([courierPartnerId, type, status])
+
+  @@index([tenantId])
 }
 
 model DeliveryTask {
   id                String                @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   fulfillmentId     String                @unique @db.Uuid
   fulfillment       Fulfillment           @relation(fields: [fulfillmentId], references: [id], onDelete: Restrict)
   state             DeliveryTaskState     @default(UNASSIGNED)
@@ -909,10 +1051,13 @@ model DeliveryTask {
   updatedAt         DateTime              @updatedAt
 
   @@index([state, pickupBefore])
+
+  @@index([tenantId])
 }
 
 model DeliveryAssignment {
   id             String                  @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   deliveryTaskId String                  @db.Uuid
   deliveryTask   DeliveryTask            @relation(fields: [deliveryTaskId], references: [id], onDelete: Cascade)
   courierId      String                  @db.Uuid
@@ -928,10 +1073,13 @@ model DeliveryAssignment {
 
   @@index([deliveryTaskId, state])
   @@index([courierId, state, offeredAt])
+
+  @@index([tenantId])
 }
 
 model CustomerEvent {
   id            String       @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   eventId       String       @unique @db.Uuid
   customerId    String       @db.Uuid
   customer      Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
@@ -950,10 +1098,13 @@ model CustomerEvent {
   @@index([customerId, occurredAt])
   @@index([name, occurredAt])
   @@index([correlationId])
+
+  @@index([tenantId])
 }
 
 model DomainEventOutbox {
   id              String       @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   eventId         String       @unique @db.Uuid
   name            String       @db.VarChar(100)
   version         Int          @default(1)
@@ -975,10 +1126,13 @@ model DomainEventOutbox {
   @@index([status, createdAt])
   @@index([aggregateType, aggregateId, occurredAt])
   @@index([correlationId])
+
+  @@index([tenantId])
 }
 
 model AuditEvent {
   id            String    @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   actorType     ActorType
   actorId       String?   @db.Uuid
   action        String    @db.VarChar(100)
@@ -993,10 +1147,13 @@ model AuditEvent {
   @@index([entityType, entityId, occurredAt])
   @@index([actorType, actorId, occurredAt])
   @@index([correlationId])
+
+  @@index([tenantId])
 }
 
 model SupportCase {
   id              String              @id @default(uuid()) @db.Uuid
+  tenantId          String? @db.Uuid
   publicId        String              @unique @default(cuid()) @db.VarChar(32)
   customerId      String?             @db.Uuid
   customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -1014,6 +1171,8 @@ model SupportCase {
   @@index([status, priority, createdAt])
   @@index([customerId, createdAt])
   @@index([orderId])
+
+  @@index([tenantId])
 }
 
 model SupportCaseNote {
