@@ -304,6 +304,11 @@ enum QuoteStatus {
   ACCEPTED
 }
 
+enum DeliveryPricingCalculationMode {
+  FLAT
+  DISTANCE_BANDED
+}
+
 model Tenant {
   id             String             @id @default(uuid()) @db.Uuid
   slug           String             @unique @db.VarChar(64)
@@ -314,6 +319,7 @@ model Tenant {
   domains        TenantDomain[]
   memberships    TenantMembership[]
   activeSessions AuthSession[]
+  deliveryPricingRules DeliveryPricingRule[]
   aiAuditEvents  AiControlPlaneAuditEvent[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
@@ -364,6 +370,7 @@ model City {
   bakeryBranches   BakeryBranch[]
   carts            Cart[]
   orders           Order[]
+  deliveryPricingRules DeliveryPricingRule[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -385,6 +392,7 @@ model OperationalZone {
   bakeryBranches BakeryBranch[]
   orders         Order[]
   carts          Cart[]
+  deliveryPricingRules DeliveryPricingRule[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -599,6 +607,7 @@ model Address {
   verifiedAt           DateTime?
   archivedAt           DateTime?
   orders               Order[]
+  quotes               Quote[]
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
 
@@ -806,6 +815,33 @@ model BakeryProductOffering {
   @@index([productVariantId, tenantId], map: "g3b_BakeryProductOffering_productVariantId_tenant_idx")
 }
 
+model DeliveryPricingRule {
+  id                    String                         @id @default(uuid()) @db.Uuid
+  tenantId              String                         @db.Uuid
+  tenant                Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  cityId                String                         @db.Uuid
+  city                  City                           @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  operationalZoneId     String?                        @db.Uuid
+  operationalZone       OperationalZone?               @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
+  version               Int
+  calculationMode       DeliveryPricingCalculationMode @default(FLAT)
+  baseFeeAmount         BigInt
+  perKilometerFeeAmount BigInt                          @default(0)
+  minimumOrderAmount    BigInt?
+  freeDeliveryThreshold BigInt?
+  currency              Currency                       @default(IRR)
+  effectiveFrom         DateTime
+  effectiveUntil        DateTime?
+  isActive              Boolean                        @default(false)
+  quotes                Quote[]
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+
+  @@unique([tenantId, cityId, operationalZoneId, version], map: "DeliveryPricingRule_scope_version_key")
+  @@unique([id, tenantId], map: "DeliveryPricingRule_id_tenant_key")
+  @@index([tenantId, cityId, operationalZoneId, isActive, effectiveFrom], map: "DeliveryPricingRule_active_scope_idx")
+}
+
 model Cart {
   id                String          @id @default(uuid()) @db.Uuid
   tenantId          String @db.Uuid
@@ -873,7 +909,19 @@ model Quote {
   discountAmount    BigInt      @default(0)
   totalAmount       BigInt
   currency          Currency    @default(IRR)
+  deliveryAddressId String?     @db.Uuid
+  deliveryAddress   Address?    @relation(fields: [deliveryAddressId], references: [id], onDelete: Restrict)
+  deliveryPricingRuleId String? @db.Uuid
+  deliveryPricingRule DeliveryPricingRule? @relation(fields: [deliveryPricingRuleId], references: [id], onDelete: Restrict)
+  deliveryPricingRuleVersion Int?
+  recipientNameSnapshot String?
+  recipientPhoneSnapshot String? @db.VarChar(16)
+  deliveryAddressSnapshot String?
+  deliveryLatitudeSnapshot Decimal? @db.Decimal(10, 7)
+  deliveryLongitudeSnapshot Decimal? @db.Decimal(10, 7)
+  deliveryInstructionsSnapshot String?
   items             QuoteItem[]
+  order             Order?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -921,6 +969,8 @@ model Order {
   id                           String                 @id @default(uuid()) @db.Uuid
   tenantId          String @db.Uuid
   publicId                     String                 @unique @default(cuid()) @db.VarChar(32)
+  quoteId                      String?                @unique @db.Uuid
+  quote                        Quote?                 @relation(fields: [quoteId], references: [id], onDelete: Restrict)
   idempotencyKey               String                 @unique @db.VarChar(128)
   customerId                   String                 @db.Uuid
   customer                     Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
