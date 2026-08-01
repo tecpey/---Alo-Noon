@@ -41,9 +41,13 @@ CREATE UNIQUE INDEX "DeliveryPricingRule_scope_version_null_zone_key"
   ON "DeliveryPricingRule" ("tenantId", "cityId", "version")
   WHERE "operationalZoneId" IS NULL;
 
-CREATE UNIQUE INDEX "DeliveryPricingRule_id_tenant_key"
+CREATE UNIQUE INDEX "g3b_DeliveryPricingRule_id_tenant_key"
   ON "DeliveryPricingRule" ("id", "tenantId");
 
+CREATE INDEX "g3b_DeliveryPricingRule_cityId_tenant_idx"
+  ON "DeliveryPricingRule" ("cityId", "tenantId");
+CREATE INDEX "g3b_DeliveryPricingRule_operationalZoneId_tenant_idx"
+  ON "DeliveryPricingRule" ("operationalZoneId", "tenantId");
 CREATE INDEX "DeliveryPricingRule_active_scope_idx"
   ON "DeliveryPricingRule" (
     "tenantId",
@@ -68,6 +72,11 @@ ALTER TABLE "Order" ADD COLUMN "quoteId" UUID;
 
 CREATE INDEX "Quote_deliveryAddressId_idx" ON "Quote" ("deliveryAddressId");
 CREATE INDEX "Quote_deliveryPricingRuleId_idx" ON "Quote" ("deliveryPricingRuleId");
+CREATE INDEX "g3b_Quote_deliveryAddressId_tenant_idx"
+  ON "Quote" ("deliveryAddressId", "tenantId");
+CREATE INDEX "g3b_Quote_deliveryPricingRuleId_tenant_idx"
+  ON "Quote" ("deliveryPricingRuleId", "tenantId");
+CREATE INDEX "g3b_Order_quoteId_tenant_idx" ON "Order" ("quoteId", "tenantId");
 CREATE UNIQUE INDEX "Order_quoteId_key" ON "Order" ("quoteId");
 
 ALTER TABLE "DeliveryPricingRule"
@@ -77,23 +86,40 @@ ALTER TABLE "DeliveryPricingRule"
   FOREIGN KEY ("cityId") REFERENCES "City"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   ADD CONSTRAINT "DeliveryPricingRule_operationalZoneId_fkey"
   FOREIGN KEY ("operationalZoneId") REFERENCES "OperationalZone"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT "DeliveryPricingRule_city_tenant_fkey"
-  FOREIGN KEY ("cityId", "tenantId") REFERENCES "City"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT "DeliveryPricingRule_zone_tenant_fkey"
-  FOREIGN KEY ("operationalZoneId", "tenantId") REFERENCES "OperationalZone"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+  ADD CONSTRAINT "g3b_DeliveryPricingRule_cityId_tenant_fk"
+  FOREIGN KEY ("cityId", "tenantId")
+  REFERENCES "City" ("id", "tenantId")
+  ON DELETE NO ACTION DEFERRABLE INITIALLY IMMEDIATE,
+  ADD CONSTRAINT "g3b_DeliveryPricingRule_operationalZoneId_tenant_fk"
+  FOREIGN KEY ("operationalZoneId", "tenantId")
+  REFERENCES "OperationalZone" ("id", "tenantId")
+  ON DELETE NO ACTION DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "Quote"
   ADD CONSTRAINT "Quote_deliveryAddressId_fkey"
   FOREIGN KEY ("deliveryAddressId") REFERENCES "Address"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   ADD CONSTRAINT "Quote_deliveryPricingRuleId_fkey"
   FOREIGN KEY ("deliveryPricingRuleId") REFERENCES "DeliveryPricingRule"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT "Quote_deliveryAddress_tenant_fkey"
-  FOREIGN KEY ("deliveryAddressId", "tenantId") REFERENCES "Address"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT "Quote_deliveryPricingRule_tenant_fkey"
-  FOREIGN KEY ("deliveryPricingRuleId", "tenantId") REFERENCES "DeliveryPricingRule"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+  ADD CONSTRAINT "g3b_Quote_deliveryAddressId_tenant_fk"
+  FOREIGN KEY ("deliveryAddressId", "tenantId")
+  REFERENCES "Address" ("id", "tenantId")
+  ON DELETE NO ACTION DEFERRABLE INITIALLY IMMEDIATE,
+  ADD CONSTRAINT "g3b_Quote_deliveryPricingRuleId_tenant_fk"
+  FOREIGN KEY ("deliveryPricingRuleId", "tenantId")
+  REFERENCES "DeliveryPricingRule" ("id", "tenantId")
+  ON DELETE NO ACTION DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "Order"
   ADD CONSTRAINT "Order_quoteId_fkey"
   FOREIGN KEY ("quoteId") REFERENCES "Quote"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT "Order_quote_tenant_fkey"
-  FOREIGN KEY ("quoteId", "tenantId") REFERENCES "Quote"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+  ADD CONSTRAINT "g3b_Order_quoteId_tenant_fk"
+  FOREIGN KEY ("quoteId", "tenantId")
+  REFERENCES "Quote" ("id", "tenantId")
+  ON DELETE NO ACTION DEFERRABLE INITIALLY IMMEDIATE;
+
+-- Registered tenant-owned relations for the G3B integrity manifest:
+--    ('DeliveryPricingRule', 'cityId', 'City')
+--    ('DeliveryPricingRule', 'operationalZoneId', 'OperationalZone')
+--    ('Order', 'quoteId', 'Quote')
+--    ('Quote', 'deliveryAddressId', 'Address')
+--    ('Quote', 'deliveryPricingRuleId', 'DeliveryPricingRule')
