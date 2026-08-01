@@ -40,3 +40,4 @@ Sessions store no permanent authorization snapshot. Membership and grant changes
 - support access has scope, reason, ticket, approver, expiry and revocation;
 - suspended tenant or membership blocks writes immediately;
 - negative tests cover IDOR, guessed IDs, forged headers, stale jobs, cache confusion and cross-tenant joins.
+
