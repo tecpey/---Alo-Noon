@@ -587,7 +587,12 @@ async function serializableWithRetry<T>(
       return await prisma.$transaction(
         async (transaction) => {
           await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
-          return operation(transaction)
+          const result = await operation(transaction)
+          // Prisma 5 can resolve an interactive transaction callback even when a
+          // deferred PostgreSQL constraint subsequently rejects COMMIT. Evaluate
+          // all financial guards before returning a result to the caller.
+          await transaction.$executeRawUnsafe('SET CONSTRAINTS ALL IMMEDIATE')
+          return result
         },
         { isolationLevel: 'Serializable' },
       )
@@ -610,7 +615,8 @@ export function isRetryablePaymentConflict(error: unknown): boolean {
 function isRetryableConflict(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const code = Reflect.get(error, 'code')
-  if (code === 'P2034' || code === 'P2002' || code === '40001') return true
+  if (code === 'P2034' || code === '40001') return true
+  if (code === 'P2002') return isRetryablePaymentUniqueRace(error)
   const meta = Reflect.get(error, 'meta')
   return (
     code === 'P2010' &&
@@ -618,4 +624,38 @@ function isRetryableConflict(error: unknown): boolean {
     meta !== null &&
     Reflect.get(meta, 'code') === '40001'
   )
+}
+
+const retryablePaymentUniqueTargets = new Set([
+  'customerId|idempotencyKey|tenantId',
+  'idempotencyKey|paymentId|tenantId',
+  'idempotencyKey|tenantId',
+  'orderId',
+  'paymentId',
+  'paymentId|version',
+])
+
+const retryablePaymentUniqueConstraints = new Set([
+  'Payment_orderId_key',
+  'Payment_tenant_customer_idempotency_key',
+  'PaymentTransition_scoped_idempotency_key',
+  'PaymentTransition_payment_version_key',
+  'FinancialTransaction_paymentId_key',
+  'FinancialTransaction_tenant_idempotency_key',
+])
+
+function isRetryablePaymentUniqueRace(error: object): boolean {
+  const meta = Reflect.get(error, 'meta')
+  if (!meta || typeof meta !== 'object') return false
+
+  const target = Reflect.get(meta, 'target')
+  if (Array.isArray(target) && target.every((field) => typeof field === 'string')) {
+    return retryablePaymentUniqueTargets.has([...target].sort().join('|'))
+  }
+  if (typeof target === 'string') {
+    return retryablePaymentUniqueConstraints.has(target)
+  }
+
+  const constraint = Reflect.get(meta, 'constraint')
+  return typeof constraint === 'string' && retryablePaymentUniqueConstraints.has(constraint)
 }

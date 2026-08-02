@@ -34,6 +34,11 @@ describe('payment and ledger foundation migration', () => {
   it('enforces positive IRR, state history, append-only records, and deferred balance', () => {
     expect(migration).toContain('PaymentTransition_state_machine_check')
     expect(migration).toContain('Payment_history_consistency')
+    expect(migration).toContain(
+      'Captured payment requires a paid order and exactly one financial transaction',
+    )
+    expect(migration).toContain('Order_payment_projection_insert')
+    expect(migration).toContain('Order_payment_projection_update')
     expect(migration).toContain('FinancialTransaction_balance_guard')
     expect(migration).toContain('DEFERRABLE INITIALLY DEFERRED')
     expect(migration).toContain('FinancialTransaction_append_only')

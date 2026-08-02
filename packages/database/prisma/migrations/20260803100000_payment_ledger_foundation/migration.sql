@@ -225,6 +225,8 @@ DECLARE
   target_payment_id UUID;
   current_state "PaymentAggregateState";
   current_version INTEGER;
+  order_payment_state "PaymentState";
+  posting_count INTEGER;
   transition_count INTEGER;
   latest_state "PaymentAggregateState";
 BEGIN
@@ -236,8 +238,13 @@ BEGIN
     target_payment_id := NEW."paymentId";
   END IF;
 
-  SELECT "state", "version" INTO current_state, current_version
-  FROM "Payment" WHERE "id" = target_payment_id;
+  SELECT payment."state", payment."version", orders."paymentState",
+         (SELECT COUNT(*) FROM "FinancialTransaction" posting
+          WHERE posting."paymentId" = payment."id")
+  INTO current_state, current_version, order_payment_state, posting_count
+  FROM "Payment" payment
+  JOIN "Order" orders ON orders."id" = payment."orderId"
+  WHERE payment."id" = target_payment_id;
   IF NOT FOUND THEN RETURN NULL; END IF;
 
   SELECT COUNT(*), (ARRAY_AGG("toState" ORDER BY "version" DESC))[1]
@@ -246,6 +253,14 @@ BEGIN
 
   IF transition_count <> current_version OR latest_state IS DISTINCT FROM current_state THEN
     RAISE EXCEPTION 'Payment state must match contiguous transition history';
+  END IF;
+  IF current_state = 'CAPTURED'
+     AND (order_payment_state <> 'PAID' OR posting_count <> 1)
+  THEN
+    RAISE EXCEPTION 'Captured payment requires a paid order and exactly one financial transaction';
+  END IF;
+  IF current_state <> 'CAPTURED' AND posting_count <> 0 THEN
+    RAISE EXCEPTION 'Only a captured payment may own a financial transaction';
   END IF;
   IF EXISTS (
     SELECT 1
@@ -270,6 +285,38 @@ CREATE CONSTRAINT TRIGGER "PaymentTransition_history_consistency"
 AFTER INSERT OR UPDATE OR DELETE ON "PaymentStateTransition"
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION enforce_payment_history_consistency();
+
+CREATE FUNCTION enforce_order_payment_projection()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  payment_state "PaymentAggregateState";
+  posting_count INTEGER;
+BEGIN
+  IF NEW."paymentState" <> 'PAID' THEN RETURN NULL; END IF;
+
+  SELECT payment."state",
+         (SELECT COUNT(*) FROM "FinancialTransaction" posting
+          WHERE posting."paymentId" = payment."id")
+  INTO payment_state, posting_count
+  FROM "Payment" payment
+  WHERE payment."orderId" = NEW."id";
+
+  IF NOT FOUND OR payment_state <> 'CAPTURED' OR posting_count <> 1 THEN
+    RAISE EXCEPTION 'Paid order requires exactly one captured payment transaction';
+  END IF;
+  RETURN NULL;
+END $$;
+
+CREATE CONSTRAINT TRIGGER "Order_payment_projection_insert"
+AFTER INSERT ON "Order"
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION enforce_order_payment_projection();
+CREATE CONSTRAINT TRIGGER "Order_payment_projection_update"
+AFTER UPDATE OF "paymentState" ON "Order"
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION enforce_order_payment_projection();
 
 CREATE FUNCTION enforce_financial_transaction_balance()
 RETURNS trigger

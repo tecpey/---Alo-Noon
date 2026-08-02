@@ -82,6 +82,18 @@ databaseDescribe('payment and ledger PostgreSQL foundation', () => {
         randomUUID(),
       ),
     ).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' })
+    await expect(
+      prisma.$transaction(async (transaction) => {
+        await transaction.order.update({
+          where: { id: secondFixture.order.id },
+          data: { paymentState: 'PAID' },
+        })
+        await transaction.$executeRawUnsafe('SET CONSTRAINTS ALL IMMEDIATE')
+      }),
+    ).rejects.toThrow('exactly one captured payment transaction')
+    expect(
+      (await prisma.order.findUnique({ where: { id: secondFixture.order.id } }))?.paymentState,
+    ).toBe('NOT_STARTED')
 
     await expect(
       service.transition(
@@ -96,6 +108,35 @@ databaseDescribe('payment and ledger PostgreSQL foundation', () => {
         randomUUID(),
       ),
     ).rejects.toThrow('not allowed')
+
+    await expect(
+      prisma.$transaction(async (transaction) => {
+        await transaction.paymentStateTransition.create({
+          data: {
+            tenantId,
+            paymentId: initialized.id,
+            fromState: 'CREATED',
+            toState: 'PENDING',
+            actorType: 'SYSTEM',
+            version: 3,
+            idempotencyKey: `payment-history-gap-${suffix}`,
+            correlationId: randomUUID(),
+            occurredAt: now,
+          },
+        })
+        await transaction.payment.update({
+          where: { id: initialized.id },
+          data: { state: 'PENDING', version: 3 },
+        })
+        await transaction.$executeRawUnsafe('SET CONSTRAINTS ALL IMMEDIATE')
+      }),
+    ).rejects.toThrow('contiguous transition history')
+    expect(
+      await prisma.payment.findUnique({
+        where: { id: initialized.id },
+        select: { state: true, version: true },
+      }),
+    ).toEqual({ state: 'CREATED', version: 1 })
 
     const pending = await service.transition(
       tenantId,
@@ -194,6 +235,50 @@ databaseDescribe('payment and ledger PostgreSQL foundation', () => {
     expect((await prisma.order.findUnique({ where: { id: fixture.order.id } }))?.paymentState).toBe(
       'PENDING',
     )
+    expect(
+      await prisma.auditEvent.count({
+        where: { entityId: initialized.id, action: { startsWith: 'payment.' } },
+      }),
+    ).toBe(3)
+    expect(
+      await prisma.domainEventOutbox.count({
+        where: { aggregateId: initialized.id, aggregateType: 'payment' },
+      }),
+    ).toBe(3)
+
+    await expect(
+      prisma.$transaction(async (transaction) => {
+        const nextVersion = authorized.version + 1
+        await transaction.paymentStateTransition.create({
+          data: {
+            tenantId,
+            paymentId: initialized.id,
+            fromState: 'AUTHORIZED',
+            toState: 'CAPTURED',
+            actorType: 'SYSTEM',
+            version: nextVersion,
+            idempotencyKey: `missing-journal-transition-${suffix}`,
+            correlationId: randomUUID(),
+            occurredAt: new Date(now.getTime() + 3_000),
+          },
+        })
+        await transaction.payment.update({
+          where: { id: initialized.id },
+          data: { state: 'CAPTURED', version: nextVersion },
+        })
+        await transaction.order.update({
+          where: { id: fixture.order.id },
+          data: { paymentState: 'PAID' },
+        })
+        await transaction.$executeRawUnsafe('SET CONSTRAINTS ALL IMMEDIATE')
+      }),
+    ).rejects.toThrow('exactly one financial transaction')
+    expect((await prisma.payment.findUnique({ where: { id: initialized.id } }))?.state).toBe(
+      'AUTHORIZED',
+    )
+    expect((await prisma.order.findUnique({ where: { id: fixture.order.id } }))?.paymentState).toBe(
+      'PENDING',
+    )
 
     await expect(
       prisma.$transaction(async (transaction) => {
@@ -214,6 +299,10 @@ databaseDescribe('payment and ledger PostgreSQL foundation', () => {
         await transaction.payment.update({
           where: { id: initialized.id },
           data: { state: 'CAPTURED', version: nextVersion },
+        })
+        await transaction.order.update({
+          where: { id: fixture.order.id },
+          data: { paymentState: 'PAID' },
         })
         const header = await transaction.financialTransaction.create({
           data: {
