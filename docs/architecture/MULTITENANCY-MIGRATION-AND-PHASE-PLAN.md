@@ -55,11 +55,12 @@ because Host-to-Tenant resolution must occur before authentication.
 Backup/export/restore procedures and audited support-access controls remain
 separate operational exit criteria before Issue #12 may close.
 
-## Phase G6 — reconcile Phase 2E
+## Phase G6 — reconcile Phase 2E ✅ implemented
 
-Only now implement address persistence, delivery pricing, durable reservation
-and Quote-to-Order. Conversion requires customer, cart, quote, address, branch,
-price policy and idempotency key to share the same tenant.
+Address persistence, delivery pricing, durable reservation and Quote-to-Order
+now execute under transaction-local tenant authority. Conversion requires
+customer, cart, quote, address, branch, price policy, capacity slot and scoped
+idempotency key to share the same tenant.
 
 ## Rollback
 

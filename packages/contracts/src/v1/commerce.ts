@@ -17,6 +17,7 @@ export const cartItemRemovalSchema = z.object({
 export type CartItemRemoval = z.infer<typeof cartItemRemovalSchema>
 
 export const quoteCreateSchema = z.object({
+  deliveryAddressId: uuidSchema,
   expectedCartVersion: z.number().int().min(1),
   idempotencyKey: z.string().trim().min(16).max(128),
 })
@@ -65,6 +66,12 @@ export const quoteSummarySchema = z.object({
   cartVersion: z.number().int().min(1),
   status: quoteStatusSchema,
   expiresAt: isoDateTimeSchema,
+  deliveryAddressId: uuidSchema,
+  deliveryServiceAreaId: uuidSchema,
+  deliveryOperationalZoneId: uuidSchema,
+  deliveryDistanceMeters: z.number().int().min(0),
+  deliveryPricingRuleId: uuidSchema,
+  deliveryPricingRuleVersion: z.number().int().min(1),
   subtotal: moneySchema,
   deliveryFee: moneySchema,
   discount: moneySchema,

@@ -6,9 +6,10 @@
   cart versioning, immutable quote snapshots, idempotent quote creation,
   expiration, supersession after cart mutation, API contracts, OpenAPI, Prisma
   migration, audit/outbox records, and customer-app integration.
-- **Planned:** quote acceptance into an order, delivery-price policy, address
-  persistence, promotion policy, tax policy if applicable, and durable capacity
-  reservation.
+- **Implemented in Phase 2E:** authenticated address persistence, server-derived
+  service-area provenance, authoritative delivery pricing, and atomic quote
+  acceptance with a durable bakery-capacity reservation.
+- **Planned:** promotion policy and tax policy if applicable.
 - **Deferred:** payment, wallet, ledger, refunds, settlement, dispatch, and
   approved production SMS delivery.
 - **Open:** final delivery-fee algorithm, quote TTL configuration, exact
@@ -43,9 +44,10 @@ A quote:
 - expires ten minutes after creation;
 - contains immutable offering, product, classification, price, and total
   snapshots;
-- has zero delivery fee and discount until reviewed pricing policies ship;
-- does not create an order, payment, ledger entry, or durable capacity
-  reservation.
+- includes an authoritative delivery fee after Phase 2E pricing resolution;
+- does not itself create an order, payment, ledger entry, or durable capacity
+  reservation; the separate idempotent order command performs acceptance and
+  reservation atomically.
 
 ## Product-promise boundary
 

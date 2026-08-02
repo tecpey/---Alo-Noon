@@ -787,7 +787,7 @@ export async function authenticateRequest(
     .catch(() => null)
 }
 
-async function resolveTenantId(
+export async function resolveTenantId(
   request: FastifyRequest,
   dependencies: AuthDependencies,
 ): Promise<string | null> {

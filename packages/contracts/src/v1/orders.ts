@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { addressInputSchema } from './geography'
-import { moneySchema, uuidSchema } from './common'
+import { moneySchema, responseMetaSchema, uuidSchema } from './common'
 import { productFulfillmentClassSchema } from './catalog'
 
 export const orderStateSchema = z.enum([
@@ -57,6 +57,12 @@ export const orderDraftInputSchema = z.object({
 })
 export type OrderDraftInput = z.infer<typeof orderDraftInputSchema>
 
+export const orderCreateSchema = z.object({
+  quoteId: uuidSchema,
+  idempotencyKey: z.string().trim().min(16).max(128),
+})
+export type OrderCreate = z.infer<typeof orderCreateSchema>
+
 export const orderItemSummarySchema = z.object({
   id: uuidSchema,
   skuSnapshot: z.string(),
@@ -70,13 +76,23 @@ export const orderItemSummarySchema = z.object({
 export const orderSummarySchema = z.object({
   id: uuidSchema,
   publicId: z.string().min(8).max(32),
+  quoteId: uuidSchema,
   state: orderStateSchema,
   paymentState: paymentStateSchema,
   productionState: productionStateSchema,
   deliveryState: deliveryStateSchema,
+  subtotal: moneySchema,
+  deliveryFee: moneySchema,
+  discount: moneySchema,
   total: moneySchema,
   items: z.array(orderItemSummarySchema),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
 })
 export type OrderSummary = z.infer<typeof orderSummarySchema>
+
+export const orderEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: orderSummarySchema,
+  meta: responseMetaSchema,
+})

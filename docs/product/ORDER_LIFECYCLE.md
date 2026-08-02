@@ -28,13 +28,15 @@ unique idempotency key and is persisted in `OrderStateTransition`.
 - Delivery: `NOT_REQUIRED`, `UNASSIGNED`, `ASSIGNED`, `PICKED_UP`,
   `OUT_FOR_DELIVERY`, `DELIVERED`, `FAILED`.
 
-An application service will coordinate cross-dimension invariants in Phase 2;
-Phase 1 defines states and order-policy transitions only.
+The Phase 2E application service now persists the initial customer-authorized
+`DRAFT -> PENDING_CONFIRMATION` transition, audit record, and outbox event in
+the same serializable transaction as Quote acceptance and capacity reservation.
+Later lifecycle transitions remain outside this slice.
 
 ## Planned
 
-- Command handlers with transactionally persisted transitions and outbox events;
-  cancellation reason policy; optimistic concurrency.
+- Post-creation command handlers, cancellation reason policy, and optimistic
+  concurrency for later lifecycle transitions.
 
 ## Deferred
 

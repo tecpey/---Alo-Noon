@@ -34,6 +34,49 @@ export const addressInputSchema = z.object({
 })
 export type AddressInput = z.infer<typeof addressInputSchema>
 
+export const addressCreateSchema = addressInputSchema
+  .omit({ operationalZoneId: true })
+  .extend({ idempotencyKey: z.string().trim().min(16).max(128) })
+export type AddressCreate = z.infer<typeof addressCreateSchema>
+
+export const addressSummarySchema = z.object({
+  id: uuidSchema,
+  cityId: uuidSchema,
+  serviceAreaId: uuidSchema,
+  operationalZoneId: uuidSchema,
+  label: z.string().min(1).max(80),
+  recipientName: z.string().min(1).max(120),
+  recipientPhone: z.string().regex(/^\+98\d{10}$/),
+  addressLine: z.string().min(1).max(500),
+  postalCode: z
+    .string()
+    .regex(/^\d{10}$/)
+    .optional(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  deliveryInstructions: z.string().max(500).optional(),
+  verificationStatus: z.enum([
+    'UNVERIFIED',
+    'CUSTOMER_CONFIRMED',
+    'OPERATIONS_VERIFIED',
+    'REJECTED',
+  ]),
+  createdAt: z.string().datetime({ offset: true }),
+})
+export type AddressSummary = z.infer<typeof addressSummarySchema>
+
+export const addressEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: addressSummarySchema,
+  meta: responseMetaSchema,
+})
+
+export const addressesEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.array(addressSummarySchema),
+  meta: responseMetaSchema,
+})
+
 export const serviceabilityRequestSchema = z.object({
   cityId: uuidSchema,
   latitude: z.number().min(-90).max(90),

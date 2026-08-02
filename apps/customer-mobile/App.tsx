@@ -14,7 +14,9 @@ import {
 
 import type {
   ActiveCitySummary,
+  AddressSummary,
   CartSummary,
+  OrderSummary,
   ProductSummary,
   QuoteSummary,
   SessionContext,
@@ -52,7 +54,17 @@ export default function App() {
   const [products, setProducts] = useState<ProductSummary[]>([])
   const [cart, setCart] = useState<CartSummary | null>(null)
   const [quote, setQuote] = useState<QuoteSummary | null>(null)
+  const [order, setOrder] = useState<OrderSummary | null>(null)
+  const [addresses, setAddresses] = useState<AddressSummary[]>([])
+  const [selectedAddressId, setSelectedAddressId] = useState<string>()
+  const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number }>()
+  const [addressLabel, setAddressLabel] = useState('خانه')
+  const [recipientName, setRecipientName] = useState('')
+  const [recipientPhone, setRecipientPhone] = useState('')
+  const [addressLine, setAddressLine] = useState('')
+  const [addressCommandKey, setAddressCommandKey] = useState<string>()
   const [quoteCommandKey, setQuoteCommandKey] = useState<string>()
+  const [orderCommandKey, setOrderCommandKey] = useState<string>()
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
   const [challengeId, setChallengeId] = useState<string>()
@@ -77,7 +89,11 @@ export default function App() {
         }
         setScreen('location')
         try {
-          await Promise.all([loadCities(api, active), loadCart(api, active)])
+          await Promise.all([
+            loadCities(api, active),
+            loadCart(api, active),
+            loadAddresses(api, active),
+          ])
         } catch (error) {
           if (active) setMessage(errorMessage(error))
         }
@@ -98,6 +114,13 @@ export default function App() {
     async function loadCart(client: CustomerApiClient, stillActive: boolean) {
       const activeCart = await client.getCart()
       if (stillActive) setCart(activeCart)
+    }
+
+    async function loadAddresses(client: CustomerApiClient, stillActive: boolean) {
+      const saved = await client.listAddresses()
+      if (!stillActive) return
+      setAddresses(saved)
+      setSelectedAddressId(saved[0]?.id)
     }
 
     return () => {
@@ -146,10 +169,12 @@ export default function App() {
       setScreen('location')
       try {
         const activeCities = await api.listActiveCities()
-        const activeCart = await api.getCart()
+        const [activeCart, savedAddresses] = await Promise.all([api.getCart(), api.listAddresses()])
         setCities(activeCities)
         setSelectedCityId(activeCities[0]?.id)
         setCart(activeCart)
+        setAddresses(savedAddresses)
+        setSelectedAddressId(savedAddresses[0]?.id)
       } catch (error) {
         setMessage(errorMessage(error))
       }
@@ -204,6 +229,14 @@ export default function App() {
         operationalZoneId: decision.operationalZoneId,
       })
       setOperationalZoneId(decision.operationalZoneId)
+      setSelectedAddressId(
+        addresses.find(
+          (address) =>
+            address.cityId === selectedCityId &&
+            address.operationalZoneId === decision.operationalZoneId,
+        )?.id,
+      )
+      setCoordinates({ latitude: current.coords.latitude, longitude: current.coords.longitude })
       setProducts(catalog)
       setQuote(null)
       setScreen('catalog')
@@ -221,6 +254,7 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     setQuote(null)
+    setOrder(null)
     try {
       const updated = await api.setCartItem(product.offeringId, {
         cityId: selectedCityId,
@@ -241,6 +275,7 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     setQuote(null)
+    setOrder(null)
     try {
       setCart(await api.removeCartItem(offeringId, cart.version))
     } catch (error) {
@@ -250,17 +285,64 @@ export default function App() {
     }
   }
 
+  const createAddress = async () => {
+    if (!api || !selectedCityId || !coordinates || busy) return
+    const normalizedPhone = normalizeIranianMobile(recipientPhone)
+    if (!normalizedPhone || recipientName.trim().length < 2 || addressLine.trim().length < 10) {
+      setMessage('نام گیرنده، شماره موبایل و نشانی کامل را وارد کنید.')
+      return
+    }
+    const idempotencyKey = addressCommandKey ?? commandKey('mobile-address')
+    setAddressCommandKey(idempotencyKey)
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      const created = await api.createAddress({
+        cityId: selectedCityId,
+        label: addressLabel.trim(),
+        recipientName: recipientName.trim(),
+        recipientPhone: normalizedPhone,
+        addressLine: addressLine.trim(),
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+        idempotencyKey,
+      })
+      setAddresses((current) => [created, ...current.filter((item) => item.id !== created.id)])
+      setSelectedAddressId(created.id)
+      setAddressCommandKey(undefined)
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const createQuote = async () => {
-    if (!api || !cart || cart.items.length === 0 || busy) return
-    const idempotencyKey =
-      quoteCommandKey ??
-      `mobile-quote-${Date.now()}-${Math.random().toString(36).slice(2, 12).padEnd(10, '0')}`
+    if (!api || !cart || !selectedAddressId || cart.items.length === 0 || busy) return
+    const idempotencyKey = quoteCommandKey ?? commandKey('mobile-quote')
     setQuoteCommandKey(idempotencyKey)
     setBusy(true)
     setMessage(undefined)
     try {
-      setQuote(await api.createQuote(cart.version, idempotencyKey))
+      setQuote(await api.createQuote(selectedAddressId, cart.version, idempotencyKey))
+      setOrder(null)
       setQuoteCommandKey(undefined)
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createOrder = async () => {
+    if (!api || !quote || busy) return
+    const idempotencyKey = orderCommandKey ?? commandKey('mobile-order')
+    setOrderCommandKey(idempotencyKey)
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      setOrder(await api.createOrder(quote.id, idempotencyKey))
+      setOrderCommandKey(undefined)
     } catch (error) {
       handleAuthenticatedError(error)
     } finally {
@@ -281,7 +363,13 @@ export default function App() {
       setProducts([])
       setCart(null)
       setQuote(null)
+      setOrder(null)
+      setAddresses([])
+      setSelectedAddressId(undefined)
+      setCoordinates(undefined)
+      setAddressCommandKey(undefined)
       setQuoteCommandKey(undefined)
+      setOrderCommandKey(undefined)
       setChallengeId(undefined)
       setScreen('phone')
       setMessage(undefined)
@@ -301,7 +389,13 @@ export default function App() {
       setProducts([])
       setCart(null)
       setQuote(null)
+      setOrder(null)
+      setAddresses([])
+      setSelectedAddressId(undefined)
+      setCoordinates(undefined)
+      setAddressCommandKey(undefined)
       setQuoteCommandKey(undefined)
+      setOrderCommandKey(undefined)
       setChallengeId(undefined)
       setScreen('phone')
     }
@@ -421,13 +515,37 @@ export default function App() {
               ))}
             </View>
           )}
+          {coordinates && selectedCityId && (
+            <AddressCheckoutCard
+              addresses={addresses.filter(
+                (address) =>
+                  address.cityId === selectedCityId &&
+                  address.operationalZoneId === operationalZoneId,
+              )}
+              selectedAddressId={selectedAddressId}
+              addressLabel={addressLabel}
+              recipientName={recipientName}
+              recipientPhone={recipientPhone}
+              addressLine={addressLine}
+              busy={busy}
+              onSelect={setSelectedAddressId}
+              onAddressLabel={setAddressLabel}
+              onRecipientName={setRecipientName}
+              onRecipientPhone={setRecipientPhone}
+              onAddressLine={setAddressLine}
+              onCreate={() => void createAddress()}
+            />
+          )}
           {cart && (
             <CartCard
               cart={cart}
               quote={quote}
+              order={order}
+              addressSelected={Boolean(selectedAddressId)}
               busy={busy}
               onRemove={(offeringId) => void removeCartItem(offeringId)}
               onQuote={() => void createQuote()}
+              onOrder={() => void createOrder()}
             />
           )}
           {message && <InlineMessage text={message} />}
@@ -438,6 +556,7 @@ export default function App() {
               setMessage(undefined)
               setOperationalZoneId(undefined)
               setQuote(null)
+              setOrder(null)
               setScreen('location')
             }}
           >
@@ -589,18 +708,105 @@ function ProductCard({
   )
 }
 
+function AddressCheckoutCard({
+  addresses,
+  selectedAddressId,
+  addressLabel,
+  recipientName,
+  recipientPhone,
+  addressLine,
+  busy,
+  onSelect,
+  onAddressLabel,
+  onRecipientName,
+  onRecipientPhone,
+  onAddressLine,
+  onCreate,
+}: {
+  addresses: AddressSummary[]
+  selectedAddressId?: string
+  addressLabel: string
+  recipientName: string
+  recipientPhone: string
+  addressLine: string
+  busy: boolean
+  onSelect: (id: string) => void
+  onAddressLabel: (value: string) => void
+  onRecipientName: (value: string) => void
+  onRecipientPhone: (value: string) => void
+  onAddressLine: (value: string) => void
+  onCreate: () => void
+}) {
+  return (
+    <View style={styles.cartCard} accessibilityLanguage="fa">
+      <Text style={styles.cartTitle}>نشانی تحویل</Text>
+      {addresses.map((address) => (
+        <Pressable
+          key={address.id}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: selectedAddressId === address.id }}
+          style={[styles.addressOption, selectedAddressId === address.id && styles.addressSelected]}
+          onPress={() => onSelect(address.id)}
+        >
+          <Text style={styles.cartItemName}>{address.label}</Text>
+          <Text style={styles.cartItemMeta}>{address.addressLine}</Text>
+        </Pressable>
+      ))}
+      <Text style={styles.fieldLabel}>افزودن نشانی تازه با موقعیت تأییدشده</Text>
+      <TextInput
+        accessibilityLabel="عنوان نشانی"
+        value={addressLabel}
+        onChangeText={onAddressLabel}
+        placeholder="خانه"
+        style={[styles.input, styles.rtlInput]}
+      />
+      <TextInput
+        accessibilityLabel="نام گیرنده"
+        value={recipientName}
+        onChangeText={onRecipientName}
+        placeholder="نام گیرنده"
+        style={[styles.input, styles.rtlInput]}
+      />
+      <TextInput
+        accessibilityLabel="شماره موبایل گیرنده"
+        value={recipientPhone}
+        onChangeText={onRecipientPhone}
+        keyboardType="phone-pad"
+        placeholder="۰۹۱۱۱۲۳۴۵۶۷"
+        style={styles.input}
+        textAlign="left"
+      />
+      <TextInput
+        accessibilityLabel="نشانی کامل"
+        value={addressLine}
+        onChangeText={onAddressLine}
+        placeholder="نشانی کامل برای تحویل"
+        multiline
+        style={[styles.input, styles.rtlInput]}
+      />
+      <PrimaryButton label="ذخیره نشانی" busy={busy} onPress={onCreate} />
+    </View>
+  )
+}
+
 function CartCard({
   cart,
   quote,
+  order,
+  addressSelected,
   busy,
   onRemove,
   onQuote,
+  onOrder,
 }: {
   cart: CartSummary
   quote: QuoteSummary | null
+  order: OrderSummary | null
+  addressSelected: boolean
   busy: boolean
   onRemove: (offeringId: string) => void
   onQuote: () => void
+  onOrder: () => void
 }) {
   return (
     <View style={styles.cartCard}>
@@ -636,7 +842,7 @@ function CartCard({
       <PrimaryButton
         label="دریافت قیمت نهایی"
         busy={busy}
-        disabled={cart.items.length === 0}
+        disabled={cart.items.length === 0 || !addressSelected}
         onPress={onQuote}
       />
       {quote && (
@@ -645,10 +851,21 @@ function CartCard({
           <Text style={styles.quoteMeta}>
             انقضا: {new Date(quote.expiresAt).toLocaleTimeString('fa-IR')}
           </Text>
+          <Text style={styles.quoteMeta}>هزینه ارسال: {formatRials(quote.deliveryFee.amount)}</Text>
           <Text style={styles.quoteTotal}>{formatRials(quote.total.amount)}</Text>
           <Text style={styles.quoteNotice}>
-            این مرحله هنوز سفارش یا پرداخت ایجاد نمی‌کند و ظرفیت را دائمی رزرو نمی‌کند.
+            مبلغ و نشانی این قیمت در سرور ثبت شده‌اند. پرداخت هنوز آغاز نمی‌شود.
           </Text>
+          {!order && <PrimaryButton label="ثبت سفارش" busy={busy} onPress={onOrder} />}
+        </View>
+      )}
+      {order && (
+        <View accessibilityLiveRegion="polite" style={styles.orderConfirmation}>
+          <Text style={styles.quoteTitle}>سفارش با موفقیت ثبت شد</Text>
+          <Text style={styles.quoteMeta}>شماره سفارش: {order.publicId}</Text>
+          <Text style={styles.quoteMeta}>وضعیت: در انتظار تأیید</Text>
+          <Text style={styles.quoteTotal}>{formatRials(order.total.amount)}</Text>
+          <Text style={styles.quoteNotice}>پرداخت هنوز آغاز نشده است.</Text>
         </View>
       )}
     </View>
@@ -681,6 +898,10 @@ function MessageCard({ title, message }: { title: string; message: string }) {
   )
 }
 
+function commandKey(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 12).padEnd(10, '0')}`
+}
+
 function errorMessage(error: unknown): string {
   if (!(error instanceof CustomerApiError)) {
     return 'ارتباط با سرویس برقرار نشد؛ دوباره تلاش کنید.'
@@ -705,7 +926,18 @@ function errorMessage(error: unknown): string {
     case 'OFFERING_UNAVAILABLE':
       return 'این محصول فعلاً برای سفارش در دسترس نیست.'
     case 'CAPACITY_UNAVAILABLE':
-      return 'ظرفیت این شعبه برای دریافت قیمت فعلاً تکمیل است.'
+      return 'ظرفیت این شعبه فعلاً تکمیل است.'
+    case 'ADDRESS_NOT_SERVICEABLE':
+      return 'این نشانی خارج از محدوده تحویل است.'
+    case 'ADDRESS_CONTEXT_MISMATCH':
+      return 'نشانی انتخابی با محدوده این سبد یکسان نیست.'
+    case 'IDEMPOTENCY_KEY_CONFLICT':
+      return 'درخواست تکراری با اطلاعات متفاوت دریافت شد؛ دوباره آغاز کنید.'
+    case 'QUOTE_EXPIRED':
+    case 'QUOTE_NOT_ACTIVE':
+      return 'اعتبار قیمت پایان یافته است؛ قیمت تازه دریافت کنید.'
+    case 'ORDER_CONCURRENCY_CONFLICT':
+      return 'نتیجه ثبت سفارش نامشخص است؛ با همان درخواست دوباره تلاش کنید.'
     case 'CART_EMPTY':
       return 'برای دریافت قیمت، ابتدا محصولی به سبد اضافه کنید.'
     case 'COMMERCE_UNAVAILABLE':
@@ -773,6 +1005,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     writingDirection: 'ltr',
   },
+  rtlInput: { textAlign: 'right', writingDirection: 'rtl' },
   primaryButton: {
     minHeight: 54,
     alignItems: 'center',
@@ -914,4 +1147,21 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   quoteNotice: { color: colors.neutral[600], fontSize: 12, lineHeight: 20, textAlign: 'right' },
+  addressOption: {
+    gap: 4,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.neutral[200],
+    borderRadius: 14,
+    backgroundColor: colors.neutral[50],
+  },
+  addressSelected: { borderColor: colors.primary[700], backgroundColor: colors.primary[100] },
+  orderConfirmation: {
+    gap: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 16,
+    backgroundColor: '#F0FDF4',
+  },
 })

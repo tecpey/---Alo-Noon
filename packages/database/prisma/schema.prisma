@@ -414,6 +414,7 @@ model ServiceArea {
   nameFa            String
   boundaryGeoJson   Json
   isActive          Boolean         @default(false)
+  addresses         Address[]
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
@@ -423,6 +424,7 @@ model ServiceArea {
   @@index([tenantId])
 
   @@index([operationalZoneId, tenantId], map: "g3b_ServiceArea_operationalZoneId_tenant_idx")
+  @@unique([id, tenantId], map: "g3b_ServiceArea_id_tenant_key")
 }
 
 model Customer {
@@ -595,6 +597,9 @@ model Address {
   city                 City                     @relation(fields: [cityId], references: [id], onDelete: Restrict)
   operationalZoneId    String?                  @db.Uuid
   operationalZone      OperationalZone?         @relation(fields: [operationalZoneId], references: [id], onDelete: SetNull)
+  serviceAreaId        String?                  @db.Uuid
+  serviceArea          ServiceArea?             @relation(fields: [serviceAreaId], references: [id], onDelete: Restrict)
+  requestIdempotencyKey String?                 @db.VarChar(128)
   label                String
   recipientName        String
   recipientPhoneE164   String                   @db.VarChar(16)
@@ -620,6 +625,8 @@ model Address {
   @@index([customerId, tenantId], map: "g3b_Address_customerId_tenant_idx")
   @@index([cityId, tenantId], map: "g3b_Address_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_Address_operationalZoneId_tenant_idx")
+  @@index([serviceAreaId, tenantId], map: "g3b_Address_serviceAreaId_tenant_idx")
+  @@unique([tenantId, customerId, requestIdempotencyKey], map: "Address_tenant_customer_idempotency_key")
 }
 
 model Bakery {
@@ -705,6 +712,7 @@ model BakeryCapacitySlot {
   maxOrders      Int
   reservedOrders Int          @default(0)
   suspended      Boolean      @default(false)
+  orders         Order[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -713,6 +721,8 @@ model BakeryCapacitySlot {
   @@index([tenantId])
 
   @@index([bakeryBranchId, tenantId], map: "g3b_BakeryCapacitySlot_bakeryBranchId_tenant_idx")
+  @@unique([id, tenantId], map: "g3b_BakeryCapacitySlot_id_tenant_key")
+  @@unique([id, tenantId, bakeryBranchId], map: "BakeryCapacitySlot_id_tenant_branch_key")
 }
 
 model ProductCategory {
@@ -898,7 +908,7 @@ model Quote {
   id                String      @id @default(uuid()) @db.Uuid
   tenantId          String @db.Uuid
   publicId          String      @unique @default(cuid()) @db.VarChar(32)
-  idempotencyKey    String      @unique @db.VarChar(128)
+  idempotencyKey    String      @db.VarChar(128)
   cartId            String      @db.Uuid
   cart              Cart        @relation(fields: [cartId], references: [id], onDelete: Restrict)
   customerId        String      @db.Uuid
@@ -916,6 +926,11 @@ model Quote {
   deliveryPricingRuleId String? @db.Uuid
   deliveryPricingRule DeliveryPricingRule? @relation(fields: [deliveryPricingRuleId], references: [id], onDelete: Restrict)
   deliveryPricingRuleVersion Int?
+  deliveryServiceAreaIdSnapshot String? @db.Uuid
+  deliveryOperationalZoneIdSnapshot String? @db.Uuid
+  deliveryDistanceMeters Int?
+  bakeryNameSnapshot String?
+  bakeryPickupSnapshot String?
   recipientNameSnapshot String?
   recipientPhoneSnapshot String? @db.VarChar(16)
   deliveryAddressSnapshot String?
@@ -933,6 +948,7 @@ model Quote {
   @@index([deliveryPricingRuleId])
   @@index([deliveryAddressId, tenantId], map: "g3b_Quote_deliveryAddressId_tenant_idx")
   @@index([deliveryPricingRuleId, tenantId], map: "g3b_Quote_deliveryPricingRuleId_tenant_idx")
+  @@unique([tenantId, customerId, idempotencyKey], map: "Quote_tenant_customer_idempotency_key")
 
   @@index([tenantId])
 
@@ -953,6 +969,8 @@ model QuoteItem {
   bakeryBranchId           String                  @db.Uuid
   skuSnapshot              String                  @db.VarChar(64)
   nameFaSnapshot           String
+  productNameFaSnapshot    String?
+  packagingTypeSnapshot    PackagingType?
   fulfillmentClassSnapshot ProductFulfillmentClass
   freshnessClaimSnapshot   FreshnessClaim
   quantity                 Int
@@ -977,7 +995,7 @@ model Order {
   publicId                     String                 @unique @default(cuid()) @db.VarChar(32)
   quoteId                      String?                @unique @db.Uuid
   quote                        Quote?                 @relation(fields: [quoteId], references: [id], onDelete: Restrict)
-  idempotencyKey               String                 @unique @db.VarChar(128)
+  idempotencyKey               String                 @db.VarChar(128)
   customerId                   String                 @db.Uuid
   customer                     Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cityId                       String                 @db.Uuid
@@ -986,6 +1004,8 @@ model Order {
   operationalZone              OperationalZone        @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
   bakeryBranchId               String                 @db.Uuid
   bakeryBranch                 BakeryBranch           @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  bakeryCapacitySlotId         String?                @db.Uuid
+  bakeryCapacitySlot           BakeryCapacitySlot?    @relation(fields: [bakeryCapacitySlotId], references: [id], onDelete: Restrict)
   savedAddressId               String?                @db.Uuid
   savedAddress                 Address?               @relation(fields: [savedAddressId], references: [id], onDelete: SetNull)
   state                        OrderState             @default(DRAFT)
@@ -1030,6 +1050,8 @@ model Order {
   @@index([bakeryBranchId, tenantId], map: "g3b_Order_bakeryBranchId_tenant_idx")
   @@index([savedAddressId, tenantId], map: "g3b_Order_savedAddressId_tenant_idx")
   @@index([quoteId, tenantId], map: "g3b_Order_quoteId_tenant_idx")
+  @@index([bakeryCapacitySlotId, tenantId], map: "g3b_Order_bakeryCapacitySlotId_tenant_idx")
+  @@unique([tenantId, customerId, idempotencyKey], map: "Order_tenant_customer_idempotency_key")
 }
 
 model OrderItem {

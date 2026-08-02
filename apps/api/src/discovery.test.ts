@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ActiveCitySummary, ProductSummary } from '@alo-noon/contracts'
 
 import { buildApp } from './app'
+import type { AuthDependencies, AuthRepository } from './modules/auth'
 import {
   evaluateServiceability,
   geoJsonContainsPoint,
@@ -18,6 +19,14 @@ const areaId = '33333333-3333-4333-8333-333333333333'
 const productId = '44444444-4444-4444-8444-444444444444'
 const variantId = '55555555-5555-4555-8555-555555555555'
 const branchId = '66666666-6666-4666-8666-666666666666'
+const tenantId = '00000000-0000-4000-8000-000000000001'
+const discoveryAuth: AuthDependencies = {
+  repository: { resolveTenantByHost: async () => tenantId } as unknown as AuthRepository,
+  deliveryProvider: { send: async () => undefined },
+  otpPepper: 'discovery-otp-pepper-that-is-long-enough',
+  sessionPepper: 'discovery-session-pepper-that-is-long-enough',
+  secureCookie: false,
+}
 
 const city: ActiveCitySummary = {
   id: cityId,
@@ -63,7 +72,7 @@ describe('active city discovery API', () => {
     const repository: CityRepository = {
       listActiveCities: async () => [city],
     }
-    const app = await buildApp({ cityRepository: repository })
+    const app = await buildApp({ auth: discoveryAuth, cityRepository: repository })
     apps.push(app)
 
     const response = await app.inject({
@@ -80,6 +89,7 @@ describe('active city discovery API', () => {
 
   it('returns a safe error when city persistence is unavailable', async () => {
     const app = await buildApp({
+      auth: discoveryAuth,
       cityRepository: {
         listActiveCities: async () => {
           throw new Error('postgresql://secret@database/internal')
@@ -102,6 +112,7 @@ describe('active city discovery API', () => {
 
   it('rejects repository output that violates the public city contract', async () => {
     const app = await buildApp({
+      auth: discoveryAuth,
       cityRepository: {
         listActiveCities: async () => [{ ...city, timezone: '' }],
       },
@@ -118,18 +129,36 @@ describe('active city discovery API', () => {
       error: { code: 'CITY_DISCOVERY_UNAVAILABLE' },
     })
   })
+
+  it('fails closed before tenant-owned discovery when the host has no tenant', async () => {
+    const listActiveCities = vi.fn<CityRepository['listActiveCities']>()
+    const auth = {
+      ...discoveryAuth,
+      repository: { resolveTenantByHost: async () => null } as unknown as AuthRepository,
+    }
+    const app = await buildApp({ auth, cityRepository: { listActiveCities } })
+    apps.push(app)
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/serviceability/cities',
+      headers: { host: 'unknown.example', 'x-tenant-id': tenantId },
+    })
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({ error: { code: 'TENANT_NOT_FOUND' } })
+    expect(listActiveCities).not.toHaveBeenCalled()
+  })
 })
 
 describe('catalog discovery API', () => {
   it('validates filters and returns a paginated contract-safe catalog', async () => {
     const calls: CatalogListInput[] = []
     const repository: CatalogRepository = {
-      listProducts: async (input) => {
+      listProducts: async (_tenantId, input) => {
         calls.push(input)
         return { items: [product], totalItems: 1 }
       },
     }
-    const app = await buildApp({ catalogRepository: repository })
+    const app = await buildApp({ auth: discoveryAuth, catalogRepository: repository })
     apps.push(app)
 
     const response = await app.inject({
@@ -148,7 +177,7 @@ describe('catalog discovery API', () => {
 
   it('rejects an invalid city identifier before repository access', async () => {
     const listProducts = vi.fn<CatalogRepository['listProducts']>()
-    const app = await buildApp({ catalogRepository: { listProducts } })
+    const app = await buildApp({ auth: discoveryAuth, catalogRepository: { listProducts } })
     apps.push(app)
 
     const response = await app.inject({
@@ -166,6 +195,7 @@ describe('catalog discovery API', () => {
 
   it('returns a safe dependency error without leaking internals', async () => {
     const app = await buildApp({
+      auth: discoveryAuth,
       catalogRepository: {
         listProducts: async () => {
           throw new Error('postgresql://secret@database/internal')
@@ -201,7 +231,7 @@ describe('serviceability API', () => {
         },
       ],
     }
-    const app = await buildApp({ serviceabilityRepository: repository })
+    const app = await buildApp({ auth: discoveryAuth, serviceabilityRepository: repository })
     apps.push(app)
 
     const response = await app.inject({
@@ -238,6 +268,7 @@ describe('serviceability API', () => {
     const result = await evaluateServiceability(
       { cityId, latitude: 36.6, longitude: 52.7 },
       repository,
+      tenantId,
       new Date('2026-07-29T12:00:00.000Z'),
     )
 
@@ -246,6 +277,31 @@ describe('serviceability API', () => {
       reason: 'ZONE_SUSPENDED',
       evaluatedAt: '2026-07-29T12:00:00.000Z',
     })
+  })
+
+  it('fails closed when active service polygons overlap', async () => {
+    const repository: ServiceabilityRepository = {
+      isCityActive: async () => true,
+      listAreas: async () => [
+        {
+          id: areaId,
+          operationalZoneId: zoneId,
+          areaActive: true,
+          zoneActive: true,
+          boundaryGeoJson: square,
+        },
+        {
+          id: productId,
+          operationalZoneId: branchId,
+          areaActive: true,
+          zoneActive: true,
+          boundaryGeoJson: square,
+        },
+      ],
+    }
+    await expect(
+      evaluateServiceability({ cityId, latitude: 36.6, longitude: 52.7 }, repository, tenantId),
+    ).rejects.toThrow('AMBIGUOUS_SERVICE_AREA')
   })
 
   it('rejects malformed coordinates', async () => {
