@@ -19,8 +19,11 @@ import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   Money,
   assertCartMutationContext,
+  calculateDeliveryDistanceMeters,
+  calculateDeliveryFee,
   calculateCartLine,
   calculateQuoteExpiry,
+  selectDeliveryPricingRule,
 } from '@alo-noon/domain'
 
 import { authenticateRequest, type AuthDependencies } from './auth.js'
@@ -31,7 +34,7 @@ const cartInclude = {
     include: {
       bakeryProductOffering: {
         include: {
-          bakeryBranch: { include: { city: true } },
+          bakeryBranch: { include: { bakery: true, city: true } },
           productVariant: { include: { product: true } },
         },
       },
@@ -47,7 +50,7 @@ type CartRecord = Prisma.CartGetPayload<{ include: typeof cartInclude }>
 type QuoteRecord = Prisma.QuoteGetPayload<{ include: typeof quoteInclude }>
 type OfferingRecord = Prisma.BakeryProductOfferingGetPayload<{
   include: {
-    bakeryBranch: { include: { city: true } }
+    bakeryBranch: { include: { bakery: true; city: true } }
     productVariant: { include: { product: true } }
   }
 }>
@@ -360,11 +363,14 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
     async createQuote(tenantId, customerId, input, now, correlationId) {
       return serializable(prisma, tenantId, async (transaction) => {
         const replay = await transaction.quote.findFirst({
-          where: { idempotencyKey: input.idempotencyKey, tenantId },
+          where: { idempotencyKey: input.idempotencyKey, tenantId, customerId },
           include: quoteInclude,
         })
         if (replay) {
-          if (replay.customerId !== customerId) {
+          if (
+            replay.cartVersion !== input.expectedCartVersion ||
+            replay.deliveryAddressId !== input.deliveryAddressId
+          ) {
             throw new CommerceError('IDEMPOTENCY_KEY_CONFLICT', 409)
           }
           if (replay.status === 'ACTIVE' && replay.expiresAt <= now) {
@@ -388,6 +394,29 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           throw new CommerceError('CART_VERSION_CONFLICT', 409)
         }
         if (cart.items.length === 0) throw new CommerceError('CART_EMPTY', 422)
+
+        const address = await transaction.address.findFirst({
+          where: {
+            id: input.deliveryAddressId,
+            tenantId,
+            customerId,
+            archivedAt: null,
+            verificationState: { not: 'REJECTED' },
+            serviceAreaId: { not: null },
+            operationalZoneId: { not: null },
+          },
+          include: { serviceArea: true },
+        })
+        if (!address || !address.serviceAreaId || !address.operationalZoneId) {
+          throw new CommerceError('ADDRESS_NOT_FOUND', 404)
+        }
+        if (
+          address.cityId !== cart.cityId ||
+          address.operationalZoneId !== cart.operationalZoneId ||
+          !address.serviceArea?.isActive
+        ) {
+          throw new CommerceError('ADDRESS_CONTEXT_MISMATCH', 422)
+        }
 
         const quoteItems: Prisma.QuoteItemUncheckedCreateWithoutQuoteInput[] = []
         let subtotal = Money.irr(0)
@@ -414,6 +443,8 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             bakeryBranchId: offering.bakeryBranchId,
             skuSnapshot: offering.productVariant.sku,
             nameFaSnapshot: offering.productVariant.nameFa,
+            productNameFaSnapshot: offering.productVariant.product.nameFa,
+            packagingTypeSnapshot: offering.productVariant.packagingType,
             fulfillmentClassSnapshot: offering.productVariant.fulfillmentClass,
             freshnessClaimSnapshot: offering.productVariant.freshnessClaim,
             quantity: item.quantity,
@@ -423,6 +454,41 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           })
         }
         await assertBranchCapacity(transaction, cart.items[0]!.bakeryProductOffering, now)
+
+        const branch = cart.items[0]!.bakeryProductOffering.bakeryBranch
+        const distanceMeters = calculateDeliveryDistanceMeters(
+          { latitude: Number(branch.latitude), longitude: Number(branch.longitude) },
+          { latitude: Number(address.latitude), longitude: Number(address.longitude) },
+        )
+        const pricingRules = await transaction.deliveryPricingRule.findMany({
+          where: {
+            tenantId,
+            cityId: cart.cityId,
+            isActive: true,
+            effectiveFrom: { lte: now },
+            AND: [
+              { OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: now } }] },
+              { OR: [{ operationalZoneId: cart.operationalZoneId }, { operationalZoneId: null }] },
+            ],
+          },
+          orderBy: [{ operationalZoneId: 'asc' }, { version: 'desc' }],
+        })
+        const pricingRule = selectDeliveryPricingRule(
+          pricingRules.map((rule) => ({
+            id: rule.id,
+            operationalZoneId: rule.operationalZoneId,
+            version: rule.version,
+            mode: rule.calculationMode,
+            baseFeeAmount: rule.baseFeeAmount,
+            perKmFeeAmount: rule.perKilometerFeeAmount,
+            minimumOrderAmount: rule.minimumOrderAmount,
+            freeDeliveryThresholdAmount: rule.freeDeliveryThreshold,
+            currency: rule.currency,
+          })),
+          cart.operationalZoneId,
+        )
+        const delivery = calculateDeliveryFee(pricingRule, subtotal.amount, distanceMeters)
+        const total = subtotal.add(Money.irr(delivery.deliveryFeeAmount))
         await transaction.quote.updateMany({
           where: { cartId: cart.id, status: 'ACTIVE' },
           data: { status: 'SUPERSEDED' },
@@ -437,7 +503,24 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             cartVersion: cart.version,
             expiresAt: calculateQuoteExpiry(now),
             subtotalAmount: subtotal.amount,
-            totalAmount: subtotal.amount,
+            deliveryFeeAmount: delivery.deliveryFeeAmount,
+            totalAmount: total.amount,
+            deliveryAddressId: address.id,
+            deliveryServiceAreaIdSnapshot: address.serviceAreaId,
+            deliveryOperationalZoneIdSnapshot: address.operationalZoneId,
+            deliveryDistanceMeters: distanceMeters,
+            deliveryPricingRuleId: pricingRule.id,
+            deliveryPricingRuleVersion: pricingRule.version,
+            bakeryNameSnapshot: branch.bakery.displayNameFa,
+            bakeryPickupSnapshot: [branch.addressLine, branch.pickupInstructions]
+              .filter(Boolean)
+              .join(' — '),
+            recipientNameSnapshot: address.recipientName,
+            recipientPhoneSnapshot: address.recipientPhoneE164,
+            deliveryAddressSnapshot: address.addressLine,
+            deliveryLatitudeSnapshot: address.latitude,
+            deliveryLongitudeSnapshot: address.longitude,
+            deliveryInstructionsSnapshot: address.deliveryInstructions,
             items: { create: quoteItems },
           },
           include: quoteInclude,
@@ -453,6 +536,10 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           {
             cartId: cart.id,
             cartVersion: cart.version,
+            deliveryAddressId: address.id,
+            deliveryPricingRuleId: pricingRule.id,
+            deliveryPricingRuleVersion: pricingRule.version,
+            deliveryDistanceMeters: distanceMeters,
             expiresAt: quote.expiresAt.toISOString(),
           },
         )
@@ -483,7 +570,7 @@ async function serializable<T>(
   }
 }
 
-async function authenticatedCustomer(
+export async function authenticatedCustomer(
   request: Parameters<typeof authenticateRequest>[0],
   auth: AuthDependencies,
 ): Promise<{ tenantId: string; customerId: string; session: SessionContext } | null> {
@@ -501,7 +588,7 @@ async function loadOffering(
   const offering = await transaction.bakeryProductOffering.findFirst({
     where: { id: offeringId, tenantId },
     include: {
-      bakeryBranch: { include: { city: true } },
+      bakeryBranch: { include: { bakery: true, city: true } },
       productVariant: { include: { product: true } },
     },
   })
@@ -562,7 +649,7 @@ async function assertBranchCapacity(
   }
 }
 
-function serviceDateAt(now: Date, timezone: string): Date {
+export function serviceDateAt(now: Date, timezone: string): Date {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
@@ -617,6 +704,16 @@ function mapCart(cart: CartRecord): CartSummary {
 }
 
 function mapQuote(quote: QuoteRecord): QuoteSummary {
+  if (
+    !quote.deliveryAddressId ||
+    !quote.deliveryServiceAreaIdSnapshot ||
+    !quote.deliveryOperationalZoneIdSnapshot ||
+    quote.deliveryDistanceMeters === null ||
+    !quote.deliveryPricingRuleId ||
+    quote.deliveryPricingRuleVersion === null
+  ) {
+    throw new CommerceError('QUOTE_DELIVERY_SNAPSHOT_INCOMPLETE', 422)
+  }
   return {
     id: quote.id,
     publicId: quote.publicId,
@@ -624,6 +721,12 @@ function mapQuote(quote: QuoteRecord): QuoteSummary {
     cartVersion: quote.cartVersion,
     status: quote.status,
     expiresAt: quote.expiresAt.toISOString(),
+    deliveryAddressId: quote.deliveryAddressId,
+    deliveryServiceAreaId: quote.deliveryServiceAreaIdSnapshot,
+    deliveryOperationalZoneId: quote.deliveryOperationalZoneIdSnapshot,
+    deliveryDistanceMeters: quote.deliveryDistanceMeters,
+    deliveryPricingRuleId: quote.deliveryPricingRuleId,
+    deliveryPricingRuleVersion: quote.deliveryPricingRuleVersion,
     subtotal: { amount: quote.subtotalAmount.toString(), currency: quote.currency },
     deliveryFee: { amount: quote.deliveryFeeAmount.toString(), currency: quote.currency },
     discount: { amount: quote.discountAmount.toString(), currency: quote.currency },
@@ -723,6 +826,17 @@ function commerceFailure(
     if (domainCode === 'CART_CONTEXT_MISMATCH' || domainCode === 'INVALID_CART_QUANTITY') {
       return reply.code(422).send(errorEnvelope(domainCode, safeCommerceMessage(domainCode)))
     }
+    if (
+      [
+        'DELIVERY_PRICING_RULE_MISSING',
+        'DELIVERY_PRICING_RULE_AMBIGUOUS',
+        'MINIMUM_ORDER_NOT_MET',
+        'INVALID_DELIVERY_PRICING_RULE',
+        'INVALID_DELIVERY_PRICING_INPUT',
+      ].includes(domainCode)
+    ) {
+      return reply.code(422).send(errorEnvelope(domainCode, safeCommerceMessage(domainCode)))
+    }
   }
   request.log.error({ err: error }, 'Commerce request failed')
   return reply
@@ -741,6 +855,11 @@ function safeCommerceMessage(code: string): string {
     OFFERING_NOT_FOUND: 'The selected offering was not found.',
     OFFERING_UNAVAILABLE: 'The selected offering is unavailable.',
     CAPACITY_UNAVAILABLE: 'Bakery capacity is unavailable for this quote.',
+    ADDRESS_NOT_FOUND: 'The delivery address was not found.',
+    ADDRESS_CONTEXT_MISMATCH: 'The delivery address does not match the cart context.',
+    DELIVERY_PRICING_RULE_MISSING: 'Delivery pricing is unavailable for this address.',
+    DELIVERY_PRICING_RULE_AMBIGUOUS: 'Delivery pricing could not be resolved safely.',
+    MINIMUM_ORDER_NOT_MET: 'The cart does not meet the minimum order amount.',
     IDEMPOTENCY_KEY_CONFLICT: 'The idempotency key was already used.',
   }
   return messages[code] ?? 'The commerce request was rejected.'

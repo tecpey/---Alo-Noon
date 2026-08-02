@@ -13,6 +13,11 @@ export interface QuoteToOrderCandidate {
   discountAmount: bigint
   totalAmount: bigint
   deliveryAddressId: string | null
+  deliveryServiceAreaIdSnapshot: string | null
+  deliveryOperationalZoneIdSnapshot: string | null
+  deliveryDistanceMeters: number | null
+  bakeryNameSnapshot: string | null
+  bakeryPickupSnapshot: string | null
   deliveryPricingRuleId: string | null
   deliveryPricingRuleVersion: number | null
   recipientNameSnapshot: string | null
@@ -21,6 +26,7 @@ export interface QuoteToOrderCandidate {
   deliveryLatitudeSnapshot: unknown | null
   deliveryLongitudeSnapshot: unknown | null
   itemCount: number
+  itemSnapshotsComplete: boolean
   existingOrderId: string | null
 }
 
@@ -28,6 +34,9 @@ export interface QuoteToOrderDecision {
   tenantId: string
   customerId: string
   deliveryAddressId: string
+  deliveryServiceAreaId: string
+  deliveryOperationalZoneId: string
+  deliveryDistanceMeters: number
   deliveryPricingRuleId: string
   deliveryPricingRuleVersion: number
   totalAmount: bigint
@@ -62,7 +71,11 @@ export function authorizeQuoteToOrder(
 
   const requiredSnapshots = [
     candidate.deliveryAddressId,
+    candidate.deliveryServiceAreaIdSnapshot,
+    candidate.deliveryOperationalZoneIdSnapshot,
     candidate.deliveryPricingRuleId,
+    candidate.bakeryNameSnapshot,
+    candidate.bakeryPickupSnapshot,
     candidate.recipientNameSnapshot,
     candidate.recipientPhoneSnapshot,
     candidate.deliveryAddressSnapshot,
@@ -75,7 +88,11 @@ export function authorizeQuoteToOrder(
     ) ||
     candidate.deliveryPricingRuleVersion === null ||
     !Number.isSafeInteger(candidate.deliveryPricingRuleVersion) ||
-    candidate.deliveryPricingRuleVersion < 1
+    candidate.deliveryPricingRuleVersion < 1 ||
+    candidate.deliveryDistanceMeters === null ||
+    !Number.isSafeInteger(candidate.deliveryDistanceMeters) ||
+    candidate.deliveryDistanceMeters < 0 ||
+    !candidate.itemSnapshotsComplete
   ) {
     throw new DomainError(
       'QUOTE_DELIVERY_SNAPSHOT_INCOMPLETE',
@@ -99,6 +116,9 @@ export function authorizeQuoteToOrder(
     tenantId: candidate.tenantId,
     customerId: candidate.customerId,
     deliveryAddressId: candidate.deliveryAddressId!,
+    deliveryServiceAreaId: candidate.deliveryServiceAreaIdSnapshot!,
+    deliveryOperationalZoneId: candidate.deliveryOperationalZoneIdSnapshot!,
+    deliveryDistanceMeters: candidate.deliveryDistanceMeters!,
     deliveryPricingRuleId: candidate.deliveryPricingRuleId!,
     deliveryPricingRuleVersion: candidate.deliveryPricingRuleVersion,
     totalAmount: candidate.totalAmount,

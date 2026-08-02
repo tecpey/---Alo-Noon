@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: Alo Noon API
-  version: 0.5.0
+  version: 0.6.0
   description: >-
-    Phase 2D contract. Operational endpoints, discovery, serviceability,
-    identity, revocable sessions, customer-bound server carts, and immutable
-    expiring quote snapshots are implemented.
+    Phase 2E contract. Operational endpoints, tenant-aware discovery, identity,
+    customer-owned addresses, authoritative delivery quotes, and atomic
+    capacity-backed Quote-to-Order conversion are implemented.
 servers:
   - url: http://localhost:3001
 paths:
@@ -157,6 +157,35 @@ paths:
               schema: { $ref: '#/components/schemas/CartEnvelope' }
         '401':
           description: A valid customer session is required.
+  /api/v1/addresses:
+    get:
+      operationId: listCustomerAddresses
+      summary: List the authenticated customer's active delivery addresses.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Active caller-owned addresses.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddressesEnvelope' }
+        '401': { description: A valid customer session is required. }
+    post:
+      operationId: createCustomerAddress
+      summary: Persist an address with server-derived service-area provenance.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddressCreate' }
+      responses:
+        '201':
+          description: Address created or replayed idempotently.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddressEnvelope' }
+        '409': { description: Idempotency key payload conflict. }
+        '422': { description: Coordinates are unserviceable or ambiguous. }
   /api/v1/cart/items/{offeringId}:
     parameters:
       - in: path
@@ -216,9 +245,8 @@ paths:
       operationId: createCartQuote
       summary: Create an immutable, expiring quote from the active cart.
       description: >-
-        Reprices every offering and rechecks fulfillment context and capacity.
-        This operation does not create an order, payment, or durable capacity
-        reservation.
+        Reprices every offering, resolves delivery policy on the server, and
+        snapshots address and pricing provenance. It does not reserve capacity.
       security:
         - cookieAuth: []
         - bearerAuth: []
@@ -240,7 +268,26 @@ paths:
         '409':
           description: Cart version or idempotency key conflict.
         '422':
-          description: Cart is empty or no longer quoteable.
+          description: Cart, address, pricing, or capacity is not quoteable.
+  /api/v1/orders:
+    post:
+      operationId: createOrderFromQuote
+      summary: Atomically accept a quote and reserve bakery capacity.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderCreate' }
+      responses:
+        '201':
+          description: Capacity-backed order created or replayed idempotently.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderEnvelope' }
+        '404': { description: Quote is not available to the caller. }
+        '409': { description: Quote or idempotency/concurrency conflict. }
+        '422': { description: Snapshot, pricing, branch, or capacity is unavailable. }
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -432,8 +479,9 @@ components:
         expectedCartVersion: { type: integer, minimum: 1 }
     QuoteCreate:
       type: object
-      required: [expectedCartVersion, idempotencyKey]
+      required: [deliveryAddressId, expectedCartVersion, idempotencyKey]
       properties:
+        deliveryAddressId: { type: string, format: uuid }
         expectedCartVersion: { type: integer, minimum: 1 }
         idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
     CommerceItemSnapshot:
@@ -509,6 +557,12 @@ components:
           cartVersion,
           status,
           expiresAt,
+          deliveryAddressId,
+          deliveryServiceAreaId,
+          deliveryOperationalZoneId,
+          deliveryDistanceMeters,
+          deliveryPricingRuleId,
+          deliveryPricingRuleVersion,
           subtotal,
           deliveryFee,
           discount,
@@ -523,6 +577,12 @@ components:
         cartVersion: { type: integer, minimum: 1 }
         status: { type: string, enum: [ACTIVE, SUPERSEDED, EXPIRED, ACCEPTED] }
         expiresAt: { type: string, format: date-time }
+        deliveryAddressId: { type: string, format: uuid }
+        deliveryServiceAreaId: { type: string, format: uuid }
+        deliveryOperationalZoneId: { type: string, format: uuid }
+        deliveryDistanceMeters: { type: integer, minimum: 0 }
+        deliveryPricingRuleId: { type: string, format: uuid }
+        deliveryPricingRuleVersion: { type: integer, minimum: 1 }
         subtotal: { $ref: '#/components/schemas/Money' }
         deliveryFee: { $ref: '#/components/schemas/Money' }
         discount: { $ref: '#/components/schemas/Money' }
@@ -538,6 +598,161 @@ components:
       properties:
         success: { type: boolean, const: true }
         data: { $ref: '#/components/schemas/QuoteSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AddressCreate:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          cityId,
+          label,
+          recipientName,
+          recipientPhone,
+          addressLine,
+          latitude,
+          longitude,
+          idempotencyKey,
+        ]
+      properties:
+        cityId: { type: string, format: uuid }
+        label: { type: string, minLength: 1, maxLength: 80 }
+        recipientName: { type: string, minLength: 2, maxLength: 120 }
+        recipientPhone: { type: string, pattern: '^\+98\d{10}$' }
+        addressLine: { type: string, minLength: 10, maxLength: 500 }
+        postalCode: { type: string, pattern: '^\d{10}$' }
+        latitude: { type: number, minimum: 35, maximum: 38.5 }
+        longitude: { type: number, minimum: 49, maximum: 54.5 }
+        deliveryInstructions: { type: string, maxLength: 500 }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    AddressSummary:
+      type: object
+      required:
+        [
+          id,
+          cityId,
+          serviceAreaId,
+          operationalZoneId,
+          label,
+          recipientName,
+          recipientPhone,
+          addressLine,
+          latitude,
+          longitude,
+          verificationStatus,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        cityId: { type: string, format: uuid }
+        serviceAreaId: { type: string, format: uuid }
+        operationalZoneId: { type: string, format: uuid }
+        label: { type: string }
+        recipientName: { type: string }
+        recipientPhone: { type: string }
+        addressLine: { type: string }
+        postalCode: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        deliveryInstructions: { type: string }
+        verificationStatus:
+          type: string
+          enum: [UNVERIFIED, CUSTOMER_CONFIRMED, OPERATIONS_VERIFIED, REJECTED]
+        createdAt: { type: string, format: date-time }
+    AddressEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AddressSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AddressesEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AddressSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    OrderCreate:
+      type: object
+      additionalProperties: false
+      required: [quoteId, idempotencyKey]
+      properties:
+        quoteId: { type: string, format: uuid }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    OrderItemSummary:
+      type: object
+      required:
+        [id, skuSnapshot, nameFaSnapshot, fulfillmentClassSnapshot, quantity, unitPrice, lineTotal]
+      properties:
+        id: { type: string, format: uuid }
+        skuSnapshot: { type: string }
+        nameFaSnapshot: { type: string }
+        fulfillmentClassSnapshot:
+          type: string
+          enum:
+            [
+              SIGNATURE_FRESH,
+              PACKAGED_TRADITIONAL,
+              PACKAGED_FANTASY,
+              PACKAGED_DIETARY,
+              LIMITED_EDITION,
+            ]
+        quantity: { type: integer, minimum: 1 }
+        unitPrice: { $ref: '#/components/schemas/Money' }
+        lineTotal: { $ref: '#/components/schemas/Money' }
+    OrderSummary:
+      type: object
+      required:
+        [
+          id,
+          publicId,
+          quoteId,
+          state,
+          paymentState,
+          productionState,
+          deliveryState,
+          subtotal,
+          deliveryFee,
+          discount,
+          total,
+          items,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        publicId: { type: string }
+        quoteId: { type: string, format: uuid }
+        state: { type: string, enum: [PENDING_CONFIRMATION] }
+        paymentState: { type: string, enum: [NOT_STARTED, PENDING, PAID, REFUND_PENDING, REFUNDED] }
+        productionState:
+          {
+            type: string,
+            enum: [NOT_REQUIRED, UNSCHEDULED, SCHEDULED, IN_PRODUCTION, READY, HANDED_OFF],
+          }
+        deliveryState:
+          {
+            type: string,
+            enum:
+              [NOT_REQUIRED, UNASSIGNED, ASSIGNED, PICKED_UP, OUT_FOR_DELIVERY, DELIVERED, FAILED],
+          }
+        subtotal: { $ref: '#/components/schemas/Money' }
+        deliveryFee: { $ref: '#/components/schemas/Money' }
+        discount: { $ref: '#/components/schemas/Money' }
+        total: { $ref: '#/components/schemas/Money' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItemSummary' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    OrderEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/OrderSummary' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
     ServiceabilityRequest:
       type: object

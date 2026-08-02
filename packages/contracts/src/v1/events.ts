@@ -35,3 +35,15 @@ export const eventEnvelopeSchema = z.object({
   payload: z.record(z.unknown()),
 })
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>
+
+export const orderCreatedEventPayloadSchema = z.object({
+  orderId: uuidSchema,
+  quoteId: uuidSchema,
+  customerId: uuidSchema,
+  bakeryBranchId: uuidSchema,
+  bakeryCapacitySlotId: uuidSchema,
+  state: z.literal('PENDING_CONFIRMATION'),
+  totalAmount: z.string().regex(/^\d+$/),
+  currency: z.literal('IRR'),
+})
+export type OrderCreatedEventPayload = z.infer<typeof orderCreatedEventPayloadSchema>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   addressInputSchema,
+  addressCreateSchema,
   activeCitiesEnvelopeSchema,
   cartEnvelopeSchema,
   cartItemMutationSchema,
@@ -13,6 +14,8 @@ import {
   quoteCreateSchema,
   quoteEnvelopeSchema,
   orderDraftInputSchema,
+  orderCreateSchema,
+  orderEnvelopeSchema,
   serviceabilityEnvelopeSchema,
   serviceabilityRequestSchema,
   sessionEnvelopeSchema,
@@ -47,6 +50,15 @@ describe('v1 geography contracts', () => {
     expect(() =>
       addressInputSchema.parse({ ...validAddress, recipientPhone: '09110000000' }),
     ).toThrow()
+  })
+
+  it('accepts only server-derivable address commands', () => {
+    const command = addressCreateSchema.parse({
+      ...validAddress,
+      idempotencyKey: 'address-command-0001',
+      operationalZoneId: '11111111-1111-4111-8111-111111111111',
+    })
+    expect(command).not.toHaveProperty('operationalZoneId')
   })
 
   it('validates active-city and serviceability response envelopes', () => {
@@ -267,6 +279,7 @@ describe('v1 cart and quote contracts', () => {
     ).toThrow()
     expect(
       quoteCreateSchema.parse({
+        deliveryAddressId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         expectedCartVersion: 1,
         idempotencyKey: 'quote-command-0001',
       }),
@@ -295,6 +308,12 @@ describe('v1 cart and quote contracts', () => {
           cartVersion: cart.version,
           status: 'ACTIVE',
           expiresAt: '2026-07-29T12:10:00.000Z',
+          deliveryAddressId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          deliveryServiceAreaId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          deliveryOperationalZoneId: cart.operationalZoneId,
+          deliveryDistanceMeters: 1_250,
+          deliveryPricingRuleId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          deliveryPricingRuleVersion: 1,
           subtotal: item.lineTotal,
           deliveryFee: { amount: '0', currency: 'IRR' },
           discount: { amount: '0', currency: 'IRR' },
@@ -305,5 +324,19 @@ describe('v1 cart and quote contracts', () => {
         meta,
       }),
     ).toBeDefined()
+  })
+
+  it('keeps order creation limited to quote identity and idempotency', () => {
+    const command = orderCreateSchema.parse({
+      quoteId: '99999999-9999-4999-8999-999999999999',
+      idempotencyKey: 'order-command-0001',
+      totalAmount: '1',
+      tenantId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    })
+    expect(command).toEqual({
+      quoteId: '99999999-9999-4999-8999-999999999999',
+      idempotencyKey: 'order-command-0001',
+    })
+    expect(() => orderEnvelopeSchema.parse({ success: true, data: { total: 1 }, meta })).toThrow()
   })
 })

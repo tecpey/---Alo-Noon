@@ -16,13 +16,14 @@ external CRM as source of truth.
 
 ## Implemented
 
-- Customer lifecycle, household/member roles, saved addresses, address
+- Customer lifecycle, household/member roles, authenticated saved-address
+  creation/listing, server-derived service-area/zone provenance, address
   verification, archival, consent fields, and runtime address contracts.
 
 ## Planned
 
-- Authorized household spending permissions, customer profile services,
-  serviceability evaluation, and support timeline projections.
+- Authorized household spending permissions, customer profile services, and
+  support timeline projections.
 
 ## Deferred
 

@@ -17,6 +17,7 @@ const branchId = '55555555-5555-4555-8555-555555555555'
 const offeringId = '66666666-6666-4666-8666-666666666666'
 const variantId = '77777777-7777-4777-8777-777777777777'
 const cartId = '88888888-8888-4888-8888-888888888888'
+const addressId = 'abababab-abab-4bab-8bab-abababababab'
 const token = 'opaque-session-token'
 const sessionPepper = 'commerce-session-pepper-that-is-long-enough'
 const now = new Date('2026-07-29T12:00:00.000Z')
@@ -53,6 +54,12 @@ const quote: QuoteSummary = {
   cartVersion: 1,
   status: 'ACTIVE',
   expiresAt: '2026-07-29T12:10:00.000Z',
+  deliveryAddressId: addressId,
+  deliveryServiceAreaId: 'acacacac-acac-4cac-8cac-acacacacacac',
+  deliveryOperationalZoneId: zoneId,
+  deliveryDistanceMeters: 1_234,
+  deliveryPricingRuleId: 'adadadad-adad-4dad-8dad-adadadadadad',
+  deliveryPricingRuleVersion: 1,
   subtotal: cart.subtotal,
   deliveryFee: { amount: '0', currency: 'IRR' },
   discount: { amount: '0', currency: 'IRR' },
@@ -145,7 +152,11 @@ describe('server cart and quote API', () => {
       app.inject({
         method: 'POST',
         url: '/api/v1/cart/quote',
-        payload: { expectedCartVersion: 1, idempotencyKey: 'quote-command-0001' },
+        payload: {
+          deliveryAddressId: addressId,
+          expectedCartVersion: 1,
+          idempotencyKey: 'quote-command-0001',
+        },
       }),
     ])
     expect(responses.map((response) => response.statusCode)).toEqual([401, 401, 401])
@@ -198,7 +209,11 @@ describe('server cart and quote API', () => {
       method: 'POST',
       url: '/api/v1/cart/quote',
       headers: { cookie: `alo_session=${token}` },
-      payload: { expectedCartVersion: 1, idempotencyKey: 'quote-command-0001' },
+      payload: {
+        deliveryAddressId: addressId,
+        expectedCartVersion: 1,
+        idempotencyKey: 'quote-command-0001',
+      },
     })
 
     expect(response.statusCode).toBe(409)
@@ -214,7 +229,11 @@ describe('server cart and quote API', () => {
       method: 'POST' as const,
       url: '/api/v1/cart/quote',
       headers: { cookie: `alo_session=${token}` },
-      payload: { expectedCartVersion: 1, idempotencyKey: 'quote-command-0001' },
+      payload: {
+        deliveryAddressId: addressId,
+        expectedCartVersion: 1,
+        idempotencyKey: 'quote-command-0001',
+      },
     }
 
     const first = await app.inject(request)

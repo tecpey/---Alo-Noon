@@ -21,8 +21,9 @@ expected price with the current offering and create snapshots transactionally.
   tests.
 - **Implemented:** transactional server-side Cart repricing and immutable,
   expiring Quote snapshot creation with integer-string API amounts.
-- **Planned:** Quote-to-Order conversion and final delivery/discount policy
-  snapshots.
+- **Implemented:** authoritative delivery pricing, immutable address/policy/
+  distance snapshots, and atomic capacity-backed Quote-to-Order conversion.
+- **Planned:** promotion and discount policy snapshots.
 - **Deferred:** payment-provider settlement, wallet, and ledger implementations.
 - **Open:** currencies beyond IRR and the accounting boundary for future
   settlement.

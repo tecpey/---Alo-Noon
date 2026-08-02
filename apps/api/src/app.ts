@@ -15,6 +15,8 @@ import {
   type CommerceDependencies,
   type CommerceRepository,
 } from './modules/commerce.js'
+import { registerAddressRoutes, type AddressRepository } from './modules/addresses.js'
+import { registerOrderRoutes, type OrderRepository } from './modules/orders.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -23,6 +25,8 @@ export interface AppOptions {
   serviceabilityRepository?: ServiceabilityRepository
   auth?: AuthDependencies
   commerceRepository?: CommerceRepository
+  addressRepository?: AddressRepository
+  orderRepository?: OrderRepository
   corsOrigins?: string[]
   logger?: boolean
 }
@@ -61,6 +65,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     cityRepository: options.cityRepository ?? unavailableCityRepository,
     serviceabilityRepository:
       options.serviceabilityRepository ?? unavailableServiceabilityRepository,
+    ...(options.auth && { auth: options.auth }),
   })
   if (options.auth) registerAuthRoutes(app, options.auth)
   if (options.auth && options.commerceRepository) {
@@ -69,6 +74,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       auth: options.auth,
     }
     registerCommerceRoutes(app, commerce)
+  }
+  if (options.auth && options.addressRepository) {
+    registerAddressRoutes(app, { repository: options.addressRepository, auth: options.auth })
+  }
+  if (options.auth && options.orderRepository) {
+    registerOrderRoutes(app, { repository: options.orderRepository, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

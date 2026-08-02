@@ -12,6 +12,9 @@ const created = {
   customerId: '',
   cityId: '',
   zoneId: '',
+  serviceAreaId: '',
+  addressId: '',
+  pricingRuleId: '',
   bakeryId: '',
   branchId: '',
   categoryId: '',
@@ -26,6 +29,9 @@ afterEach(async () => {
   await prisma.cart.deleteMany({ where: { customerId: created.customerId } })
   await prisma.domainEventOutbox.deleteMany({ where: { actorId: created.customerId } })
   await prisma.auditEvent.deleteMany({ where: { actorId: created.customerId } })
+  await prisma.address.deleteMany({ where: { id: created.addressId } })
+  await prisma.deliveryPricingRule.deleteMany({ where: { id: created.pricingRuleId } })
+  await prisma.serviceArea.deleteMany({ where: { id: created.serviceAreaId } })
   await prisma.bakeryCapacitySlot.deleteMany({ where: { bakeryBranchId: created.branchId } })
   await prisma.bakeryProductOffering.deleteMany({ where: { id: created.offeringId } })
   await prisma.productVariant.deleteMany({ where: { id: created.variantId } })
@@ -71,6 +77,58 @@ databaseDescribe('Prisma cart and quote transactions', () => {
       },
     })
     created.zoneId = zone.id
+    const serviceArea = await prisma.serviceArea.create({
+      data: {
+        tenantId,
+        operationalZoneId: zone.id,
+        code: `AREA-${suffix}`,
+        nameFa: 'محدوده خدمت تست',
+        boundaryGeoJson: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [52.6, 36.4],
+              [52.8, 36.4],
+              [52.8, 36.7],
+              [52.6, 36.7],
+              [52.6, 36.4],
+            ],
+          ],
+        },
+        isActive: true,
+      },
+    })
+    created.serviceAreaId = serviceArea.id
+    const address = await prisma.address.create({
+      data: {
+        tenantId,
+        customerId: customer.id,
+        cityId: city.id,
+        operationalZoneId: zone.id,
+        serviceAreaId: serviceArea.id,
+        label: 'خانه',
+        recipientName: 'مشتری تست',
+        recipientPhoneE164: '+989111111111',
+        addressLine: 'بابل، نشانی کامل تست برای تحویل نان',
+        latitude: '36.5387',
+        longitude: '52.6765',
+        verificationState: 'CUSTOMER_CONFIRMED',
+      },
+    })
+    created.addressId = address.id
+    const pricingRule = await prisma.deliveryPricingRule.create({
+      data: {
+        tenantId,
+        cityId: city.id,
+        operationalZoneId: zone.id,
+        version: 1,
+        calculationMode: 'FLAT',
+        baseFeeAmount: 50_000n,
+        effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+        isActive: true,
+      },
+    })
+    created.pricingRuleId = pricingRule.id
     const bakery = await prisma.bakery.create({
       data: {
         tenantId,
@@ -216,19 +274,19 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     const quote = await repository.createQuote(
       tenantId,
       customer.id,
-      { expectedCartVersion: 2, idempotencyKey },
+      { deliveryAddressId: address.id, expectedCartVersion: 2, idempotencyKey },
       now,
       randomUUID(),
     )
     const replay = await repository.createQuote(
       tenantId,
       customer.id,
-      { expectedCartVersion: 2, idempotencyKey },
+      { deliveryAddressId: address.id, expectedCartVersion: 2, idempotencyKey },
       now,
       randomUUID(),
     )
     expect(replay.id).toBe(quote.id)
-    expect(replay.total.amount).toMatch(/^(750000|1000000)$/)
+    expect(replay.total.amount).toMatch(/^(800000|1050000)$/)
 
     const changedCart = await repository.upsertItem(
       tenantId,
@@ -247,7 +305,7 @@ databaseDescribe('Prisma cart and quote transactions', () => {
     const superseded = await repository.createQuote(
       tenantId,
       customer.id,
-      { expectedCartVersion: 2, idempotencyKey },
+      { deliveryAddressId: address.id, expectedCartVersion: 2, idempotencyKey },
       now,
       randomUUID(),
     )
@@ -266,7 +324,11 @@ databaseDescribe('Prisma cart and quote transactions', () => {
       repository.createQuote(
         tenantId,
         customer.id,
-        { expectedCartVersion: 3, idempotencyKey: `quote-${randomUUID()}` },
+        {
+          deliveryAddressId: address.id,
+          expectedCartVersion: 3,
+          idempotencyKey: `quote-${randomUUID()}`,
+        },
         now,
         randomUUID(),
       ),

@@ -11,6 +11,8 @@ import {
 } from './modules/discovery.js'
 import { createPrismaAuthRepository, type OtpDeliveryProvider } from './modules/auth.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
+import { createPrismaAddressRepository } from './modules/addresses.js'
+import { createPrismaOrderRepository } from './modules/orders.js'
 
 const env = getEnv()
 const prisma = new PrismaClient()
@@ -38,6 +40,8 @@ const app = await buildApp({
   corsOrigins: parseCorsOrigins(env.CORS_ORIGINS),
   auth,
   commerceRepository: createPrismaCommerceRepository(prisma),
+  addressRepository: createPrismaAddressRepository(prisma),
+  orderRepository: createPrismaOrderRepository(prisma),
 })
 
 const close = async (signal: string): Promise<void> => {

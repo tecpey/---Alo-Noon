@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 
 import {
   activeCitySummarySchema,
@@ -14,6 +14,8 @@ import {
 } from '@alo-noon/contracts'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 
+import { resolveTenantId, type AuthDependencies } from './auth.js'
+
 export interface CatalogListInput {
   cityId: string
   operationalZoneId?: string
@@ -27,11 +29,11 @@ export interface CatalogPage {
 }
 
 export interface CatalogRepository {
-  listProducts(input: CatalogListInput): Promise<CatalogPage>
+  listProducts(tenantId: string, input: CatalogListInput): Promise<CatalogPage>
 }
 
 export interface CityRepository {
-  listActiveCities(): Promise<ActiveCitySummary[]>
+  listActiveCities(tenantId: string): Promise<ActiveCitySummary[]>
 }
 
 export interface ServiceAreaRecord {
@@ -43,46 +45,51 @@ export interface ServiceAreaRecord {
 }
 
 export interface ServiceabilityRepository {
-  isCityActive(cityId: string): Promise<boolean>
-  listAreas(cityId: string): Promise<ServiceAreaRecord[]>
+  isCityActive(tenantId: string, cityId: string): Promise<boolean>
+  listAreas(tenantId: string, cityId: string): Promise<ServiceAreaRecord[]>
 }
 
 export interface DiscoveryDependencies {
   catalogRepository: CatalogRepository
   cityRepository: CityRepository
   serviceabilityRepository: ServiceabilityRepository
+  auth?: AuthDependencies
 }
 
 export function createPrismaCityRepository(prisma: PrismaClient): CityRepository {
   return {
-    async listActiveCities() {
-      return prisma.city.findMany({
-        where: {
-          isActive: true,
-          operationalZones: {
-            some: {
-              isActive: true,
-              serviceAreas: { some: { isActive: true } },
+    async listActiveCities(tenantId) {
+      return withTenant(prisma, tenantId, (transaction) =>
+        transaction.city.findMany({
+          where: {
+            tenantId,
+            isActive: true,
+            operationalZones: {
+              some: {
+                isActive: true,
+                serviceAreas: { some: { isActive: true } },
+              },
             },
           },
-        },
-        select: {
-          id: true,
-          code: true,
-          nameFa: true,
-          timezone: true,
-        },
-        orderBy: [{ nameFa: 'asc' }, { id: 'asc' }],
-      })
+          select: {
+            id: true,
+            code: true,
+            nameFa: true,
+            timezone: true,
+          },
+          orderBy: [{ nameFa: 'asc' }, { id: 'asc' }],
+        }),
+      )
     },
   }
 }
 
 export function createPrismaCatalogRepository(prisma: PrismaClient): CatalogRepository {
   return {
-    async listProducts(input) {
+    async listProducts(tenantId, input) {
       const now = new Date()
       const where: Prisma.BakeryProductOfferingWhereInput = {
+        tenantId,
         availability: 'AVAILABLE',
         AND: [
           { OR: [{ availableFrom: null }, { availableFrom: { lte: now } }] },
@@ -107,19 +114,21 @@ export function createPrismaCatalogRepository(prisma: PrismaClient): CatalogRepo
         },
       }
 
-      const [offerings, totalItems] = await prisma.$transaction([
-        prisma.bakeryProductOffering.findMany({
-          where,
-          include: {
-            bakeryBranch: true,
-            productVariant: { include: { product: true } },
-          },
-          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-          skip: (input.page - 1) * input.pageSize,
-          take: input.pageSize,
-        }),
-        prisma.bakeryProductOffering.count({ where }),
-      ])
+      const [offerings, totalItems] = await withTenant(prisma, tenantId, async (transaction) =>
+        Promise.all([
+          transaction.bakeryProductOffering.findMany({
+            where,
+            include: {
+              bakeryBranch: true,
+              productVariant: { include: { product: true } },
+            },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            skip: (input.page - 1) * input.pageSize,
+            take: input.pageSize,
+          }),
+          transaction.bakeryProductOffering.count({ where }),
+        ]),
+      )
 
       return {
         totalItems,
@@ -150,25 +159,29 @@ export function createPrismaServiceabilityRepository(
   prisma: PrismaClient,
 ): ServiceabilityRepository {
   return {
-    async isCityActive(cityId) {
-      const city = await prisma.city.findUnique({
-        where: { id: cityId },
-        select: { isActive: true },
-      })
+    async isCityActive(tenantId, cityId) {
+      const city = await withTenant(prisma, tenantId, (transaction) =>
+        transaction.city.findFirst({
+          where: { id: cityId, tenantId },
+          select: { isActive: true },
+        }),
+      )
       return city?.isActive ?? false
     },
-    async listAreas(cityId) {
-      const areas = await prisma.serviceArea.findMany({
-        where: { operationalZone: { is: { cityId } } },
-        select: {
-          id: true,
-          operationalZoneId: true,
-          isActive: true,
-          boundaryGeoJson: true,
-          operationalZone: { select: { isActive: true } },
-        },
-        orderBy: [{ operationalZoneId: 'asc' }, { id: 'asc' }],
-      })
+    async listAreas(tenantId, cityId) {
+      const areas = await withTenant(prisma, tenantId, (transaction) =>
+        transaction.serviceArea.findMany({
+          where: { tenantId, operationalZone: { is: { cityId, tenantId } } },
+          select: {
+            id: true,
+            operationalZoneId: true,
+            isActive: true,
+            boundaryGeoJson: true,
+            operationalZone: { select: { isActive: true } },
+          },
+          orderBy: [{ operationalZoneId: 'asc' }, { id: 'asc' }],
+        }),
+      )
 
       return areas.map((area) => ({
         id: area.id,
@@ -186,10 +199,12 @@ export function registerDiscoveryRoutes(
   dependencies: DiscoveryDependencies,
 ): void {
   app.get('/api/v1/serviceability/cities', async (request, reply) => {
+    const tenantId = dependencies.auth ? await resolveTenantId(request, dependencies.auth) : null
+    if (!tenantId) return tenantUnavailable(reply)
     try {
       const cities = activeCitySummarySchema
         .array()
-        .parse(await dependencies.cityRepository.listActiveCities())
+        .parse(await dependencies.cityRepository.listActiveCities(tenantId))
       return {
         success: true,
         data: cities,
@@ -218,6 +233,8 @@ export function registerDiscoveryRoutes(
           ),
         )
     }
+    const tenantId = dependencies.auth ? await resolveTenantId(request, dependencies.auth) : null
+    if (!tenantId) return tenantUnavailable(reply)
 
     try {
       const input: CatalogListInput = {
@@ -228,7 +245,7 @@ export function registerDiscoveryRoutes(
           operationalZoneId: parsed.data.operationalZoneId,
         }),
       }
-      const page = await dependencies.catalogRepository.listProducts(input)
+      const page = await dependencies.catalogRepository.listProducts(tenantId, input)
       const totalPages = Math.ceil(page.totalItems / input.pageSize)
 
       const response: PaginatedResponse<ProductSummary> = {
@@ -268,11 +285,14 @@ export function registerDiscoveryRoutes(
           ),
         )
     }
+    const tenantId = dependencies.auth ? await resolveTenantId(request, dependencies.auth) : null
+    if (!tenantId) return tenantUnavailable(reply)
 
     try {
       const result = await evaluateServiceability(
         parsed.data,
         dependencies.serviceabilityRepository,
+        tenantId,
       )
       return {
         success: true,
@@ -293,9 +313,10 @@ export function registerDiscoveryRoutes(
 export async function evaluateServiceability(
   input: ServiceabilityRequest,
   repository: ServiceabilityRepository,
+  tenantId: string,
   now = new Date(),
 ): Promise<ServiceabilityResponse> {
-  if (!(await repository.isCityActive(input.cityId))) {
+  if (!(await repository.isCityActive(tenantId, input.cityId))) {
     return {
       serviceable: false,
       reason: 'OUTSIDE_CITY',
@@ -303,27 +324,25 @@ export async function evaluateServiceability(
     }
   }
 
-  const areas = await repository.listAreas(input.cityId)
-  let suspendedMatch: ServiceAreaRecord | undefined
-
-  for (const area of areas) {
-    if (!geoJsonContainsPoint(area.boundaryGeoJson, input.longitude, input.latitude)) {
-      continue
+  const matches = (await repository.listAreas(tenantId, input.cityId)).filter((area) =>
+    geoJsonContainsPoint(area.boundaryGeoJson, input.longitude, input.latitude),
+  )
+  const activeMatches = matches.filter((area) => area.areaActive && area.zoneActive)
+  if (activeMatches.length > 1) {
+    throw new Error('AMBIGUOUS_SERVICE_AREA')
+  }
+  if (activeMatches.length === 1) {
+    return {
+      serviceable: true,
+      operationalZoneId: activeMatches[0]!.operationalZoneId,
+      serviceAreaId: activeMatches[0]!.id,
+      evaluatedAt: now.toISOString(),
     }
-    if (area.areaActive && area.zoneActive) {
-      return {
-        serviceable: true,
-        operationalZoneId: area.operationalZoneId,
-        serviceAreaId: area.id,
-        evaluatedAt: now.toISOString(),
-      }
-    }
-    suspendedMatch = area
   }
 
   return {
     serviceable: false,
-    reason: suspendedMatch ? 'ZONE_SUSPENDED' : 'OUTSIDE_SERVICE_AREA',
+    reason: matches.length > 0 ? 'ZONE_SUSPENDED' : 'OUTSIDE_SERVICE_AREA',
     evaluatedAt: now.toISOString(),
   }
 }
@@ -441,6 +460,23 @@ function responseMeta(): ResponseMeta {
     timestamp: new Date().toISOString(),
     version: 'v1',
   }
+}
+
+async function withTenant<T>(
+  prisma: PrismaClient,
+  tenantId: string,
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(async (transaction) => {
+    await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+    return operation(transaction)
+  })
+}
+
+function tenantUnavailable(reply: FastifyReply) {
+  return reply
+    .code(404)
+    .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
 }
 
 function errorEnvelope(

@@ -1,17 +1,23 @@
 import {
   activeCitiesEnvelopeSchema,
+  addressEnvelopeSchema,
+  addressesEnvelopeSchema,
   cartEnvelopeSchema,
   catalogPageSchema,
   errorEnvelopeSchema,
   otpRequestEnvelopeSchema,
   quoteEnvelopeSchema,
+  orderEnvelopeSchema,
   serviceabilityEnvelopeSchema,
   sessionEnvelopeSchema,
   type ActiveCitySummary,
+  type AddressCreate,
+  type AddressSummary,
   type CartSummary,
   type OtpRequestAccepted,
   type ProductSummary,
   type QuoteSummary,
+  type OrderSummary,
   type ServiceabilityResponse,
   type SessionContext,
 } from '@alo-noon/contracts'
@@ -45,6 +51,8 @@ export interface CustomerApiClient {
   }): Promise<ServiceabilityResponse>
   listCatalog(input: { cityId: string; operationalZoneId: string }): Promise<ProductSummary[]>
   getCart(): Promise<CartSummary | null>
+  listAddresses(): Promise<AddressSummary[]>
+  createAddress(input: AddressCreate): Promise<AddressSummary>
   setCartItem(
     offeringId: string,
     input: {
@@ -55,7 +63,12 @@ export interface CustomerApiClient {
     },
   ): Promise<CartSummary>
   removeCartItem(offeringId: string, expectedCartVersion?: number): Promise<CartSummary>
-  createQuote(expectedCartVersion: number, idempotencyKey: string): Promise<QuoteSummary>
+  createQuote(
+    deliveryAddressId: string,
+    expectedCartVersion: number,
+    idempotencyKey: string,
+  ): Promise<QuoteSummary>
+  createOrder(quoteId: string, idempotencyKey: string): Promise<OrderSummary>
 }
 
 export function createCustomerApiClient(
@@ -131,6 +144,12 @@ export function createCustomerApiClient(
       return request(`/api/v1/catalog/products?${query.toString()}`, catalogPageSchema)
     },
     getCart: async () => request('/api/v1/cart', cartEnvelopeSchema),
+    listAddresses: async () => request('/api/v1/addresses', addressesEnvelopeSchema),
+    createAddress: async (input) =>
+      request('/api/v1/addresses', addressEnvelopeSchema, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
     setCartItem: async (offeringId, input) =>
       request(`/api/v1/cart/items/${encodeURIComponent(offeringId)}`, cartEnvelopeSchema, {
         method: 'PUT',
@@ -143,10 +162,15 @@ export function createCustomerApiClient(
           ...(expectedCartVersion !== undefined && { expectedCartVersion }),
         }),
       }).then(requireCart),
-    createQuote: async (expectedCartVersion, idempotencyKey) =>
+    createQuote: async (deliveryAddressId, expectedCartVersion, idempotencyKey) =>
       request('/api/v1/cart/quote', quoteEnvelopeSchema, {
         method: 'POST',
-        body: JSON.stringify({ expectedCartVersion, idempotencyKey }),
+        body: JSON.stringify({ deliveryAddressId, expectedCartVersion, idempotencyKey }),
+      }),
+    createOrder: async (quoteId, idempotencyKey) =>
+      request('/api/v1/orders', orderEnvelopeSchema, {
+        method: 'POST',
+        body: JSON.stringify({ quoteId, idempotencyKey }),
       }),
   }
 }

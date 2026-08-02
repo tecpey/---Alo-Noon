@@ -163,6 +163,12 @@ describe('customer API client', () => {
           cartVersion: 3,
           status: 'ACTIVE',
           expiresAt: '2026-07-29T12:10:00.000Z',
+          deliveryAddressId: '77777777-7777-4777-8777-777777777777',
+          deliveryServiceAreaId: '88888888-8888-4888-8888-888888888888',
+          deliveryOperationalZoneId: '99999999-9999-4999-8999-999999999999',
+          deliveryDistanceMeters: 1250,
+          deliveryPricingRuleId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          deliveryPricingRuleVersion: 2,
           subtotal: { amount: '500000', currency: 'IRR' },
           deliveryFee: { amount: '0', currency: 'IRR' },
           discount: { amount: '0', currency: 'IRR' },
@@ -189,12 +195,52 @@ describe('customer API client', () => {
     )
     const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
 
-    await expect(client.createQuote(3, 'mobile-quote-command-0001')).resolves.toMatchObject({
+    await expect(
+      client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001'),
+    ).resolves.toMatchObject({
       cartVersion: 3,
       total: { amount: '500000' },
     })
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
-      JSON.stringify({ expectedCartVersion: 3, idempotencyKey: 'mobile-quote-command-0001' }),
+      JSON.stringify({
+        deliveryAddressId: '77777777-7777-4777-8777-777777777777',
+        expectedCartVersion: 3,
+        idempotencyKey: 'mobile-quote-command-0001',
+      }),
     )
+  })
+
+  it('sends only quote identity and an idempotency key when creating an order', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          id: '11111111-1111-4111-8111-111111111111',
+          publicId: 'order-public-001',
+          quoteId: '22222222-2222-4222-8222-222222222222',
+          state: 'PENDING_CONFIRMATION',
+          paymentState: 'NOT_STARTED',
+          productionState: 'UNSCHEDULED',
+          deliveryState: 'UNASSIGNED',
+          subtotal: { amount: '500000', currency: 'IRR' },
+          deliveryFee: { amount: '50000', currency: 'IRR' },
+          discount: { amount: '0', currency: 'IRR' },
+          total: { amount: '550000', currency: 'IRR' },
+          items: [],
+          createdAt: meta.timestamp,
+          updatedAt: meta.timestamp,
+        },
+        meta,
+      }),
+    )
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    await client.createOrder('22222222-2222-4222-8222-222222222222', 'mobile-order-command-0001')
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({
+        quoteId: '22222222-2222-4222-8222-222222222222',
+        idempotencyKey: 'mobile-order-command-0001',
+      }),
+    )
+    expect(fetchMock.mock.calls[0]?.[1]?.body).not.toContain('total')
   })
 })
