@@ -21,6 +21,39 @@ export const ledgerAccountTypeSchema = z.enum([
 export const ledgerEntrySideSchema = z.enum(['DEBIT', 'CREDIT'])
 export const financialTransactionTypeSchema = z.enum(['PAYMENT_CAPTURE'])
 
+export const ledgerAccountGovernanceActionSchema = z.enum([
+  'PROVISIONED',
+  'ACTIVATED',
+  'DEACTIVATED',
+])
+
+export const ledgerAccountSummarySchema = z.object({
+  id: uuidSchema,
+  parentId: uuidSchema.nullable(),
+  code: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+  name: z.string().min(1),
+  type: ledgerAccountTypeSchema,
+  currency: z.literal('IRR'),
+  isSystem: z.boolean(),
+  isPostable: z.boolean(),
+  isActive: z.boolean(),
+  systemKey: z.string().min(1).max(64).nullable(),
+  templateVersion: z.number().int().positive().nullable(),
+  governanceVersion: z.number().int().nonnegative(),
+})
+export type LedgerAccountSummary = z.infer<typeof ledgerAccountSummarySchema>
+
+export const tenantFinancialBootstrapSummarySchema = z.object({
+  id: uuidSchema,
+  tenantId: uuidSchema,
+  templateVersion: z.number().int().positive(),
+  accountCount: z.number().int().positive(),
+  correlationId: uuidSchema,
+  completedAt: isoDateTimeSchema,
+  accounts: z.array(ledgerAccountSummarySchema).min(1),
+})
+export type TenantFinancialBootstrapSummary = z.infer<typeof tenantFinancialBootstrapSummarySchema>
+
 export const paymentSummarySchema = z.object({
   id: uuidSchema,
   publicId: z.string().min(8).max(32),

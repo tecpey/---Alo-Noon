@@ -31,6 +31,8 @@ export type {
   Payment,
   PaymentStateTransition,
   LedgerAccount,
+  LedgerAccountGovernanceEvent,
+  TenantFinancialBootstrap,
   FinancialTransaction,
   LedgerEntry,
   Vehicle,

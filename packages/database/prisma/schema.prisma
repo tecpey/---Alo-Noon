@@ -334,6 +334,12 @@ enum FinancialTransactionType {
   PAYMENT_CAPTURE
 }
 
+enum LedgerAccountGovernanceAction {
+  PROVISIONED
+  ACTIVATED
+  DEACTIVATED
+}
+
 model Tenant {
   id             String             @id @default(uuid()) @db.Uuid
   slug           String             @unique @db.VarChar(64)
@@ -1186,20 +1192,72 @@ model PaymentStateTransition {
 }
 
 model LedgerAccount {
-  id        String            @id @default(uuid()) @db.Uuid
-  tenantId  String            @db.Uuid
-  code      String            @db.VarChar(64)
-  name      String
-  type      LedgerAccountType
-  currency  Currency          @default(IRR)
-  isActive  Boolean           @default(true)
-  entries   LedgerEntry[]
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id                String                         @id @default(uuid()) @db.Uuid
+  tenantId          String                         @db.Uuid
+  parentId          String?                        @db.Uuid
+  parent            LedgerAccount?                 @relation("LedgerAccountHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children          LedgerAccount[]                @relation("LedgerAccountHierarchy")
+  code              String                         @db.VarChar(64)
+  name              String
+  type              LedgerAccountType
+  currency          Currency                       @default(IRR)
+  isSystem          Boolean                        @default(false)
+  isPostable        Boolean                        @default(true)
+  isActive          Boolean                        @default(true)
+  systemKey         String?                        @db.VarChar(64)
+  templateVersion   Int?
+  governanceVersion Int                            @default(0)
+  entries           LedgerEntry[]
+  governanceEvents  LedgerAccountGovernanceEvent[]
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
 
   @@unique([tenantId, code], map: "LedgerAccount_tenant_code_key")
+  @@unique([tenantId, systemKey], map: "LedgerAccount_tenant_system_key")
   @@unique([id, tenantId], map: "g3b_LedgerAccount_id_tenant_key")
+  @@index([parentId, tenantId], map: "g3b_LedgerAccount_parentId_tenant_idx")
   @@index([tenantId, type, isActive])
+  @@index([tenantId, isSystem, isPostable, isActive])
+}
+
+model TenantFinancialBootstrap {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  templateVersion Int
+  accountCount    Int
+  idempotencyKey  String   @db.VarChar(128)
+  correlationId  String   @db.Uuid
+  completedAt     DateTime
+  createdAt       DateTime @default(now())
+
+  @@unique([tenantId, templateVersion], map: "TenantFinancialBootstrap_tenant_version_key")
+  @@unique([tenantId, idempotencyKey], map: "TenantFinancialBootstrap_tenant_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_TenantFinancialBootstrap_id_tenant_key")
+  @@index([tenantId, completedAt])
+}
+
+model LedgerAccountGovernanceEvent {
+  id              String                        @id @default(uuid()) @db.Uuid
+  tenantId        String                        @db.Uuid
+  ledgerAccountId String                        @db.Uuid
+  ledgerAccount   LedgerAccount                 @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  action          LedgerAccountGovernanceAction
+  fromActive      Boolean?
+  toActive        Boolean
+  actorType       ActorType
+  actorId         String?                       @db.Uuid
+  version         Int
+  idempotencyKey  String                        @db.VarChar(128)
+  reason          String                        @db.VarChar(500)
+  correlationId   String                        @db.Uuid
+  occurredAt      DateTime
+  createdAt       DateTime                      @default(now())
+
+  @@unique([tenantId, ledgerAccountId, idempotencyKey], map: "LedgerGovernance_scoped_idempotency_key")
+  @@unique([ledgerAccountId, version], map: "LedgerGovernance_account_version_key")
+  @@unique([id, tenantId], map: "g3b_LedgerAccountGovernanceEvent_id_tenant_key")
+  @@index([ledgerAccountId, tenantId], map: "g3b_LedgerAccountGovernanceEvent_ledgerAccountId_tenant_idx")
+  @@index([tenantId, correlationId])
 }
 
 model FinancialTransaction {

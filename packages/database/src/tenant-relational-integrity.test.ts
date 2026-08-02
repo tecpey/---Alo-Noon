@@ -20,6 +20,10 @@ const migrationUrls = [
     '../prisma/migrations/20260803100000_payment_ledger_foundation/migration.sql',
     import.meta.url,
   ),
+  new URL(
+    '../prisma/migrations/20260803160000_chart_of_accounts_provisioning/migration.sql',
+    import.meta.url,
+  ),
 ]
 
 type TenantRelation = {
@@ -52,7 +56,7 @@ function tenantRelationsFromSchema(schema: string): TenantRelation[] {
 
     for (const line of body.split('\n')) {
       const relation = line.match(
-        /^\s*\w+\s+(\w+)\??\s+@relation\(fields:\s*\[(\w+)\],\s*references:\s*\[\w+\],\s*onDelete:\s*\w+\)/,
+        /^\s*\w+\s+(\w+)\??\s+@relation\((?:"[^"]+",\s*)?fields:\s*\[(\w+)\],\s*references:\s*\[\w+\],\s*onDelete:\s*\w+\)/,
       )
 
       const parent = relation?.[1]
@@ -98,7 +102,7 @@ describe('tenant relational integrity G3B', () => {
   const registeredRelations = registeredRelationsFromMigration(sql)
 
   it('covers every implemented tenant-owned relation exactly once', () => {
-    expect(schemaRelations).toHaveLength(61)
+    expect(schemaRelations).toHaveLength(63)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
       new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,

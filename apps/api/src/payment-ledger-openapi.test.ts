@@ -16,11 +16,17 @@ describe('payment and ledger OpenAPI foundation', () => {
     'PaymentCreatedEventPayload:',
     'PaymentStateChangedEventPayload:',
     'FinancialTransactionPostedEventPayload:',
+    'LedgerAccountGovernanceAction:',
+    'LedgerAccountSummary:',
+    'TenantFinancialBootstrapSummary:',
+    'FinancialChartProvisionedEventPayload:',
+    'LedgerAccountStateChangedEventPayload:',
   ])('publishes %s', (schema) => expect(openApi).toContain(schema))
 
   it('does not expose an untrusted public payment execution path', () => {
     expect(openApi).not.toContain('/api/v1/payments:')
-    expect(openApi).toContain('no public payment-status write endpoint is exposed')
+    expect(openApi).not.toContain('/api/v1/financial-operations:')
+    expect(openApi).toContain('No public payment-status or ledger-governance')
   })
 
   it('documents integer IRR and double-entry line constraints', () => {

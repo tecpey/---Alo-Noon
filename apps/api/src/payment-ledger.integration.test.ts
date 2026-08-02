@@ -20,23 +20,11 @@ databaseDescribe('payment and ledger PostgreSQL foundation', () => {
     const fixture = await createOrderFixture(suffix)
     const secondFixture = await createOrderFixture(`${suffix}-b`)
     const accounts = await Promise.all([
-      prisma.ledgerAccount.create({
-        data: {
-          tenantId,
-          code: `CASH_${suffix.toUpperCase()}`,
-          name: 'Cash clearing',
-          type: 'ASSET',
-          currency: 'IRR',
-        },
+      prisma.ledgerAccount.findFirstOrThrow({
+        where: { tenantId, systemKey: 'CASH_CLEARING', isPostable: true, isActive: true },
       }),
-      prisma.ledgerAccount.create({
-        data: {
-          tenantId,
-          code: `ORDER_REVENUE_${suffix.toUpperCase()}`,
-          name: 'Order revenue clearing',
-          type: 'LIABILITY',
-          currency: 'IRR',
-        },
+      prisma.ledgerAccount.findFirstOrThrow({
+        where: { tenantId, systemKey: 'PAYMENT_CLEARING', isPostable: true, isActive: true },
       }),
     ])
     const service = createPrismaPaymentLedgerService(prisma)
