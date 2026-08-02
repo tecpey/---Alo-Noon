@@ -8,6 +8,10 @@ const tenantA = randomUUID()
 const tenantB = randomUUID()
 const customerA = randomUUID()
 const customerB = randomUUID()
+const cityA = randomUUID()
+const cityB = randomUUID()
+const pricingRuleA = randomUUID()
+const pricingRuleB = randomUUID()
 const roleName = `alo_noon_rls_${randomUUID().replaceAll('-', '')}`
 
 databaseDescribe('PostgreSQL tenant isolation G5', () => {
@@ -40,14 +44,59 @@ databaseDescribe('PostgreSQL tenant isolation G5', () => {
         },
       ],
     })
+    await prisma.city.createMany({
+      data: [
+        {
+          id: cityA,
+          tenantId: tenantA,
+          code: `rls-city-a-${cityA.slice(0, 8)}`,
+          nameFa: 'شهر الف',
+        },
+        {
+          id: cityB,
+          tenantId: tenantB,
+          code: `rls-city-b-${cityB.slice(0, 8)}`,
+          nameFa: 'شهر ب',
+        },
+      ],
+    })
+    await prisma.deliveryPricingRule.createMany({
+      data: [
+        {
+          id: pricingRuleA,
+          tenantId: tenantA,
+          cityId: cityA,
+          version: 1,
+          baseFeeAmount: 100_000n,
+          effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+          isActive: true,
+        },
+        {
+          id: pricingRuleB,
+          tenantId: tenantB,
+          cityId: cityB,
+          version: 1,
+          baseFeeAmount: 200_000n,
+          effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+          isActive: true,
+        },
+      ],
+    })
     await prisma.$executeRawUnsafe(`CREATE ROLE "${roleName}" NOLOGIN NOSUPERUSER NOBYPASSRLS`)
     await prisma.$executeRawUnsafe(`GRANT USAGE ON SCHEMA public TO "${roleName}"`)
     await prisma.$executeRawUnsafe(
       `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "Customer" TO "${roleName}"`,
     )
+    await prisma.$executeRawUnsafe(
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "DeliveryPricingRule" TO "${roleName}"`,
+    )
   })
 
   afterAll(async () => {
+    await prisma.deliveryPricingRule.deleteMany({
+      where: { id: { in: [pricingRuleA, pricingRuleB] } },
+    })
+    await prisma.city.deleteMany({ where: { id: { in: [cityA, cityB] } } })
     await prisma.customer.deleteMany({
       where: { id: { in: [customerA, customerB] } },
     })
@@ -82,6 +131,41 @@ databaseDescribe('PostgreSQL tenant isolation G5', () => {
         await transaction.$executeRaw`
           INSERT INTO "Customer" ("id", "tenantId", "mobileE164", "lifecycleStatus", "createdAt", "updatedAt")
           VALUES (${randomUUID()}::uuid, ${tenantB}::uuid, '+989000000001', 'ACTIVE', now(), now())
+        `
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('isolates delivery pricing rules and rejects cross-tenant pricing writes', async () => {
+    const withoutContext = await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRawUnsafe(`SET LOCAL ROLE "${roleName}"`)
+      return transaction.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "DeliveryPricingRule" ORDER BY "id"
+      `
+    })
+    expect(withoutContext).toEqual([])
+
+    const visible = await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRawUnsafe(`SET LOCAL ROLE "${roleName}"`)
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantA}, true)`
+      return transaction.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "DeliveryPricingRule" ORDER BY "id"
+      `
+    })
+    expect(visible).toEqual([{ id: pricingRuleA }])
+
+    await expect(
+      prisma.$transaction(async (transaction) => {
+        await transaction.$executeRawUnsafe(`SET LOCAL ROLE "${roleName}"`)
+        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantA}, true)`
+        await transaction.$executeRaw`
+          INSERT INTO "DeliveryPricingRule" (
+            "id", "tenantId", "cityId", "version", "baseFeeAmount",
+            "effectiveFrom", "createdAt", "updatedAt"
+          ) VALUES (
+            ${randomUUID()}::uuid, ${tenantB}::uuid, ${cityB}::uuid, 2, 300000,
+            now(), now(), now()
+          )
         `
       }),
     ).rejects.toThrow()

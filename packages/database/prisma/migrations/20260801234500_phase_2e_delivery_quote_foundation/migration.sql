@@ -117,6 +117,14 @@ ALTER TABLE "Order"
   REFERENCES "Quote" ("id", "tenantId")
   ON DELETE NO ACTION DEFERRABLE INITIALLY IMMEDIATE;
 
+-- Delivery pricing is tenant-owned operational policy. Keep the table deny-by-default
+-- under the same transaction-local tenant authority as every other business aggregate.
+ALTER TABLE "DeliveryPricingRule" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "DeliveryPricingRule" FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON "DeliveryPricingRule"
+  USING ("tenantId" = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+  WITH CHECK ("tenantId" = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+
 -- Registered tenant-owned relations for the G3B integrity manifest:
 --    ('DeliveryPricingRule', 'cityId', 'City')
 --    ('DeliveryPricingRule', 'operationalZoneId', 'OperationalZone')
