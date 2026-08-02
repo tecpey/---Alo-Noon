@@ -11,6 +11,9 @@ export const DomainEventName = {
   ORDER_CONFIRMED: 'order.confirmed',
   ORDER_CANCELLED: 'order.cancelled',
   ORDER_DELIVERED: 'order.delivered',
+  PAYMENT_CREATED: 'payment.created',
+  PAYMENT_STATE_CHANGED: 'payment.state_changed',
+  FINANCIAL_TRANSACTION_POSTED: 'financial.transaction_posted',
   SUPPORT_CASE_CREATED: 'support.case_created',
 } as const
 export type DomainEventName = (typeof DomainEventName)[keyof typeof DomainEventName]

@@ -1,11 +1,13 @@
 openapi: 3.1.0
 info:
   title: Alo Noon API
-  version: 0.6.0
+  version: 0.7.0
   description: >-
     Phase 2E contract. Operational endpoints, tenant-aware discovery, identity,
     customer-owned addresses, authoritative delivery quotes, and atomic
-    capacity-backed Quote-to-Order conversion are implemented.
+    capacity-backed Quote-to-Order conversion, and the internal payment and
+    double-entry ledger foundation are implemented. Payment execution remains
+    internal; no public payment-status write endpoint is exposed.
 servers:
   - url: http://localhost:3001
 paths:
@@ -754,6 +756,84 @@ components:
         success: { type: boolean, const: true }
         data: { $ref: '#/components/schemas/OrderSummary' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
+    PaymentAggregateState:
+      type: string
+      enum: [CREATED, PENDING, AUTHORIZED, CAPTURED, FAILED]
+    PaymentSummary:
+      type: object
+      required: [id, publicId, orderId, customerId, state, amount, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        publicId: { type: string, minLength: 8, maxLength: 32 }
+        orderId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/PaymentAggregateState' }
+        amount: { $ref: '#/components/schemas/Money' }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    LedgerAccountType:
+      type: string
+      enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+    LedgerEntrySide:
+      type: string
+      enum: [DEBIT, CREDIT]
+    LedgerEntrySummary:
+      type: object
+      required: [id, accountId, accountCode, sequence, side, amount]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        accountCode: { type: string, minLength: 1, maxLength: 64 }
+        sequence: { type: integer, minimum: 1 }
+        side: { $ref: '#/components/schemas/LedgerEntrySide' }
+        amount: { $ref: '#/components/schemas/Money' }
+    FinancialTransactionSummary:
+      type: object
+      required: [id, paymentId, orderId, type, amount, correlationId, occurredAt, postedAt, entries]
+      properties:
+        id: { type: string, format: uuid }
+        paymentId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        type: { type: string, enum: [PAYMENT_CAPTURE] }
+        amount: { $ref: '#/components/schemas/Money' }
+        correlationId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        postedAt: { type: string, format: date-time }
+        entries:
+          type: array
+          minItems: 2
+          items: { $ref: '#/components/schemas/LedgerEntrySummary' }
+    PaymentCreatedEventPayload:
+      type: object
+      required: [paymentId, orderId, customerId, state, amount, currency]
+      properties:
+        paymentId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        state: { type: string, const: CREATED }
+        amount: { type: string, pattern: '^\d+$' }
+        currency: { type: string, const: IRR }
+    PaymentStateChangedEventPayload:
+      type: object
+      required: [paymentId, orderId, fromState, toState, version]
+      properties:
+        paymentId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        fromState: { $ref: '#/components/schemas/PaymentAggregateState' }
+        toState: { $ref: '#/components/schemas/PaymentAggregateState' }
+        version: { type: integer, minimum: 2 }
+    FinancialTransactionPostedEventPayload:
+      type: object
+      required: [financialTransactionId, paymentId, orderId, type, amount, currency, entryCount]
+      properties:
+        financialTransactionId: { type: string, format: uuid }
+        paymentId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        type: { type: string, const: PAYMENT_CAPTURE }
+        amount: { type: string, pattern: '^\d+$' }
+        currency: { type: string, const: IRR }
+        entryCount: { type: integer, minimum: 2 }
     ServiceabilityRequest:
       type: object
       required: [cityId, latitude, longitude]

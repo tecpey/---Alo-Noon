@@ -33,6 +33,11 @@ The Phase 2E application service now persists the initial customer-authorized
 the same serializable transaction as Quote acceptance and capacity reservation.
 Later lifecycle transitions remain outside this slice.
 
+The payment foundation separately persists `CREATED`, `PENDING`, `AUTHORIZED`,
+`CAPTURED`, and `FAILED` payment-aggregate states. Capture atomically maps the
+order payment dimension to `PAID` and posts a balanced journal; it does not
+confirm or otherwise advance the order lifecycle.
+
 ## Planned
 
 - Post-creation command handlers, cancellation reason policy, and optimistic
@@ -40,7 +45,7 @@ Later lifecycle transitions remain outside this slice.
 
 ## Deferred
 
-- Cart persistence, payment execution, refunds, automated retries, customer UI,
+- Payment-provider execution, refunds, automated retries, customer payment UI,
   and live dispatch.
 
 ## Open decisions

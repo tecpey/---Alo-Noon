@@ -28,5 +28,10 @@ export type {
   ProductVariant,
   Quote,
   QuoteItem,
+  Payment,
+  PaymentStateTransition,
+  LedgerAccount,
+  FinancialTransaction,
+  LedgerEntry,
   Vehicle,
 } from '@prisma/client'

@@ -309,6 +309,31 @@ enum DeliveryPricingCalculationMode {
   DISTANCE_BANDED
 }
 
+enum PaymentAggregateState {
+  CREATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum LedgerEntrySide {
+  DEBIT
+  CREDIT
+}
+
+enum FinancialTransactionType {
+  PAYMENT_CAPTURE
+}
+
 model Tenant {
   id             String             @id @default(uuid()) @db.Uuid
   slug           String             @unique @db.VarChar(64)
@@ -441,6 +466,7 @@ model Customer {
   householdMemberships   HouseholdMember[]
   addresses              Address[]
   orders                 Order[]
+  payments               Payment[]
   customerEvents         CustomerEvent[]
   supportCases           SupportCase[]
   identityAccount        IdentityAccount?
@@ -1031,6 +1057,8 @@ model Order {
   requestedDeliveryAt          DateTime?
   items                        OrderItem[]
   transitions                  OrderStateTransition[]
+  payment                      Payment?
+  financialTransactions        FinancialTransaction[]
   fulfillment                  Fulfillment?
   supportCases                 SupportCase[]
   incidents                    OperationalIncident[]
@@ -1044,6 +1072,7 @@ model Order {
   @@index([tenantId])
 
   @@unique([id, tenantId], map: "g3b_Order_id_tenant_key")
+  @@unique([id, tenantId, customerId], map: "Order_id_tenant_customer_key")
   @@index([customerId, tenantId], map: "g3b_Order_customerId_tenant_idx")
   @@index([cityId, tenantId], map: "g3b_Order_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_Order_operationalZoneId_tenant_idx")
@@ -1106,6 +1135,114 @@ model OrderStateTransition {
   @@index([tenantId])
 
   @@index([orderId, tenantId], map: "g3b_OrderStateTransition_orderId_tenant_idx")
+}
+
+model Payment {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  tenantId             String                   @db.Uuid
+  publicId             String                   @unique @default(cuid()) @db.VarChar(32)
+  orderId              String                   @unique @db.Uuid
+  order                Order                    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customerId           String                   @db.Uuid
+  customer             Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  state                PaymentAggregateState    @default(CREATED)
+  amount               BigInt
+  currency             Currency                 @default(IRR)
+  version              Int                      @default(1)
+  idempotencyKey       String                   @db.VarChar(128)
+  correlationId        String                   @db.Uuid
+  transitions          PaymentStateTransition[]
+  financialTransaction FinancialTransaction?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@unique([tenantId, customerId, idempotencyKey], map: "Payment_tenant_customer_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_Payment_id_tenant_key")
+  @@index([orderId, tenantId], map: "g3b_Payment_orderId_tenant_idx")
+  @@index([customerId, tenantId], map: "g3b_Payment_customerId_tenant_idx")
+  @@index([tenantId, state, createdAt])
+}
+
+model PaymentStateTransition {
+  id             String                 @id @default(uuid()) @db.Uuid
+  tenantId       String                 @db.Uuid
+  paymentId      String                 @db.Uuid
+  payment        Payment                @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  fromState      PaymentAggregateState?
+  toState        PaymentAggregateState
+  actorType      ActorType
+  actorId        String?                @db.Uuid
+  version        Int
+  idempotencyKey String                 @db.VarChar(128)
+  correlationId  String                 @db.Uuid
+  occurredAt     DateTime
+  createdAt      DateTime               @default(now())
+
+  @@unique([tenantId, paymentId, idempotencyKey], map: "PaymentTransition_scoped_idempotency_key")
+  @@unique([paymentId, version], map: "PaymentTransition_payment_version_key")
+  @@index([paymentId, occurredAt])
+  @@index([paymentId, tenantId], map: "g3b_PaymentStateTransition_paymentId_tenant_idx")
+  @@index([tenantId, correlationId])
+}
+
+model LedgerAccount {
+  id        String            @id @default(uuid()) @db.Uuid
+  tenantId  String            @db.Uuid
+  code      String            @db.VarChar(64)
+  name      String
+  type      LedgerAccountType
+  currency  Currency          @default(IRR)
+  isActive  Boolean           @default(true)
+  entries   LedgerEntry[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([tenantId, code], map: "LedgerAccount_tenant_code_key")
+  @@unique([id, tenantId], map: "g3b_LedgerAccount_id_tenant_key")
+  @@index([tenantId, type, isActive])
+}
+
+model FinancialTransaction {
+  id             String                   @id @default(uuid()) @db.Uuid
+  tenantId       String                   @db.Uuid
+  paymentId      String                   @unique @db.Uuid
+  payment        Payment                  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  orderId        String                   @db.Uuid
+  order          Order                    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  type           FinancialTransactionType
+  amount         BigInt
+  currency       Currency                 @default(IRR)
+  idempotencyKey String                   @db.VarChar(128)
+  correlationId  String                   @db.Uuid
+  occurredAt     DateTime
+  postedAt       DateTime
+  entries        LedgerEntry[]
+  createdAt      DateTime                 @default(now())
+
+  @@unique([tenantId, idempotencyKey], map: "FinancialTransaction_tenant_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_FinancialTransaction_id_tenant_key")
+  @@index([paymentId, tenantId], map: "g3b_FinancialTransaction_paymentId_tenant_idx")
+  @@index([orderId, tenantId], map: "g3b_FinancialTransaction_orderId_tenant_idx")
+  @@index([tenantId, occurredAt])
+}
+
+model LedgerEntry {
+  id                     String               @id @default(uuid()) @db.Uuid
+  tenantId               String               @db.Uuid
+  financialTransactionId String               @db.Uuid
+  financialTransaction   FinancialTransaction @relation(fields: [financialTransactionId], references: [id], onDelete: Restrict)
+  ledgerAccountId        String               @db.Uuid
+  ledgerAccount          LedgerAccount        @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  sequence               Int
+  side                   LedgerEntrySide
+  amount                 BigInt
+  currency               Currency             @default(IRR)
+  createdAt              DateTime             @default(now())
+
+  @@unique([financialTransactionId, sequence], map: "LedgerEntry_transaction_sequence_key")
+  @@index([financialTransactionId, tenantId], map: "g3b_LedgerEntry_financialTransactionId_tenant_idx")
+  @@index([ledgerAccountId, tenantId], map: "g3b_LedgerEntry_ledgerAccountId_tenant_idx")
+  @@index([tenantId, ledgerAccountId, createdAt])
 }
 
 model Fulfillment {

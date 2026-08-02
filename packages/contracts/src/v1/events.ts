@@ -15,6 +15,9 @@ export const eventNameSchema = z.enum([
   'order.confirmed',
   'order.cancelled',
   'order.delivered',
+  'payment.created',
+  'payment.state_changed',
+  'financial.transaction_posted',
   'support.case_created',
 ])
 
@@ -47,3 +50,35 @@ export const orderCreatedEventPayloadSchema = z.object({
   currency: z.literal('IRR'),
 })
 export type OrderCreatedEventPayload = z.infer<typeof orderCreatedEventPayloadSchema>
+
+export const paymentCreatedEventPayloadSchema = z.object({
+  paymentId: uuidSchema,
+  orderId: uuidSchema,
+  customerId: uuidSchema,
+  state: z.literal('CREATED'),
+  amount: z.string().regex(/^\d+$/),
+  currency: z.literal('IRR'),
+})
+export type PaymentCreatedEventPayload = z.infer<typeof paymentCreatedEventPayloadSchema>
+
+export const paymentStateChangedEventPayloadSchema = z.object({
+  paymentId: uuidSchema,
+  orderId: uuidSchema,
+  fromState: z.enum(['CREATED', 'PENDING', 'AUTHORIZED', 'CAPTURED', 'FAILED']),
+  toState: z.enum(['CREATED', 'PENDING', 'AUTHORIZED', 'CAPTURED', 'FAILED']),
+  version: z.number().int().min(2),
+})
+export type PaymentStateChangedEventPayload = z.infer<typeof paymentStateChangedEventPayloadSchema>
+
+export const financialTransactionPostedEventPayloadSchema = z.object({
+  financialTransactionId: uuidSchema,
+  paymentId: uuidSchema,
+  orderId: uuidSchema,
+  type: z.literal('PAYMENT_CAPTURE'),
+  amount: z.string().regex(/^\d+$/),
+  currency: z.literal('IRR'),
+  entryCount: z.number().int().min(2),
+})
+export type FinancialTransactionPostedEventPayload = z.infer<
+  typeof financialTransactionPostedEventPayloadSchema
+>

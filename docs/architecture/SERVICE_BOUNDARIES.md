@@ -13,8 +13,9 @@ boundaries, not deployed microservices.
 - Fulfillment & Delivery: production/handoff plan, tasks, assignments, proofs.
 - CRM & Engagement: consent-aware timeline and segmentation inputs.
 - Support & Operations: cases, interventions, incidents, audit.
-- Payments & Settlement: concepts only; no provider, wallet, or ledger in
-  Phase 1.
+- Payments & Settlement: internal Payment aggregate and double-entry ledger
+  foundation; provider execution, refunds, wallet, and settlement remain
+  deferred.
 - Promotions & Loyalty: future contract boundary, no engine.
 - Notifications: future intent/outbox consumer, no provider.
 
