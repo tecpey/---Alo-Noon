@@ -240,6 +240,7 @@ databaseDescribe('payment and ledger PostgreSQL foundation', () => {
             currency: 'IRR',
           },
         })
+        await transaction.$executeRawUnsafe('SET CONSTRAINTS ALL IMMEDIATE')
       }),
     ).rejects.toThrow('balanced double-entry')
     expect((await prisma.payment.findUnique({ where: { id: initialized.id } }))?.state).toBe(
