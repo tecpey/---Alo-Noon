@@ -6,7 +6,7 @@ import type { AddressSummary, OrderSummary, SessionContext } from '@alo-noon/con
 import { buildApp } from './app'
 import type { AddressRepository } from './modules/addresses'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
-import type { OrderRepository } from './modules/orders'
+import { isSerializationFailure, type OrderRepository } from './modules/orders'
 
 const tenantId = '00000000-0000-4000-8000-000000000001'
 const customerId = '11111111-1111-4111-8111-111111111111'
@@ -169,5 +169,15 @@ describe('authenticated checkout API boundary', () => {
     expect(response.statusCode).toBe(400)
     expect(response.json()).toMatchObject({ error: { code: 'INVALID_ORDER_REQUEST' } })
     expect(called).toBe(false)
+  })
+})
+
+describe('order transaction conflict classification', () => {
+  it('recognizes PostgreSQL serialization failures wrapped by Prisma raw queries', () => {
+    expect(isSerializationFailure({ code: 'P2010', meta: { code: '40001' } })).toBe(true)
+    expect(isSerializationFailure({ code: 'P2034' })).toBe(true)
+    expect(isSerializationFailure({ code: 'P2002' })).toBe(true)
+    expect(isSerializationFailure({ code: 'P2010', meta: { code: '23505' } })).toBe(false)
+    expect(isSerializationFailure(new Error('could not serialize access'))).toBe(false)
   })
 })

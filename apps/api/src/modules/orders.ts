@@ -419,10 +419,18 @@ async function serializableWithRetry<T>(
   throw new OrderError('ORDER_CONCURRENCY_CONFLICT', 409)
 }
 
-function isSerializationFailure(error: unknown): boolean {
+export function isSerializationFailure(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const code = Reflect.get(error, 'code')
-  return code === 'P2034' || code === 'P2002'
+  if (code === 'P2034' || code === 'P2002' || code === '40001') return true
+
+  const meta = Reflect.get(error, 'meta')
+  return (
+    code === 'P2010' &&
+    typeof meta === 'object' &&
+    meta !== null &&
+    Reflect.get(meta, 'code') === '40001'
+  )
 }
 
 function mapOrder(order: OrderRecord): OrderSummary {
