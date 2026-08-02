@@ -12,6 +12,7 @@ const tenantA = randomUUID()
 const tenantB = randomUUID()
 const roleName = `financial_ops_${randomUUID().replaceAll('-', '')}`
 let roleCreated = false
+let authorizedStaffId = ''
 
 databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
   beforeAll(async () => {
@@ -20,6 +21,43 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
         { id: tenantA, slug: `finance-a-${tenantA.slice(0, 8)}`, name: 'Finance tenant A' },
         { id: tenantB, slug: `finance-b-${tenantB.slice(0, 8)}`, name: 'Finance tenant B' },
       ],
+    })
+    const staff = await prisma.identityAccount.create({
+      data: {
+        mobileE164: `+989${randomUUID().replaceAll('-', '').slice(0, 9)}`,
+        verifiedAt: new Date('2026-08-03T11:00:00.000Z'),
+      },
+    })
+    authorizedStaffId = staff.id
+    await prisma.tenantMembership.create({
+      data: {
+        tenantId: tenantA,
+        accountId: staff.id,
+        status: 'ACTIVE',
+        activeAt: new Date('2026-08-03T11:00:00.000Z'),
+      },
+    })
+    const permission = await prisma.authorizationPermission.upsert({
+      where: { code: 'financial.ledger-account.govern' },
+      update: {},
+      create: {
+        code: 'financial.ledger-account.govern',
+        description: 'Activate or deactivate governed tenant ledger accounts',
+      },
+    })
+    const authorizationRole = await prisma.authorizationRole.create({
+      data: { code: `FINANCIAL_OPERATOR_${tenantA.slice(0, 8)}`, name: 'Financial operator' },
+    })
+    await prisma.rolePermission.create({
+      data: { roleId: authorizationRole.id, permissionId: permission.id },
+    })
+    await prisma.accessGrant.create({
+      data: {
+        accountId: staff.id,
+        roleId: authorizationRole.id,
+        scopeType: 'GLOBAL',
+        activeAt: new Date('2026-08-03T11:00:00.000Z'),
+      },
     })
     await prisma.$executeRawUnsafe(`CREATE ROLE "${roleName}" NOLOGIN NOSUPERUSER NOBYPASSRLS`)
     roleCreated = true
@@ -113,7 +151,7 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
     const leaf = await prisma.ledgerAccount.findFirstOrThrow({
       where: { tenantId: tenantA, systemKey: 'DELIVERY_EXPENSE' },
     })
-    const actorId = randomUUID()
+    const actorId = authorizedStaffId
     const command = {
       accountId: leaf.id,
       targetActive: false,
@@ -145,6 +183,29 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
         randomUUID(),
       ),
     ).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_CONFLICT' })
+    const otherLeaf = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { tenantId: tenantA, systemKey: 'PAYMENT_PROCESSING_EXPENSE' },
+    })
+    await expect(
+      service.setAccountActive(
+        tenantA,
+        { ...command, accountId: otherLeaf.id },
+        new Date('2026-08-03T12:11:00.000Z'),
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_CONFLICT' })
+    await expect(
+      service.setAccountActive(
+        tenantA,
+        {
+          ...command,
+          actorId: randomUUID(),
+          idempotencyKey: 'ledger-unauthorized-actor-0001',
+        },
+        new Date('2026-08-03T12:11:00.000Z'),
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'FINANCIAL_OPERATION_FORBIDDEN' })
     expect(
       await prisma.auditEvent.count({
         where: {
@@ -214,7 +275,9 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
   })
 
   it('rejects unsafe hierarchy, ungoverned state mutation, and system identity mutation', async () => {
-    const service = createPrismaFinancialOperationsService(prisma)
+    const service = createPrismaFinancialOperationsService(prisma, {
+      allowSystemGovernance: true,
+    })
     const root = await prisma.ledgerAccount.findFirstOrThrow({
       where: { tenantId: tenantA, systemKey: 'ASSETS' },
     })

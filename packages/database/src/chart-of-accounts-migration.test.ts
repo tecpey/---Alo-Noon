@@ -52,6 +52,9 @@ describe('chart-of-accounts provisioning migration', () => {
     }
     expect(migration).toContain('g3b_LedgerAccount_parentId_tenant_fk')
     expect(migration).toContain('g3b_LedgerAccountGovernanceEvent_ledgerAccountId_tenant_fk')
+    expect(migration).toContain(
+      '"LedgerGovernance_tenant_idempotency_key"\n  ON "LedgerAccountGovernanceEvent" ("tenantId", "idempotencyKey")',
+    )
     expect(migration).toContain('DEFERRABLE INITIALLY IMMEDIATE')
   })
 

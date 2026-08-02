@@ -12,7 +12,7 @@ describe('financial operations transaction conflict classification', () => {
     expect(
       isRetryableFinancialOperationsConflict({
         code: 'P2002',
-        meta: { target: ['tenantId', 'ledgerAccountId', 'idempotencyKey'] },
+        meta: { target: ['tenantId', 'idempotencyKey'] },
       }),
     ).toBe(true)
     expect(

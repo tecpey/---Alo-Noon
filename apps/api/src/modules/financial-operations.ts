@@ -38,7 +38,10 @@ export interface FinancialOperationsService {
 export interface PrismaFinancialOperationsOptions {
   maxSerializationAttempts?: number
   beforeCommit?: (transaction: Prisma.TransactionClient) => Promise<void>
+  allowSystemGovernance?: boolean
 }
+
+const LEDGER_ACCOUNT_GOVERN_PERMISSION = 'financial.ledger-account.govern'
 
 export class FinancialOperationsError extends Error {
   constructor(readonly code: string) {
@@ -84,14 +87,11 @@ export function createPrismaFinancialOperationsService(
     async setAccountActive(tenantId, command, now, correlationId) {
       return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
         const replay = await transaction.ledgerAccountGovernanceEvent.findFirst({
-          where: {
-            tenantId,
-            ledgerAccountId: command.accountId,
-            idempotencyKey: command.idempotencyKey,
-          },
+          where: { tenantId, idempotencyKey: command.idempotencyKey },
         })
         if (replay) {
           if (
+            replay.ledgerAccountId !== command.accountId ||
             replay.toActive !== command.targetActive ||
             replay.actorType !== command.actor ||
             replay.actorId !== (command.actorId ?? null) ||
@@ -99,7 +99,12 @@ export function createPrismaFinancialOperationsService(
           ) {
             throw new FinancialOperationsError('IDEMPOTENCY_KEY_CONFLICT')
           }
-          return mapAccount(await loadAccount(transaction, tenantId, command.accountId), {
+        }
+
+        await authorizeGovernanceActor(transaction, tenantId, command, now, options)
+
+        if (replay) {
+          return mapAccount(await loadAccount(transaction, tenantId, replay.ledgerAccountId), {
             isActive: replay.toActive,
             governanceVersion: replay.version,
           })
@@ -193,6 +198,52 @@ export function createPrismaFinancialOperationsService(
       })
     },
   }
+}
+
+async function authorizeGovernanceActor(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  command: GovernLedgerAccountCommand,
+  now: Date,
+  options: PrismaFinancialOperationsOptions,
+): Promise<void> {
+  if (command.actor === 'SYSTEM') {
+    if (options.allowSystemGovernance === true && command.actorId === undefined) return
+    throw new FinancialOperationsError('FINANCIAL_OPERATION_FORBIDDEN')
+  }
+  if (!command.actorId) throw new FinancialOperationsError('FINANCIAL_OPERATION_FORBIDDEN')
+
+  const authorized = await transaction.identityAccount.findFirst({
+    where: {
+      id: command.actorId,
+      status: 'ACTIVE',
+      tenantMemberships: {
+        some: {
+          tenantId,
+          status: 'ACTIVE',
+          activeAt: { lte: now },
+          suspendedAt: null,
+          revokedAt: null,
+        },
+      },
+      accessGrants: {
+        some: {
+          scopeType: 'GLOBAL',
+          scopeId: null,
+          activeAt: { lte: now },
+          revokedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          role: {
+            permissions: {
+              some: { permission: { code: LEDGER_ACCOUNT_GOVERN_PERMISSION } },
+            },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  })
+  if (!authorized) throw new FinancialOperationsError('FINANCIAL_OPERATION_FORBIDDEN')
 }
 
 const accountInclude = { parent: true } satisfies Prisma.LedgerAccountInclude
@@ -314,11 +365,11 @@ function isRetryableConflict(error: unknown): boolean {
         .join('|')
     : target
   return (
-    normalized === 'idempotencyKey|ledgerAccountId|tenantId' ||
+    normalized === 'idempotencyKey|tenantId' ||
     normalized === 'ledgerAccountId|version' ||
-    normalized === 'LedgerGovernance_scoped_idempotency_key' ||
+    normalized === 'LedgerGovernance_tenant_idempotency_key' ||
     normalized === 'LedgerGovernance_account_version_key' ||
-    constraint === 'LedgerGovernance_scoped_idempotency_key' ||
+    constraint === 'LedgerGovernance_tenant_idempotency_key' ||
     constraint === 'LedgerGovernance_account_version_key'
   )
 }

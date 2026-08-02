@@ -102,8 +102,8 @@ CREATE UNIQUE INDEX "g3b_TenantFinancialBootstrap_id_tenant_key"
 CREATE INDEX "TenantFinancialBootstrap_tenant_completedAt_idx"
   ON "TenantFinancialBootstrap" ("tenantId", "completedAt");
 
-CREATE UNIQUE INDEX "LedgerGovernance_scoped_idempotency_key"
-  ON "LedgerAccountGovernanceEvent" ("tenantId", "ledgerAccountId", "idempotencyKey");
+CREATE UNIQUE INDEX "LedgerGovernance_tenant_idempotency_key"
+  ON "LedgerAccountGovernanceEvent" ("tenantId", "idempotencyKey");
 CREATE UNIQUE INDEX "LedgerGovernance_account_version_key"
   ON "LedgerAccountGovernanceEvent" ("ledgerAccountId", "version");
 CREATE UNIQUE INDEX "g3b_LedgerAccountGovernanceEvent_id_tenant_key"

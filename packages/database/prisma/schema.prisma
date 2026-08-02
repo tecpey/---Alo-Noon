@@ -1253,7 +1253,7 @@ model LedgerAccountGovernanceEvent {
   occurredAt      DateTime
   createdAt       DateTime                      @default(now())
 
-  @@unique([tenantId, ledgerAccountId, idempotencyKey], map: "LedgerGovernance_scoped_idempotency_key")
+  @@unique([tenantId, idempotencyKey], map: "LedgerGovernance_tenant_idempotency_key")
   @@unique([ledgerAccountId, version], map: "LedgerGovernance_account_version_key")
   @@unique([id, tenantId], map: "g3b_LedgerAccountGovernanceEvent_id_tenant_key")
   @@index([ledgerAccountId, tenantId], map: "g3b_LedgerAccountGovernanceEvent_ledgerAccountId_tenant_idx")
