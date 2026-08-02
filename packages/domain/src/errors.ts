@@ -13,6 +13,13 @@ export type DomainErrorCode =
   | 'CART_CONTEXT_MISMATCH'
   | 'INVALID_CART_QUANTITY'
   | 'INVALID_QUOTE_TIME'
+  | 'QUOTE_OWNERSHIP_MISMATCH'
+  | 'QUOTE_ALREADY_ACCEPTED'
+  | 'QUOTE_NOT_ACTIVE'
+  | 'QUOTE_EXPIRED'
+  | 'QUOTE_EMPTY'
+  | 'QUOTE_DELIVERY_SNAPSHOT_INCOMPLETE'
+  | 'QUOTE_TOTAL_MISMATCH'
 
 export class DomainError extends Error {
   constructor(

@@ -2,10 +2,17 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const schemaUrl = new URL('../prisma/schema.prisma', import.meta.url)
-const migrationUrl = new URL(
+const g3bMigrationUrl = new URL(
   '../prisma/migrations/20260801170000_tenant_relational_integrity_g3b/migration.sql',
   import.meta.url,
 )
+const migrationUrls = [
+  g3bMigrationUrl,
+  new URL(
+    '../prisma/migrations/20260801234500_phase_2e_delivery_quote_foundation/migration.sql',
+    import.meta.url,
+  ),
+]
 
 type TenantRelation = {
   child: string
@@ -74,12 +81,16 @@ function registeredRelationsFromMigration(sql: string): TenantRelation[] {
 
 describe('tenant relational integrity G3B', () => {
   const schema = readFileSync(schemaUrl, 'utf8')
-  const sql = readFileSync(migrationUrl, 'utf8')
+  const g3bSql = readFileSync(g3bMigrationUrl, 'utf8')
+  const sql = [
+    g3bSql,
+    ...migrationUrls.slice(1).map((migrationUrl) => readFileSync(migrationUrl, 'utf8')),
+  ].join('\n')
   const schemaRelations = tenantRelationsFromSchema(schema)
   const registeredRelations = registeredRelationsFromMigration(sql)
 
   it('covers every implemented tenant-owned relation exactly once', () => {
-    expect(schemaRelations).toHaveLength(47)
+    expect(schemaRelations).toHaveLength(52)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
       new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,
@@ -100,15 +111,15 @@ describe('tenant relational integrity G3B', () => {
   })
 
   it('fails closed before DDL and preserves the G4/G5 boundary', () => {
-    expect(sql.indexOf('G3B aborted:')).toBeLessThan(sql.indexOf('ADD CONSTRAINT "g3b_'))
-    expect(sql).toContain('child_row."tenantId" IS NULL')
-    expect(sql).toContain('parent_row."tenantId" IS NULL')
-    expect(sql).toContain('child_row."tenantId" <> parent_row."tenantId"')
-    expect(sql).toContain('DEFERRABLE INITIALLY IMMEDIATE')
-    expect(sql).toContain('ON DELETE NO ACTION')
-    expect(sql).not.toContain('SET NOT NULL')
-    expect(sql).not.toContain('ENABLE ROW LEVEL SECURITY')
-    expect(sql).not.toContain('CREATE POLICY')
-    expect(sql).not.toContain('DROP CONSTRAINT')
+    expect(g3bSql.indexOf('G3B aborted:')).toBeLessThan(g3bSql.indexOf('ADD CONSTRAINT "g3b_'))
+    expect(g3bSql).toContain('child_row."tenantId" IS NULL')
+    expect(g3bSql).toContain('parent_row."tenantId" IS NULL')
+    expect(g3bSql).toContain('child_row."tenantId" <> parent_row."tenantId"')
+    expect(g3bSql).toContain('DEFERRABLE INITIALLY IMMEDIATE')
+    expect(g3bSql).toContain('ON DELETE NO ACTION')
+    expect(g3bSql).not.toContain('SET NOT NULL')
+    expect(g3bSql).not.toContain('ENABLE ROW LEVEL SECURITY')
+    expect(g3bSql).not.toContain('CREATE POLICY')
+    expect(g3bSql).not.toContain('DROP CONSTRAINT')
   })
 })
