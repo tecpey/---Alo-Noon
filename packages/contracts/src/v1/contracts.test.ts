@@ -16,6 +16,11 @@ import {
   orderDraftInputSchema,
   orderCreateSchema,
   orderEnvelopeSchema,
+  paymentCreatedEventPayloadSchema,
+  paymentStateChangedEventPayloadSchema,
+  financialTransactionPostedEventPayloadSchema,
+  paymentSummarySchema,
+  financialTransactionSummarySchema,
   serviceabilityEnvelopeSchema,
   serviceabilityRequestSchema,
   sessionEnvelopeSchema,
@@ -129,6 +134,113 @@ describe('v1 order and event contracts', () => {
         payload: { state: 'DRAFT' },
       }),
     ).toBeDefined()
+  })
+})
+
+describe('v1 payment and ledger foundation contracts', () => {
+  const paymentId = 'cb1e8354-976a-456f-9a70-1d9b93b722ac'
+  const orderId = '22048a68-8a9c-4775-b6b2-28e449f73220'
+  const customerId = '0af09971-0ef8-4033-912d-238b68b8feb1'
+  const transactionId = 'fefbfab1-4e5d-40e2-b930-661f55cbe529'
+
+  it('validates payment and balanced-journal read models with integer strings', () => {
+    expect(
+      paymentSummarySchema.parse({
+        id: paymentId,
+        publicId: 'payment-public-01',
+        orderId,
+        customerId,
+        state: 'CAPTURED',
+        amount: { amount: '530000', currency: 'IRR' },
+        version: 4,
+        createdAt: '2026-08-03T00:00:00.000Z',
+        updatedAt: '2026-08-03T00:03:00.000Z',
+      }).amount.amount,
+    ).toBe('530000')
+    expect(
+      financialTransactionSummarySchema.parse({
+        id: transactionId,
+        paymentId,
+        orderId,
+        type: 'PAYMENT_CAPTURE',
+        amount: { amount: '530000', currency: 'IRR' },
+        correlationId: 'bc8b4a51-6ca7-4f35-887e-f8903820fc7e',
+        occurredAt: '2026-08-03T00:03:00.000Z',
+        postedAt: '2026-08-03T00:03:00.000Z',
+        entries: [
+          {
+            id: '1a16bbb6-35fd-434f-b990-b3e8b7b83c0b',
+            accountId: 'c761bd1d-bfbf-4747-a78d-d558f1cd7cd2',
+            accountCode: 'CASH',
+            sequence: 1,
+            side: 'DEBIT',
+            amount: { amount: '530000', currency: 'IRR' },
+          },
+          {
+            id: 'f1ac1f86-78dc-461e-a263-a360c3838c99',
+            accountId: '0d1013f5-51df-4762-876f-c587be0cebe2',
+            accountCode: 'PAYMENT_CLEARING',
+            sequence: 2,
+            side: 'CREDIT',
+            amount: { amount: '530000', currency: 'IRR' },
+          },
+        ],
+      }).entries,
+    ).toHaveLength(2)
+  })
+
+  it('validates PII-free payment and posting events', () => {
+    expect(
+      paymentCreatedEventPayloadSchema.parse({
+        paymentId,
+        orderId,
+        customerId,
+        state: 'CREATED',
+        amount: '530000',
+        currency: 'IRR',
+      }),
+    ).toBeDefined()
+    expect(
+      paymentStateChangedEventPayloadSchema.parse({
+        paymentId,
+        orderId,
+        fromState: 'AUTHORIZED',
+        toState: 'CAPTURED',
+        version: 4,
+      }),
+    ).toBeDefined()
+    expect(
+      financialTransactionPostedEventPayloadSchema.parse({
+        financialTransactionId: transactionId,
+        paymentId,
+        orderId,
+        type: 'PAYMENT_CAPTURE',
+        amount: '530000',
+        currency: 'IRR',
+        entryCount: 2,
+      }),
+    ).toBeDefined()
+  })
+
+  it('rejects floating, signed, and non-IRR financial contracts', () => {
+    const invalid = {
+      id: paymentId,
+      publicId: 'payment-public-01',
+      orderId,
+      customerId,
+      state: 'CREATED',
+      amount: { amount: '530.5', currency: 'IRR' },
+      version: 1,
+      createdAt: '2026-08-03T00:00:00.000Z',
+      updatedAt: '2026-08-03T00:00:00.000Z',
+    }
+    expect(() => paymentSummarySchema.parse(invalid)).toThrow()
+    expect(() =>
+      paymentSummarySchema.parse({ ...invalid, amount: { amount: '-1', currency: 'IRR' } }),
+    ).toThrow()
+    expect(() =>
+      paymentSummarySchema.parse({ ...invalid, amount: { amount: '1', currency: 'USD' } }),
+    ).toThrow()
   })
 })
 
