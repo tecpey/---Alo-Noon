@@ -145,6 +145,30 @@ describe('payment execution retry classification', () => {
         true,
       ),
     ).toBe(false)
+    expect(
+      isRetryablePaymentExecutionConflict(
+        {
+          code: 'P2002',
+          meta: {
+            modelName: 'PaymentAttempt',
+            target: ['tenantId', 'requestIdempotencyKey'],
+          },
+        },
+        true,
+      ),
+    ).toBe(true)
+    expect(
+      isRetryablePaymentExecutionConflict(
+        {
+          code: 'P2002',
+          meta: {
+            modelName: 'AnotherModel',
+            target: ['tenantId', 'requestIdempotencyKey'],
+          },
+        },
+        true,
+      ),
+    ).toBe(false)
     expect(isRetryablePaymentExecutionConflict({ code: 'P2002' }, true)).toBe(false)
   })
 })

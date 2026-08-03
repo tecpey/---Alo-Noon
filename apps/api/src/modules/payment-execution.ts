@@ -911,7 +911,15 @@ function constraintIdentity(meta: unknown): string {
   const constraint = Reflect.get(meta, 'constraint')
   if (typeof constraint === 'string') return constraint
   const target = Reflect.get(meta, 'target')
-  return Array.isArray(target) ? target.join(',') : ''
+  if (!Array.isArray(target) || Reflect.get(meta, 'modelName') !== 'PaymentAttempt') return ''
+  const fields = target.join(',')
+  if (fields === 'tenantId,requestIdempotencyKey') {
+    return 'PaymentAttempt_tenant_idempotency_key'
+  }
+  if (fields === 'tenantId,providerConfigurationId,providerReference') {
+    return 'PaymentAttempt_provider_reference_key'
+  }
+  return ''
 }
 
 function executionFailure(
