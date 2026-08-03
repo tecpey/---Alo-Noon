@@ -1,95 +1,82 @@
-# نقشه مستندات الو نون
+# Alo Noon documentation map
 
-این پوشه منبع تصمیم‌های محصول، عملیات، امنیت و معماری الو نون است. تصمیم‌های مهم
-نباید فقط در گفتگو، کد یا حافظه افراد باقی بمانند.
+This directory records product intent, architecture, security controls,
+operations design, and accepted decisions. Repository behavior and executable
+tests are the authority for implementation status; target documents must never
+be read as evidence that a capability is shipped.
 
-> اسناد هدف و معماری آینده را از قابلیت‌های پیاده‌سازی‌شده تفکیک می‌کنند. وضعیت
-> واقعی هر فاز در `architecture/README.md`، `architecture/DOMAIN_BOUNDARIES.md`
-> و اسناد فاز انگلیسی ثبت شده است.
+The repository entry points are the Persian-first [`README.md`](../README.md)
+and its factually equivalent English edition [`README.en.md`](../README.en.md).
 
-## ترتیب مطالعه برای مدیر محصول و عملیات
+## Status vocabulary
 
-1. `00-governance/ALO_NOON_PROJECT_GOVERNANCE_FA.md`
-2. `00-vision/PRODUCT_VISION_FA.md`
-3. `01-product/CATALOG_AND_FRESHNESS_MODEL_FA.md`
-4. `02-operations/BABOL_PILOT_OPERATING_MODEL_FA.md`
-5. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
-6. `04-crm/CRM_BLUEPRINT_FA.md`
-7. `05-logistics/LOGISTICS_PRICING_AND_PROVIDER_MODEL_FA.md`
-8. `07-roadmap/MVP_ROADMAP_FA.md`
+- **Verified:** implemented on `main` and covered by executable evidence.
+- **Foundation:** core invariants or persistence exist, but the end-to-end
+  production workflow is incomplete.
+- **Deferred:** intentionally outside the current delivery boundary.
+- **Planned:** product or architecture intent without shipped runtime behavior.
+- **Open:** a decision still requiring product, security, or operations input.
 
-## ترتیب مطالعه برای مهندسی
+## Recommended reading
 
-1. `00-governance/ALO_NOON_PROJECT_GOVERNANCE_FA.md`
-2. `architecture/README.md`
-3. `03-architecture/API_FIRST_ARCHITECTURE_FA.md`
-4. `03-architecture/DOMAIN_MODEL_FA.md`
-5. `architecture/PHASE_1_DOMAIN_FOUNDATION.md`
-6. `architecture/PHASE_2B_IDENTITY_ACCESS.md`
-7. `architecture/PHASE_2C_CUSTOMER_APP_INTEGRATION.md`
-8. `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
-9. `06-security/SECURITY_BASELINE_FA.md`
-10. `decisions/`
+### Product, operations, and partners
 
-## اسناد جدید مرجع
+1. [Product vision](./00-vision/PRODUCT_VISION_FA.md)
+2. [Product requirements](./product/PRODUCT_REQUIREMENTS.md)
+3. [Catalog and freshness model](./product/CATALOG_AND_FRESHNESS_MODEL.md)
+4. [Babol pilot operating model](./02-operations/BABOL_PILOT_OPERATING_MODEL_FA.md)
+5. [Bakery partner model](./product/BAKERY_PARTNER_MODEL.md)
+6. [Courier and delivery model](./product/COURIER_AND_DELIVERY_MODEL.md)
+7. [CRM foundation](./product/CRM_FOUNDATION.md)
+8. [MVP roadmap](./07-roadmap/MVP_ROADMAP_FA.md)
 
-### `architecture/PHASE_1_DOMAIN_FOUNDATION.md`
+### Engineering and security
 
-مرز دامنه‌ها، مدل‌های هدف، State Machine سفارش، RBAC محدوده‌محور، Outbox،
-Idempotency، Migration، تست و ترتیب PRهای فاز یک را تعریف می‌کند.
+1. [Architecture index](./architecture/README.md)
+2. [Domain boundaries](./architecture/DOMAIN_BOUNDARIES.md)
+3. [Data ownership](./architecture/DATA_OWNERSHIP.md)
+4. [Service boundaries](./architecture/SERVICE_BOUNDARIES.md)
+5. [Domain-event model](./architecture/DOMAIN_EVENT_MODEL.md)
+6. [Security baseline](./06-security/SECURITY_BASELINE_FA.md)
+7. [Multi-tenancy threat model](./security/MULTITENANCY-AI-THREAT-MODEL.md)
+8. [ADR index](./decisions/README.md)
 
-### `operations/NOTIFICATION_PRINT_LABEL_ARCHITECTURE.md`
+### Assets
 
-اعلان‌های هوشمند و دستی برای مشتری، نانوا، پیک و عملیات؛ چاپ خودکار Kitchen
-Ticket و لیبل چسبی؛ Print Agent، مدل داده، حریم خصوصی، Retry، خطا و معیار پذیرش
-MVP را تعریف می‌کند.
+- [Brand-asset governance](./assets/brand/README.md)
+- [Capability-label catalog](./assets/badges/README.md)
+- [Diagram source and export policy](./assets/diagrams/README.md)
 
-### `architecture/PHASE_2B_IDENTITY_ACCESS.md`
+## Current verified boundary
 
-OTP امن، Session opaque و قابل ابطال، مدل نقش/مجوز/Scope، Audit بدون افشای
-Secret یا PII و مرز اتصال آینده ارائه‌دهنده پیامک را تعریف می‌کند.
+The following capabilities are present on `main`:
 
-### `architecture/PHASE_2C_CUSTOMER_APP_INTEGRATION.md`
+- tenant-aware identity and authorization foundations with forced PostgreSQL RLS
+  on covered tenant data;
+- authenticated customer address, serviceability, authoritative delivery
+  pricing, immutable Quote snapshots, atomic Quote-to-Order conversion, and
+  durable capacity reservation;
+- independent Payment and double-entry Ledger foundations with governed tenant
+  Chart of Accounts;
+- payment-provider configuration, opaque credential references, adapter
+  registry/SPI, callback-receipt and replay foundations;
+- initialization-only Payment Execution Orchestrator using a recoverable
+  two-transaction boundary.
 
-اتصال واقعی اپ مشتری به Session، شهرهای فعال، مجوز موقعیت، محدوده سرویس و
-کاتالوگ و همچنین قواعد CORS و برچسب‌گذاری دقیق تازگی محصول را تعریف می‌کند.
+Real provider adapters, callback verification processing, inquiry, capture,
+settlement, reconciliation, refunds, production SMS delivery, bakery/courier
+operational workflows, notification delivery, CRM UI, and external-store
+integrations are not shipped.
 
-## طبقه‌بندی اسناد
+## Documentation rules
 
-- **Authority**: تصمیم پایه و الزام‌آور؛ تغییر آن نیازمند ADR یا تایید رسمی است.
-- **Target Architecture**: وضعیت مطلوب آینده، نه لزوماً وضعیت فعلی.
-- **Living Document**: همراه محصول و عملیات به‌روز می‌شود.
-- **Runbook**: راهنمای اجرای عملیات یا پاسخ به خطا.
-- **Generated**: خروجی خودکار ابزارها و قابل ویرایش دستی نیست.
-
-## قواعد مستندسازی
-
-- قابلیت پیاده‌سازی‌شده و قابلیت برنامه‌ریزی‌شده باید صریحاً تفکیک شوند.
-- هر تغییر مدل داده، API، امنیت، پرداخت، چاپ یا لجستیک باید مستند شود.
-- تصمیم‌های معماری مهم در `decisions/` به‌صورت ADR ثبت شوند.
-- اسناد نباید secret، داده شخصی واقعی یا اطلاعات پرداخت داشته باشند.
-- مسیرها، نام‌ها و اصطلاحات باید با کد و قراردادهای API همگام باشند.
-- هر PR مهم باید بخش‌های API/data model، security/privacy، operational impact،
-  tests و rollback را تکمیل کند.
-
-## وضعیت فعلی
-
-ریپو پس از Phase 2D Commerce و Phase G2 Tenant Foundation قرار دارد. Cart و
-Quote سروری، OTP، Session قابل ابطال، RBAC، قراردادهای نسخه‌دار،
-PostgreSQL/Prisma و Tenant foundation افزایشی پیاده‌سازی و در CI تایید شده‌اند.
-Phase G3A برای Backfill کنترل‌شده داده‌های پیش از چندمستاجری در حال بررسی است.
-TenantContext اجباری، تست‌های منفی Cross-tenant، RLS، پرداخت، Quote-to-Order،
-اعلان Delivery و چاپ اجرایی هنوز تکمیل نشده‌اند و نباید قابلیت تحویل‌شده معرفی
-شوند.
-
-## منابع معتبر وضعیت فعلی
-
-1. `product/PRODUCT_REQUIREMENTS.md`
-2. `architecture/DOMAIN_BOUNDARIES.md`
-3. `architecture/DOMAIN_MODEL.md`
-4. `architecture/DOMAIN_EVENT_MODEL.md`
-5. `architecture/DATA_OWNERSHIP.md`
-6. `architecture/SERVICE_BOUNDARIES.md`
-7. `decisions/ADR-0004` تا `ADR-0007`
-8. `architecture/PHASE_2B_IDENTITY_ACCESS.md`
-9. `architecture/PHASE_2C_CUSTOMER_APP_INTEGRATION.md`
+- Label implemented, foundation, deferred, planned, and open behavior.
+- Use the product promise **fresh bread**, never **hot bread**.
+- Keep executable invariants in `packages/domain`, transport schemas in
+  `packages/contracts`, and persistence in `packages/database`.
+- Record material architecture changes as ADRs and include an Architectural
+  Impact Assessment in the corresponding PR.
+- Do not include credentials, private contact details, real customer data, or
+  payment secrets.
+- Treat migrations as forward-only, additive production artifacts.
+- Update links and status descriptions in the same PR as the verified behavior.

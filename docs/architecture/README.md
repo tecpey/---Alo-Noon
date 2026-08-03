@@ -1,65 +1,84 @@
-# Platform foundation architecture
+# Alo Noon architecture index
 
-## System context
+Alo Noon is a TypeScript modular monolith in a pnpm monorepo. PostgreSQL is the
+system of record; public transport contracts, framework-neutral domain rules,
+and Prisma persistence have separate package boundaries.
 
-Alo Noon begins as a modular monorepo with four independently deployable
-surfaces. The web and customer mobile applications serve ordering customers; the
-courier application serves delivery operators; the Fastify API owns business
-orchestration and persistence.
+## Runtime surfaces
 
 ```text
 Next.js web ─────────┐
-Expo customer ───────┼── HTTPS/JSON ── Fastify API ── Prisma ── PostgreSQL
-Expo courier ────────┘
+Expo customer ───────┼── HTTPS/JSON ── Fastify API ── Prisma ── PostgreSQL 16
+Expo courier shell ──┘
 ```
 
-## Boundaries
+`/health` tests process liveness without external dependencies. `/ready` owns
+required dependency readiness and must return a non-ready response before the
+service receives traffic when a required dependency is unavailable.
 
-- Applications may depend on packages; packages never depend on applications.
-- `contracts` contains transport shapes without framework or database types.
-- `database` owns Prisma and exports the generated client and model types.
-- `config` validates runtime input at process boundaries.
-- `design-tokens` is the visual source of truth across web and mobile.
-- The API is composed in `app.ts` so tests can inject dependencies without
-  binding a network port.
+## Package boundaries
 
-## Operational model
+- `packages/contracts` owns versioned Zod transport contracts and OpenAPI.
+- `packages/domain` owns executable invariants and imports neither frameworks
+  nor Prisma Client.
+- `packages/database` owns Prisma schema, migrations, database services, and
+  PostgreSQL integration tests.
+- applications compose these packages; packages do not depend on applications.
+- Prisma models are never public transport contracts.
 
-`/health` proves that the API process can answer requests. `/ready` proves that
-required dependencies are available and returns HTTP 503 otherwise. Containers
-should use health for liveness and readiness for traffic admission.
+## Architecture references
 
-PostgreSQL is the system of record. Phase 1 uses bigint integer minor units and
-currency for money, UUID persistence IDs, immutable order/address/product/price
-snapshots, explicit order transition history, and separate domain outbox, audit,
-and engagement records.
+| Area                             | Document                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| Domain ownership                 | [DOMAIN_BOUNDARIES.md](./DOMAIN_BOUNDARIES.md)                                         |
+| Persistent data ownership        | [DATA_OWNERSHIP.md](./DATA_OWNERSHIP.md)                                               |
+| Domain model                     | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md)                                                   |
+| Domain events, audit, and outbox | [DOMAIN_EVENT_MODEL.md](./DOMAIN_EVENT_MODEL.md)                                       |
+| Service boundaries               | [SERVICE_BOUNDARIES.md](./SERVICE_BOUNDARIES.md)                                       |
+| Tenant ownership matrix          | [TENANT-DATA-OWNERSHIP-MATRIX.md](./TENANT-DATA-OWNERSHIP-MATRIX.md)                   |
+| Multi-tenancy migration plan     | [MULTITENANCY-MIGRATION-AND-PHASE-PLAN.md](./MULTITENANCY-MIGRATION-AND-PHASE-PLAN.md) |
+| Multi-tenancy gate index         | [MULTITENANCY-AI-GATE-INDEX.md](./MULTITENANCY-AI-GATE-INDEX.md)                       |
+| Accepted product/platform ADRs   | [../decisions/README.md](../decisions/README.md)                                       |
+| Tenant and control-plane ADRs    | [adr/](./adr/)                                                                         |
 
-`packages/domain` owns framework-independent money, catalog/freshness, order
-transition, and event-envelope rules. `packages/contracts/src/v1` owns runtime
-Zod transport schemas. Neither exposes Prisma models.
+## Delivered slices
+
+- Phase 1 domain, contract, and normalized persistence foundations.
+- Phase 2A read-only discovery and serviceability.
+- Phase 2B revocable sessions and deny-by-default scoped authorization.
+- Phase 2C contract-validating customer discovery/session integration.
+- Phase 2D server-owned Cart and immutable Quote snapshots.
+- Phase 2E authenticated address-to-order acceptance with authoritative delivery
+  pricing and atomic capacity reservation.
+- Payment aggregate, integer-IRR double-entry Ledger, and governed tenant Chart
+  of Accounts.
+- Secure payment-provider foundation and initialization-only provider-agnostic
+  Payment Execution Orchestrator.
+
+## Current boundary
+
+The execution orchestrator prepares an attempt transactionally, invokes only a
+registered compatible adapter outside PostgreSQL, and persists a normalized
+initialization result in a second transaction. The production composition does
+not register a real adapter or secret resolver, so real payment execution fails
+closed. Callback processing, inquiry, capture, settlement, reconciliation, and
+refunds remain deferred.
+
+Bakery onboarding/production operations, courier dispatch/tracking, notification
+delivery, CRM/admin interfaces, and external commerce integrations remain
+foundation-only or planned. Target documents describing those areas are not
+runtime evidence.
 
 ## Evolution rules
 
-- Prefer a modular monolith until scaling evidence justifies service extraction.
-- Add idempotency, authentication, audit history, and outbox-backed events
-  before introducing transactional ordering endpoints.
-- Treat migrations as forward-only production artifacts and test them in CI.
-- Add observability exporters through validated configuration, without coupling
-  business logic to a vendor SDK.
-
-## Status
-
-- **Implemented:** Phase 0 application surfaces, Phase 1
-  domain/contract/persistence foundations, and the Phase 2A read-only catalog
-  and serviceability application slice. Phase 2B adds OTP contracts, revocable
-  server-side sessions, deny-by-default scoped RBAC, and audit-safe identity
-  persistence. Phase 2C connects the customer application to active-city
-  discovery, foreground-location serviceability, the catalog, and revocable
-  identity sessions through a contract-validating client. Phase 2D adds the
-  customer-bound server Cart, versioned item mutations, immutable expiring Quote
-  snapshots, and customer-app integration.
-- **Planned:** approved SMS-provider integration, Quote-to-Order conversion,
-  delivery-price policy, and scoped administrative catalog management.
-- **Deferred:** payments, dispatch, CRM UI, and other external providers.
-- **Open:** Babol service polygons, cancellation policy, PostGIS, and settlement
-  provider decisions.
+- Preserve the modular monolith until measured scaling needs justify extraction.
+- Derive tenant identity from verified server context and set `app.tenant_id`
+  transaction-locally for tenant-owned database work.
+- Use integer IRR and immutable economic snapshots; never infer legacy economic
+  values.
+- Keep order, payment, production, fulfillment, and delivery state independent.
+- Commit audit and outbox records atomically with protected state changes.
+- Use idempotency and bounded `SERIALIZABLE` retries at multi-record command
+  boundaries; never classify generic uniqueness conflicts as serialization.
+- Add dependencies to `/ready` before serving traffic that requires them.
+- Prefer additive forward migrations and forward corrective rollback.
