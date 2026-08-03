@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1676" height="932" viewBox="0 0 1676 932">
+  <rect width="1676" height="932" fill="#FEF3E2"/>
+  <text x="28" y="50" fill="#431407" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">Alo Noon capability labels</text>
+  <text x="28" y="72" fill="#525252" font-family="Arial, Helvetica, sans-serif" font-size="14">Repository evidence labels — not certifications or the official Alo Noon logo</text>
+  <g transform="translate(28 88) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">API First</text>
+</g>
+  <g transform="translate(568 88) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Multi-Tenant</text>
+</g>
+  <g transform="translate(1108 88) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">RLS Secured</text>
+</g>
+  <g transform="translate(28 220) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">PostgreSQL Verified</text>
+</g>
+  <g transform="translate(568 220) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Atomic Checkout</text>
+</g>
+  <g transform="translate(1108 220) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Quote-to-Order</text>
+</g>
+  <g transform="translate(28 352) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Double-Entry Ledger</text>
+</g>
+  <g transform="translate(568 352) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Governed Chart of Accounts</text>
+</g>
+  <g transform="translate(1108 352) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Provider Agnostic</text>
+</g>
+  <g transform="translate(28 484) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Execution Orchestrator</text>
+</g>
+  <g transform="translate(568 484) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Audit &amp; Outbox</text>
+</g>
+  <g transform="translate(1108 484) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Idempotent</text>
+</g>
+  <g transform="translate(28 616) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Persian First</text>
+</g>
+  <g transform="translate(568 616) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">RTL Ready</text>
+</g>
+  <g transform="translate(1108 616) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Mobile Ready</text>
+</g>
+  <g transform="translate(28 748) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">CI Verified</text>
+</g>
+  <g transform="translate(568 748) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">OpenAPI</text>
+</g>
+  <g transform="translate(1108 748) scale(2)">
+  <rect x="1" y="1" width="258" height="54" rx="14" fill="#431407" stroke="#F97316" stroke-width="2"/>
+  <rect x="12" y="12" width="5" height="32" rx="2.5" fill="#F97316"/>
+  <circle cx="31" cy="28" r="7" fill="#D4A574"/>
+  <circle cx="31" cy="28" r="3" fill="#7C2D12"/>
+  <text x="47" y="34" fill="#FAFAFA" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="0.1">Security by Design</text>
+</g>
+</svg>
