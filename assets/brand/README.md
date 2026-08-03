@@ -1,35 +1,41 @@
-# Alo Noon brand assets
+# Alo Noon brand sources
 
-This directory is the canonical repository location for the Alo Noon visual mark.
+این پوشه محل نگهداری منابع تصویری رسمی و قفل‌شده برند «الو نون» است.
 
-## Production assets
+## منابع ثبت‌شده
 
-| File | Purpose |
-| --- | --- |
-| `alo-noon-mark.svg` | Primary scalable mark on transparent backgrounds |
-| `alo-noon-mark-mono.svg` | Single-color mark; set color with CSS `color` |
-| `alo-noon-app-icon-light.svg` | Light app/PWA icon master |
-| `alo-noon-app-icon-dark.svg` | Dark app/PWA icon master |
-| `png/alo-noon-mark-1024.png` | Transparent raster fallback |
-| `png/alo-noon-app-icon-light-1024.png` | Light raster app icon |
-| `png/alo-noon-app-icon-dark-1024.png` | Dark raster app icon |
+- `source/alo-noon-primary-lockup-fa-source.jpeg`: قفل کامل فارسی برند
+- `source/alo-noon-mark-dark-source.jpeg`: نشان اصلی روی زمینه تیره
+- `source/alo-noon-app-icon-light-source.jpeg`: آیکن روشن
+- `source/alo-noon-app-icon-orange-source.jpeg`: آیکن نارنجی
 
-## Brand rules
+## قانون هویت قفل‌شده
 
-- Preserve the clear space around the mark; do not crop the three warmth lines.
-- Use the primary gradient or a true single-color treatment. Do not recolor individual shapes independently.
-- Do not add baked-in text to app icons. Wordmarks and taglines are separate assets.
-- The current product promise is **fresh bread** (`نان تازه`), not “hot bread”. Legacy reference artwork containing the older phrase is not production copy.
-- Do not use compressed JPEG references as application assets.
+هندسه، نسبت‌ها، فرم قوس تنور، شخصیت و نان، سه خط بخار، فاصله‌ها و ترکیب‌بندی
+این نشان قطعی‌اند و نباید بازطراحی، ساده‌سازی یا تفسیر شوند.
 
-## Palette
+تنها عملیات مجاز برای خروجی‌های آینده عبارت‌اند از:
 
-- Oven clay: `#C78946`
-- Fresh saffron: `#F59E0B`
-- Flame orange: `#F4510B`
-- Warm paper: `#FFFDF8`
-- Oven charcoal: `#17110D`
+- افزایش رزولوشن و وضوح بدون تغییر فرم
+- کاهش نویز و آثار فشرده‌سازی
+- پاک‌سازی لبه‌ها بدون جابه‌جایی پیکسل‌های مرزی هویت
+- اصلاح کنترل‌شده رنگ، نور و کنتراست
+- استخراج پس‌زمینه شفاف با حفظ دقیق لبه‌ها
+- تولید اندازه‌ها و فرمت‌های موردنیاز از همین مرجع
 
-## Provenance
+## وضعیت استفاده
 
-The geometry is a clean, vector reconstruction of the founder-provided Alo Noon references. It retains the oven arch, person/bread silhouette and three warmth lines while removing JPEG artifacts, accidental black borders and low-resolution edge halos.
+فایل‌های این پوشه منابع مرجع اصلی هستند. تا زمان تأیید Founder، هیچ بازسازی SVG،
+نسخه مولد یا وکتورسازی تفسیری نباید به‌عنوان دارایی رسمی Production استفاده شود.
+
+عبارت موجود در تصویر قفل کامل، بخشی از فایل مرجع تاریخی است. وعده محصول در
+مستندات و محتوای جدید «نان تازه» است و نباید با «نان داغ» جایگزین شود.
+
+## Integrity
+
+فایل‌های منبع بدون تغییر بایت‌به‌بایت ثبت شده‌اند. Checksumهای SHA-256:
+
+- `dcfc277694e797566714ae98c5d681f740376651c1d5e971e39b46e7b63b1161`
+- `b7da72aed11ad7b99d964ad9554e58744217069a92b19b2c1b1052ee7b4b10be`
+- `1d8554588b746c4e6a375828cb00fc4140390bfb1509593b2877c65272f077f6`
+- `7c729150bfe64a59e0481b22d286f57d1735583c3adc95a6f4222338325deb75`
