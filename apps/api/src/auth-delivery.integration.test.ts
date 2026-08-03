@@ -445,7 +445,11 @@ databaseDescribe('authentication delivery foundation on PostgreSQL', () => {
         headers: { host },
         payload: { challengeId, code: '123456' },
       })
-      expect(rolledBack.statusCode).toBe(401)
+      expect(rolledBack.statusCode).toBe(503)
+      expect(rolledBack.json()).toMatchObject({
+        success: false,
+        error: { code: 'AUTHENTICATION_UNAVAILABLE' },
+      })
       await tenantTransaction(tenantId, async (transaction) => {
         expect(
           await transaction.authOtpChallenge.findUniqueOrThrow({ where: { id: challengeId } }),
