@@ -43,7 +43,7 @@ and its factually equivalent English edition [`README.en.md`](../README.en.md).
 
 ### Assets
 
-- [Brand-asset governance](./assets/brand/README.md)
+- [Brand-source governance](../assets/brand/README.md)
 - [Capability-label catalog](./assets/badges/README.md)
 - [Diagram source and export policy](./assets/diagrams/README.md)
 

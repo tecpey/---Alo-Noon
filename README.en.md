@@ -1,9 +1,9 @@
 <p align="center"><a href="./README.md">فارسی</a> · <strong>English</strong></p>
 
 <!--
-Official logo slot reserved for:
-docs/assets/brand/alo-noon-logo-horizontal-transparent.png
-The approved logo master is not tracked. Do not populate this slot by approximation.
+Production README logo slot remains unpopulated.
+Founder-approved JPEG raster sources are preserved under assets/brand/source/,
+but none is an approved transparent, slogan-free horizontal hero export.
 -->
 
 <div align="center">
@@ -24,10 +24,11 @@ The approved logo master is not tracked. Do not populate this slot by approximat
 
 > [!IMPORTANT] The product promise is **fresh bread**, never “hot bread.” Only
 > validated, bakery-specific `SIGNATURE_FRESH` variants may claim freshly
-> produced. The approved official logo is not tracked; the heading above is not
-> a permanent logo substitute. The
-> [brand-asset policy](docs/assets/brand/README.md) identifies the required
-> source.
+> produced. Four founder-approved raster sources are preserved for provenance,
+> but none is an approved transparent, slogan-free horizontal hero export; the
+> heading above is not a permanent logo substitute. The
+> [brand-asset policy](assets/brand/README.md) records their status and usage
+> limits.
 
 ## Contents
 
@@ -596,7 +597,7 @@ operational contact.
 - [CRM foundation](docs/product/CRM_FOUNDATION.md)
 - [Security policy](SECURITY.md)
 - [OpenAPI](packages/contracts/openapi/alo-noon.v1.yaml)
-- [Brand-asset governance](docs/assets/brand/README.md)
+- [Brand-asset governance](assets/brand/README.md)
 - [Capability-label catalog](docs/assets/badges/README.md)
 - [Diagram policy](docs/assets/diagrams/README.md)
 
@@ -606,5 +607,5 @@ operational contact.
   <strong>Alo Noon</strong> — city-aware bread commerce and operations for Iran,
   with a precise freshness promise and an auditable engineering path.
   <br />
-  Documentation revision: 2026-08-03 · Official logo pending an approved master.
+  Documentation revision: 2026-08-03 · Approved raster sources are preserved; a production hero export still requires separate approval.
 </p>
