@@ -18,8 +18,8 @@ English READMEs; critical meaning remains available as text.
   approximately `260 × 56` CSS-pixel display (2×/retina source).
 - Shape: deterministic rounded label with a neutral capability marker. It does
   not reproduce or imply logo geometry.
-- Typography: generic system-safe sans-serif outlines rendered from the SVG
-  source; no Alo Noon or third-party font file is embedded.
+- Typography: generic system-safe sans-serif text rendered from the SVG source;
+  no Alo Noon or third-party font file is embedded.
 
 The SVG files under [`source/`](./source/) are authoritative for these labels.
 PNGs were rasterized deterministically at 2× resolution with the Sharp version
