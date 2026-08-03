@@ -28,6 +28,8 @@ import {
 } from './auth-delivery.js'
 
 const OTP_MAX_IP_FAILURES_PER_TEN_MINUTES = 25
+// One initial attempt plus enough retries to serialize the full five-failure challenge budget.
+const AUTH_SERIALIZABLE_MAX_ATTEMPTS = 6
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const SESSION_COOKIE = 'alo_session'
 const SESSION_SELF_PERMISSION = 'session.self.read'
@@ -200,12 +202,17 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
         meta: responseMeta(),
       }
     } catch (error) {
-      if (!(error instanceof InvalidOtpError)) {
-        request.log.error({ errorType: errorName(error) }, 'OTP verification failed')
+      if (error instanceof InvalidOtpError) {
+        return reply
+          .code(401)
+          .send(errorEnvelope('OTP_INVALID_OR_EXPIRED', 'Verification code is invalid or expired.'))
       }
+      request.log.error({ errorType: errorName(error) }, 'OTP verification persistence failed')
       return reply
-        .code(401)
-        .send(errorEnvelope('OTP_INVALID_OR_EXPIRED', 'Verification code is invalid or expired.'))
+        .code(503)
+        .send(
+          errorEnvelope('AUTHENTICATION_UNAVAILABLE', 'Verification is temporarily unavailable.'),
+        )
     }
   })
 
@@ -706,7 +713,7 @@ async function tenantTransaction<T>(
   operation: (transaction: Prisma.TransactionClient) => Promise<T>,
   isolationLevel?: Prisma.TransactionIsolationLevel,
 ): Promise<T> {
-  const maxAttempts = isolationLevel === 'Serializable' ? 3 : 1
+  const maxAttempts = isolationLevel === 'Serializable' ? AUTH_SERIALIZABLE_MAX_ATTEMPTS : 1
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await prisma.$transaction(

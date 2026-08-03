@@ -138,6 +138,8 @@ paths:
           description: Malformed challenge or code.
         '401':
           description: Challenge is invalid, expired, consumed, or over-attempted.
+        '503':
+          description: Verification persistence is temporarily unavailable.
   /api/v1/auth/session:
     get:
       operationId: getCurrentSession

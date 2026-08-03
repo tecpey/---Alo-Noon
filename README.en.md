@@ -496,7 +496,7 @@ the current test result.
 
 - Canonical specification:
   [`packages/contracts/openapi/alo-noon.v1.yaml`](packages/contracts/openapi/alo-noon.v1.yaml),
-  OpenAPI `3.1.0`, current API document version `0.10.0`.
+  OpenAPI `3.1.0`, current API document version `0.11.0`.
 - Runtime schemas: [`packages/contracts/src/v1`](packages/contracts/src/v1).
 - Transport invariants are independent of Prisma models and APIs return safe
   error envelopes.

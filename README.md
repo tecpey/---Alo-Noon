@@ -490,7 +490,7 @@ promotion محیط، smoke test و rollback automation هنوز پیاده‌س�
 
 - مشخصات canonical:
   [`packages/contracts/openapi/alo-noon.v1.yaml`](packages/contracts/openapi/alo-noon.v1.yaml)
-  با OpenAPI `3.1.0` و نسخهٔ فعلی `0.10.0`.
+  با OpenAPI `3.1.0` و نسخهٔ فعلی `0.11.0`.
 - schemaهای runtime: [`packages/contracts/src/v1`](packages/contracts/src/v1).
 - invariantهای transport از Prisma model مستقل‌اند و APIها safe error envelope
   برمی‌گردانند.

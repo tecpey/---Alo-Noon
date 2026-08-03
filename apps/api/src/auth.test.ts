@@ -375,6 +375,32 @@ describe('OTP authentication API', () => {
     expect(repository.session).toBeNull()
   })
 
+  it('returns a generic unavailable response when a failed attempt cannot be persisted', async () => {
+    const { dependencies, repository } = fixture()
+    repository.recordFailedAttempt = vi.fn().mockRejectedValue(new Error('persistence unavailable'))
+    const app = await buildApp({ auth: dependencies })
+    apps.push(app)
+
+    const requested = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
+      payload: { mobileE164: '+989111234567' },
+    })
+    const unavailable = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/verify',
+      payload: { challengeId: requested.json().data.challengeId, code: '999999' },
+    })
+
+    expect(unavailable.statusCode).toBe(503)
+    expect(unavailable.json()).toMatchObject({
+      success: false,
+      error: { code: 'AUTHENTICATION_UNAVAILABLE' },
+    })
+    expect(unavailable.body).not.toContain('persistence unavailable')
+  })
+
   it('bounds failed verification and supports inspection plus logout', async () => {
     const { dependencies, repository } = fixture()
     const app = await buildApp({ auth: dependencies })

@@ -9,6 +9,9 @@ const openApi = readFileSync(
 const otpRequestPath = openApi
   .split('  /api/v1/auth/otp/request:')[1]
   ?.split('  /api/v1/auth/otp/verify:')[0]
+const otpVerifyPath = openApi
+  .split('  /api/v1/auth/otp/verify:')[1]
+  ?.split('  /api/v1/auth/session:')[0]
 
 describe('authentication delivery OpenAPI parity', () => {
   it('requires the same idempotency and Iranian mobile boundaries as Zod', () => {
@@ -24,5 +27,6 @@ describe('authentication delivery OpenAPI parity', () => {
     expect(openApi).toContain("'503':")
     expect(otpRequestPath).toBeDefined()
     expect(otpRequestPath).not.toMatch(/providerReference|credentialReference|rawOtp|apiKey/)
+    expect(otpVerifyPath).toContain("'503':")
   })
 })
