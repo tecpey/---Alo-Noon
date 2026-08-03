@@ -68,6 +68,7 @@ export interface ResolvedProviderCredential {
 }
 
 export interface ProviderSecretResolver {
+  readonly testOnly?: boolean
   resolve(
     reference: string,
     tenantId: string,
@@ -96,6 +97,8 @@ export interface ProviderPaymentRequest {
   amount: bigint
   currency: 'IRR'
   idempotencyKey: string
+  requestFingerprint: string
+  timeoutMs: number
   configuration: ProviderConfigurationView
   credential: ResolvedProviderCredential
 }
@@ -107,6 +110,24 @@ export interface ProviderOperationResult {
   reasonCode?: string
 }
 
+export type ProviderInitializationOutcome =
+  | 'ACCEPTED'
+  | 'CUSTOMER_ACTION_REQUIRED'
+  | 'REJECTED'
+  | 'RETRYABLE_FAILURE'
+  | 'PERMANENT_FAILURE'
+  | 'UNKNOWN'
+
+export interface ProviderInitializationResult {
+  outcome: ProviderInitializationOutcome
+  providerReference?: string
+  customerActionUrl?: string
+  actionExpiresAt?: Date
+  normalizedCode?: string
+  retryable?: boolean
+  customerMessageKey?: string
+}
+
 export interface PaymentProviderAdapter {
   readonly code: string
   readonly adapterVersion: string
@@ -114,7 +135,7 @@ export interface PaymentProviderAdapter {
   readonly capabilities: ReadonlySet<PaymentProviderCapability>
   readonly testOnly?: boolean
   mapProviderStatus(providerStatus: string): ProviderNormalizedOutcome
-  initializePayment?(request: ProviderPaymentRequest): Promise<ProviderOperationResult>
+  initializePayment?(request: ProviderPaymentRequest): Promise<ProviderInitializationResult>
   inquirePayment?(request: ProviderPaymentRequest): Promise<ProviderOperationResult>
   cancelPayment?(request: ProviderPaymentRequest): Promise<ProviderOperationResult>
   refundPayment?(request: ProviderPaymentRequest): Promise<ProviderOperationResult>

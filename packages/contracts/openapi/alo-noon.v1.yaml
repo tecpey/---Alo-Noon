@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Alo Noon API
-  version: 0.9.0
+  version: 0.10.0
   description: >-
     Phase 2E contract. Operational endpoints, tenant-aware discovery, identity,
     customer-owned addresses, authoritative delivery quotes, and atomic
@@ -11,7 +11,9 @@ info:
     foundation are implemented. The tenant-scoped, SPI-versioned payment-provider abstraction,
     opaque credential-reference, payment-attempt, and callback replay foundation
     are implemented without a real gateway adapter. No public payment-status or ledger-governance
-    write endpoint is exposed, and no provider-governance or provider-execution endpoint exists.
+    write endpoint is exposed. The authenticated initialization orchestrator is implemented as an
+    injectable, fail-closed boundary; the production server does not configure a real adapter or
+    credential resolver, so real payment execution remains unavailable.
 servers:
   - url: http://localhost:3001
 paths:
@@ -294,6 +296,39 @@ paths:
         '404': { description: Quote is not available to the caller. }
         '409': { description: Quote or idempotency/concurrency conflict. }
         '422': { description: Snapshot, pricing, branch, or capacity is unavailable. }
+  /api/v1/payments/initialize:
+    post:
+      operationId: initializePaymentExecution
+      summary: Prepare and invoke a configured payment provider initialization boundary.
+      description: >-
+        The authenticated caller supplies only a payment ID and idempotency key. Tenant,
+        customer, order, amount, currency, provider configuration, adapter version, and
+        credential reference are resolved server-side. The endpoint never captures payment,
+        posts a ledger transaction, marks an order paid, or performs browser navigation.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentExecutionInitialize' }
+      responses:
+        '200':
+          description: Historical execution result returned from an idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentExecutionEnvelope' }
+        '201':
+          description: Initialization attempt persisted with a normalized safe result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentExecutionEnvelope' }
+        '400': { description: The execution command is malformed. }
+        '401': { description: A valid customer session is required. }
+        '404': { description: Payment is unavailable to the caller. }
+        '409': { description: Idempotency, provider reference, or concurrency conflict. }
+        '422': { description: Payment is not eligible for provider initialization. }
+        '503':
+          { description: Provider, adapter, credential, or persistence boundary is unavailable. }
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -857,6 +892,90 @@ components:
         correlationId: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    PaymentInitializationOutcome:
+      type: string
+      enum:
+        [
+          ACCEPTED,
+          CUSTOMER_ACTION_REQUIRED,
+          REJECTED,
+          RETRYABLE_FAILURE,
+          PERMANENT_FAILURE,
+          UNKNOWN,
+        ]
+    PaymentExecutionInitialize:
+      type: object
+      additionalProperties: false
+      required: [paymentId, idempotencyKey]
+      properties:
+        paymentId: { type: string, format: uuid }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    PaymentExecutionSummary:
+      type: object
+      required:
+        [
+          paymentAttemptId,
+          paymentId,
+          providerConfigurationId,
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          state,
+          outcome,
+          providerReference,
+          customerAction,
+          failure,
+          correlationId,
+          replayed,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        paymentAttemptId: { type: string, format: uuid }
+        paymentId: { type: string, format: uuid }
+        providerConfigurationId: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion:
+          { type: string, maxLength: 64, pattern: '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        state:
+          {
+            type: string,
+            enum: [INITIALIZATION_PENDING, INITIALIZED, CUSTOMER_ACTION_REQUIRED, FAILED],
+          }
+        outcome:
+          oneOf:
+            - { $ref: '#/components/schemas/PaymentInitializationOutcome' }
+            - { type: 'null' }
+        providerReference: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+        customerAction:
+          oneOf:
+            - type: object
+              required: [url, expiresAt]
+              properties:
+                url: { type: string, format: uri, pattern: '^https://' }
+                expiresAt: { type: [string, 'null'], format: date-time }
+            - { type: 'null' }
+        failure:
+          oneOf:
+            - type: object
+              required: [code, retryable, customerMessageKey]
+              properties:
+                code: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,63}$' }
+                retryable: { type: boolean }
+                customerMessageKey: { type: [string, 'null'], pattern: '^[a-z][a-z0-9_.-]{1,99}$' }
+            - { type: 'null' }
+        correlationId: { type: string, format: uuid }
+        replayed: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaymentExecutionEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/PaymentExecutionSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentCallbackReceiptSummary:
       type: object
       required:

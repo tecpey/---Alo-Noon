@@ -17,6 +17,10 @@ import {
 } from './modules/commerce.js'
 import { registerAddressRoutes, type AddressRepository } from './modules/addresses.js'
 import { registerOrderRoutes, type OrderRepository } from './modules/orders.js'
+import {
+  registerPaymentExecutionRoutes,
+  type PaymentExecutionService,
+} from './modules/payment-execution.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -27,6 +31,7 @@ export interface AppOptions {
   commerceRepository?: CommerceRepository
   addressRepository?: AddressRepository
   orderRepository?: OrderRepository
+  paymentExecutionService?: PaymentExecutionService
   corsOrigins?: string[]
   logger?: boolean
 }
@@ -80,6 +85,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.orderRepository) {
     registerOrderRoutes(app, { repository: options.orderRepository, auth: options.auth })
+  }
+  if (options.auth && options.paymentExecutionService) {
+    registerPaymentExecutionRoutes(app, {
+      service: options.paymentExecutionService,
+      auth: options.auth,
+    })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

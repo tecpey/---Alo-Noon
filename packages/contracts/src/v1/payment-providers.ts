@@ -100,6 +100,61 @@ export const paymentAttemptSummarySchema = z.object({
   updatedAt: isoDateTimeSchema,
 })
 
+export const paymentInitializationOutcomeSchema = z.enum([
+  'ACCEPTED',
+  'CUSTOMER_ACTION_REQUIRED',
+  'REJECTED',
+  'RETRYABLE_FAILURE',
+  'PERMANENT_FAILURE',
+  'UNKNOWN',
+])
+
+export const paymentExecutionInitializeSchema = z
+  .object({
+    paymentId: uuidSchema,
+    idempotencyKey: z.string().min(16).max(128),
+  })
+  .strict()
+
+const customerActionSchema = z.object({
+  url: z
+    .string()
+    .url()
+    .max(2048)
+    .regex(
+      /^https:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\/[^#\s]*)?$/,
+      'Customer action URL must be an opaque HTTPS URL',
+    ),
+  expiresAt: isoDateTimeSchema.nullable(),
+})
+
+const paymentExecutionFailureSchema = z.object({
+  code: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+  retryable: z.boolean(),
+  customerMessageKey: z
+    .string()
+    .regex(/^[a-z][a-z0-9_.-]{1,99}$/)
+    .nullable(),
+})
+
+export const paymentExecutionSummarySchema = z.object({
+  paymentAttemptId: uuidSchema,
+  paymentId: uuidSchema,
+  providerConfigurationId: uuidSchema,
+  providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
+  adapterVersion: paymentProviderAdapterVersionSchema,
+  adapterSpiVersion: paymentProviderAdapterSpiVersionSchema,
+  state: z.enum(['INITIALIZATION_PENDING', 'INITIALIZED', 'CUSTOMER_ACTION_REQUIRED', 'FAILED']),
+  outcome: paymentInitializationOutcomeSchema.nullable(),
+  providerReference: z.string().min(1).max(200).nullable(),
+  customerAction: customerActionSchema.nullable(),
+  failure: paymentExecutionFailureSchema.nullable(),
+  correlationId: uuidSchema,
+  replayed: z.boolean(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+})
+
 export const paymentCallbackIntakeSchema = z.object({
   providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
   externalEventId: z.string().min(1).max(200),
@@ -141,5 +196,7 @@ export type PaymentProviderConfigurationSummary = z.infer<
 >
 export type PaymentAttemptCreate = z.infer<typeof paymentAttemptCreateSchema>
 export type PaymentAttemptSummary = z.infer<typeof paymentAttemptSummarySchema>
+export type PaymentExecutionInitialize = z.infer<typeof paymentExecutionInitializeSchema>
+export type PaymentExecutionSummary = z.infer<typeof paymentExecutionSummarySchema>
 export type PaymentCallbackIntake = z.infer<typeof paymentCallbackIntakeSchema>
 export type PaymentCallbackReceiptSummary = z.infer<typeof paymentCallbackReceiptSummarySchema>

@@ -34,7 +34,7 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
       capabilities: new Set(['PAYMENT_INITIALIZATION', 'CALLBACK_VERIFICATION']),
       testOnly: true,
       mapProviderStatus: () => 'PENDING',
-      initializePayment: async () => ({ normalizedOutcome: 'PENDING' }),
+      initializePayment: async () => ({ outcome: 'ACCEPTED', providerReference: 'test-reference' }),
       verifyCallback: async ({ credential, approvedHeaders }) => ({
         verified:
           new TextDecoder().decode(credential.material) === secret &&

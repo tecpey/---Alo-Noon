@@ -73,7 +73,7 @@ describe('payment provider domain foundation', () => {
       capabilities: new Set(['PAYMENT_INITIALIZATION']),
       testOnly: true,
       mapProviderStatus: () => 'PENDING',
-      initializePayment: async () => ({ normalizedOutcome: 'PENDING' }),
+      initializePayment: async () => ({ outcome: 'ACCEPTED', providerReference: 'test-reference' }),
     }
     const registry = createPaymentProviderAdapterRegistry([adapter])
     expect(() => requireProviderCapability(adapter, 'REFUND')).toThrow('unsupported')
