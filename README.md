@@ -103,28 +103,28 @@ but none is an approved transparent, slogan-free horizontal hero export.
 می‌دهد. «بنیاد» یعنی invariant و persistence وجود دارد، اما جریان production
 کامل یا UI عملیاتی هنوز موجود نیست.
 
-| حوزه                                | وضعیت                                 | شواهد و مرز دقیق                                                                               |
-| ----------------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Multi-tenancy و forced RLS          | **تأیید و merge شده**                 | tenant context سمت سرور، composite tenant FK، `ENABLE/FORCE RLS` و تست منفی cross-tenant       |
-| Address و serviceability            | **تأیید و merge شده**                 | ایجاد/فهرست نشانی مشتری، مشتق‌سازی service area و zone سمت سرور                                |
-| قیمت‌گذاری ارسال                    | **تأیید و merge شده**                 | rule شهر/zone، precedence، ambiguity rejection و محاسبهٔ bigint IRR                            |
-| Quote-to-Order                      | **تأیید و merge شده**                 | snapshot immutable، cart version، تراکنش `SERIALIZABLE` و پذیرش اتمیک Quote                    |
-| رزرو ظرفیت نانوایی                  | **تأیید و merge شده**                 | رزرو پایدار slot هم‌تراکنش با Order؛ release/cancellation هنوز deferred                        |
-| اپ مشتری                            | **جریان حداقلی تأییدشده**             | تجربهٔ فارسی/RTL برای session، کاتالوگ، cart، address، quote و confirmation سفارش              |
-| هویت و مجوز                         | **بنیاد + runtime محدود**             | OTP contract، session قابل‌ابطال و RBAC موجود؛ SMS provider تأییدشدهٔ production وجود ندارد    |
-| Payment aggregate                   | **بنیاد تأییدشده**                    | state machine مستقل و تاریخچهٔ immutable؛ client وضعیت پرداخت را تعیین نمی‌کند                 |
-| Double-entry Ledger                 | **بنیاد تأییدشده**                    | journal متوازن، entryهای append-only و مبلغ صحیح IRR؛ balance مشتق‌شده است                     |
-| Chart of Accounts                   | **بنیاد تأییدشده**                    | chart سیستمی ۱۴ حسابی، bootstrap idempotent و governance حساب                                  |
-| Provider foundation                 | **بنیاد تأییدشده**                    | configuration، credential reference، attempt، registry/SPI و replay guard؛ بدون adapter واقعی  |
-| Payment Execution Orchestrator      | **بنیاد initialization-only**         | دو تراکنش پیرامون boundary خارجی؛ production server adapter/resolver واقعی inject نمی‌کند      |
-| Callback، inquiry و capture         | **Deferred**                          | callback receipt foundation وجود دارد؛ verification processing، inquiry و capture اجرایی نیست  |
-| Settlement، reconciliation و refund | **Deferred**                          | هیچ job/provider flow یا endpoint production وجود ندارد                                        |
-| عملیات نانوایی                      | **مدل/ظرفیت موجود؛ workflow planned** | مدل branch/offering/capacity موجود؛ onboarding، production queue، printing و portal کامل نیست  |
-| عملیات پیک                          | **مدل و surface اولیه؛ planned**      | entityهای partner/courier/task و shell اپ وجود دارد؛ dispatch، tracking و proof flow اجرا نشده |
-| اعلان و چاپ                         | **معماری planned**                    | outbox وجود دارد؛ delivery provider، worker و print agent عملیاتی نیست                         |
-| CRM و پشتیبانی                      | **بنیاد داده**                        | customer event، support case و incident موجود؛ CRM UI، segmentation و automation deferred      |
-| Admin/operations panel              | **Planned**                           | UI مدیریت production وجود ندارد                                                                |
-| External store integrations         | **Planned**                           | adapter یا همگام‌سازی فروشگاه بیرونی وجود ندارد                                                |
+| حوزه                                | وضعیت                                        | شواهد و مرز دقیق                                                                                                    |
+| ----------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Multi-tenancy و forced RLS          | **تأیید و merge شده**                        | tenant context سمت سرور، composite tenant FK، `ENABLE/FORCE RLS` و تست منفی cross-tenant                            |
+| Address و serviceability            | **تأیید و merge شده**                        | ایجاد/فهرست نشانی مشتری، مشتق‌سازی service area و zone سمت سرور                                                     |
+| قیمت‌گذاری ارسال                    | **تأیید و merge شده**                        | rule شهر/zone، precedence، ambiguity rejection و محاسبهٔ bigint IRR                                                 |
+| Quote-to-Order                      | **تأیید و merge شده**                        | snapshot immutable، cart version، تراکنش `SERIALIZABLE` و پذیرش اتمیک Quote                                         |
+| رزرو ظرفیت نانوایی                  | **تأیید و merge شده**                        | رزرو پایدار slot هم‌تراکنش با Order؛ release/cancellation هنوز deferred                                             |
+| اپ مشتری                            | **جریان حداقلی تأییدشده**                    | تجربهٔ فارسی/RTL برای session، کاتالوگ، cart، address، quote و confirmation سفارش                                   |
+| هویت و مجوز                         | **بنیاد تحویل امن؛ provider واقعی Deferred** | OTP امن، session، RBAC، RLS، abuse control و orchestrator تحویل موجود؛ SMS provider تأییدشدهٔ production وجود ندارد |
+| Payment aggregate                   | **بنیاد تأییدشده**                           | state machine مستقل و تاریخچهٔ immutable؛ client وضعیت پرداخت را تعیین نمی‌کند                                      |
+| Double-entry Ledger                 | **بنیاد تأییدشده**                           | journal متوازن، entryهای append-only و مبلغ صحیح IRR؛ balance مشتق‌شده است                                          |
+| Chart of Accounts                   | **بنیاد تأییدشده**                           | chart سیستمی ۱۴ حسابی، bootstrap idempotent و governance حساب                                                       |
+| Provider foundation                 | **بنیاد تأییدشده**                           | configuration، credential reference، attempt، registry/SPI و replay guard؛ بدون adapter واقعی                       |
+| Payment Execution Orchestrator      | **بنیاد initialization-only**                | دو تراکنش پیرامون boundary خارجی؛ production server adapter/resolver واقعی inject نمی‌کند                           |
+| Callback، inquiry و capture         | **Deferred**                                 | callback receipt foundation وجود دارد؛ verification processing، inquiry و capture اجرایی نیست                       |
+| Settlement، reconciliation و refund | **Deferred**                                 | هیچ job/provider flow یا endpoint production وجود ندارد                                                             |
+| عملیات نانوایی                      | **مدل/ظرفیت موجود؛ workflow planned**        | مدل branch/offering/capacity موجود؛ onboarding، production queue، printing و portal کامل نیست                       |
+| عملیات پیک                          | **مدل و surface اولیه؛ planned**             | entityهای partner/courier/task و shell اپ وجود دارد؛ dispatch، tracking و proof flow اجرا نشده                      |
+| اعلان و چاپ                         | **معماری planned**                           | outbox وجود دارد؛ delivery provider، worker و print agent عملیاتی نیست                                              |
+| CRM و پشتیبانی                      | **بنیاد داده**                               | customer event، support case و incident موجود؛ CRM UI، segmentation و automation deferred                           |
+| Admin/operations panel              | **Planned**                                  | UI مدیریت production وجود ندارد                                                                                     |
+| External store integrations         | **Planned**                                  | adapter یا همگام‌سازی فروشگاه بیرونی وجود ندارد                                                                     |
 
 <a id="platform-architecture"></a>
 
@@ -420,8 +420,9 @@ pnpm dev:courier-mobile
 
 API به‌طور پیش‌فرض روی `http://localhost:3001` است. `GET /health` مستقل از
 dependency خارجی و `GET /ready` وابسته به PostgreSQL است. OTP request بدون SMS
-provider تأییدشده عمداً `503` می‌دهد. route اجرای payment نیز تا زمان injection
-یک adapter و resolver واقعی در production server فعال نیست.
+provider و adapter تأییدشده عمداً `503` می‌دهد؛ foundation تحویل، abuse control
+و recovery به‌تنهایی ارسال واقعی پیامک نیست. route اجرای payment نیز تا زمان
+injection یک adapter و resolver واقعی در production server فعال نیست.
 
 ### gateهای محلی
 
@@ -530,8 +531,9 @@ promotion محیط، smoke test و rollback automation هنوز پیاده‌س�
 2. **مسیر اجرای پرداخت:** adapter واقعی و تأییدشدهٔ درگاه ایرانی، secret
    manager، transport بیرونی، redirect، callback verification، inquiry و capture
    transactional.
-3. **احراز هویت production:** provider تأییدشدهٔ پیامک، abuse controls عملیاتی و
-   runbook تحویل OTP.
+3. **فعال‌سازی احراز هویت production:** provider تأییدشدهٔ پیامک، adapter واقعی،
+   secret provisioning و اتصال metrics/alert؛ abuse controls و runbook پیاده
+   شده‌اند.
 4. **عملیات نانوایی:** onboarding، ظرفیت عملیاتی، production/packaging queue،
    پذیرش سفارش و printing.
 5. **عملیات پیک:** dispatch، assignment command، proof، tracking و SLA.

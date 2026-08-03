@@ -24,6 +24,24 @@ describe('operational endpoints', () => {
     expect(response.json()).toMatchObject({ success: false, data: { ready: false } })
   })
 
+  it('keeps health independent while failing readiness without authentication delivery', async () => {
+    const app = await buildApp({ authenticationDeliveryReadinessCheck: async () => false })
+    apps.push(app)
+
+    expect((await app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200)
+    const readiness = await app.inject({ method: 'GET', url: '/ready' })
+    expect(readiness.statusCode).toBe(503)
+    expect(readiness.json()).toMatchObject({
+      success: false,
+      data: {
+        checks: [
+          { name: 'database', ready: true },
+          { name: 'authentication-delivery', ready: false },
+        ],
+      },
+    })
+  })
+
   it('allows credentials only for configured browser origins', async () => {
     const app = await buildApp({ corsOrigins: ['http://localhost:8081'] })
     apps.push(app)

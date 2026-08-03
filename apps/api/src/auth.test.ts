@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AccessGrantContract, SessionContext } from '@alo-noon/contracts'
@@ -7,9 +9,9 @@ import {
   authorizeGrants,
   type AuthDependencies,
   type AuthRepository,
-  type CreateChallengeResult,
   type OtpChallengeRecord,
 } from './modules/auth'
+import { AuthenticationDeliveryError } from './modules/auth-delivery'
 
 const tenantId = '00000000-0000-4000-8000-000000000001'
 const accountId = '11111111-1111-4111-8111-111111111111'
@@ -17,38 +19,16 @@ const customerId = '22222222-2222-4222-8222-222222222222'
 const cityId = '33333333-3333-4333-8333-333333333333'
 const otherCityId = '44444444-4444-4444-8444-444444444444'
 const now = new Date('2026-07-29T12:00:00.000Z')
+const otpHeaders = { 'idempotency-key': 'otp-request-key-0001' }
 
 class MemoryAuthRepository implements AuthRepository {
   resolvedTenantId: string | null = tenantId
   challenge: OtpChallengeRecord | null = null
-  invalidated = false
   session: SessionContext | null = null
   sessionDigest: string | null = null
-  createResult: CreateChallengeResult | null = null
 
   async resolveTenantByHost(): Promise<string | null> {
     return this.resolvedTenantId
-  }
-
-  async createChallenge(
-    input: Parameters<AuthRepository['createChallenge']>[0],
-  ): Promise<CreateChallengeResult> {
-    if (this.createResult) return this.createResult
-    this.challenge = {
-      id: input.id,
-      mobileE164: input.mobileE164,
-      codeDigest: input.codeDigest,
-      status: 'PENDING',
-      attempts: 0,
-      maxAttempts: input.maxAttempts,
-      expiresAt: input.expiresAt,
-    }
-    return { status: 'CREATED', challengeId: input.id }
-  }
-
-  async invalidateChallenge(): Promise<void> {
-    this.invalidated = true
-    if (this.challenge) this.challenge.status = 'INVALIDATED'
   }
 
   async findChallenge(challengeId: string): Promise<OtpChallengeRecord | null> {
@@ -66,7 +46,11 @@ class MemoryAuthRepository implements AuthRepository {
   async consumeChallenge(
     challengeId: string,
   ): Promise<{ accountId: string; customerId: string } | null> {
-    if (this.challenge?.id !== challengeId || this.challenge.status !== 'PENDING') return null
+    if (
+      this.challenge?.id !== challengeId ||
+      !['DELIVERED', 'DELIVERY_UNKNOWN'].includes(this.challenge.status)
+    )
+      return null
     this.challenge.status = 'CONSUMED'
     return { accountId, customerId }
   }
@@ -111,21 +95,49 @@ function fixture(overrides: Partial<AuthDependencies> = {}): {
 } {
   const repository = new MemoryAuthRepository()
   const deliveredCodes: string[] = []
+  const otpPepper = 'otp-test-pepper-that-is-long-enough'
+  const deliveryService = {
+    request: async (command: {
+      tenantId: string
+      mobileE164: string
+      idempotencyKey: string
+      sourceIp: string
+      now: Date
+      correlationId: string
+    }) => {
+      const challengeId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      const code = '004231'
+      const expiresAt = new Date(command.now.getTime() + 5 * 60_000)
+      deliveredCodes.push(code)
+      repository.challenge = {
+        id: challengeId,
+        mobileE164: command.mobileE164,
+        codeDigest: createHmac('sha256', otpPepper).update(`${challengeId}.${code}`).digest('hex'),
+        status: 'DELIVERED',
+        attempts: 0,
+        maxAttempts: 5,
+        expiresAt,
+      }
+      return {
+        challengeId,
+        expiresAt,
+        retryAfterSeconds: 60,
+        replayed: false,
+        uncertain: false,
+      }
+    },
+  }
   return {
     repository,
     deliveredCodes,
     dependencies: {
       repository,
-      deliveryProvider: {
-        send: async ({ code }) => {
-          deliveredCodes.push(code)
-        },
-      },
-      otpPepper: 'otp-test-pepper-that-is-long-enough',
+      deliveryService,
+      otpPepper,
+      abusePepper: 'abuse-test-pepper-that-is-long-enough',
       sessionPepper: 'session-test-pepper-that-is-long-enough',
       secureCookie: false,
       now: () => new Date(now),
-      generateOtp: () => '004231',
       generateSessionToken: () => 'opaque-session-token',
       ...overrides,
     },
@@ -147,6 +159,7 @@ describe('OTP authentication API', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
       payload: { mobileE164: '+989111234567' },
     })
 
@@ -166,6 +179,7 @@ describe('OTP authentication API', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
       payload: { mobileE164: '09111234567' },
     })
 
@@ -173,11 +187,11 @@ describe('OTP authentication API', () => {
     expect(deliveredCodes).toEqual([])
   })
 
-  it('invalidates a challenge when the delivery provider is unavailable', async () => {
+  it('fails closed without leaking details when delivery is unavailable', async () => {
     const { dependencies, repository } = fixture({
-      deliveryProvider: {
-        send: async () => {
-          throw new Error('provider secret and destination must not leak')
+      deliveryService: {
+        request: async () => {
+          throw new AuthenticationDeliveryError('AUTH_DELIVERY_PROVIDER_UNAVAILABLE', 503)
         },
       },
     })
@@ -187,30 +201,41 @@ describe('OTP authentication API', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
       payload: { mobileE164: '+989111234567' },
     })
 
     expect(response.statusCode).toBe(503)
-    expect(repository.invalidated).toBe(true)
-    expect(response.body).not.toContain('provider secret')
+    expect(repository.challenge).toBeNull()
+    expect(response.body).not.toContain('AUTH_DELIVERY_PROVIDER_UNAVAILABLE')
     expect(response.body).not.toContain('+989111234567')
   })
 
-  it('returns a bounded retry response during cooldown', async () => {
-    const { dependencies, repository } = fixture()
-    repository.createResult = { status: 'COOLDOWN', retryAfterSeconds: 42 }
+  it('returns generic acceptance when a private abuse decision suppresses delivery', async () => {
+    const { dependencies, deliveredCodes } = fixture({
+      deliveryService: {
+        request: async ({ now: requestedAt }) => ({
+          challengeId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          expiresAt: new Date(requestedAt.getTime() + 5 * 60_000),
+          retryAfterSeconds: 60,
+          replayed: false,
+          uncertain: true,
+        }),
+      },
+    })
     const app = await buildApp({ auth: dependencies })
     apps.push(app)
 
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
       payload: { mobileE164: '+989111234567' },
     })
 
-    expect(response.statusCode).toBe(429)
-    expect(response.headers['retry-after']).toBe('42')
-    expect(response.json()).toMatchObject({ error: { code: 'OTP_COOLDOWN_ACTIVE' } })
+    expect(response.statusCode).toBe(202)
+    expect(response.headers['retry-after']).toBeUndefined()
+    expect(deliveredCodes).toEqual([])
   })
 
   it('verifies once, creates an opaque cookie session, and rejects replay', async () => {
@@ -221,6 +246,7 @@ describe('OTP authentication API', () => {
     const requested = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
       payload: { mobileE164: '+989111234567' },
     })
     const challengeId = requested.json().data.challengeId as string
@@ -251,6 +277,7 @@ describe('OTP authentication API', () => {
     const requested = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
       payload: { mobileE164: '+989111234567' },
     })
     const challengeId = requested.json().data.challengeId as string
@@ -275,6 +302,7 @@ describe('OTP authentication API', () => {
     const requested = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
       payload: { mobileE164: '+989111234567' },
     })
     const challengeId = requested.json().data.challengeId as string
@@ -306,6 +334,7 @@ describe('OTP authentication API', () => {
     const requested = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
+      headers: otpHeaders,
       payload: { mobileE164: '+989111234567' },
     })
     const challengeId = requested.json().data.challengeId as string
@@ -356,7 +385,11 @@ describe('OTP authentication API', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/otp/request',
-      headers: { host: 'forged.example', 'x-tenant-id': tenantId },
+      headers: {
+        host: 'forged.example',
+        'x-tenant-id': tenantId,
+        'idempotency-key': otpHeaders['idempotency-key'],
+      },
       payload: { mobileE164: '+989111234567', tenantId },
     })
     expect(response.statusCode).toBe(404)

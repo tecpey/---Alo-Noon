@@ -66,6 +66,7 @@ export default function App() {
   const [quoteCommandKey, setQuoteCommandKey] = useState<string>()
   const [orderCommandKey, setOrderCommandKey] = useState<string>()
   const [phone, setPhone] = useState('')
+  const [otpCommand, setOtpCommand] = useState<{ mobileE164: string; idempotencyKey: string }>()
   const [otp, setOtp] = useState('')
   const [challengeId, setChallengeId] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -138,10 +139,16 @@ export default function App() {
 
     setBusy(true)
     setMessage(undefined)
+    const command =
+      otpCommand?.mobileE164 === mobileE164
+        ? otpCommand
+        : { mobileE164, idempotencyKey: commandKey('otp') }
+    setOtpCommand(command)
     try {
-      const challenge = await api.requestOtp(mobileE164)
+      const challenge = await api.requestOtp(mobileE164, command.idempotencyKey)
       setChallengeId(challenge.challengeId)
       setOtp('')
+      setOtpCommand(undefined)
       setScreen('otp')
     } catch (error) {
       setMessage(errorMessage(error))
@@ -910,10 +917,6 @@ function errorMessage(error: unknown): string {
   switch (error.code) {
     case 'OTP_DELIVERY_UNAVAILABLE':
       return 'ارسال پیامک هنوز فعال نشده است؛ کمی بعد دوباره تلاش کنید.'
-    case 'OTP_COOLDOWN_ACTIVE':
-      return `برای درخواست دوباره ${error.retryAfterSeconds ?? 60} ثانیه صبر کنید.`
-    case 'OTP_RATE_LIMITED':
-      return 'تعداد درخواست‌ها بیش از حد مجاز است؛ بعداً دوباره تلاش کنید.'
     case 'OTP_INVALID_OR_EXPIRED':
       return 'کد واردشده نادرست یا منقضی شده است.'
     case 'SESSION_UNAUTHORIZED':

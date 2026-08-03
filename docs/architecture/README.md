@@ -54,6 +54,10 @@ service receives traffic when a required dependency is unavailable.
   of Accounts.
 - Secure payment-provider foundation and initialization-only provider-agnostic
   Payment Execution Orchestrator.
+- Provider-neutral authentication delivery, persisted abuse controls, and
+  fail-closed recovery
+  ([ADR-0011](../decisions/ADR-0011-production-auth-delivery-foundation.md),
+  [operations](../security/AUTHENTICATION_DELIVERY.md)).
 
 ## Current boundary
 
@@ -62,7 +66,8 @@ registered compatible adapter outside PostgreSQL, and persists a normalized
 initialization result in a second transaction. The production composition does
 not register a real adapter or secret resolver, so real payment execution fails
 closed. Callback processing, inquiry, capture, settlement, reconciliation, and
-refunds remain deferred.
+refunds remain deferred. Authentication delivery likewise has no approved real
+SMS adapter, so production SMS remains unavailable by design.
 
 Bakery onboarding/production operations, courier dispatch/tracking, notification
 delivery, CRM/admin interfaces, and external commerce integrations remain

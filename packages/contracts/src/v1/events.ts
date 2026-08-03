@@ -20,6 +20,13 @@ export const eventNameSchema = z.enum([
   'financial.transaction_posted',
   'financial.chart_provisioned',
   'financial.ledger_account_state_changed',
+  'auth.otp.delivery_requested',
+  'auth.otp.delivery_succeeded',
+  'auth.otp.delivery_failed',
+  'auth.otp.delivery_unknown',
+  'auth.otp.verification_failed',
+  'auth.otp.verification_locked',
+  'auth.otp.verified',
   'support.case_created',
 ])
 
@@ -101,6 +108,37 @@ export const ledgerAccountStateChangedEventPayloadSchema = z.object({
   toActive: z.boolean(),
   version: z.number().int().positive(),
   reason: z.string().min(1).max(500),
+})
+
+export const authenticationDeliveryEventPayloadSchema = z.object({
+  challengeId: uuidSchema,
+  deliveryAttemptId: uuidSchema,
+  providerConfigurationId: uuidSchema,
+  providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
+  adapterVersion: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+  adapterSpiVersion: z.literal(1),
+  state: z.enum([
+    'INITIALIZED',
+    'DELIVERED',
+    'REJECTED',
+    'TRANSIENT_FAILURE',
+    'PERMANENT_FAILURE',
+    'UNKNOWN',
+  ]),
+  safeFailureCode: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]{1,63}$/)
+    .nullable(),
+  version: z.number().int().positive(),
+})
+export type AuthenticationDeliveryEventPayload = z.infer<
+  typeof authenticationDeliveryEventPayloadSchema
+>
+
+export const otpVerificationEventPayloadSchema = z.object({
+  attempts: z.number().int().min(0).max(8),
+  maxAttempts: z.number().int().min(3).max(8),
+  locked: z.boolean(),
 })
 export type LedgerAccountStateChangedEventPayload = z.infer<
   typeof ledgerAccountStateChangedEventPayloadSchema

@@ -2,13 +2,20 @@
 
 ## Implemented
 
-- E.164 OTP request and verification contracts in Zod and OpenAPI.
+- Strict Iranian E.164 OTP request and verification contracts in Zod and
+  OpenAPI.
 - Cryptographically generated six-digit OTP values delivered only through an
   injected provider. OTP values are HMAC-digested with a deployment secret
   before persistence.
-- Five-minute expiry, sixty-second resend cooldown, five requests per rolling
-  hour, five verification attempts, single consumption, and generic
+- Five-minute expiry, sixty-second resend cooldown, persisted phone/IP/tenant/
+  provider budgets, five verification attempts, single consumption, and generic
   anti-enumeration API responses.
+- Versioned provider-neutral delivery SPI and deterministic registry, opaque
+  credential resolution, normalized outcomes, timeout-as-unknown handling,
+  circuit state, recovery without blind resend, and atomic delivery
+  audit/outbox.
+- Tenant-owned challenges, delivery attempts, abuse events, memberships, and
+  sessions protected by forced RLS and transaction-local tenant context.
 - Opaque 256-bit session tokens. Only token HMAC digests are stored. Sessions
   are server-side, expiring, inspectable, and revocable.
 - HttpOnly, `SameSite=Lax`, production-`Secure` cookie transport. Bearer
@@ -34,11 +41,13 @@
 
 ## Planned
 
-- Approved SMS-provider adapter, delivery receipts, and operational monitoring.
+- Approved Iranian SMS-provider adapter and external delivery receipts.
+- Production metrics exporter and alert integrations for the implemented
+  low-cardinality observer port.
 - Administrative role/grant management endpoints with dual-control for
   privileged permissions.
 - Session rotation, device inventory, step-up authentication, and passkeys.
-- Redis-backed edge throttling in addition to the transactional database limits.
+- Edge/WAF throttling in addition to the transactional database limits.
 
 ## Deferred
 
@@ -50,3 +59,6 @@
 - SMS provider and domestic delivery-compliance requirements.
 - Final customer session lifetime and device-management policy.
 - Privileged-role approval workflow and emergency-access policy.
+
+Operational and security details are maintained in
+[`../security/AUTHENTICATION_DELIVERY.md`](../security/AUTHENTICATION_DELIVERY.md).

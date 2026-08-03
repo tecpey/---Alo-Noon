@@ -15,9 +15,10 @@ This is the routing index; it does not duplicate detailed rules.
 | Promotions/loyalty  | [`SERVICE_BOUNDARIES.md`](SERVICE_BOUNDARIES.md)                                                         | documented only                                |
 | Notifications       | [`SERVICE_BOUNDARIES.md`](SERVICE_BOUNDARIES.md)                                                         | outbox-ready; provider deferred                |
 
-Identity accounts, OTP challenges, revocable sessions, roles, permissions, and
-scope grants are implemented in Phase 2B. Provider-specific SMS delivery and
-administrative grant-management interfaces remain deferred.
+Identity accounts, tenant-owned OTP challenges, provider-neutral delivery,
+persisted abuse controls, revocable sessions, roles, permissions, and scope
+grants are implemented. A real SMS adapter and administrative provider/grant
+management interfaces remain deferred.
 
 ## Status
 

@@ -31,8 +31,8 @@ are first-class user experience requirements.
   rules.
 - Read-only active-city, serviceability, and catalog APIs under the reviewed
   OpenAPI contract.
-- OTP identity, revocable server-side sessions, scoped RBAC, and the first
-  Persian-first customer application flow through location and catalog display.
+- Provider-neutral OTP delivery, persisted abuse controls, revocable server-side
+  sessions, scoped RBAC, and the Persian-first customer authentication flow.
 - Customer-bound server carts, single-fulfillment-context enforcement,
   optimistic versioning, exact server repricing, and immutable expiring quote
   snapshots connected to the Persian-first customer application.
@@ -40,8 +40,7 @@ are first-class user experience requirements.
 ## Planned
 
 - Babol zone configuration through operations tools.
-- Approved production SMS-provider integration, address persistence,
-  Quote-to-Order conversion, and reviewed delivery-price policy.
+- Approved production SMS-provider adapter and credential provisioning.
 - Scheduled delivery, subscriptions, loyalty, promotions, dispatch, partner
   settlement, and multi-city operations.
 - Electric-motorcycle operations and an inclusive women courier employment
@@ -49,9 +48,9 @@ are first-class user experience requirements.
 
 ## Deferred
 
-- Approved production SMS-provider integration and provider-specific delivery
-  operations. The Phase 2B OTP, session, RBAC, and audit foundations are
-  implemented independently of a provider.
+- Approved production SMS-provider adapter and provider-specific receipt
+  operations. The OTP delivery, session, RLS, abuse-control, RBAC, audit, and
+  recovery foundations are implemented independently of a provider.
 - Transactional ordering endpoints and post-quote ordering UI.
 - Payment provider, wallet, ledger, refunds, or settlement execution.
 - External CRM, notification, analytics, maps, or courier integrations.

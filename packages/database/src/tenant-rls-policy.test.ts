@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const schemaUrl = new URL('../prisma/schema.prisma', import.meta.url)
 const migrationsUrl = new URL('../prisma/migrations/', import.meta.url)
-const rlsControlPlaneModels = new Set(['TenantDomain', 'TenantMembership'])
+const rlsControlPlaneModels = new Set(['TenantDomain'])
 
 function tenantOwnedModels(schema: string): string[] {
   return [...schema.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)]
@@ -13,7 +13,8 @@ function tenantOwnedModels(schema: string): string[] {
       return name &&
         body &&
         !rlsControlPlaneModels.has(name) &&
-        /^\s*tenantId\s+String\??\s+@db\.Uuid/m.test(body)
+        (/^\s*tenantId\s+String\??\s+@db\.Uuid/m.test(body) ||
+          (name === 'AuthSession' && /^\s*activeTenantId\s+String\s+@db\.Uuid/m.test(body)))
         ? [name]
         : []
     })

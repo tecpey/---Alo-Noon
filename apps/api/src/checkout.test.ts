@@ -63,8 +63,9 @@ function authFixture(): AuthDependencies {
       resolveTenantByHost: async () => tenantId,
       findSession: async (value: string) => (value === digest ? context : null),
     } as unknown as AuthRepository,
-    deliveryProvider: { send: async () => undefined },
+    deliveryService: { request: async () => Promise.reject(new Error('unused')) },
     otpPepper: 'checkout-otp-pepper-that-is-long-enough',
+    abusePepper: 'checkout-abuse-pepper-that-is-long-enough',
     sessionPepper,
     secureCookie: false,
   }

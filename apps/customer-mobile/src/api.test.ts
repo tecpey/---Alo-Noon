@@ -69,23 +69,27 @@ describe('customer API client', () => {
     })
   })
 
-  it('preserves bounded retry information from API errors', async () => {
+  it('sends a stable OTP idempotency key without exposing authority fields', async () => {
     const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
       jsonResponse(
         {
           success: false,
-          error: { code: 'OTP_COOLDOWN_ACTIVE', message: 'Wait.' },
+          error: { code: 'OTP_DELIVERY_UNAVAILABLE', message: 'Unavailable.' },
           meta,
         },
-        429,
-        { 'Retry-After': '42' },
+        503,
       ),
     )
     const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
 
-    const error = await client.requestOtp('+989111234567').catch((reason: unknown) => reason)
+    const error = await client
+      .requestOtp('+989111234567', 'otp-test-idempotency-key')
+      .catch((reason: unknown) => reason)
     expect(error).toBeInstanceOf(CustomerApiError)
-    expect(error).toMatchObject({ code: 'OTP_COOLDOWN_ACTIVE', retryAfterSeconds: 42 })
+    expect(error).toMatchObject({ code: 'OTP_DELIVERY_UNAVAILABLE', status: 503 })
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      'Idempotency-Key': 'otp-test-idempotency-key',
+    })
   })
 
   it('rejects unsafe or ambiguous API base URLs before making a request', () => {

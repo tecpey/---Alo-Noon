@@ -24,6 +24,8 @@ export const envSchema = z
     // non-auth development surfaces can start without committed defaults.
     AUTH_OTP_PEPPER: z.string().min(32).optional(),
     AUTH_SESSION_PEPPER: z.string().min(32).optional(),
+    AUTH_ABUSE_PEPPER: z.string().min(32).optional(),
+    API_TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).default(0),
     // Observability
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),
@@ -31,7 +33,7 @@ export const envSchema = z
   .superRefine((env, context) => {
     if (env.NODE_ENV !== 'production') return
 
-    for (const key of ['AUTH_OTP_PEPPER', 'AUTH_SESSION_PEPPER'] as const) {
+    for (const key of ['AUTH_OTP_PEPPER', 'AUTH_SESSION_PEPPER', 'AUTH_ABUSE_PEPPER'] as const) {
       if (!env[key]) {
         context.addIssue({
           code: z.ZodIssueCode.custom,

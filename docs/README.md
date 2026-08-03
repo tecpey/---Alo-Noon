@@ -40,6 +40,7 @@ and its factually equivalent English edition [`README.en.md`](../README.en.md).
 6. [Security baseline](./06-security/SECURITY_BASELINE_FA.md)
 7. [Multi-tenancy threat model](./security/MULTITENANCY-AI-THREAT-MODEL.md)
 8. [ADR index](./decisions/README.md)
+9. [Authentication delivery security and operations](./security/AUTHENTICATION_DELIVERY.md)
 
 ### Assets
 
@@ -62,11 +63,13 @@ The following capabilities are present on `main`:
   registry/SPI, callback-receipt and replay foundations;
 - initialization-only Payment Execution Orchestrator using a recoverable
   two-transaction boundary.
+- provider-neutral authentication delivery with persisted abuse controls, forced
+  RLS, opaque credential references, and fail-closed readiness.
 
-Real provider adapters, callback verification processing, inquiry, capture,
-settlement, reconciliation, refunds, production SMS delivery, bakery/courier
-operational workflows, notification delivery, CRM UI, and external-store
-integrations are not shipped.
+Real payment or SMS provider adapters, callback verification processing,
+inquiry, capture, settlement, reconciliation, refunds, production SMS delivery,
+bakery/courier operational workflows, notification delivery, CRM UI, and
+external-store integrations are not shipped.
 
 ## Documentation rules
 

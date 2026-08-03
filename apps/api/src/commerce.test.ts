@@ -120,8 +120,9 @@ function authFixture(
   } as unknown as AuthRepository
   return {
     repository,
-    deliveryProvider: { send: async () => undefined },
+    deliveryService: { request: async () => Promise.reject(new Error('unused')) },
     otpPepper: 'commerce-otp-pepper-that-is-long-enough',
+    abusePepper: 'commerce-abuse-pepper-that-is-long-enough',
     sessionPepper,
     secureCookie: false,
     now: () => new Date(now),
