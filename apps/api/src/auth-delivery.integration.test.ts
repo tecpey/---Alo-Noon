@@ -194,10 +194,7 @@ databaseDescribe('authentication delivery foundation on PostgreSQL', () => {
     const result = await service.request(
       deliveryCommand('+989121234572', `otp-${randomUUID()}`, now),
     )
-    const hidden = await tenantTransaction(otherTenantId, (transaction) =>
-      transaction.authOtpChallenge.findUnique({ where: { id: result.challengeId } }),
-    )
-    expect(hidden).toBeNull()
+    await verifyForcedRls(result.challengeId)
 
     await expect(
       tenantTransaction(
@@ -321,4 +318,41 @@ function tenantTransaction<T>(
     },
     { isolationLevel: 'Serializable' },
   )
+}
+
+async function verifyForcedRls(challengeId: string): Promise<void> {
+  const roleName = `auth_rls_${randomUUID().replaceAll('-', '').slice(0, 12)}`
+  await prisma.$executeRawUnsafe(`CREATE ROLE "${roleName}" NOLOGIN NOSUPERUSER NOBYPASSRLS`)
+  await prisma.$executeRawUnsafe(`GRANT USAGE ON SCHEMA public TO "${roleName}"`)
+  await prisma.$executeRawUnsafe(`GRANT SELECT ON TABLE "AuthOtpChallenge" TO "${roleName}"`)
+  try {
+    const withoutContext = await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRawUnsafe(`SET LOCAL ROLE "${roleName}"`)
+      return transaction.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*) count FROM "AuthOtpChallenge" WHERE "id" = ${challengeId}::uuid
+      `
+    })
+    expect(withoutContext).toEqual([{ count: 0n }])
+
+    const crossTenant = await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRawUnsafe(`SET LOCAL ROLE "${roleName}"`)
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${otherTenantId}, true)`
+      return transaction.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*) count FROM "AuthOtpChallenge" WHERE "id" = ${challengeId}::uuid
+      `
+    })
+    expect(crossTenant).toEqual([{ count: 0n }])
+
+    const visible = await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRawUnsafe(`SET LOCAL ROLE "${roleName}"`)
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+      return transaction.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "AuthOtpChallenge" WHERE "id" = ${challengeId}::uuid
+      `
+    })
+    expect(visible).toEqual([{ id: challengeId }])
+  } finally {
+    await prisma.$executeRawUnsafe(`DROP OWNED BY "${roleName}"`)
+    await prisma.$executeRawUnsafe(`DROP ROLE IF EXISTS "${roleName}"`)
+  }
 }
