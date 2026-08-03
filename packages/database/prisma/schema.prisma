@@ -383,6 +383,15 @@ enum PaymentAttemptState {
   EXPIRED
 }
 
+enum PaymentInitializationOutcome {
+  ACCEPTED
+  CUSTOMER_ACTION_REQUIRED
+  REJECTED
+  RETRYABLE_FAILURE
+  PERMANENT_FAILURE
+  UNKNOWN
+}
+
 enum PaymentCallbackVerificationStatus {
   UNVERIFIED
   VERIFIED
@@ -1312,6 +1321,12 @@ model PaymentAttempt {
   state                   PaymentAttemptState             @default(CREATED)
   version                 Int                             @default(1)
   providerReference       String?                         @db.VarChar(200)
+  initializationOutcome   PaymentInitializationOutcome?
+  customerActionUrl       String?                         @db.VarChar(2048)
+  actionExpiresAt         DateTime?
+  failureCode             String?                         @db.VarChar(64)
+  customerMessageKey      String?                         @db.VarChar(100)
+  initializationCompletedAt DateTime?
   requestIdempotencyKey   String                          @db.VarChar(128)
   requestFingerprint      String                          @db.Char(64)
   correlationId           String                          @db.Uuid

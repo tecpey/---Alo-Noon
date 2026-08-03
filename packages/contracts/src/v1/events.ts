@@ -144,6 +144,37 @@ export const paymentAttemptEventPayloadSchema = z.object({
   version: z.number().int().positive(),
 })
 
+export const paymentExecutionEventPayloadSchema = z.object({
+  paymentAttemptId: uuidSchema,
+  paymentId: uuidSchema,
+  providerConfigurationId: uuidSchema,
+  providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
+  adapterVersion: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+  adapterSpiVersion: z.literal(1),
+  state: z.enum([
+    'CREATED',
+    'INITIALIZATION_PENDING',
+    'INITIALIZED',
+    'CUSTOMER_ACTION_REQUIRED',
+    'FAILED',
+  ]),
+  outcome: z
+    .enum([
+      'ACCEPTED',
+      'CUSTOMER_ACTION_REQUIRED',
+      'REJECTED',
+      'RETRYABLE_FAILURE',
+      'PERMANENT_FAILURE',
+      'UNKNOWN',
+    ])
+    .nullable(),
+  safeFailureCode: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]{1,63}$/)
+    .nullable(),
+  version: z.number().int().positive(),
+})
+
 export const paymentCallbackEventPayloadSchema = z.object({
   callbackReceiptId: uuidSchema,
   providerConfigurationId: uuidSchema,

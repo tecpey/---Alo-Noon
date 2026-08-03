@@ -7,7 +7,7 @@ const openapi = readFileSync(
 )
 
 describe('payment provider OpenAPI boundary', () => {
-  it('documents safe provider, attempt and callback summaries without execution endpoints', () => {
+  it('documents safe provider, attempt and callback summaries without governance or callback routes', () => {
     expect(openapi).toContain('PaymentProviderConfigurationSummary:')
     expect(openapi).toContain('PaymentAttemptSummary:')
     expect(openapi).toContain('PaymentCallbackReceiptSummary:')

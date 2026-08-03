@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   paymentCallbackIntakeSchema,
+  paymentExecutionInitializeSchema,
+  paymentExecutionSummarySchema,
   paymentProviderConfigurationCreateSchema,
   paymentProviderConfigurationSummarySchema,
   providerCredentialReferenceCreateSchema,
@@ -99,5 +101,51 @@ describe('payment provider contracts', () => {
         idempotencyKey: 'callback-intake-event-0002',
       }),
     ).toThrow('not approved')
+  })
+})
+
+describe('payment execution contracts', () => {
+  it('accepts only the caller-controlled payment and idempotency fields', () => {
+    expect(
+      paymentExecutionInitializeSchema.parse({
+        paymentId: '00000000-0000-4000-8000-000000000001',
+        idempotencyKey: 'payment-execution-0001',
+      }),
+    ).toEqual({
+      paymentId: '00000000-0000-4000-8000-000000000001',
+      idempotencyKey: 'payment-execution-0001',
+    })
+    expect(
+      paymentExecutionInitializeSchema.safeParse({
+        paymentId: '00000000-0000-4000-8000-000000000001',
+        idempotencyKey: 'payment-execution-0001',
+        providerConfigurationId: '00000000-0000-4000-8000-000000000002',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('returns only normalized, redacted execution output', () => {
+    const result = paymentExecutionSummarySchema.parse({
+      paymentAttemptId: '00000000-0000-4000-8000-000000000001',
+      paymentId: '00000000-0000-4000-8000-000000000002',
+      providerConfigurationId: '00000000-0000-4000-8000-000000000003',
+      providerCode: 'TEST_GATEWAY',
+      adapterVersion: '1.0.0',
+      adapterSpiVersion: 1,
+      state: 'CUSTOMER_ACTION_REQUIRED',
+      outcome: 'CUSTOMER_ACTION_REQUIRED',
+      providerReference: 'provider-reference',
+      customerAction: {
+        url: 'https://pay.example.test/action?token=opaque',
+        expiresAt: '2026-08-04T10:00:00.000Z',
+      },
+      failure: null,
+      correlationId: '00000000-0000-4000-8000-000000000004',
+      replayed: false,
+      createdAt: '2026-08-04T09:00:00.000Z',
+      updatedAt: '2026-08-04T09:01:00.000Z',
+    })
+    expect(result).not.toHaveProperty('credential')
+    expect(result).not.toHaveProperty('rawProviderPayload')
   })
 })
