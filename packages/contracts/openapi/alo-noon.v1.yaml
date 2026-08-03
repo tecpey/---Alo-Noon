@@ -8,7 +8,7 @@ info:
     capacity-backed Quote-to-Order conversion, and the internal payment and
     double-entry ledger foundation are implemented. Payment execution remains
     internal; the versioned tenant chart of accounts and governed account state
-    foundation are implemented. The tenant-scoped payment-provider abstraction,
+    foundation are implemented. The tenant-scoped, SPI-versioned payment-provider abstraction,
     opaque credential-reference, payment-attempt, and callback replay foundation
     are implemented without a real gateway adapter. No public payment-status or ledger-governance
     write endpoint is exposed, and no provider-governance or provider-execution endpoint exists.
@@ -793,6 +793,8 @@ components:
         [
           id,
           providerCode,
+          adapterVersion,
+          adapterSpiVersion,
           merchantReference,
           environment,
           paymentContext,
@@ -810,6 +812,9 @@ components:
       properties:
         id: { type: string, format: uuid }
         providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion:
+          { type: string, maxLength: 64, pattern: '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' }
+        adapterSpiVersion: { type: integer, const: 1 }
         merchantReference: { type: string, minLength: 1, maxLength: 128 }
         environment: { $ref: '#/components/schemas/PaymentProviderEnvironment' }
         paymentContext: { type: string, const: CHECKOUT }

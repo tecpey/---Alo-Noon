@@ -16,13 +16,13 @@ import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   canonicalProviderRequest,
   redactProviderSecrets,
-  requireProviderCapability,
-  resolveProductionProviderAdapter,
   selectPaymentProvider,
   transitionPaymentAttempt,
   validateProviderCapabilities,
   type PaymentAttemptState,
   type PaymentProviderAdapter,
+  type PaymentProviderAdapterRegistry,
+  type PaymentProviderAdapterSpiVersion,
   type PaymentProviderCapability,
   type ProviderSecretResolver,
   type ProviderNormalizedOutcome,
@@ -48,6 +48,8 @@ export type CreateCredentialReferenceCommand = GovernanceActor & {
 
 export type CreateProviderConfigurationCommand = GovernanceActor & {
   providerCode: string
+  adapterVersion: string
+  adapterSpiVersion: PaymentProviderAdapterSpiVersion
   merchantReference: string
   environment: 'TEST' | 'PRODUCTION'
   paymentContext: 'CHECKOUT'
@@ -146,7 +148,7 @@ export interface PaymentProviderService {
 export interface PrismaPaymentProviderOptions {
   maxSerializationAttempts?: number
   allowSystemOperations?: boolean
-  adapters?: ReadonlyMap<string, PaymentProviderAdapter>
+  adapterRegistry?: PaymentProviderAdapterRegistry
   secretResolver?: ProviderSecretResolver
   beforeCommit?: (transaction: Prisma.TransactionClient) => Promise<void>
 }
@@ -282,6 +284,8 @@ export function createPrismaPaymentProviderService(
           data: {
             tenantId,
             providerCode: command.providerCode,
+            adapterVersion: command.adapterVersion,
+            adapterSpiVersion: command.adapterSpiVersion,
             merchantReference: command.merchantReference,
             environment: command.environment,
             paymentContext: command.paymentContext,
@@ -370,6 +374,11 @@ export function createPrismaPaymentProviderService(
         const toDefault = command.targetActive && command.makeDefault
         if (configuration.isActive === command.targetActive) {
           throw new PaymentProviderError('PROVIDER_CONFIGURATION_STATE_UNCHANGED')
+        }
+        if (command.targetActive) {
+          for (const capability of configuration.capabilities) {
+            resolveConfiguredAdapter(options, configuration, capability)
+          }
         }
         const version = configuration.governanceVersion + 1
         const action = command.targetActive ? 'ACTIVATED' : 'DEACTIVATED'
@@ -700,12 +709,11 @@ export function createPrismaPaymentProviderService(
         }
         return mapCallback(boundary)
       }
-      const adapter = resolveProductionProviderAdapter(
-        options.adapters ?? new Map(),
-        boundary.providerConfiguration.providerCode,
-        boundary.providerConfiguration.environment,
+      const adapter = resolveConfiguredAdapter(
+        options,
+        boundary.providerConfiguration,
+        'CALLBACK_VERIFICATION',
       )
-      requireProviderCapability(adapter, 'CALLBACK_VERIFICATION')
       if (!options.secretResolver) {
         throw new PaymentProviderError('PROVIDER_SECRET_RESOLVER_UNAVAILABLE')
       }
@@ -729,6 +737,10 @@ export function createPrismaPaymentProviderService(
             id: boundary.providerConfiguration.id,
             tenantId,
             providerCode: boundary.providerConfiguration.providerCode,
+            adapterVersion: boundary.providerConfiguration.adapterVersion,
+            adapterSpiVersion: providerAdapterSpiVersion(
+              boundary.providerConfiguration.adapterSpiVersion,
+            ),
             environment: boundary.providerConfiguration.environment,
             merchantReference: boundary.providerConfiguration.merchantReference,
             callbackPolicy: 'SIGNED_ONLY',
@@ -840,9 +852,42 @@ function validateApprovedHeaders(headers: Readonly<Record<string, string>>): voi
   }
 }
 
+function resolveConfiguredAdapter(
+  options: PrismaPaymentProviderOptions,
+  configuration: {
+    providerCode: string
+    adapterVersion: string
+    adapterSpiVersion: number
+    environment: 'TEST' | 'PRODUCTION'
+  },
+  capability: PaymentProviderCapability,
+): PaymentProviderAdapter {
+  if (!options.adapterRegistry) {
+    throw new PaymentProviderError('PAYMENT_PROVIDER_ADAPTER_UNAVAILABLE')
+  }
+  try {
+    return options.adapterRegistry.resolve({
+      providerCode: configuration.providerCode,
+      adapterVersion: configuration.adapterVersion,
+      adapterSpiVersion: providerAdapterSpiVersion(configuration.adapterSpiVersion),
+      environment: configuration.environment,
+      capability,
+    })
+  } catch {
+    throw new PaymentProviderError('PAYMENT_PROVIDER_ADAPTER_UNAVAILABLE')
+  }
+}
+
+function providerAdapterSpiVersion(value: number): PaymentProviderAdapterSpiVersion {
+  if (value !== 1) throw new PaymentProviderError('PAYMENT_PROVIDER_ADAPTER_UNAVAILABLE')
+  return value
+}
+
 function sameConfiguration(
   record: {
     providerCode: string
+    adapterVersion: string
+    adapterSpiVersion: number
     merchantReference: string
     environment: string
     paymentContext: string
@@ -855,6 +900,8 @@ function sameConfiguration(
 ): boolean {
   return (
     record.providerCode === command.providerCode &&
+    record.adapterVersion === command.adapterVersion &&
+    record.adapterSpiVersion === command.adapterSpiVersion &&
     record.merchantReference === command.merchantReference &&
     record.environment === command.environment &&
     record.paymentContext === command.paymentContext &&
@@ -902,6 +949,8 @@ function mapConfiguration(
   record: {
     id: string
     providerCode: string
+    adapterVersion: string
+    adapterSpiVersion: number
     merchantReference: string
     environment: 'TEST' | 'PRODUCTION'
     paymentContext: 'CHECKOUT'
@@ -989,6 +1038,8 @@ async function writeProviderGovernanceRecords(
   const payload = paymentProviderConfigurationEventPayloadSchema.parse({
     providerConfigurationId: configuration.id,
     providerCode: configuration.providerCode,
+    adapterVersion: configuration.adapterVersion,
+    adapterSpiVersion: configuration.adapterSpiVersion,
     environment: configuration.environment,
     paymentContext: configuration.paymentContext,
     currency: configuration.currency,
@@ -1221,9 +1272,10 @@ function deterministicProviderConflict(error: unknown): string | null {
     return 'PROVIDER_CREDENTIAL_CONFLICT'
   }
   if (
-    ['PaymentProvider_tenant_code_environment_key', 'environment|providerCode|tenantId'].includes(
-      identity,
-    )
+    [
+      'PaymentProvider_tenant_code_environment_version_key',
+      'adapterSpiVersion|adapterVersion|environment|providerCode|tenantId',
+    ].includes(identity)
   ) {
     return 'PROVIDER_CONFIGURATION_CONFLICT'
   }

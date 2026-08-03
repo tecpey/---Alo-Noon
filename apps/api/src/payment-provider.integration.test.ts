@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
-import { canonicalProviderRequest, type PaymentProviderAdapter } from '@alo-noon/domain'
+import {
+  canonicalProviderRequest,
+  createPaymentProviderAdapterRegistry,
+  type PaymentProviderAdapter,
+} from '@alo-noon/domain'
 
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
 import { createPrismaPaymentProviderService } from './modules/payment-provider'
@@ -22,11 +26,15 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
     const payment = await createPayment(suffix, now)
     const secret = 'integration-secret-must-never-persist'
     let disposed = false
+    const alternateCode = `ALT_GATEWAY_${suffix}`
     const adapter: PaymentProviderAdapter = {
       code: `TEST_GATEWAY_${suffix}`,
+      adapterVersion: '1.0.0',
+      spiVersion: 1,
       capabilities: new Set(['PAYMENT_INITIALIZATION', 'CALLBACK_VERIFICATION']),
       testOnly: true,
       mapProviderStatus: () => 'PENDING',
+      initializePayment: async () => ({ normalizedOutcome: 'PENDING' }),
       verifyCallback: async ({ credential, approvedHeaders }) => ({
         verified:
           new TextDecoder().decode(credential.material) === secret &&
@@ -36,9 +44,14 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
         externalEventId: `callback-${suffix}`,
       }),
     }
+    const adapterRegistry = createPaymentProviderAdapterRegistry([
+      adapter,
+      { ...adapter, adapterVersion: '2.0.0' },
+      { ...adapter, code: alternateCode },
+    ])
     const service = createPrismaPaymentProviderService(prisma, {
       allowSystemOperations: true,
-      adapters: new Map([[adapter.code, adapter]]),
+      adapterRegistry,
       secretResolver: {
         resolve: async (reference, requestedTenant, providerCode) => {
           expect(reference).toBe(`vault://alo-noon/${tenantId}/${adapter.code}`)
@@ -109,6 +122,8 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
       actor: 'STAFF' as const,
       actorId,
       providerCode: adapter.code,
+      adapterVersion: adapter.adapterVersion,
+      adapterSpiVersion: adapter.spiVersion,
       merchantReference: `merchant-${suffix}`,
       environment: 'TEST' as const,
       paymentContext: 'CHECKOUT' as const,
@@ -127,6 +142,19 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
     )
     expect(configuration).toMatchObject({ isActive: false, isDefault: false, governanceVersion: 1 })
     expect(configuration).not.toHaveProperty('credentialReference')
+    expect(
+      await service.createConfiguration(
+        tenantId,
+        {
+          ...configurationCommand,
+          adapterVersion: '2.0.0',
+          idempotencyKey: `provider-configuration-v2-${suffix}`,
+          reason: 'Provision a coexisting adapter generation',
+        },
+        now,
+        randomUUID(),
+      ),
+    ).toMatchObject({ providerCode: adapter.code, adapterVersion: '2.0.0', isActive: false })
     await expect(
       service.createConfiguration(
         tenantId,
@@ -139,6 +167,28 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
       where: { id: configuration.id },
       data: { healthStatus: 'HEALTHY' },
     })
+    const unregisteredService = createPrismaPaymentProviderService(prisma)
+    await expect(
+      unregisteredService.governConfiguration(
+        tenantId,
+        {
+          actor: 'STAFF',
+          actorId,
+          providerConfigurationId: configuration.id,
+          targetActive: true,
+          makeDefault: true,
+          idempotencyKey: `provider-unregistered-${suffix}`,
+          reason: 'Activation must fail without a governed adapter registry',
+        },
+        new Date(now.getTime() + 500),
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_ADAPTER_UNAVAILABLE' })
+    expect(
+      await prisma.paymentProviderGovernanceEvent.count({
+        where: { tenantId, idempotencyKey: `provider-unregistered-${suffix}` },
+      }),
+    ).toBe(0)
     const activated = await service.governConfiguration(
       tenantId,
       {
@@ -179,7 +229,6 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
       ),
     ).toMatchObject({ isActive: false, isDefault: false, governanceVersion: 1 })
 
-    const alternateCode = `ALT_GATEWAY_${suffix}`
     const alternateCredential = await service.createCredentialReference(
       tenantId,
       {
@@ -470,7 +519,7 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
     )
     const failingResolverService = createPrismaPaymentProviderService(prisma, {
       allowSystemOperations: true,
-      adapters: new Map([[adapter.code, adapter]]),
+      adapterRegistry,
       secretResolver: {
         resolve: async () => {
           throw new Error(secret)

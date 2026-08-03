@@ -11,6 +11,11 @@ export const paymentProviderCapabilitySchema = z.enum([
 ])
 export const paymentProviderEnvironmentSchema = z.enum(['TEST', 'PRODUCTION'])
 export const paymentContextSchema = z.literal('CHECKOUT')
+export const paymentProviderAdapterVersionSchema = z
+  .string()
+  .max(64)
+  .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
+export const paymentProviderAdapterSpiVersionSchema = z.literal(1)
 export const providerHealthStatusSchema = z.enum(['UNKNOWN', 'HEALTHY', 'DEGRADED', 'UNHEALTHY'])
 export const paymentAttemptStateSchema = z.enum([
   'CREATED',
@@ -38,6 +43,8 @@ export const providerCredentialReferenceCreateSchema = z.object({
 
 export const paymentProviderConfigurationCreateSchema = z.object({
   providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
+  adapterVersion: paymentProviderAdapterVersionSchema,
+  adapterSpiVersion: paymentProviderAdapterSpiVersionSchema,
   merchantReference: z.string().min(1).max(128),
   environment: paymentProviderEnvironmentSchema,
   paymentContext: paymentContextSchema,
@@ -57,6 +64,8 @@ export const paymentProviderConfigurationCreateSchema = z.object({
 export const paymentProviderConfigurationSummarySchema = z.object({
   id: uuidSchema,
   providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
+  adapterVersion: paymentProviderAdapterVersionSchema,
+  adapterSpiVersion: paymentProviderAdapterSpiVersionSchema,
   merchantReference: z.string().min(1).max(128),
   environment: paymentProviderEnvironmentSchema,
   paymentContext: paymentContextSchema,

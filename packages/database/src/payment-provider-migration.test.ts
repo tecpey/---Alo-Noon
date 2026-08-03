@@ -38,6 +38,8 @@ describe('payment provider foundation migration', () => {
 
   it('enforces scoped uniqueness, immutable history and one active default', () => {
     expect(migration).toContain('PaymentProvider_one_active_default_key')
+    expect(migration).toContain('PaymentProvider_tenant_code_environment_version_key')
+    expect(migration).toContain('PaymentProvider_adapter_spi_check')
     expect(migration).toContain('PaymentCallback_external_event_key')
     expect(migration).toContain('PaymentAttempt_provider_reference_key')
     expect(migration).toContain('PaymentProviderGovernance_append_only')

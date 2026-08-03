@@ -109,6 +109,8 @@ export type LedgerAccountStateChangedEventPayload = z.infer<
 export const paymentProviderConfigurationEventPayloadSchema = z.object({
   providerConfigurationId: uuidSchema,
   providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
+  adapterVersion: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+  adapterSpiVersion: z.literal(1),
   environment: z.enum(['TEST', 'PRODUCTION']),
   paymentContext: z.literal('CHECKOUT'),
   currency: z.literal('IRR'),

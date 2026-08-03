@@ -56,6 +56,8 @@ CREATE TABLE "PaymentProviderConfiguration" (
   "id" UUID NOT NULL,
   "tenantId" UUID NOT NULL,
   "providerCode" VARCHAR(32) NOT NULL,
+  "adapterVersion" VARCHAR(64) NOT NULL,
+  "adapterSpiVersion" INTEGER NOT NULL,
   "merchantReference" VARCHAR(128) NOT NULL,
   "environment" "PaymentProviderEnvironment" NOT NULL,
   "paymentContext" "PaymentContext" NOT NULL,
@@ -72,6 +74,10 @@ CREATE TABLE "PaymentProviderConfiguration" (
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "PaymentProviderConfiguration_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "PaymentProvider_code_check" CHECK ("providerCode" ~ '^[A-Z][A-Z0-9_]{1,31}$'),
+  CONSTRAINT "PaymentProvider_adapter_version_check" CHECK (
+    "adapterVersion" ~ '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+  ),
+  CONSTRAINT "PaymentProvider_adapter_spi_check" CHECK ("adapterSpiVersion" = 1),
   CONSTRAINT "PaymentProvider_merchant_check" CHECK (char_length(trim("merchantReference")) BETWEEN 1 AND 128),
   CONSTRAINT "PaymentProvider_callback_policy_check" CHECK ("callbackPolicy" = 'SIGNED_ONLY'),
   CONSTRAINT "PaymentProvider_currency_check" CHECK ("currency" = 'IRR'),
@@ -208,7 +214,7 @@ CREATE UNIQUE INDEX "ProviderCredential_tenant_provider_reference_key" ON "Provi
 CREATE UNIQUE INDEX "g3b_ProviderCredentialReference_id_tenant_key" ON "ProviderCredentialReference" ("id", "tenantId");
 CREATE INDEX "ProviderCredentialReference_tenant_providerCode_idx" ON "ProviderCredentialReference" ("tenantId", "providerCode");
 
-CREATE UNIQUE INDEX "PaymentProvider_tenant_code_environment_key" ON "PaymentProviderConfiguration" ("tenantId", "providerCode", "environment");
+CREATE UNIQUE INDEX "PaymentProvider_tenant_code_environment_version_key" ON "PaymentProviderConfiguration" ("tenantId", "providerCode", "environment", "adapterVersion", "adapterSpiVersion");
 CREATE UNIQUE INDEX "PaymentProvider_tenant_idempotency_key" ON "PaymentProviderConfiguration" ("tenantId", "idempotencyKey");
 CREATE UNIQUE INDEX "g3b_PaymentProviderConfiguration_id_tenant_key" ON "PaymentProviderConfiguration" ("id", "tenantId");
 CREATE INDEX "g3b_ProviderConfig_credentialRef_tenant_idx" ON "PaymentProviderConfiguration" ("credentialReferenceId", "tenantId");
@@ -329,6 +335,8 @@ BEGIN
   IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'Payment provider configurations cannot be deleted'; END IF;
   IF NEW."tenantId" IS DISTINCT FROM OLD."tenantId"
     OR NEW."providerCode" IS DISTINCT FROM OLD."providerCode"
+    OR NEW."adapterVersion" IS DISTINCT FROM OLD."adapterVersion"
+    OR NEW."adapterSpiVersion" IS DISTINCT FROM OLD."adapterSpiVersion"
     OR NEW."merchantReference" IS DISTINCT FROM OLD."merchantReference"
     OR NEW."environment" IS DISTINCT FROM OLD."environment"
     OR NEW."paymentContext" IS DISTINCT FROM OLD."paymentContext"

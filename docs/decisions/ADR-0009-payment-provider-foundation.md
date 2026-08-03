@@ -5,7 +5,11 @@
 
 ## Decision
 
-Payment providers are isolated behind a capability-explicit adapter contract.
+Payment providers are isolated behind a capability-explicit, versioned adapter
+SPI. An immutable registry rejects duplicate identities, unsupported SPI
+versions, and test-only adapters in production. Provider configurations pin the
+adapter implementation and SPI versions so multiple adapter generations can
+coexist during controlled migrations without changing historical attempts.
 Provider-specific statuses are translated into normalized outcomes and never
 become authoritative payment or ledger state directly. Production execution
 fails closed when no production adapter is registered.
@@ -30,8 +34,9 @@ the callback receipt; it cannot capture a Payment or post ledger entries.
 
 ## Implemented
 
-- Capability-explicit adapter, signature-verification, and secret-resolver
-  interfaces.
+- Capability-explicit, SPI-versioned adapter registry, signature-verification,
+  and secret-resolver interfaces. The registry is proven with 100 isolated
+  providers and controlled adapter-version coexistence.
 - Tenant provider configuration, opaque credential references, governed
   activation, one-default enforcement, health metadata, payment attempts, and
   append-only history.

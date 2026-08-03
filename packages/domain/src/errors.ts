@@ -46,6 +46,7 @@ export type DomainErrorCode =
   | 'PAYMENT_PROVIDER_AMBIGUOUS'
   | 'PAYMENT_PROVIDER_CAPABILITY_UNSUPPORTED'
   | 'PAYMENT_PROVIDER_ADAPTER_UNAVAILABLE'
+  | 'PAYMENT_PROVIDER_REGISTRY_INVALID'
 
 export class DomainError extends Error {
   constructor(

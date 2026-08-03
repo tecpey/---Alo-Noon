@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   canonicalProviderRequest,
+  createPaymentProviderAdapterRegistry,
   redactProviderSecrets,
   requireProviderCapability,
-  resolveProductionProviderAdapter,
   selectPaymentProvider,
   transitionPaymentAttempt,
   validateProviderCapabilities,
@@ -68,21 +68,41 @@ describe('payment provider domain foundation', () => {
   it('fails closed for unsupported capabilities and unavailable production adapters', () => {
     const adapter: PaymentProviderAdapter = {
       code: 'TEST_ONLY',
+      adapterVersion: '1.0.0',
+      spiVersion: 1,
       capabilities: new Set(['PAYMENT_INITIALIZATION']),
       testOnly: true,
       mapProviderStatus: () => 'PENDING',
+      initializePayment: async () => ({ normalizedOutcome: 'PENDING' }),
     }
+    const registry = createPaymentProviderAdapterRegistry([adapter])
     expect(() => requireProviderCapability(adapter, 'REFUND')).toThrow('unsupported')
     expect(() =>
-      resolveProductionProviderAdapter(
-        new Map([[adapter.code, adapter]]),
-        adapter.code,
-        'PRODUCTION',
-      ),
+      registry.resolve({
+        providerCode: adapter.code,
+        adapterVersion: adapter.adapterVersion,
+        adapterSpiVersion: 1,
+        environment: 'PRODUCTION',
+      }),
     ).toThrow('unavailable')
     expect(
-      resolveProductionProviderAdapter(new Map([[adapter.code, adapter]]), adapter.code, 'TEST'),
+      registry.resolve({
+        providerCode: adapter.code,
+        adapterVersion: adapter.adapterVersion,
+        adapterSpiVersion: 1,
+        environment: 'TEST',
+        capability: 'PAYMENT_INITIALIZATION',
+      }),
     ).toBe(adapter)
+    expect(() =>
+      registry.resolve({
+        providerCode: adapter.code,
+        adapterVersion: '2.0.0',
+        adapterSpiVersion: 1,
+        environment: 'TEST',
+      }),
+    ).toThrow('unavailable')
+    expect(() => createPaymentProviderAdapterRegistry([adapter, adapter])).toThrow('duplicated')
     expect(() => validateProviderCapabilities([])).toThrow('non-empty')
     expect(() =>
       validateProviderCapabilities(['PAYMENT_INITIALIZATION', 'PAYMENT_INITIALIZATION']),
@@ -104,5 +124,28 @@ describe('payment provider domain foundation', () => {
     expect(redacted).not.toContain(secret)
     expect(redacted).toContain('[REDACTED]')
     expect(redacted).toContain('visible')
+  })
+
+  it('resolves one hundred isolated adapters and permits governed version coexistence', () => {
+    const adapters: PaymentProviderAdapter[] = Array.from({ length: 100 }, (_, index) => ({
+      code: `PROVIDER_${String(index).padStart(3, '0')}`,
+      adapterVersion: '1.0.0',
+      spiVersion: 1,
+      capabilities: new Set(['PAYMENT_INQUIRY']),
+      mapProviderStatus: () => 'PENDING',
+      inquirePayment: async () => ({ normalizedOutcome: 'PENDING' }),
+    }))
+    adapters.push({ ...adapters[0]!, adapterVersion: '2.0.0' })
+    const registry = createPaymentProviderAdapterRegistry(adapters)
+    expect(registry.identities()).toHaveLength(101)
+    expect(
+      registry.resolve({
+        providerCode: 'PROVIDER_000',
+        adapterVersion: '2.0.0',
+        adapterSpiVersion: 1,
+        environment: 'PRODUCTION',
+        capability: 'PAYMENT_INQUIRY',
+      }).adapterVersion,
+    ).toBe('2.0.0')
   })
 })

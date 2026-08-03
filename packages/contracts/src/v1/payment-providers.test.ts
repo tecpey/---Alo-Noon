@@ -19,6 +19,8 @@ describe('payment provider contracts', () => {
     expect(
       paymentProviderConfigurationCreateSchema.parse({
         providerCode: 'FUTURE_GATEWAY',
+        adapterVersion: '1.0.0',
+        adapterSpiVersion: 1,
         merchantReference: 'merchant-safe-reference',
         environment: 'TEST',
         paymentContext: 'CHECKOUT',
@@ -32,6 +34,8 @@ describe('payment provider contracts', () => {
     expect(() =>
       paymentProviderConfigurationCreateSchema.parse({
         providerCode: 'FUTURE_GATEWAY',
+        adapterVersion: '1.0.0',
+        adapterSpiVersion: 1,
         merchantReference: 'merchant-safe-reference',
         environment: 'TEST',
         paymentContext: 'CHECKOUT',
@@ -55,6 +59,8 @@ describe('payment provider contracts', () => {
     const parsed = paymentProviderConfigurationSummarySchema.parse({
       id: '00000000-0000-4000-8000-000000000001',
       providerCode: 'FUTURE_GATEWAY',
+      adapterVersion: '1.0.0',
+      adapterSpiVersion: 1,
       merchantReference: 'merchant-safe-reference',
       environment: 'TEST',
       paymentContext: 'CHECKOUT',
