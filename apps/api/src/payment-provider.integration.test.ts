@@ -368,7 +368,7 @@ databaseDescribe('payment provider PostgreSQL foundation', () => {
         now,
         randomUUID(),
       ),
-    ).rejects.toThrow('not allowed')
+    ).rejects.toMatchObject({ code: 'PAYMENT_ATTEMPT_VERIFICATION_REQUIRES_ADAPTER' })
 
     const callbackPayload = {
       authority: `provider-reference-${suffix}`,
