@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 
@@ -19,11 +19,14 @@ import { normalizeIranianMobile } from '@alo-noon/domain'
 
 import {
   AuthenticationDeliveryError,
+  authenticationIdentifierDigest,
+  authenticationOtpDigest,
+  authenticationSessionDigest,
   isRetryableAuthenticationConflict,
+  normalizeAuthenticationClientIp,
   type AuthenticationDeliveryService,
 } from './auth-delivery.js'
 
-const OTP_MAX_ATTEMPTS = 5
 const OTP_MAX_IP_FAILURES_PER_TEN_MINUTES = 25
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const SESSION_COOKIE = 'alo_session'
@@ -64,21 +67,15 @@ export interface AuthRepository {
     now: Date,
     correlationId: string,
   ): Promise<void>
-  consumeChallenge(
-    challengeId: string,
-    mobileE164: string,
-    tenantId: string,
-    now: Date,
-    correlationId: string,
-  ): Promise<{ accountId: string; customerId: string } | null>
-  createSession(input: {
+  consumeChallengeAndCreateSession(input: {
+    challengeId: string
+    mobileE164: string
     tenantId: string
-    accountId: string
     tokenDigest: string
     now: Date
     expiresAt: Date
     correlationId: string
-  }): Promise<SessionContext>
+  }): Promise<SessionContext | null>
   findSession(tokenDigest: string, tenantId: string, now: Date): Promise<SessionContext | null>
   revokeSession(
     tokenDigest: string,
@@ -101,6 +98,10 @@ export interface AuthDependencies {
 
 export class InvalidOtpError extends Error {}
 export class TenantUnavailableError extends Error {}
+
+export interface PrismaAuthRepositoryOptions {
+  beforeVerificationCommit?: (transaction: Prisma.TransactionClient) => Promise<void>
+}
 
 export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDependencies): void {
   app.post('/api/v1/auth/otp/request', async (request, reply) => {
@@ -235,7 +236,7 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
     const tenantId = await resolveTenantId(request, dependencies)
     if (token && tenantId) {
       await dependencies.repository.revokeSession(
-        digest(dependencies.sessionPepper, token),
+        authenticationSessionDigest(dependencies.sessionPepper, token),
         tenantId,
         currentTime(dependencies),
         randomUUID(),
@@ -288,36 +289,38 @@ export async function verifyOtp(
     throw new InvalidOtpError()
   }
 
-  const suppliedDigest = otpDigest(dependencies.otpPepper, challenge.id, code)
+  const suppliedDigest = authenticationOtpDigest(
+    dependencies.otpPepper,
+    tenantId,
+    challenge.id,
+    code,
+  )
   if (!safeDigestEqual(challenge.codeDigest, suppliedDigest)) {
     await dependencies.repository.recordFailedAttempt(
       challenge.id,
       tenantId,
-      digest(dependencies.abusePepper, `ip:${sourceIp}`),
+      authenticationIdentifierDigest(
+        dependencies.abusePepper,
+        'source-ip',
+        normalizeAuthenticationClientIp(sourceIp),
+      ),
       now,
       randomUUID(),
     )
     throw new InvalidOtpError()
   }
 
-  const account = await dependencies.repository.consumeChallenge(
-    challenge.id,
-    challenge.mobileE164,
-    tenantId,
-    now,
-    randomUUID(),
-  )
-  if (!account) throw new InvalidOtpError()
-
   const token = dependencies.generateSessionToken?.() ?? randomBytes(32).toString('base64url')
-  const context = await dependencies.repository.createSession({
+  const context = await dependencies.repository.consumeChallengeAndCreateSession({
+    challengeId: challenge.id,
+    mobileE164: challenge.mobileE164,
     tenantId,
-    accountId: account.accountId,
-    tokenDigest: digest(dependencies.sessionPepper, token),
+    tokenDigest: authenticationSessionDigest(dependencies.sessionPepper, token),
     now,
     expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
     correlationId: randomUUID(),
   })
+  if (!context) throw new InvalidOtpError()
   return { context, token }
 }
 
@@ -348,7 +351,10 @@ export function authorizeGrants(
   })
 }
 
-export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository {
+export function createPrismaAuthRepository(
+  prisma: PrismaClient,
+  options: PrismaAuthRepositoryOptions = {},
+): AuthRepository {
   return {
     async resolveTenantByHost(host) {
       const domain = await prisma.tenantDomain.findFirst({
@@ -465,61 +471,76 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
       )
     },
 
-    async consumeChallenge(challengeId, mobileE164, tenantId, now, correlationId) {
+    async consumeChallengeAndCreateSession(input) {
       return tenantTransaction(
         prisma,
-        tenantId,
+        input.tenantId,
         async (transaction) => {
           const existingAccount = await transaction.identityAccount.findUnique({
-            where: { mobileE164 },
+            where: { mobileE164: input.mobileE164 },
             select: { id: true, status: true, customerId: true },
           })
           if (existingAccount && existingAccount.status !== 'ACTIVE') return null
 
           const consumed = await transaction.authOtpChallenge.updateMany({
             where: {
-              id: challengeId,
-              mobileE164,
+              id: input.challengeId,
+              mobileE164: input.mobileE164,
               status: { in: ['DELIVERED', 'DELIVERY_UNKNOWN'] },
-              expiresAt: { gt: now },
-              attempts: { lt: OTP_MAX_ATTEMPTS },
+              expiresAt: { gt: input.now },
+              attempts: { lt: transaction.authOtpChallenge.fields.maxAttempts },
             },
-            data: { status: 'CONSUMED', consumedAt: now, version: { increment: 1 } },
+            data: { status: 'CONSUMED', consumedAt: input.now, version: { increment: 1 } },
           })
           if (consumed.count !== 1) return null
 
           const customer = await transaction.customer.upsert({
-            where: { tenantId_mobileE164: { tenantId, mobileE164 } },
+            where: {
+              tenantId_mobileE164: {
+                tenantId: input.tenantId,
+                mobileE164: input.mobileE164,
+              },
+            },
             update: { lifecycleStatus: 'ACTIVE' },
-            create: { tenantId, mobileE164, lifecycleStatus: 'ACTIVE' },
+            create: {
+              tenantId: input.tenantId,
+              mobileE164: input.mobileE164,
+              lifecycleStatus: 'ACTIVE',
+            },
           })
           const account = existingAccount
             ? await transaction.identityAccount.update({
                 where: { id: existingAccount.id },
                 data: {
-                  verifiedAt: now,
+                  verifiedAt: input.now,
                   ...(!existingAccount.customerId && { customerId: customer.id }),
                 },
               })
             : await transaction.identityAccount.create({
-                data: { mobileE164, customerId: customer.id, verifiedAt: now },
+                data: {
+                  mobileE164: input.mobileE164,
+                  customerId: customer.id,
+                  verifiedAt: input.now,
+                },
               })
           if (account.status !== 'ACTIVE') return null
           await transaction.tenantMembership.upsert({
-            where: { tenantId_accountId: { tenantId, accountId: account.id } },
+            where: {
+              tenantId_accountId: { tenantId: input.tenantId, accountId: account.id },
+            },
             update: {
               customerId: customer.id,
               status: 'ACTIVE',
-              activeAt: now,
+              activeAt: input.now,
               suspendedAt: null,
               revokedAt: null,
             },
             create: {
-              tenantId,
+              tenantId: input.tenantId,
               accountId: account.id,
               customerId: customer.id,
               status: 'ACTIVE',
-              activeAt: now,
+              activeAt: input.now,
             },
           })
 
@@ -568,82 +589,66 @@ export function createPrismaAuthRepository(prisma: PrismaClient): AuthRepository
           }
           await transaction.auditEvent.create({
             data: {
-              tenantId,
+              tenantId: input.tenantId,
               actorType: 'CUSTOMER',
               actorId: customer.id,
               action: 'auth.identity.verified',
               entityType: 'identity_account',
               entityId: account.id,
               summary: 'Customer identity verified',
-              correlationId,
-              occurredAt: now,
+              correlationId: input.correlationId,
+              occurredAt: input.now,
             },
           })
           await transaction.domainEventOutbox.create({
             data: {
-              tenantId,
+              tenantId: input.tenantId,
               eventId: randomUUID(),
               name: 'auth.otp.verified',
               aggregateType: 'auth_otp_challenge',
-              aggregateId: challengeId,
+              aggregateId: input.challengeId,
               actorType: 'CUSTOMER',
               actorId: customer.id,
-              correlationId,
+              correlationId: input.correlationId,
               consentBasis: 'TRANSACTIONAL',
               payload: { accountId: account.id, customerId: customer.id },
-              occurredAt: now,
+              occurredAt: input.now,
             },
           })
-          return { accountId: account.id, customerId: customer.id }
+          const session = await transaction.authSession.create({
+            data: {
+              accountId: account.id,
+              activeTenantId: input.tenantId,
+              tokenDigest: input.tokenDigest,
+              expiresAt: input.expiresAt,
+              lastSeenAt: input.now,
+            },
+            select: { id: true },
+          })
+          await transaction.auditEvent.create({
+            data: {
+              tenantId: input.tenantId,
+              actorType: 'CUSTOMER',
+              actorId: customer.id,
+              action: 'auth.session.created',
+              entityType: 'auth_session',
+              entityId: session.id,
+              summary: 'Authenticated session created',
+              correlationId: input.correlationId,
+              occurredAt: input.now,
+            },
+          })
+          await options.beforeVerificationCommit?.(transaction)
+          return loadSessionContext(
+            transaction,
+            input.tokenDigest,
+            input.tenantId,
+            input.now,
+            input.expiresAt,
+          )
         },
         'Serializable',
       )
-    },
-
-    async createSession(input) {
-      return tenantTransaction(prisma, input.tenantId, async (transaction) => {
-        const membership = await transaction.tenantMembership.findFirst({
-          where: {
-            tenantId: input.tenantId,
-            accountId: input.accountId,
-            status: 'ACTIVE',
-            revokedAt: null,
-            customerId: { not: null },
-          },
-          select: { customerId: true },
-        })
-        if (!membership?.customerId) throw new InvalidOtpError()
-        const session = await transaction.authSession.create({
-          data: {
-            accountId: input.accountId,
-            activeTenantId: input.tenantId,
-            tokenDigest: input.tokenDigest,
-            expiresAt: input.expiresAt,
-            lastSeenAt: input.now,
-          },
-          select: { id: true },
-        })
-        await transaction.auditEvent.create({
-          data: {
-            tenantId: input.tenantId,
-            actorType: 'CUSTOMER',
-            actorId: membership.customerId,
-            action: 'auth.session.created',
-            entityType: 'auth_session',
-            entityId: session.id,
-            summary: 'Authenticated session created',
-            correlationId: input.correlationId,
-            occurredAt: input.now,
-          },
-        })
-        return loadSessionContext(
-          transaction,
-          input.tokenDigest,
-          input.tenantId,
-          input.now,
-          input.expiresAt,
-        )
-      })
     },
 
     async findSession(tokenDigest, tenantId, now) {
@@ -806,7 +811,11 @@ export async function authenticateRequest(
   const tenantId = await resolveTenantId(request, dependencies)
   if (!tenantId) return null
   return dependencies.repository
-    .findSession(digest(dependencies.sessionPepper, token), tenantId, currentTime(dependencies))
+    .findSession(
+      authenticationSessionDigest(dependencies.sessionPepper, token),
+      tenantId,
+      currentTime(dependencies),
+    )
     .catch(() => null)
 }
 
@@ -839,14 +848,6 @@ function sessionTokenFromRequest(request: FastifyRequest): string | undefined {
     }
   }
   return undefined
-}
-
-function otpDigest(pepper: string, challengeId: string, code: string): string {
-  return digest(pepper, `${challengeId}.${code}`)
-}
-
-function digest(pepper: string, value: string): string {
-  return createHmac('sha256', pepper).update(value).digest('hex')
 }
 
 function safeDigestEqual(expected: string, supplied: string): boolean {

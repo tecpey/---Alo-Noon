@@ -1,5 +1,5 @@
 import cors from '@fastify/cors'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { LogController, type FastifyInstance } from 'fastify'
 
 import type { HealthResponse, ReadyResponse, ResponseMeta } from '@alo-noon/contracts'
 
@@ -61,7 +61,20 @@ const unavailableCityRepository: CityRepository = {
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: options.logger ?? false,
+    logger: options.logger
+      ? {
+          redact: {
+            paths: [
+              'req.remoteAddress',
+              'req.remotePort',
+              'req.headers.authorization',
+              'req.headers.cookie',
+            ],
+            censor: '[REDACTED]',
+          },
+        }
+      : false,
+    logController: new LogController({ disableRequestLogging: options.logger === true }),
     trustProxy:
       options.trustProxyHops && options.trustProxyHops > 0 ? options.trustProxyHops : false,
   })

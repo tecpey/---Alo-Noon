@@ -21,6 +21,14 @@ describe('environment configuration', () => {
       AUTH_ABUSE_PEPPER: 'a'.repeat(32),
     })
     expect(configured.success).toBe(true)
+
+    const reused = validateEnv({
+      NODE_ENV: 'production',
+      AUTH_OTP_PEPPER: 'x'.repeat(32),
+      AUTH_SESSION_PEPPER: 'x'.repeat(32),
+      AUTH_ABUSE_PEPPER: 'x'.repeat(32),
+    })
+    expect(reused.success).toBe(false)
   })
 
   it('bounds explicitly trusted proxy hops', () => {

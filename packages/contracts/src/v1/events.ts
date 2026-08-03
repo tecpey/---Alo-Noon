@@ -24,6 +24,7 @@ export const eventNameSchema = z.enum([
   'auth.otp.delivery_succeeded',
   'auth.otp.delivery_failed',
   'auth.otp.delivery_unknown',
+  'auth.otp.delivery_suppressed',
   'auth.otp.verification_failed',
   'auth.otp.verification_locked',
   'auth.otp.verified',
@@ -133,6 +134,13 @@ export const authenticationDeliveryEventPayloadSchema = z.object({
 })
 export type AuthenticationDeliveryEventPayload = z.infer<
   typeof authenticationDeliveryEventPayloadSchema
+>
+
+export const authenticationDeliverySuppressedEventPayloadSchema = z.object({
+  policyDecision: z.enum(['ACTIVE_CHALLENGE', 'RATE_LIMIT']),
+})
+export type AuthenticationDeliverySuppressedEventPayload = z.infer<
+  typeof authenticationDeliverySuppressedEventPayloadSchema
 >
 
 export const otpVerificationEventPayloadSchema = z.object({

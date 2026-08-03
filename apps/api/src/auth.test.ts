@@ -1,5 +1,3 @@
-import { createHmac } from 'node:crypto'
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AccessGrantContract, SessionContext } from '@alo-noon/contracts'
@@ -11,7 +9,14 @@ import {
   type AuthRepository,
   type OtpChallengeRecord,
 } from './modules/auth'
-import { AuthenticationDeliveryError } from './modules/auth-delivery'
+import {
+  AuthenticationDeliveryError,
+  authenticationIdentifierDigest,
+  authenticationOtpDigest,
+  authenticationSessionDigest,
+  isRetryableAuthenticationConflict,
+  normalizeAuthenticationClientIp,
+} from './modules/auth-delivery'
 
 const tenantId = '00000000-0000-4000-8000-000000000001'
 const accountId = '11111111-1111-4111-8111-111111111111'
@@ -43,21 +48,15 @@ class MemoryAuthRepository implements AuthRepository {
     }
   }
 
-  async consumeChallenge(
-    challengeId: string,
-  ): Promise<{ accountId: string; customerId: string } | null> {
+  async consumeChallengeAndCreateSession(
+    input: Parameters<AuthRepository['consumeChallengeAndCreateSession']>[0],
+  ): Promise<SessionContext | null> {
     if (
-      this.challenge?.id !== challengeId ||
+      this.challenge?.id !== input.challengeId ||
       !['DELIVERED', 'DELIVERY_UNKNOWN'].includes(this.challenge.status)
     )
       return null
     this.challenge.status = 'CONSUMED'
-    return { accountId, customerId }
-  }
-
-  async createSession(
-    input: Parameters<AuthRepository['createSession']>[0],
-  ): Promise<SessionContext> {
     this.sessionDigest = input.tokenDigest
     this.session = {
       tenantId: input.tenantId,
@@ -112,7 +111,7 @@ function fixture(overrides: Partial<AuthDependencies> = {}): {
       repository.challenge = {
         id: challengeId,
         mobileE164: command.mobileE164,
-        codeDigest: createHmac('sha256', otpPepper).update(`${challengeId}.${code}`).digest('hex'),
+        codeDigest: authenticationOtpDigest(otpPepper, tenantId, challengeId, code),
         status: 'DELIVERED',
         attempts: 0,
         maxAttempts: 5,
@@ -236,6 +235,56 @@ describe('OTP authentication API', () => {
     expect(response.statusCode).toBe(202)
     expect(response.headers['retry-after']).toBeUndefined()
     expect(deliveredCodes).toEqual([])
+  })
+
+  it('ignores forwarded IPs by default and selects only the first untrusted hop', async () => {
+    const direct = fixture()
+    let directIp = ''
+    direct.dependencies.deliveryService = {
+      request: async (command) => {
+        directIp = command.sourceIp
+        return {
+          challengeId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          expiresAt: new Date(command.now.getTime() + 5 * 60_000),
+          retryAfterSeconds: 60,
+          replayed: false,
+          uncertain: false,
+        }
+      },
+    }
+    const directApp = await buildApp({ auth: direct.dependencies })
+    apps.push(directApp)
+    await directApp.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/request',
+      headers: { ...otpHeaders, 'x-forwarded-for': '198.51.100.20, 203.0.113.20' },
+      payload: { mobileE164: '+989111234567' },
+    })
+    expect(directIp).toBe('127.0.0.1')
+
+    const proxied = fixture()
+    let proxiedIp = ''
+    proxied.dependencies.deliveryService = {
+      request: async (command) => {
+        proxiedIp = command.sourceIp
+        return {
+          challengeId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          expiresAt: new Date(command.now.getTime() + 5 * 60_000),
+          retryAfterSeconds: 60,
+          replayed: false,
+          uncertain: false,
+        }
+      },
+    }
+    const proxiedApp = await buildApp({ auth: proxied.dependencies, trustProxyHops: 1 })
+    apps.push(proxiedApp)
+    await proxiedApp.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/request',
+      headers: { ...otpHeaders, 'x-forwarded-for': '198.51.100.20, 203.0.113.20' },
+      payload: { mobileE164: '+989111234567' },
+    })
+    expect(proxiedIp).toBe('203.0.113.20')
   })
 
   it('verifies once, creates an opaque cookie session, and rejects replay', async () => {
@@ -432,5 +481,37 @@ describe('scoped authorization', () => {
         now,
       ),
     ).toBe(false)
+  })
+})
+
+describe('authentication security primitives', () => {
+  it('domain-separates OTP, session, mobile, and source-IP HMAC inputs', () => {
+    const pepper = 'purpose-separation-pepper-that-is-long-enough'
+    const repeated = '00000000-0000-4000-8000-000000000001'
+    const digests = new Set([
+      authenticationOtpDigest(pepper, tenantId, repeated, '123456'),
+      authenticationSessionDigest(pepper, `${repeated}:123456`),
+      authenticationIdentifierDigest(pepper, 'mobile', repeated),
+      authenticationIdentifierDigest(pepper, 'source-ip', repeated),
+    ])
+    expect(digests.size).toBe(4)
+  })
+
+  it('canonicalizes IP forms and rejects malformed addresses', () => {
+    expect(normalizeAuthenticationClientIp('::ffff:203.0.113.10')).toBe('203.0.113.10')
+    expect(normalizeAuthenticationClientIp('2001:0DB8:0:0:0:0:0:1')).toBe('2001:db8::1')
+    expect(normalizeAuthenticationClientIp('203.0.113.10')).toBe('203.0.113.10')
+    expect(() => normalizeAuthenticationClientIp('attacker-controlled')).toThrow(
+      'AUTH_SOURCE_IP_UNAVAILABLE',
+    )
+  })
+
+  it('retries P2010 only when metadata carries SQLSTATE 40001', () => {
+    expect(isRetryableAuthenticationConflict({ code: 'P2010', meta: { code: '40001' } })).toBe(true)
+    expect(isRetryableAuthenticationConflict({ code: 'P2010', meta: { code: '23505' } })).toBe(
+      false,
+    )
+    expect(isRetryableAuthenticationConflict({ code: 'P2010' })).toBe(false)
+    expect(isRetryableAuthenticationConflict({ code: 'P2002' })).toBe(false)
   })
 })

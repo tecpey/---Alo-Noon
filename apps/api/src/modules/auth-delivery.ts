@@ -1,12 +1,17 @@
 import { createHash, createHmac, randomInt, randomUUID } from 'node:crypto'
+import { isIP } from 'node:net'
 
 import type { Prisma, PrismaClient } from '@alo-noon/database'
-import { authenticationDeliveryEventPayloadSchema } from '@alo-noon/contracts'
+import {
+  authenticationDeliveryEventPayloadSchema,
+  authenticationDeliverySuppressedEventPayloadSchema,
+} from '@alo-noon/contracts'
 import {
   assertAuthenticationDeliveryTransition,
   createAuthenticationDeliveryPolicy,
   generateSecureOtp,
   normalizeAuthenticationDeliveryResult,
+  normalizeIranianMobile,
   selectAuthenticationProvider,
   type AuthenticationCredentialResolver,
   type AuthenticationDeliveryPolicy,
@@ -101,10 +106,12 @@ export function createPrismaAuthenticationDeliveryService(
 
   return {
     async request(command) {
-      if (!command.sourceIp.trim()) {
-        throw new AuthenticationDeliveryError('AUTH_SOURCE_IP_UNAVAILABLE', 503)
+      const canonicalCommand = {
+        ...command,
+        mobileE164: normalizeIranianMobile(command.mobileE164),
+        sourceIp: normalizeAuthenticationClientIp(command.sourceIp),
       }
-      const preparation = await prepareDelivery(prisma, options, command)
+      const preparation = await prepareDelivery(prisma, options, canonicalCommand)
       if (preparation.kind === 'SUPPRESSED' || preparation.kind === 'REPLAY') {
         if (preparation.kind === 'SUPPRESSED') {
           await observe(options, {
@@ -114,19 +121,25 @@ export function createPrismaAuthenticationDeliveryService(
             durationMs: null,
           })
         }
+        if (
+          preparation.kind === 'REPLAY' &&
+          ['REJECTED', 'TRANSIENT_FAILURE', 'PERMANENT_FAILURE'].includes(preparation.attempt.state)
+        ) {
+          throw new AuthenticationDeliveryError('AUTH_DELIVERY_PROVIDER_UNAVAILABLE', 503)
+        }
         return preparation.result
       }
 
       await options.afterPreparationCommit?.(preparation.attempt.id)
       const invocationStartedAt = Date.now()
-      const normalized = await invokeDelivery(options, preparation, command)
+      const normalized = await invokeDelivery(options, preparation, canonicalCommand)
       await observe(options, {
         name: 'auth_delivery_completed',
         providerCode: preparation.attempt.providerConfiguration.providerCode,
         outcome: normalized.outcome,
         durationMs: Math.max(0, Date.now() - invocationStartedAt),
       })
-      return finalizeDelivery(prisma, options, command, preparation, normalized)
+      return finalizeDelivery(prisma, options, canonicalCommand, preparation, normalized)
     },
   }
 }
@@ -136,11 +149,20 @@ async function prepareDelivery(
   options: PrismaAuthenticationDeliveryOptions,
   command: AuthenticationDeliveryCommand,
 ): Promise<Preparation> {
-  const mobileDigest = hmac(options.abusePepper, `mobile:${command.mobileE164}`)
-  const sourceIpDigest = hmac(options.abusePepper, `ip:${command.sourceIp}`)
-  const fingerprint = hmac(
+  const mobileDigest = authenticationIdentifierDigest(
     options.abusePepper,
-    `auth-delivery:v1:${command.tenantId}:${mobileDigest}`,
+    'mobile',
+    command.mobileE164,
+  )
+  const sourceIpDigest = authenticationIdentifierDigest(
+    options.abusePepper,
+    'source-ip',
+    command.sourceIp,
+  )
+  const fingerprint = authenticationPurposeDigest(
+    options.abusePepper,
+    'request-fingerprint',
+    `${command.tenantId}:${mobileDigest}`,
   )
   const candidateChallengeId = randomUUID()
   const candidateAttemptId = randomUUID()
@@ -286,6 +308,13 @@ async function prepareDelivery(
           active.status === 'PREPARED' ||
           active.resendAvailableAt > command.now
         ) {
+          await writeSuppressionRecords(
+            transaction,
+            command.tenantId,
+            command.correlationId,
+            'ACTIVE_CHALLENGE',
+            command.now,
+          )
           return {
             kind: 'SUPPRESSED',
             result: genericAccepted(command.now, options.policy, true),
@@ -342,6 +371,13 @@ async function prepareDelivery(
         tenantCount >= options.policy.maxTenantSendsPerHour ||
         providerCount >= options.policy.maxProviderSendsPerMinute
       ) {
+        await writeSuppressionRecords(
+          transaction,
+          command.tenantId,
+          command.correlationId,
+          'RATE_LIMIT',
+          command.now,
+        )
         return {
           kind: 'SUPPRESSED',
           result: genericAccepted(command.now, options.policy, true),
@@ -354,7 +390,12 @@ async function prepareDelivery(
           tenantId: command.tenantId,
           mobileE164: command.mobileE164,
           mobileDigest,
-          codeDigest: hmac(options.otpPepper, `${candidateChallengeId}.${otp}`),
+          codeDigest: authenticationOtpDigest(
+            options.otpPepper,
+            command.tenantId,
+            candidateChallengeId,
+            otp,
+          ),
           requestIdempotencyKey: command.idempotencyKey,
           requestFingerprint: fingerprint,
           sourceIpDigest,
@@ -614,6 +655,45 @@ async function writeDeliveryRecords(
   ])
 }
 
+async function writeSuppressionRecords(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  correlationId: string,
+  policyDecision: 'ACTIVE_CHALLENGE' | 'RATE_LIMIT',
+  occurredAt: Date,
+): Promise<void> {
+  const payload = authenticationDeliverySuppressedEventPayloadSchema.parse({ policyDecision })
+  await Promise.all([
+    transaction.auditEvent.create({
+      data: {
+        tenantId,
+        actorType: 'SYSTEM',
+        action: 'auth.otp.delivery_suppressed',
+        entityType: 'auth_delivery_policy',
+        entityId: correlationId,
+        summary: 'OTP delivery suppressed by private policy',
+        correlationId,
+        metadata: payload,
+        occurredAt,
+      },
+    }),
+    transaction.domainEventOutbox.create({
+      data: {
+        tenantId,
+        eventId: randomUUID(),
+        name: 'auth.otp.delivery_suppressed',
+        aggregateType: 'auth_delivery_policy',
+        aggregateId: correlationId,
+        actorType: 'SYSTEM',
+        correlationId,
+        consentBasis: 'TRANSACTIONAL',
+        payload,
+        occurredAt,
+      },
+    }),
+  ])
+}
+
 export function createEnvironmentAuthenticationCredentialResolver(
   environment: Readonly<Record<string, string | undefined>>,
 ): AuthenticationCredentialResolver {
@@ -634,7 +714,46 @@ export function createEnvironmentAuthenticationCredentialResolver(
 }
 
 export function authenticationFingerprint(pepper: string, value: string): string {
-  return hmac(pepper, value)
+  return authenticationPurposeDigest(pepper, 'request-fingerprint', value)
+}
+
+export function authenticationOtpDigest(
+  pepper: string,
+  tenantId: string,
+  challengeId: string,
+  otp: string,
+): string {
+  return authenticationPurposeDigest(pepper, 'otp', `${tenantId}:${challengeId}:${otp}`)
+}
+
+export function authenticationIdentifierDigest(
+  pepper: string,
+  purpose: 'mobile' | 'source-ip',
+  value: string,
+): string {
+  return authenticationPurposeDigest(pepper, purpose, value)
+}
+
+export function authenticationSessionDigest(pepper: string, token: string): string {
+  return authenticationPurposeDigest(pepper, 'session', token)
+}
+
+export function normalizeAuthenticationClientIp(value: string): string {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) {
+    throw new AuthenticationDeliveryError('AUTH_SOURCE_IP_UNAVAILABLE', 503)
+  }
+  if (normalized.startsWith('::ffff:')) {
+    const mapped = normalized.slice('::ffff:'.length)
+    if (isIP(mapped) === 4) return mapped
+  }
+  const version = isIP(normalized)
+  if (version === 4) return normalized
+  if (version === 6) {
+    const hostname = new URL(`http://[${normalized}]/`).hostname
+    return hostname.slice(1, -1)
+  }
+  throw new AuthenticationDeliveryError('AUTH_SOURCE_IP_UNAVAILABLE', 503)
 }
 
 function configurationView(
@@ -682,8 +801,14 @@ function failure(
   }
 }
 
-function hmac(pepper: string, value: string): string {
-  return createHmac('sha256', pepper).update(value).digest('hex')
+function authenticationPurposeDigest(
+  pepper: string,
+  purpose: 'otp' | 'mobile' | 'source-ip' | 'request-fingerprint' | 'session',
+  value: string,
+): string {
+  return createHmac('sha256', pepper)
+    .update(`alo-noon:authentication:v1:${purpose}:${value}`)
+    .digest('hex')
 }
 
 function secondsUntil(target: Date, now: Date): number {
@@ -728,13 +853,13 @@ async function serializableWithRetry<T>(
       const retryable = isRetryableAuthenticationConflict(error, retryUniqueConstraints)
       if (!retryable || attempt === maxAttempts) {
         if (retryable) {
-          throw new AuthenticationDeliveryError('AUTH_DELIVERY_CONCURRENCY_CONFLICT', 409)
+          throw new AuthenticationDeliveryError('AUTH_DELIVERY_CONCURRENCY_CONFLICT', 503)
         }
         throw error
       }
     }
   }
-  throw new AuthenticationDeliveryError('AUTH_DELIVERY_CONCURRENCY_CONFLICT', 409)
+  throw new AuthenticationDeliveryError('AUTH_DELIVERY_CONCURRENCY_CONFLICT', 503)
 }
 
 export function isRetryableAuthenticationConflict(
@@ -770,4 +895,66 @@ function constraintIdentity(meta: unknown): string {
 
 export function authenticationRequestHash(value: string): string {
   return createHash('sha256').update(value).digest('hex')
+}
+
+export async function authenticationDatabaseRoleIsSafe(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ safe: boolean }>>`
+    SELECT
+      NOT EXISTS (
+        SELECT 1
+        FROM pg_roles elevated
+        WHERE (elevated.rolsuper OR elevated.rolbypassrls)
+          AND pg_has_role(current_user, elevated.oid, 'MEMBER')
+      )
+      AND (
+        SELECT count(*)
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relkind = 'r'
+          AND relation.relname IN (
+            'AuthDeliveryProviderConfiguration',
+            'AuthOtpChallenge',
+            'AuthOtpDeliveryAttempt',
+            'AuthAbuseEvent',
+            'TenantMembership',
+            'AuthSession'
+          )
+      ) = 6
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relkind = 'r'
+          AND relation.relname IN (
+            'AuthDeliveryProviderConfiguration',
+            'AuthOtpChallenge',
+            'AuthOtpDeliveryAttempt',
+            'AuthAbuseEvent',
+            'TenantMembership',
+            'AuthSession'
+          )
+          AND pg_get_userbyid(relation.relowner) = current_user
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relkind = 'r'
+          AND relation.relname IN (
+            'AuthDeliveryProviderConfiguration',
+            'AuthOtpChallenge',
+            'AuthOtpDeliveryAttempt',
+            'AuthAbuseEvent',
+            'TenantMembership',
+            'AuthSession'
+          )
+          AND (NOT relation.relrowsecurity OR NOT relation.relforcerowsecurity)
+      ) AS safe
+  `
+  return rows[0]?.safe === true
 }

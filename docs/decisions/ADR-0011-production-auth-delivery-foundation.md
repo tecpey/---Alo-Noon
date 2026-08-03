@@ -34,8 +34,9 @@ session, and payment domains. It uses:
   forced PostgreSQL RLS;
 - a `SERIALIZABLE` preparation transaction, provider invocation outside the
   database transaction, and a `SERIALIZABLE` finalization transaction;
-- HMAC digests for OTP values, phone-number abuse dimensions, source IPs,
-  idempotency fingerprints, and session tokens;
+- purpose-separated HMAC digests for OTP values, phone-number abuse dimensions,
+  source IPs, idempotency fingerprints, and session tokens, backed by three
+  independent production peppers;
 - a single active challenge policy, five-minute expiry, sixty-second resend
   cooldown, five verification attempts, and bounded rolling send budgets;
 - a persisted provider circuit that opens after repeated normalized failures;
@@ -75,6 +76,10 @@ adapters and never perform network calls.
   `40001`) receive bounded retries.
 - Direct database access remains governed by composite tenant constraints, state
   checks, and forced RLS.
+- Pepper rotation is state invalidation, not a transparent configuration change:
+  OTP and session rotations revoke their active state, while abuse-key rotation
+  must preserve the longest active counter window or use a reviewed dual-key
+  rollout.
 
 ## Rollout and rollback
 

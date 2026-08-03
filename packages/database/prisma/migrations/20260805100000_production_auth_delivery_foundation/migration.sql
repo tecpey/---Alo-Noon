@@ -372,7 +372,13 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
-  RAISE EXCEPTION 'Authentication abuse history is append-only';
+  IF TG_OP = 'UPDATE' THEN
+    RAISE EXCEPTION 'Authentication abuse history cannot be updated';
+  END IF;
+  IF TG_OP = 'DELETE' AND OLD."expiresAt" > CURRENT_TIMESTAMP THEN
+    RAISE EXCEPTION 'Unexpired authentication abuse history cannot be deleted';
+  END IF;
+  RETURN OLD;
 END
 $$;
 CREATE TRIGGER auth_abuse_event_append_only

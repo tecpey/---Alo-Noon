@@ -45,7 +45,9 @@ describe('production authentication delivery migration', () => {
     expect(migration).toContain('auth_attempt_provider_reference_key')
     expect(migration).toContain('Authentication OTP challenges cannot be deleted')
     expect(migration).toContain('Authentication delivery attempt is append-only after finalization')
-    expect(migration).toContain('Authentication abuse history is append-only')
+    expect(migration).toContain('Authentication abuse history cannot be updated')
+    expect(migration).toContain('Unexpired authentication abuse history cannot be deleted')
+    expect(migration).toContain('OLD."expiresAt" > CURRENT_TIMESTAMP')
   })
 
   it('contains no plaintext credential or OTP value column', () => {

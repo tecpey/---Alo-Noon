@@ -42,6 +42,18 @@ export const envSchema = z
         })
       }
     }
+    const configuredPeppers = [
+      env.AUTH_OTP_PEPPER,
+      env.AUTH_SESSION_PEPPER,
+      env.AUTH_ABUSE_PEPPER,
+    ].filter((value): value is string => value !== undefined)
+    if (new Set(configuredPeppers).size !== configuredPeppers.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['AUTH_OTP_PEPPER'],
+        message: 'Authentication peppers must be independent production secrets',
+      })
+    }
   })
 
 export type Env = z.infer<typeof envSchema>

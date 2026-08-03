@@ -15,6 +15,7 @@ import {
 } from './modules/discovery.js'
 import { createPrismaAuthRepository } from './modules/auth.js'
 import {
+  authenticationDatabaseRoleIsSafe,
   createEnvironmentAuthenticationCredentialResolver,
   createPrismaAuthenticationDeliveryService,
 } from './modules/auth-delivery.js'
@@ -60,7 +61,7 @@ const app = await buildApp({
   trustProxyHops: env.API_TRUST_PROXY_HOPS,
   readinessCheck: async () => {
     await prisma.$queryRaw`SELECT 1`
-    return true
+    return env.NODE_ENV !== 'production' || authenticationDatabaseRoleIsSafe(prisma)
   },
   authenticationDeliveryReadinessCheck: async () =>
     env.NODE_ENV !== 'production' ||

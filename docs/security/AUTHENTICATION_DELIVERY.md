@@ -15,6 +15,12 @@ authentication-delivery dependency unavailable until an approved non-test
 adapter is registered. Automated tests use only an isolated deterministic test
 adapter and never send SMS.
 
+Production readiness also rejects a database application role that is a member
+of any `SUPERUSER`/`BYPASSRLS` role or owns the protected authentication tables.
+Schema migration credentials must therefore be separate from the least-privilege
+runtime `DATABASE_URL` role. Tenant configuration is checked per request; the
+global readiness probe does not enumerate tenant/provider configuration.
+
 ## Provider onboarding
 
 Provider onboarding requires a separate reviewed change with:
@@ -58,6 +64,24 @@ trusts no forwarded proxy hop by default. `API_TRUST_PROXY_HOPS` may be set only
 to the reviewed number of reverse-proxy hops (0–3); an unavailable reliable
 source IP fails closed.
 
+Authentication HMAC inputs use explicit `otp`, `session`, `mobile`, `source-ip`,
+and `request-fingerprint` purpose namespaces. Production additionally rejects
+configuration that reuses one pepper across OTP, session, and abuse purposes.
+Pepper rotation is an operationally coordinated invalidation boundary:
+
+- rotating `AUTH_OTP_PEPPER` invalidates every active OTP challenge;
+- rotating `AUTH_SESSION_PEPPER` invalidates every active session;
+- rotating `AUTH_ABUSE_PEPPER` changes identifier tokens and therefore must wait
+  for the longest abuse window to drain, or the old-key counters must remain
+  enforced during a separately reviewed dual-key migration.
+
+Rotate during a controlled security event or maintenance window, revoke affected
+state explicitly, and never change these values on only part of a running fleet.
+HMAC tokenization is pseudonymization, not encryption or irreversible
+anonymization: compromise of `AUTH_ABUSE_PEPPER` permits offline testing of the
+bounded Iranian mobile-number space. Treat a suspected leak as a credential and
+privacy incident and rotate using the coordinated procedure above.
+
 ## Transaction and recovery model
 
 Transaction A establishes transaction-local `app.tenant_id`, selects exactly one
@@ -73,7 +97,9 @@ not a safe retry. If a process disappears after invocation, replay initially
 returns a stable uncertain result; after two provider-timeout intervals it
 finalizes the stale initialized attempt as `UNKNOWN` without another send. Known
 failed attempts do not become verifiable. Successful verification consumes the
-challenge atomically, so concurrent verification can create only one session.
+challenge and creates its session in one `SERIALIZABLE` transaction, so a
+session-persistence failure rolls back consumption and concurrent verification
+can create only one session.
 
 ## Privacy and observability
 
@@ -82,6 +108,24 @@ code, adapter/SPI versions, normalized state, correlation ID, and a bounded safe
 code. They exclude phone numbers, OTPs, credentials, provider payloads,
 authorization headers, and raw provider messages. Runtime warnings log only
 stable error codes.
+
+Automatic Fastify request logging is disabled in the production server path, and
+the logger redacts request IP/port, `Authorization`, and cookie bindings from
+manual request logs. Authentication handlers never attach request bodies or raw
+provider errors to logs.
+
+The environment resolver copies credential text into a mutable buffer and
+overwrites that buffer after invocation as a best-effort reduction of exposure.
+JavaScript strings and environment storage are runtime-managed, so this is not
+guaranteed memory erasure; process, secret-manager, and crash-dump controls
+remain required.
+
+`AuthOtpChallenge.mobileE164` is the bounded delivery/recovery destination and
+is protected by forced tenant RLS, but it remains personal data visible to an
+authorized PostgreSQL administrator and in protected backups. Database access,
+encryption at rest, backup access, and challenge/attempt retention must be
+approved before a real provider is enabled. HMAC digests do not replace this
+data-classification requirement.
 
 The service exposes a non-authoritative low-cardinality observer port for
 delivery outcome, provider code, suppression count, and latency. Exporting these
@@ -96,6 +140,18 @@ observer failure never changes authentication truth. Alerting should cover:
 
 Never use full phone numbers, tenant names, challenge IDs, IP addresses, or
 credential references as metric labels or trace attributes.
+
+Expired `AuthAbuseEvent` rows may be deleted under tenant context for bounded
+retention. Updates and deletion before `expiresAt` remain database-rejected.
+Deployments must schedule tenant-scoped cleanup using the indexed `expiresAt`
+column; otherwise high-volume abuse traffic will grow the table indefinitely.
+
+The synchronous endpoint can have different latency for a suppressed request and
+a real provider invocation. It performs no account-existence lookup, but recent
+request activity could still be statistically inferred once a real adapter is
+enabled. Provider onboarding therefore requires an edge/WAF control and a
+separately reviewed asynchronous or latency-normalized public-delivery design
+before production activation.
 
 ## Troubleshooting and rollback
 

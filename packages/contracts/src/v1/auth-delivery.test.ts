@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   authenticationDeliveryEventPayloadSchema,
+  authenticationDeliverySuppressedEventPayloadSchema,
   otpIdempotencyKeySchema,
   otpRequestSchema,
 } from '..'
@@ -39,5 +40,10 @@ describe('authentication delivery contracts', () => {
     expect(payload).not.toHaveProperty('otp')
     expect(payload).not.toHaveProperty('mobileE164')
     expect(payload).not.toHaveProperty('credentialReference')
+    expect(
+      authenticationDeliverySuppressedEventPayloadSchema.parse({
+        policyDecision: 'RATE_LIMIT',
+      }),
+    ).toEqual({ policyDecision: 'RATE_LIMIT' })
   })
 })
