@@ -312,7 +312,13 @@ export function createPrismaPaymentLedgerService(
 
         const codes = [...new Set(command.entries.map((entry) => entry.accountCode))]
         const accounts = await transaction.ledgerAccount.findMany({
-          where: { tenantId, code: { in: codes }, isActive: true, currency: 'IRR' },
+          where: {
+            tenantId,
+            code: { in: codes },
+            isActive: true,
+            isPostable: true,
+            currency: 'IRR',
+          },
         })
         const accountsByCode = new Map(accounts.map((account) => [account.code, account]))
         if (accounts.length !== codes.length) {

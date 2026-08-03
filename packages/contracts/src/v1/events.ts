@@ -18,6 +18,8 @@ export const eventNameSchema = z.enum([
   'payment.created',
   'payment.state_changed',
   'financial.transaction_posted',
+  'financial.chart_provisioned',
+  'financial.ledger_account_state_changed',
   'support.case_created',
 ])
 
@@ -81,4 +83,25 @@ export const financialTransactionPostedEventPayloadSchema = z.object({
 })
 export type FinancialTransactionPostedEventPayload = z.infer<
   typeof financialTransactionPostedEventPayloadSchema
+>
+
+export const financialChartProvisionedEventPayloadSchema = z.object({
+  tenantId: uuidSchema,
+  templateVersion: z.number().int().positive(),
+  accountCount: z.number().int().positive(),
+})
+export type FinancialChartProvisionedEventPayload = z.infer<
+  typeof financialChartProvisionedEventPayloadSchema
+>
+
+export const ledgerAccountStateChangedEventPayloadSchema = z.object({
+  ledgerAccountId: uuidSchema,
+  code: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+  fromActive: z.boolean(),
+  toActive: z.boolean(),
+  version: z.number().int().positive(),
+  reason: z.string().min(1).max(500),
+})
+export type LedgerAccountStateChangedEventPayload = z.infer<
+  typeof ledgerAccountStateChangedEventPayloadSchema
 >

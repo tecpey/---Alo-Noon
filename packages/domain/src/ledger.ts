@@ -16,6 +16,234 @@ export const FinancialTransactionType = { PAYMENT_CAPTURE: 'PAYMENT_CAPTURE' } a
 export type FinancialTransactionType =
   (typeof FinancialTransactionType)[keyof typeof FinancialTransactionType]
 
+export const SYSTEM_CHART_VERSION = 1 as const
+
+export interface SystemLedgerAccountTemplate {
+  key: string
+  code: string
+  name: string
+  type: LedgerAccountType
+  parentKey: string | null
+  isPostable: boolean
+}
+
+export const SYSTEM_LEDGER_ACCOUNT_TEMPLATES = Object.freeze([
+  {
+    key: 'ASSETS',
+    code: 'A_1000',
+    name: 'Assets',
+    type: 'ASSET',
+    parentKey: null,
+    isPostable: false,
+  },
+  {
+    key: 'CASH_CLEARING',
+    code: 'A_1100_CASH_CLEARING',
+    name: 'Cash clearing',
+    type: 'ASSET',
+    parentKey: 'ASSETS',
+    isPostable: true,
+  },
+  {
+    key: 'LIABILITIES',
+    code: 'L_2000',
+    name: 'Liabilities',
+    type: 'LIABILITY',
+    parentKey: null,
+    isPostable: false,
+  },
+  {
+    key: 'PAYMENT_CLEARING',
+    code: 'L_2100_PAYMENT_CLEARING',
+    name: 'Payment clearing',
+    type: 'LIABILITY',
+    parentKey: 'LIABILITIES',
+    isPostable: true,
+  },
+  {
+    key: 'BAKERY_PAYABLE',
+    code: 'L_2200_BAKERY_PAYABLE',
+    name: 'Bakery payable',
+    type: 'LIABILITY',
+    parentKey: 'LIABILITIES',
+    isPostable: true,
+  },
+  {
+    key: 'COURIER_PAYABLE',
+    code: 'L_2300_COURIER_PAYABLE',
+    name: 'Courier payable',
+    type: 'LIABILITY',
+    parentKey: 'LIABILITIES',
+    isPostable: true,
+  },
+  {
+    key: 'EQUITY',
+    code: 'E_3000',
+    name: 'Equity',
+    type: 'EQUITY',
+    parentKey: null,
+    isPostable: false,
+  },
+  {
+    key: 'RETAINED_EARNINGS',
+    code: 'E_3100_RETAINED_EARNINGS',
+    name: 'Retained earnings',
+    type: 'EQUITY',
+    parentKey: 'EQUITY',
+    isPostable: true,
+  },
+  {
+    key: 'REVENUE',
+    code: 'R_4000',
+    name: 'Revenue',
+    type: 'REVENUE',
+    parentKey: null,
+    isPostable: false,
+  },
+  {
+    key: 'PRODUCT_SALES_REVENUE',
+    code: 'R_4100_PRODUCT_SALES',
+    name: 'Product sales revenue',
+    type: 'REVENUE',
+    parentKey: 'REVENUE',
+    isPostable: true,
+  },
+  {
+    key: 'DELIVERY_REVENUE',
+    code: 'R_4200_DELIVERY',
+    name: 'Delivery revenue',
+    type: 'REVENUE',
+    parentKey: 'REVENUE',
+    isPostable: true,
+  },
+  {
+    key: 'EXPENSES',
+    code: 'X_5000',
+    name: 'Expenses',
+    type: 'EXPENSE',
+    parentKey: null,
+    isPostable: false,
+  },
+  {
+    key: 'DELIVERY_EXPENSE',
+    code: 'X_5100_DELIVERY',
+    name: 'Delivery expense',
+    type: 'EXPENSE',
+    parentKey: 'EXPENSES',
+    isPostable: true,
+  },
+  {
+    key: 'PAYMENT_PROCESSING_EXPENSE',
+    code: 'X_5200_PAYMENT_PROCESSING',
+    name: 'Payment processing expense',
+    type: 'EXPENSE',
+    parentKey: 'EXPENSES',
+    isPostable: true,
+  },
+] satisfies readonly SystemLedgerAccountTemplate[])
+
+export const LedgerAccountGovernanceAction = {
+  PROVISIONED: 'PROVISIONED',
+  ACTIVATED: 'ACTIVATED',
+  DEACTIVATED: 'DEACTIVATED',
+} as const
+export type LedgerAccountGovernanceAction =
+  (typeof LedgerAccountGovernanceAction)[keyof typeof LedgerAccountGovernanceAction]
+
+export interface LedgerAccountGovernanceCommand {
+  accountId: string
+  currentActive: boolean
+  targetActive: boolean
+  parentActive: boolean | null
+  hasActiveChildren: boolean
+  actor: 'SYSTEM' | 'STAFF'
+  actorId?: string
+  idempotencyKey: string
+  reason: string
+  correlationId: string
+  occurredAt: Date
+}
+
+export function validateSystemChartTemplates(
+  templates: readonly SystemLedgerAccountTemplate[] = SYSTEM_LEDGER_ACCOUNT_TEMPLATES,
+): void {
+  const keys = new Set<string>()
+  const codes = new Set<string>()
+  const roots = new Set<LedgerAccountType>()
+  for (const template of templates) {
+    if (
+      keys.has(template.key) ||
+      codes.has(template.code) ||
+      !/^[A-Z][A-Z0-9_]{1,63}$/.test(template.code)
+    ) {
+      throw new DomainError(
+        'INVALID_CHART_TEMPLATE',
+        'System account keys and codes must be unique',
+      )
+    }
+    if (template.parentKey === null) {
+      if (template.isPostable || roots.has(template.type)) {
+        throw new DomainError(
+          'INVALID_CHART_TEMPLATE',
+          'Each account type requires one header root',
+        )
+      }
+      roots.add(template.type)
+    } else {
+      const parent = templates.find(({ key }) => key === template.parentKey)
+      if (!parent || parent.type !== template.type || parent.isPostable) {
+        throw new DomainError(
+          'INVALID_CHART_TEMPLATE',
+          'Account parents must be headers of the same type',
+        )
+      }
+    }
+    keys.add(template.key)
+    codes.add(template.code)
+  }
+  if (roots.size !== Object.keys(LedgerAccountType).length) {
+    throw new DomainError('INVALID_CHART_TEMPLATE', 'The chart must cover every account type')
+  }
+}
+
+export function governLedgerAccount(
+  command: LedgerAccountGovernanceCommand,
+): Readonly<LedgerAccountGovernanceCommand & { action: LedgerAccountGovernanceAction }> {
+  if (
+    !command.accountId.trim() ||
+    command.idempotencyKey.trim().length < 16 ||
+    command.idempotencyKey.length > 128 ||
+    !command.reason.trim() ||
+    command.reason.length > 500 ||
+    !command.correlationId.trim() ||
+    Number.isNaN(command.occurredAt.getTime()) ||
+    (command.actor === 'SYSTEM' ? command.actorId !== undefined : !command.actorId)
+  ) {
+    throw new DomainError('INVALID_LEDGER_GOVERNANCE', 'Ledger governance command is invalid')
+  }
+  if (command.currentActive === command.targetActive) {
+    throw new DomainError('LEDGER_ACCOUNT_STATE_UNCHANGED', 'Ledger account already has that state')
+  }
+  if (command.targetActive && command.parentActive === false) {
+    throw new DomainError(
+      'LEDGER_PARENT_INACTIVE',
+      'An account cannot activate below an inactive parent',
+    )
+  }
+  if (!command.targetActive && command.hasActiveChildren) {
+    throw new DomainError(
+      'LEDGER_ACCOUNT_HAS_ACTIVE_CHILDREN',
+      'A header with active children cannot deactivate',
+    )
+  }
+  return Object.freeze({
+    ...command,
+    action: command.targetActive
+      ? LedgerAccountGovernanceAction.ACTIVATED
+      : LedgerAccountGovernanceAction.DEACTIVATED,
+  })
+}
+
 export interface JournalLine {
   accountId: string
   side: LedgerEntrySide

@@ -1,13 +1,15 @@
 openapi: 3.1.0
 info:
   title: Alo Noon API
-  version: 0.7.0
+  version: 0.8.0
   description: >-
     Phase 2E contract. Operational endpoints, tenant-aware discovery, identity,
     customer-owned addresses, authoritative delivery quotes, and atomic
     capacity-backed Quote-to-Order conversion, and the internal payment and
     double-entry ledger foundation are implemented. Payment execution remains
-    internal; no public payment-status write endpoint is exposed.
+    internal; the versioned tenant chart of accounts and governed account state
+    foundation are implemented. No public payment-status or ledger-governance
+    write endpoint is exposed.
 servers:
   - url: http://localhost:3001
 paths:
@@ -775,6 +777,53 @@ components:
     LedgerAccountType:
       type: string
       enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+    LedgerAccountGovernanceAction:
+      type: string
+      enum: [PROVISIONED, ACTIVATED, DEACTIVATED]
+    LedgerAccountSummary:
+      type: object
+      required:
+        [
+          id,
+          parentId,
+          code,
+          name,
+          type,
+          currency,
+          isSystem,
+          isPostable,
+          isActive,
+          systemKey,
+          templateVersion,
+          governanceVersion,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        parentId: { type: [string, 'null'], format: uuid }
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,63}$' }
+        name: { type: string, minLength: 1 }
+        type: { $ref: '#/components/schemas/LedgerAccountType' }
+        currency: { type: string, const: IRR }
+        isSystem: { type: boolean }
+        isPostable: { type: boolean }
+        isActive: { type: boolean }
+        systemKey: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        templateVersion: { type: [integer, 'null'], minimum: 1 }
+        governanceVersion: { type: integer, minimum: 0 }
+    TenantFinancialBootstrapSummary:
+      type: object
+      required: [id, tenantId, templateVersion, accountCount, correlationId, completedAt, accounts]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        templateVersion: { type: integer, minimum: 1 }
+        accountCount: { type: integer, minimum: 1 }
+        correlationId: { type: string, format: uuid }
+        completedAt: { type: string, format: date-time }
+        accounts:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/LedgerAccountSummary' }
     LedgerEntrySide:
       type: string
       enum: [DEBIT, CREDIT]
@@ -834,6 +883,23 @@ components:
         amount: { type: string, pattern: '^\d+$' }
         currency: { type: string, const: IRR }
         entryCount: { type: integer, minimum: 2 }
+    FinancialChartProvisionedEventPayload:
+      type: object
+      required: [tenantId, templateVersion, accountCount]
+      properties:
+        tenantId: { type: string, format: uuid }
+        templateVersion: { type: integer, minimum: 1 }
+        accountCount: { type: integer, minimum: 1 }
+    LedgerAccountStateChangedEventPayload:
+      type: object
+      required: [ledgerAccountId, code, fromActive, toActive, version, reason]
+      properties:
+        ledgerAccountId: { type: string, format: uuid }
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,63}$' }
+        fromActive: { type: boolean }
+        toActive: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
     ServiceabilityRequest:
       type: object
       required: [cityId, latitude, longitude]

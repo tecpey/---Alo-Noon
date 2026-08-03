@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   FinancialTransactionType,
+  governLedgerAccount,
   LedgerEntrySide,
   postDoubleEntry,
+  SYSTEM_CHART_VERSION,
+  SYSTEM_LEDGER_ACCOUNT_TEMPLATES,
+  validateSystemChartTemplates,
   type FinancialPosting,
 } from './ledger'
 
@@ -69,5 +73,76 @@ describe('double-entry ledger', () => {
         lines: [{ ...posting.lines[0]!, amount: -1n }, posting.lines[1]!],
       }),
     ).toThrow('positive IRR')
+  })
+})
+
+describe('system chart of accounts', () => {
+  it('defines a valid deterministic versioned hierarchy covering every account type', () => {
+    expect(SYSTEM_CHART_VERSION).toBe(1)
+    expect(() => validateSystemChartTemplates()).not.toThrow()
+    expect(new Set(SYSTEM_LEDGER_ACCOUNT_TEMPLATES.map(({ code }) => code)).size).toBe(
+      SYSTEM_LEDGER_ACCOUNT_TEMPLATES.length,
+    )
+    expect(
+      SYSTEM_LEDGER_ACCOUNT_TEMPLATES.filter(({ parentKey }) => parentKey === null).map(
+        ({ type }) => type,
+      ),
+    ).toEqual(['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'])
+  })
+
+  it('rejects duplicate and structurally invalid templates', () => {
+    const assetRoot = SYSTEM_LEDGER_ACCOUNT_TEMPLATES[0]!
+    expect(() =>
+      validateSystemChartTemplates([...SYSTEM_LEDGER_ACCOUNT_TEMPLATES, assetRoot]),
+    ).toThrow('unique')
+    expect(() =>
+      validateSystemChartTemplates([
+        ...SYSTEM_LEDGER_ACCOUNT_TEMPLATES.filter(({ key }) => key !== 'ASSETS'),
+        { ...assetRoot, isPostable: true },
+      ]),
+    ).toThrow('header')
+  })
+})
+
+describe('ledger account governance', () => {
+  const command = {
+    accountId: 'account-1',
+    currentActive: true,
+    targetActive: false,
+    parentActive: true,
+    hasActiveChildren: false,
+    actor: 'STAFF' as const,
+    actorId: 'staff-1',
+    idempotencyKey: 'ledger-governance-0001',
+    reason: 'Temporarily unavailable for new postings',
+    correlationId: 'correlation-1',
+    occurredAt: new Date('2026-08-03T12:00:00.000Z'),
+  }
+
+  it('derives activation actions without changing financial identity', () => {
+    expect(governLedgerAccount(command).action).toBe('DEACTIVATED')
+    expect(
+      governLedgerAccount({
+        ...command,
+        currentActive: false,
+        targetActive: true,
+      }).action,
+    ).toBe('ACTIVATED')
+  })
+
+  it('rejects no-op, orphan activation, unsafe header deactivation and invalid authority', () => {
+    expect(() => governLedgerAccount({ ...command, targetActive: true })).toThrow('already')
+    expect(() =>
+      governLedgerAccount({
+        ...command,
+        currentActive: false,
+        targetActive: true,
+        parentActive: false,
+      }),
+    ).toThrow('inactive parent')
+    expect(() => governLedgerAccount({ ...command, hasActiveChildren: true })).toThrow(
+      'active children',
+    )
+    expect(() => governLedgerAccount({ ...command, actor: 'SYSTEM' })).toThrow('invalid')
   })
 })

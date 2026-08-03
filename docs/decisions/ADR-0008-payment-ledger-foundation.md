@@ -29,6 +29,11 @@ transaction-local `app.tenant_id` for every financial relation.
 - Append-only history and PostgreSQL deferred integrity constraints.
 - Tenant/customer/operation-scoped idempotency, audit, and event contracts.
 - Internal application service; no public payment-status write endpoint.
+- A versioned, deterministic system chart for every tenant, including
+  non-postable hierarchy headers and operational posting accounts.
+- Automatic and replay-safe tenant financial bootstrap at the PostgreSQL tenant
+  boundary, with governed activation, immutable system identity, audit, and
+  outbox events.
 
 ## Deferred
 
@@ -39,5 +44,4 @@ transaction-local `app.tenant_id` for every financial relation.
 ## Open
 
 - Provider selection and provider-reference storage boundary.
-- Chart-of-accounts provisioning and operational ownership.
 - Reconciliation, settlement, and refund authorization policies.
