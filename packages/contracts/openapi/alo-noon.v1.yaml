@@ -1,15 +1,17 @@
 openapi: 3.1.0
 info:
   title: Alo Noon API
-  version: 0.8.0
+  version: 0.9.0
   description: >-
     Phase 2E contract. Operational endpoints, tenant-aware discovery, identity,
     customer-owned addresses, authoritative delivery quotes, and atomic
     capacity-backed Quote-to-Order conversion, and the internal payment and
     double-entry ledger foundation are implemented. Payment execution remains
     internal; the versioned tenant chart of accounts and governed account state
-    foundation are implemented. No public payment-status or ledger-governance
-    write endpoint is exposed.
+    foundation are implemented. The tenant-scoped payment-provider abstraction,
+    opaque credential-reference, payment-attempt, and callback replay foundation
+    are implemented without a real gateway adapter. No public payment-status or ledger-governance
+    write endpoint is exposed, and no provider-governance or provider-execution endpoint exists.
 servers:
   - url: http://localhost:3001
 paths:
@@ -761,6 +763,119 @@ components:
     PaymentAggregateState:
       type: string
       enum: [CREATED, PENDING, AUTHORIZED, CAPTURED, FAILED]
+    PaymentProviderCapability:
+      type: string
+      enum: [PAYMENT_INITIALIZATION, CALLBACK_VERIFICATION, PAYMENT_INQUIRY, CANCELLATION, REFUND]
+    PaymentProviderEnvironment:
+      type: string
+      enum: [TEST, PRODUCTION]
+    ProviderHealthStatus:
+      type: string
+      enum: [UNKNOWN, HEALTHY, DEGRADED, UNHEALTHY]
+    PaymentAttemptState:
+      type: string
+      enum:
+        [
+          CREATED,
+          INITIALIZATION_PENDING,
+          INITIALIZED,
+          CUSTOMER_ACTION_REQUIRED,
+          CALLBACK_RECEIVED,
+          VERIFICATION_PENDING,
+          VERIFIED,
+          REJECTED,
+          FAILED,
+          EXPIRED,
+        ]
+    PaymentProviderConfigurationSummary:
+      type: object
+      required:
+        [
+          id,
+          providerCode,
+          merchantReference,
+          environment,
+          paymentContext,
+          currency,
+          callbackPolicy,
+          capabilities,
+          credentialReferenceId,
+          isActive,
+          isDefault,
+          healthStatus,
+          governanceVersion,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        merchantReference: { type: string, minLength: 1, maxLength: 128 }
+        environment: { $ref: '#/components/schemas/PaymentProviderEnvironment' }
+        paymentContext: { type: string, const: CHECKOUT }
+        currency: { type: string, const: IRR }
+        callbackPolicy: { type: string, const: SIGNED_ONLY }
+        capabilities:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/PaymentProviderCapability' }
+        credentialReferenceId: { type: string, format: uuid }
+        isActive: { type: boolean }
+        isDefault: { type: boolean }
+        healthStatus: { $ref: '#/components/schemas/ProviderHealthStatus' }
+        governanceVersion: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaymentAttemptSummary:
+      type: object
+      required:
+        [
+          id,
+          paymentId,
+          providerConfigurationId,
+          state,
+          providerReference,
+          version,
+          correlationId,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        paymentId: { type: string, format: uuid }
+        providerConfigurationId: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/PaymentAttemptState' }
+        providerReference: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+        version: { type: integer, minimum: 1 }
+        correlationId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaymentCallbackReceiptSummary:
+      type: object
+      required:
+        [
+          id,
+          providerConfigurationId,
+          paymentAttemptId,
+          externalEventId,
+          bodyDigest,
+          headersFingerprint,
+          verificationStatus,
+          processingStatus,
+          receivedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        providerConfigurationId: { type: string, format: uuid }
+        paymentAttemptId: { type: [string, 'null'], format: uuid }
+        externalEventId: { type: string, minLength: 1, maxLength: 200 }
+        bodyDigest: { type: string, pattern: '^[a-f0-9]{64}$' }
+        headersFingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+        verificationStatus: { type: string, enum: [UNVERIFIED, VERIFIED, REJECTED] }
+        processingStatus: { type: string, enum: [RECEIVED, PROCESSED, REJECTED] }
+        receivedAt: { type: string, format: date-time }
     PaymentSummary:
       type: object
       required: [id, publicId, orderId, customerId, state, amount, version, createdAt, updatedAt]
