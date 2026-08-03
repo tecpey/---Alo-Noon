@@ -24,12 +24,28 @@ const migrationUrls = [
     '../prisma/migrations/20260803160000_chart_of_accounts_provisioning/migration.sql',
     import.meta.url,
   ),
+  new URL(
+    '../prisma/migrations/20260803200000_payment_provider_foundation/migration.sql',
+    import.meta.url,
+  ),
 ]
 
 type TenantRelation = {
   child: string
   foreignKey: string
   parent: string
+}
+
+const relationNameStems: Readonly<Record<string, string>> = {
+  'PaymentProviderConfiguration.credentialReferenceId': 'g3b_ProviderConfig_credentialRef_tenant',
+  'PaymentProviderGovernanceEvent.providerConfigurationId':
+    'g3b_ProviderGovernance_providerConfig_tenant',
+  'PaymentCallbackReceipt.providerConfigurationId': 'g3b_CallbackReceipt_providerConfig_tenant',
+}
+
+function relationConstraintName(child: string, foreignKey: string, suffix: 'idx' | 'fk'): string {
+  const stem = relationNameStems[`${child}.${foreignKey}`] ?? `g3b_${child}_${foreignKey}_tenant`
+  return `${stem}_${suffix}`
 }
 
 function tenantRelationsFromSchema(schema: string): TenantRelation[] {
@@ -102,7 +118,7 @@ describe('tenant relational integrity G3B', () => {
   const registeredRelations = registeredRelationsFromMigration(sql)
 
   it('covers every implemented tenant-owned relation exactly once', () => {
-    expect(schemaRelations).toHaveLength(63)
+    expect(schemaRelations).toHaveLength(70)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
       new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,
@@ -111,11 +127,13 @@ describe('tenant relational integrity G3B', () => {
 
   it('declares parent keys, child indexes and composite tenant foreign keys', () => {
     for (const { child, foreignKey, parent } of schemaRelations) {
+      const indexName = relationConstraintName(child, foreignKey, 'idx')
+      const foreignKeyName = relationConstraintName(child, foreignKey, 'fk')
+      expect(indexName.length).toBeLessThanOrEqual(63)
+      expect(foreignKeyName.length).toBeLessThanOrEqual(63)
       expect(schema).toContain(`@@unique([id, tenantId], map: "g3b_${parent}_id_tenant_key")`)
-      expect(schema).toContain(
-        `@@index([${foreignKey}, tenantId], map: "g3b_${child}_${foreignKey}_tenant_idx")`,
-      )
-      expect(sql).toContain(`CONSTRAINT "g3b_${child}_${foreignKey}_tenant_fk"`)
+      expect(schema).toContain(`@@index([${foreignKey}, tenantId], map: "${indexName}")`)
+      expect(sql).toContain(`CONSTRAINT "${foreignKeyName}"`)
       expect(sql).toContain(
         `FOREIGN KEY ("${foreignKey}", "tenantId")\n  REFERENCES "${parent}" ("id", "tenantId")`,
       )

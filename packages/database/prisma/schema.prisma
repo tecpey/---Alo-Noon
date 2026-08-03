@@ -340,6 +340,61 @@ enum LedgerAccountGovernanceAction {
   DEACTIVATED
 }
 
+enum PaymentProviderEnvironment {
+  TEST
+  PRODUCTION
+}
+
+enum PaymentProviderCapability {
+  PAYMENT_INITIALIZATION
+  CALLBACK_VERIFICATION
+  PAYMENT_INQUIRY
+  CANCELLATION
+  REFUND
+}
+
+enum PaymentContext {
+  CHECKOUT
+}
+
+enum ProviderHealthStatus {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+}
+
+enum PaymentProviderGovernanceAction {
+  CREATED
+  ACTIVATED
+  DEACTIVATED
+}
+
+enum PaymentAttemptState {
+  CREATED
+  INITIALIZATION_PENDING
+  INITIALIZED
+  CUSTOMER_ACTION_REQUIRED
+  CALLBACK_RECEIVED
+  VERIFICATION_PENDING
+  VERIFIED
+  REJECTED
+  FAILED
+  EXPIRED
+}
+
+enum PaymentCallbackVerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  REJECTED
+}
+
+enum PaymentCallbackProcessingStatus {
+  RECEIVED
+  PROCESSED
+  REJECTED
+}
+
 model Tenant {
   id             String             @id @default(uuid()) @db.Uuid
   slug           String             @unique @db.VarChar(64)
@@ -1159,6 +1214,7 @@ model Payment {
   correlationId        String                   @db.Uuid
   transitions          PaymentStateTransition[]
   financialTransaction FinancialTransaction?
+  attempts             PaymentAttempt[]
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
 
@@ -1167,6 +1223,161 @@ model Payment {
   @@index([orderId, tenantId], map: "g3b_Payment_orderId_tenant_idx")
   @@index([customerId, tenantId], map: "g3b_Payment_customerId_tenant_idx")
   @@index([tenantId, state, createdAt])
+}
+
+model ProviderCredentialReference {
+  id             String                         @id @default(uuid()) @db.Uuid
+  tenantId       String                         @db.Uuid
+  providerCode   String                         @db.VarChar(32)
+  reference      String                         @db.VarChar(500)
+  keyVersion     String                         @db.VarChar(64)
+  metadata       Json                           @default("{}")
+  idempotencyKey String                         @db.VarChar(128)
+  actorType      ActorType
+  actorId        String?                        @db.Uuid
+  correlationId  String                         @db.Uuid
+  configurations PaymentProviderConfiguration[]
+  createdAt      DateTime                       @default(now())
+
+  @@unique([tenantId, idempotencyKey], map: "ProviderCredential_tenant_idempotency_key")
+  @@unique([tenantId, providerCode, reference], map: "ProviderCredential_tenant_provider_reference_key")
+  @@unique([id, tenantId], map: "g3b_ProviderCredentialReference_id_tenant_key")
+  @@index([tenantId, providerCode])
+}
+
+model PaymentProviderConfiguration {
+  id                    String                           @id @default(uuid()) @db.Uuid
+  tenantId              String                           @db.Uuid
+  providerCode          String                           @db.VarChar(32)
+  adapterVersion        String                           @db.VarChar(64)
+  adapterSpiVersion     Int
+  merchantReference     String                           @db.VarChar(128)
+  environment           PaymentProviderEnvironment
+  paymentContext        PaymentContext
+  currency              Currency                         @default(IRR)
+  callbackPolicy        String                           @default("SIGNED_ONLY") @db.VarChar(32)
+  capabilities          PaymentProviderCapability[]
+  credentialReferenceId String                           @db.Uuid
+  credentialReference   ProviderCredentialReference      @relation(fields: [credentialReferenceId], references: [id], onDelete: Restrict)
+  isActive              Boolean                          @default(false)
+  isDefault             Boolean                          @default(false)
+  healthStatus          ProviderHealthStatus             @default(UNKNOWN)
+  governanceVersion     Int                              @default(1)
+  idempotencyKey        String                           @db.VarChar(128)
+  governanceEvents      PaymentProviderGovernanceEvent[]
+  attempts              PaymentAttempt[]
+  callbackReceipts      PaymentCallbackReceipt[]
+  createdAt             DateTime                         @default(now())
+  updatedAt             DateTime                         @updatedAt
+
+  @@unique([tenantId, providerCode, environment, adapterVersion, adapterSpiVersion], map: "PaymentProvider_tenant_code_environment_version_key")
+  @@unique([tenantId, idempotencyKey], map: "PaymentProvider_tenant_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_PaymentProviderConfiguration_id_tenant_key")
+  @@index([credentialReferenceId, tenantId], map: "g3b_ProviderConfig_credentialRef_tenant_idx")
+  @@index([tenantId, environment, paymentContext, currency, isActive, isDefault])
+}
+
+model PaymentProviderGovernanceEvent {
+  id                      String                          @id @default(uuid()) @db.Uuid
+  tenantId                String                          @db.Uuid
+  providerConfigurationId String                          @db.Uuid
+  providerConfiguration   PaymentProviderConfiguration    @relation(fields: [providerConfigurationId], references: [id], onDelete: Restrict)
+  action                  PaymentProviderGovernanceAction
+  fromActive              Boolean?
+  toActive                Boolean
+  fromDefault             Boolean?
+  toDefault               Boolean
+  actorType               ActorType
+  actorId                 String?                         @db.Uuid
+  version                 Int
+  idempotencyKey          String                          @db.VarChar(128)
+  reason                  String                          @db.VarChar(500)
+  correlationId           String                          @db.Uuid
+  occurredAt              DateTime
+  createdAt               DateTime                        @default(now())
+
+  @@unique([tenantId, idempotencyKey], map: "PaymentProviderGovernance_tenant_idempotency_key")
+  @@unique([providerConfigurationId, version], map: "PaymentProviderGovernance_configuration_version_key")
+  @@unique([id, tenantId], map: "g3b_PaymentProviderGovernanceEvent_id_tenant_key")
+  @@index([providerConfigurationId, tenantId], map: "g3b_ProviderGovernance_providerConfig_tenant_idx")
+}
+
+model PaymentAttempt {
+  id                      String                          @id @default(uuid()) @db.Uuid
+  tenantId                String                          @db.Uuid
+  paymentId               String                          @db.Uuid
+  payment                 Payment                         @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  providerConfigurationId String                          @db.Uuid
+  providerConfiguration   PaymentProviderConfiguration    @relation(fields: [providerConfigurationId], references: [id], onDelete: Restrict)
+  state                   PaymentAttemptState             @default(CREATED)
+  version                 Int                             @default(1)
+  providerReference       String?                         @db.VarChar(200)
+  requestIdempotencyKey   String                          @db.VarChar(128)
+  requestFingerprint      String                          @db.Char(64)
+  correlationId           String                          @db.Uuid
+  transitions             PaymentAttemptStateTransition[]
+  callbackReceipts        PaymentCallbackReceipt[]
+  createdAt               DateTime                        @default(now())
+  updatedAt               DateTime                        @updatedAt
+
+  @@unique([tenantId, requestIdempotencyKey], map: "PaymentAttempt_tenant_idempotency_key")
+  @@unique([tenantId, providerConfigurationId, providerReference], map: "PaymentAttempt_provider_reference_key")
+  @@unique([id, tenantId], map: "g3b_PaymentAttempt_id_tenant_key")
+  @@index([paymentId, tenantId], map: "g3b_PaymentAttempt_paymentId_tenant_idx")
+  @@index([providerConfigurationId, tenantId], map: "g3b_PaymentAttempt_providerConfigurationId_tenant_idx")
+  @@index([tenantId, state, createdAt])
+}
+
+model PaymentAttemptStateTransition {
+  id                String               @id @default(uuid()) @db.Uuid
+  tenantId          String               @db.Uuid
+  paymentAttemptId  String               @db.Uuid
+  paymentAttempt    PaymentAttempt       @relation(fields: [paymentAttemptId], references: [id], onDelete: Restrict)
+  fromState         PaymentAttemptState?
+  toState           PaymentAttemptState
+  version           Int
+  providerOutcome   String?              @db.VarChar(64)
+  providerReference String?              @db.VarChar(200)
+  idempotencyKey    String               @db.VarChar(128)
+  correlationId     String               @db.Uuid
+  occurredAt        DateTime
+  createdAt         DateTime             @default(now())
+
+  @@unique([tenantId, idempotencyKey], map: "PaymentAttemptTransition_tenant_idempotency_key")
+  @@unique([paymentAttemptId, version], map: "PaymentAttemptTransition_attempt_version_key")
+  @@unique([id, tenantId], map: "g3b_PaymentAttemptStateTransition_id_tenant_key")
+  @@index([paymentAttemptId, tenantId], map: "g3b_PaymentAttemptStateTransition_paymentAttemptId_tenant_idx")
+}
+
+model PaymentCallbackReceipt {
+  id                       String                            @id @default(uuid()) @db.Uuid
+  tenantId                 String                            @db.Uuid
+  providerConfigurationId  String                            @db.Uuid
+  providerConfiguration    PaymentProviderConfiguration      @relation(fields: [providerConfigurationId], references: [id], onDelete: Restrict)
+  paymentAttemptId         String?                           @db.Uuid
+  paymentAttempt           PaymentAttempt?                   @relation(fields: [paymentAttemptId], references: [id], onDelete: Restrict)
+  externalEventId          String                            @db.VarChar(200)
+  headersFingerprint       String                            @db.Char(64)
+  bodyDigest               String                            @db.Char(64)
+  safePayload              Json
+  verificationStatus       PaymentCallbackVerificationStatus @default(UNVERIFIED)
+  processingStatus         PaymentCallbackProcessingStatus   @default(RECEIVED)
+  idempotencyKey           String                            @db.VarChar(128)
+  processingIdempotencyKey String?                           @db.VarChar(128)
+  processingFingerprint    String?                           @db.Char(64)
+  correlationId            String                            @db.Uuid
+  receivedAt               DateTime
+  retentionUntil           DateTime
+  createdAt                DateTime                          @default(now())
+  updatedAt                DateTime                          @updatedAt
+
+  @@unique([tenantId, idempotencyKey], map: "PaymentCallback_tenant_idempotency_key")
+  @@unique([tenantId, processingIdempotencyKey], map: "PaymentCallback_processing_idempotency_key")
+  @@unique([tenantId, providerConfigurationId, externalEventId], map: "PaymentCallback_external_event_key")
+  @@unique([id, tenantId], map: "g3b_PaymentCallbackReceipt_id_tenant_key")
+  @@index([providerConfigurationId, tenantId], map: "g3b_CallbackReceipt_providerConfig_tenant_idx")
+  @@index([paymentAttemptId, tenantId], map: "g3b_PaymentCallbackReceipt_paymentAttemptId_tenant_idx")
+  @@index([tenantId, processingStatus, receivedAt])
 }
 
 model PaymentStateTransition {

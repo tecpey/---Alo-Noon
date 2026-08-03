@@ -105,3 +105,51 @@ export const ledgerAccountStateChangedEventPayloadSchema = z.object({
 export type LedgerAccountStateChangedEventPayload = z.infer<
   typeof ledgerAccountStateChangedEventPayloadSchema
 >
+
+export const paymentProviderConfigurationEventPayloadSchema = z.object({
+  providerConfigurationId: uuidSchema,
+  providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
+  adapterVersion: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+  adapterSpiVersion: z.literal(1),
+  environment: z.enum(['TEST', 'PRODUCTION']),
+  paymentContext: z.literal('CHECKOUT'),
+  currency: z.literal('IRR'),
+  isActive: z.boolean(),
+  isDefault: z.boolean(),
+  version: z.number().int().positive(),
+})
+
+export const providerCredentialReferenceCreatedEventPayloadSchema = z.object({
+  credentialReferenceId: uuidSchema,
+  providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),
+  keyVersion: z.string().min(1).max(64),
+})
+
+export const paymentAttemptEventPayloadSchema = z.object({
+  paymentAttemptId: uuidSchema,
+  paymentId: uuidSchema,
+  providerConfigurationId: uuidSchema,
+  state: z.enum([
+    'CREATED',
+    'INITIALIZATION_PENDING',
+    'INITIALIZED',
+    'CUSTOMER_ACTION_REQUIRED',
+    'CALLBACK_RECEIVED',
+    'VERIFICATION_PENDING',
+    'VERIFIED',
+    'REJECTED',
+    'FAILED',
+    'EXPIRED',
+  ]),
+  version: z.number().int().positive(),
+})
+
+export const paymentCallbackEventPayloadSchema = z.object({
+  callbackReceiptId: uuidSchema,
+  providerConfigurationId: uuidSchema,
+  paymentAttemptId: uuidSchema.nullable(),
+  externalEventId: z.string().min(1).max(200),
+  bodyDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  verificationStatus: z.enum(['UNVERIFIED', 'VERIFIED', 'REJECTED']),
+  processingStatus: z.enum(['RECEIVED', 'PROCESSED', 'REJECTED']),
+})
