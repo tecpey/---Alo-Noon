@@ -1,9 +1,9 @@
 <p align="center"><strong>فارسی</strong> · <a href="./README.en.md">English</a></p>
 
 <!--
-Official logo slot reserved for:
-docs/assets/brand/alo-noon-logo-horizontal-transparent.png
-The approved logo master is not tracked. Do not populate this slot by approximation.
+Production README logo slot remains unpopulated.
+Founder-approved JPEG raster sources are preserved under assets/brand/source/,
+but none is an approved transparent, slogan-free horizontal hero export.
 -->
 
 <div align="center" dir="rtl">
@@ -24,8 +24,10 @@ The approved logo master is not tracked. Do not populate this slot by approximat
 
 > [!IMPORTANT] وعدهٔ محصول «نان تازه» است، نه «نان داغ». فقط variantهای
 > نانوایی‌محور و اعتبارسنجی‌شدهٔ `SIGNATURE_FRESH` می‌توانند ادعای تولید تازه
-> داشته باشند. لوگوی رسمیِ تأییدشده در مخزن موجود نیست؛ عنوان بالا جایگزین دائمی
-> لوگو نیست. [سیاست asset برند](docs/assets/brand/README.md) منبع موردنیاز را
+> داشته باشند. چهار منبع رستریِ تأییدشده توسط بنیان‌گذار برای ثبت منشأ در مخزن
+> نگهداری می‌شوند، اما هیچ‌کدام خروجی شفاف، افقی و بدون شعارِ مناسب بخش آغازین
+> README نیستند؛ عنوان بالا جایگزین دائمی لوگو نیست.
+> [سیاست دارایی‌های برند](assets/brand/README.md) وضعیت و محدودیت استفاده را
 > مشخص می‌کند.
 
 ## فهرست مطالب
@@ -582,7 +584,7 @@ promotion محیط، smoke test و rollback automation هنوز پیاده‌س�
 - [بنیاد CRM](docs/product/CRM_FOUNDATION.md)
 - [امنیت](SECURITY.md)
 - [OpenAPI](packages/contracts/openapi/alo-noon.v1.yaml)
-- [asset governance برند](docs/assets/brand/README.md)
+- [حاکمیت دارایی‌های برند](assets/brand/README.md)
 - [catalog برچسب‌های قابلیت](docs/assets/badges/README.md)
 - [سیاست نمودارها](docs/assets/diagrams/README.md)
 
@@ -592,5 +594,5 @@ promotion محیط، smoke test و rollback automation هنوز پیاده‌س�
   <strong>الو نون</strong> — زیرساخت شهرمحور تجارت و عملیات نان برای بازار ایران،
   با وعدهٔ دقیق «تازگی» و مسیر مهندسی قابل‌ممیزی.
   <br />
-  بازنگری مستندات: ۲۰۲۶-۰۸-۰۳ · لوگوی رسمی پس از دریافت master تأییدشده افزوده می‌شود.
+  بازنگری مستندات: ۲۰۲۶-۰۸-۰۳ · منابع رستریِ تأییدشده حفظ شده‌اند؛ خروجی نهایی برای بخش آغازین README هنوز نیازمند تأیید مستقل است.
 </p>
