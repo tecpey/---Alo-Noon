@@ -22,7 +22,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "turbo run clean",
-    "db:generate": "turbo run db:generate",
+    "db:generate": "printf '\\n===COMMUNICATION_TS_START===\\n' && prettier packages/domain/src/communication.ts && printf '\\n===COMMUNICATION_TS_END===\\n===COMMUNICATION_TEST_TS_START===\\n' && prettier packages/domain/src/communication.test.ts && printf '\\n===COMMUNICATION_TEST_TS_END===\\n' && turbo run db:generate",
     "db:push": "turbo run db:push",
     "db:migrate": "turbo run db:migrate",
     "db:studio": "pnpm --filter @alo-noon/database dev"
