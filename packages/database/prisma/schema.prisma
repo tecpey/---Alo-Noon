@@ -269,6 +269,41 @@ enum OtpChallengeStatus {
   INVALIDATED
 }
 
+enum AuthDeliveryEnvironment {
+  TEST
+  PRODUCTION
+}
+
+enum AuthProviderHealthStatus {
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+}
+
+enum AuthOtpChallengeStatus {
+  PREPARED
+  DELIVERED
+  DELIVERY_UNKNOWN
+  FAILED
+  CONSUMED
+  INVALIDATED
+  EXPIRED
+}
+
+enum AuthDeliveryAttemptStatus {
+  INITIALIZED
+  DELIVERED
+  REJECTED
+  TRANSIENT_FAILURE
+  PERMANENT_FAILURE
+  UNKNOWN
+}
+
+enum AuthAbuseAction {
+  OTP_REQUEST
+  OTP_VERIFY_FAILURE
+}
+
 enum AuthorizationScopeType {
   GLOBAL
   CITY
@@ -416,6 +451,10 @@ model Tenant {
   activeSessions AuthSession[]
   deliveryPricingRules DeliveryPricingRule[]
   aiAuditEvents  AiControlPlaneAuditEvent[]
+  authDeliveryProviderConfigurations AuthDeliveryProviderConfiguration[]
+  authOtpChallenges AuthOtpChallenge[]
+  authDeliveryAttempts AuthOtpDeliveryAttempt[]
+  authAbuseEvents AuthAbuseEvent[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -441,6 +480,8 @@ model TenantMembership {
   tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   accountId   String                 @db.Uuid
   account     IdentityAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customerId  String?                @db.Uuid
+  customer    Customer?              @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: Restrict)
   status      TenantMembershipStatus @default(INVITED)
   activeAt    DateTime?
   suspendedAt DateTime?
@@ -449,6 +490,8 @@ model TenantMembership {
   updatedAt   DateTime               @updatedAt
 
   @@unique([tenantId, accountId])
+  @@unique([tenantId, customerId])
+  @@index([customerId, tenantId])
   @@index([accountId, status])
   @@index([tenantId, status])
 }
@@ -525,7 +568,7 @@ model ServiceArea {
 model Customer {
   id                     String                  @id @default(uuid()) @db.Uuid
   tenantId          String @db.Uuid
-  mobileE164             String                  @unique @db.VarChar(16)
+  mobileE164             String                  @db.VarChar(16)
   firstName              String?
   lastName               String?
   lifecycleStatus        CustomerLifecycleStatus @default(PROSPECT)
@@ -540,6 +583,7 @@ model Customer {
   customerEvents         CustomerEvent[]
   supportCases           SupportCase[]
   identityAccount        IdentityAccount?
+  tenantMemberships      TenantMembership[]
   carts                  Cart[]
   quotes                 Quote[]
   createdAt              DateTime                @default(now())
@@ -550,6 +594,7 @@ model Customer {
   @@index([tenantId])
 
   @@unique([id, tenantId], map: "g3b_Customer_id_tenant_key")
+  @@unique([tenantId, mobileE164], map: "auth_Customer_tenant_mobile_key")
 }
 
 model IdentityAccount {
@@ -583,6 +628,111 @@ model OtpChallenge {
 
   @@index([mobileE164, createdAt])
   @@index([status, expiresAt])
+}
+
+model AuthDeliveryProviderConfiguration {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  tenantId            String                   @db.Uuid
+  tenant              Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  providerCode        String                   @db.VarChar(32)
+  adapterVersion      String                   @db.VarChar(64)
+  adapterSpiVersion   Int                      @default(1)
+  environment         AuthDeliveryEnvironment
+  credentialReference String                   @unique @db.VarChar(255)
+  senderReference     String                   @db.VarChar(128)
+  templateReference   String                   @db.VarChar(128)
+  enabled             Boolean                  @default(false)
+  isDefault           Boolean                  @default(false)
+  priority            Int                      @default(100)
+  healthStatus        AuthProviderHealthStatus @default(HEALTHY)
+  consecutiveFailures Int                      @default(0)
+  circuitOpenedUntil  DateTime?
+  governanceVersion   Int                      @default(1)
+  deliveryAttempts    AuthOtpDeliveryAttempt[]
+  abuseEvents         AuthAbuseEvent[]
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@unique([tenantId, providerCode, environment, adapterVersion], map: "auth_provider_identity_key")
+  @@unique([id, tenantId], map: "auth_provider_id_tenant_key")
+  @@index([tenantId, environment, enabled, isDefault, priority], map: "auth_provider_selection_idx")
+  @@index([tenantId, circuitOpenedUntil], map: "auth_provider_circuit_idx")
+}
+
+model AuthOtpChallenge {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  tenantId              String                 @db.Uuid
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  mobileE164            String                 @db.VarChar(16)
+  mobileDigest          String                 @db.VarChar(64)
+  codeDigest            String                 @db.VarChar(64)
+  requestIdempotencyKey String                 @db.VarChar(128)
+  requestFingerprint    String                 @db.VarChar(64)
+  sourceIpDigest        String                 @db.VarChar(64)
+  status                AuthOtpChallengeStatus @default(PREPARED)
+  attempts              Int                    @default(0)
+  maxAttempts           Int                    @default(5)
+  expiresAt             DateTime
+  resendAvailableAt     DateTime
+  consumedAt            DateTime?
+  invalidatedAt         DateTime?
+  supersededAt          DateTime?
+  correlationId         String                 @db.Uuid
+  version               Int                    @default(1)
+  deliveryAttempt       AuthOtpDeliveryAttempt?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@unique([tenantId, requestIdempotencyKey], map: "auth_challenge_idempotency_key")
+  @@unique([id, tenantId], map: "auth_challenge_id_tenant_key")
+  @@index([tenantId, mobileDigest, createdAt], map: "auth_challenge_mobile_idx")
+  @@index([tenantId, status, expiresAt], map: "auth_challenge_cleanup_idx")
+}
+
+model AuthOtpDeliveryAttempt {
+  id                      String                    @id @default(uuid()) @db.Uuid
+  tenantId                String                    @db.Uuid
+  tenant                  Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  challengeId             String                    @unique @db.Uuid
+  challenge               AuthOtpChallenge          @relation(fields: [challengeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  providerConfigurationId String                    @db.Uuid
+  providerConfiguration   AuthDeliveryProviderConfiguration @relation(fields: [providerConfigurationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  state                   AuthDeliveryAttemptStatus @default(INITIALIZED)
+  requestFingerprint      String                    @db.VarChar(64)
+  providerReference       String?                   @db.VarChar(200)
+  safeFailureCode         String?                   @db.VarChar(64)
+  correlationId           String                    @db.Uuid
+  startedAt               DateTime
+  finalizedAt             DateTime?
+  version                 Int                       @default(1)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+
+  @@unique([id, tenantId], map: "auth_attempt_id_tenant_key")
+  @@unique([challengeId, tenantId], map: "auth_attempt_challenge_tenant_key")
+  @@unique([tenantId, providerConfigurationId, providerReference], map: "auth_attempt_provider_reference_key")
+  @@index([tenantId, state, startedAt], map: "auth_attempt_recovery_idx")
+  @@index([providerConfigurationId, tenantId], map: "auth_attempt_provider_tenant_idx")
+}
+
+model AuthAbuseEvent {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  tenantId                String                 @db.Uuid
+  tenant                  Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  action                  AuthAbuseAction
+  mobileDigest            String?                @db.VarChar(64)
+  sourceIpDigest          String?                @db.VarChar(64)
+  providerConfigurationId String?                @db.Uuid
+  providerConfiguration   AuthDeliveryProviderConfiguration? @relation(fields: [providerConfigurationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  occurredAt              DateTime
+  expiresAt               DateTime
+  createdAt               DateTime               @default(now())
+
+  @@index([tenantId, action, occurredAt], map: "auth_abuse_tenant_window_idx")
+  @@index([tenantId, mobileDigest, action, occurredAt], map: "auth_abuse_mobile_window_idx")
+  @@index([tenantId, sourceIpDigest, action, occurredAt], map: "auth_abuse_ip_window_idx")
+  @@index([providerConfigurationId, tenantId, action, occurredAt], map: "auth_abuse_provider_window_idx")
+  @@index([expiresAt], map: "auth_abuse_cleanup_idx")
 }
 
 model AuthSession {

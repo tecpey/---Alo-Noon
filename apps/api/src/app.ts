@@ -1,5 +1,5 @@
 import cors from '@fastify/cors'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { LogController, type FastifyInstance } from 'fastify'
 
 import type { HealthResponse, ReadyResponse, ResponseMeta } from '@alo-noon/contracts'
 
@@ -24,6 +24,7 @@ import {
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
+  authenticationDeliveryReadinessCheck?: () => Promise<boolean>
   catalogRepository?: CatalogRepository
   cityRepository?: CityRepository
   serviceabilityRepository?: ServiceabilityRepository
@@ -34,6 +35,7 @@ export interface AppOptions {
   paymentExecutionService?: PaymentExecutionService
   corsOrigins?: string[]
   logger?: boolean
+  trustProxyHops?: number
 }
 
 const unavailableCatalogRepository: CatalogRepository = {
@@ -58,7 +60,24 @@ const unavailableCityRepository: CityRepository = {
 }
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false })
+  const app = Fastify({
+    logger: options.logger
+      ? {
+          redact: {
+            paths: [
+              'req.remoteAddress',
+              'req.remotePort',
+              'req.headers.authorization',
+              'req.headers.cookie',
+            ],
+            censor: '[REDACTED]',
+          },
+        }
+      : false,
+    logController: new LogController({ disableRequestLogging: options.logger === true }),
+    trustProxy:
+      options.trustProxyHops && options.trustProxyHops > 0 ? options.trustProxyHops : false,
+  })
   const readinessCheck = options.readinessCheck ?? (async () => true)
 
   await app.register(cors, {
@@ -106,18 +125,33 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
 
   app.get('/ready', async (_request, reply): Promise<ReadyResponse> => {
     const databaseReady = await readinessCheck().catch(() => false)
-    if (!databaseReady) reply.code(503)
+    const authenticationDeliveryReady = options.authenticationDeliveryReadinessCheck
+      ? await options.authenticationDeliveryReadinessCheck().catch(() => false)
+      : true
+    const ready = databaseReady && authenticationDeliveryReady
+    if (!ready) reply.code(503)
 
     return {
-      success: databaseReady,
+      success: ready,
       data: {
-        ready: databaseReady,
+        ready,
         checks: [
           {
             name: 'database',
             ready: databaseReady,
             ...(!databaseReady && { message: 'Database connection unavailable' }),
           },
+          ...(options.authenticationDeliveryReadinessCheck
+            ? [
+                {
+                  name: 'authentication-delivery',
+                  ready: authenticationDeliveryReady,
+                  ...(!authenticationDeliveryReady && {
+                    message: 'Authentication delivery provider unavailable',
+                  }),
+                },
+              ]
+            : []),
         ],
       },
       meta: responseMeta(),

@@ -18,8 +18,22 @@ describe('environment configuration', () => {
       NODE_ENV: 'production',
       AUTH_OTP_PEPPER: 'o'.repeat(32),
       AUTH_SESSION_PEPPER: 's'.repeat(32),
+      AUTH_ABUSE_PEPPER: 'a'.repeat(32),
     })
     expect(configured.success).toBe(true)
+
+    const reused = validateEnv({
+      NODE_ENV: 'production',
+      AUTH_OTP_PEPPER: 'x'.repeat(32),
+      AUTH_SESSION_PEPPER: 'x'.repeat(32),
+      AUTH_ABUSE_PEPPER: 'x'.repeat(32),
+    })
+    expect(reused.success).toBe(false)
+  })
+
+  it('bounds explicitly trusted proxy hops', () => {
+    expect(validateEnv({ API_TRUST_PROXY_HOPS: '3' }).success).toBe(true)
+    expect(validateEnv({ API_TRUST_PROXY_HOPS: '4' }).success).toBe(false)
   })
 
   it('parses exact credential-safe CORS origins', () => {

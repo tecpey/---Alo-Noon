@@ -648,8 +648,11 @@ async function createFinancialOperator(suffix: string, occurredAt: Date): Promis
       verifiedAt: occurredAt,
     },
   })
-  await prisma.tenantMembership.create({
-    data: { tenantId, accountId: account.id, status: 'ACTIVE', activeAt: occurredAt },
+  await prisma.$transaction(async (transaction) => {
+    await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+    await transaction.tenantMembership.create({
+      data: { tenantId, accountId: account.id, status: 'ACTIVE', activeAt: occurredAt },
+    })
   })
   const permission = await prisma.authorizationPermission.upsert({
     where: { code: 'payment-provider.configuration.govern' },

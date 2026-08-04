@@ -603,14 +603,17 @@ async function createFinancialOperator(
       verifiedAt: now,
     },
   })
-  await prisma.tenantMembership.create({
-    data: {
-      tenantId,
-      accountId: account.id,
-      status: membershipStatus,
-      activeAt: membershipStatus === 'ACTIVE' ? now : null,
-      suspendedAt: membershipStatus === 'SUSPENDED' ? now : null,
-    },
+  await prisma.$transaction(async (transaction) => {
+    await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+    await transaction.tenantMembership.create({
+      data: {
+        tenantId,
+        accountId: account.id,
+        status: membershipStatus,
+        activeAt: membershipStatus === 'ACTIVE' ? now : null,
+        suspendedAt: membershipStatus === 'SUSPENDED' ? now : null,
+      },
+    })
   })
   const permission = await prisma.authorizationPermission.upsert({
     where: { code: 'payment-provider.configuration.govern' },

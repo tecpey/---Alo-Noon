@@ -3,8 +3,8 @@
 Phase 1 remains a modular monolith. These are code and data ownership
 boundaries, not deployed microservices.
 
-- Identity & Access: future credentials, roles, permissions; authentication is
-  out of scope.
+- Identity & Access: provider-neutral OTP delivery, sessions, roles,
+  permissions, tenant RLS, abuse controls, and audit; real SMS adapter deferred.
 - Customer & Household: profile, consent, member and address lifecycle.
 - Geography & Serviceability: cities, zones, service-area evaluation.
 - Bakery Partner & Catalog: organizations, branches, capacity, products,

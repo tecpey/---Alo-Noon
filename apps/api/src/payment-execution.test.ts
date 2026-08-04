@@ -1,10 +1,10 @@
-import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { PaymentExecutionSummary, SessionContext } from '@alo-noon/contracts'
 
 import { buildApp } from './app'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
+import { authenticationSessionDigest } from './modules/auth-delivery'
 import {
   isRetryablePaymentExecutionConflict,
   paymentExecutionRequestKey,
@@ -47,14 +47,15 @@ function authFixture(): AuthDependencies {
     expiresAt: '2026-09-04T09:00:00.000Z',
     grants: [],
   }
-  const digest = createHmac('sha256', sessionPepper).update(token).digest('hex')
+  const digest = authenticationSessionDigest(sessionPepper, token)
   return {
     repository: {
       resolveTenantByHost: async () => tenantId,
       findSession: async (value: string) => (value === digest ? context : null),
     } as unknown as AuthRepository,
-    deliveryProvider: { send: async () => undefined },
+    deliveryService: { request: async () => Promise.reject(new Error('unused')) },
     otpPepper: 'payment-execution-otp-pepper',
+    abusePepper: 'payment-execution-abuse-pepper',
     sessionPepper,
     secureCookie: false,
   }

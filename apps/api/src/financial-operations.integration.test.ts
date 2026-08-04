@@ -29,13 +29,16 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
       },
     })
     authorizedStaffId = staff.id
-    await prisma.tenantMembership.create({
-      data: {
-        tenantId: tenantA,
-        accountId: staff.id,
-        status: 'ACTIVE',
-        activeAt: new Date('2026-08-03T11:00:00.000Z'),
-      },
+    await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantA}, true)`
+      await transaction.tenantMembership.create({
+        data: {
+          tenantId: tenantA,
+          accountId: staff.id,
+          status: 'ACTIVE',
+          activeAt: new Date('2026-08-03T11:00:00.000Z'),
+        },
+      })
     })
     const permission = await prisma.authorizationPermission.upsert({
       where: { code: 'financial.ledger-account.govern' },

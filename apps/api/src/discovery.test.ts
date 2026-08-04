@@ -22,8 +22,9 @@ const branchId = '66666666-6666-4666-8666-666666666666'
 const tenantId = '00000000-0000-4000-8000-000000000001'
 const discoveryAuth: AuthDependencies = {
   repository: { resolveTenantByHost: async () => tenantId } as unknown as AuthRepository,
-  deliveryProvider: { send: async () => undefined },
+  deliveryService: { request: async () => Promise.reject(new Error('unused')) },
   otpPepper: 'discovery-otp-pepper-that-is-long-enough',
+  abusePepper: 'discovery-abuse-pepper-that-is-long-enough',
   sessionPepper: 'discovery-session-pepper-that-is-long-enough',
   secureCookie: false,
 }

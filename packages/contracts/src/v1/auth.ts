@@ -4,11 +4,19 @@ import { isoDateTimeSchema, responseMetaSchema, uuidSchema } from './common'
 
 export const mobileE164Schema = z
   .string()
-  .regex(/^\+[1-9]\d{7,14}$/, 'Mobile number must use E.164 format')
+  .regex(/^\+989\d{9}$/, 'Iranian mobile number must use +989XXXXXXXXX format')
 
-export const otpRequestSchema = z.object({
-  mobileE164: mobileE164Schema,
-})
+export const otpIdempotencyKeySchema = z
+  .string()
+  .min(16)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]+$/)
+
+export const otpRequestSchema = z
+  .object({
+    mobileE164: mobileE164Schema,
+  })
+  .strict()
 export type OtpRequest = z.infer<typeof otpRequestSchema>
 
 export const otpRequestAcceptedSchema = z.object({
@@ -25,10 +33,12 @@ export const otpRequestEnvelopeSchema = z.object({
 })
 export type OtpRequestEnvelope = z.infer<typeof otpRequestEnvelopeSchema>
 
-export const otpVerifySchema = z.object({
-  challengeId: uuidSchema,
-  code: z.string().regex(/^\d{6}$/, 'OTP code must contain exactly six digits'),
-})
+export const otpVerifySchema = z
+  .object({
+    challengeId: uuidSchema,
+    code: z.string().regex(/^\d{6}$/, 'OTP code must contain exactly six digits'),
+  })
+  .strict()
 export type OtpVerifyRequest = z.infer<typeof otpVerifySchema>
 
 export const authorizationScopeTypeSchema = z.enum([

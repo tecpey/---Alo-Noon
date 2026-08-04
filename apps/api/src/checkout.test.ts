@@ -1,4 +1,3 @@
-import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { AddressSummary, OrderSummary, SessionContext } from '@alo-noon/contracts'
@@ -6,6 +5,7 @@ import type { AddressSummary, OrderSummary, SessionContext } from '@alo-noon/con
 import { buildApp } from './app'
 import type { AddressRepository } from './modules/addresses'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
+import { authenticationSessionDigest } from './modules/auth-delivery'
 import { isSerializationFailure, type OrderRepository } from './modules/orders'
 
 const tenantId = '00000000-0000-4000-8000-000000000001'
@@ -57,14 +57,15 @@ function authFixture(): AuthDependencies {
     expiresAt: '2026-09-02T10:00:00.000Z',
     grants: [],
   }
-  const digest = createHmac('sha256', sessionPepper).update(token).digest('hex')
+  const digest = authenticationSessionDigest(sessionPepper, token)
   return {
     repository: {
       resolveTenantByHost: async () => tenantId,
       findSession: async (value: string) => (value === digest ? context : null),
     } as unknown as AuthRepository,
-    deliveryProvider: { send: async () => undefined },
+    deliveryService: { request: async () => Promise.reject(new Error('unused')) },
     otpPepper: 'checkout-otp-pepper-that-is-long-enough',
+    abusePepper: 'checkout-abuse-pepper-that-is-long-enough',
     sessionPepper,
     secureCookie: false,
   }

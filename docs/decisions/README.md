@@ -18,6 +18,7 @@ the repository status matrix determine current delivery status.
 | [ADR-0008](./ADR-0008-payment-ledger-foundation.md) — Payment and Ledger Foundation                    | Accepted | Govern Payment state and balanced double-entry accounting.                 |
 | [ADR-0009](./ADR-0009-payment-provider-foundation.md) — Payment Provider Foundation                    | Accepted | Isolate provider configuration, credentials, attempts, and adapter SPI.    |
 | [ADR-0010](./ADR-0010-payment-execution-orchestrator.md) — Payment Execution Orchestrator              | Accepted | Orchestrate initialization using a recoverable provider-agnostic boundary. |
+| [ADR-0011](./ADR-0011-production-auth-delivery-foundation.md) — Production Authentication Delivery     | Accepted | Govern tenant-safe OTP delivery, abuse controls, and provider isolation.   |
 
 ## Tenant and control-plane decisions
 

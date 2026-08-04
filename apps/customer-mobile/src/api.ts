@@ -40,7 +40,7 @@ export class CustomerApiError extends Error {
 
 export interface CustomerApiClient {
   getSession(): Promise<SessionContext | null>
-  requestOtp(mobileE164: string): Promise<OtpRequestAccepted>
+  requestOtp(mobileE164: string, idempotencyKey: string): Promise<OtpRequestAccepted>
   verifyOtp(challengeId: string, code: string): Promise<SessionContext>
   logout(): Promise<void>
   listActiveCities(): Promise<ActiveCitySummary[]>
@@ -107,9 +107,10 @@ export function createCustomerApiClient(
         throw error
       }
     },
-    requestOtp: async (mobileE164) =>
+    requestOtp: async (mobileE164, idempotencyKey) =>
       request('/api/v1/auth/otp/request', otpRequestEnvelopeSchema, {
         method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ mobileE164 }),
       }),
     verifyOtp: async (challengeId, code) =>

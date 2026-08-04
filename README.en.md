@@ -107,28 +107,28 @@ This table reflects `main` after the Payment Execution Orchestrator merge.
 “Foundation” means the invariant and persistence layer exists, while a complete
 production workflow or operating UI does not.
 
-| Area                               | Status                                       | Evidence and exact boundary                                                                              |
-| ---------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Multi-tenancy and forced RLS       | **Verified and merged**                      | Server-derived tenant context, composite tenant FKs, `ENABLE/FORCE RLS`, and negative cross-tenant tests |
-| Address and serviceability         | **Verified and merged**                      | Customer address create/list and server-derived service area and zone                                    |
-| Delivery pricing                   | **Verified and merged**                      | City/zone rules, precedence, ambiguity rejection, and bigint IRR calculation                             |
-| Quote-to-Order                     | **Verified and merged**                      | Immutable snapshots, cart versioning, `SERIALIZABLE` transaction, and atomic Quote acceptance            |
-| Bakery capacity reservation        | **Verified and merged**                      | Durable slot reservation in the Order transaction; release/cancellation is deferred                      |
-| Customer application               | **Verified minimal flow**                    | Persian/RTL session, catalog, cart, address, quote, and Order confirmation                               |
-| Identity and authorization         | **Foundation + limited runtime**             | OTP contract, revocable session, and RBAC exist; no approved production SMS provider                     |
-| Payment aggregate                  | **Verified foundation**                      | Independent state machine and immutable history; clients cannot set status                               |
-| Double-entry Ledger                | **Verified foundation**                      | Balanced journal, append-only entries, integer IRR, and derived balances                                 |
-| Chart of Accounts                  | **Verified foundation**                      | Deterministic 14-account system chart, idempotent bootstrap, and governance                              |
-| Provider foundation                | **Verified foundation**                      | Configuration, credential reference, attempt, registry/SPI, and replay guard; no real adapter            |
-| Payment Execution Orchestrator     | **Initialization-only foundation**           | Two transactions around an external boundary; production server injects no real adapter/resolver         |
-| Callback, inquiry, and capture     | **Deferred**                                 | Callback receipt foundation exists; verification processing, inquiry, and capture execution do not       |
-| Settlement, reconciliation, refund | **Deferred**                                 | No production job, provider flow, or endpoint                                                            |
-| Bakery operations                  | **Model/capacity present; workflow planned** | Branch/offering/capacity models exist; onboarding, queue, printing, and full portal do not               |
-| Courier operations                 | **Model and early surface; planned**         | Partner/courier/task entities and app shell exist; dispatch, tracking, and proof flow do not             |
-| Notifications and printing         | **Architecture planned**                     | Outbox exists; delivery workers, providers, and print agent do not                                       |
-| CRM and support                    | **Data foundation**                          | Customer events, support cases, and incidents exist; CRM UI, segmentation, and automation are deferred   |
-| Admin/operations panel             | **Planned**                                  | No production management UI                                                                              |
-| External store integrations        | **Planned**                                  | No external store adapter or synchronization runtime                                                     |
+| Area                               | Status                                                 | Evidence and exact boundary                                                                                   |
+| ---------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Multi-tenancy and forced RLS       | **Verified and merged**                                | Server-derived tenant context, composite tenant FKs, `ENABLE/FORCE RLS`, and negative cross-tenant tests      |
+| Address and serviceability         | **Verified and merged**                                | Customer address create/list and server-derived service area and zone                                         |
+| Delivery pricing                   | **Verified and merged**                                | City/zone rules, precedence, ambiguity rejection, and bigint IRR calculation                                  |
+| Quote-to-Order                     | **Verified and merged**                                | Immutable snapshots, cart versioning, `SERIALIZABLE` transaction, and atomic Quote acceptance                 |
+| Bakery capacity reservation        | **Verified and merged**                                | Durable slot reservation in the Order transaction; release/cancellation is deferred                           |
+| Customer application               | **Verified minimal flow**                              | Persian/RTL session, catalog, cart, address, quote, and Order confirmation                                    |
+| Identity and authorization         | **Secure delivery foundation; real provider deferred** | Secure OTP, sessions, RBAC, RLS, abuse controls, and orchestration exist; no approved production SMS provider |
+| Payment aggregate                  | **Verified foundation**                                | Independent state machine and immutable history; clients cannot set status                                    |
+| Double-entry Ledger                | **Verified foundation**                                | Balanced journal, append-only entries, integer IRR, and derived balances                                      |
+| Chart of Accounts                  | **Verified foundation**                                | Deterministic 14-account system chart, idempotent bootstrap, and governance                                   |
+| Provider foundation                | **Verified foundation**                                | Configuration, credential reference, attempt, registry/SPI, and replay guard; no real adapter                 |
+| Payment Execution Orchestrator     | **Initialization-only foundation**                     | Two transactions around an external boundary; production server injects no real adapter/resolver              |
+| Callback, inquiry, and capture     | **Deferred**                                           | Callback receipt foundation exists; verification processing, inquiry, and capture execution do not            |
+| Settlement, reconciliation, refund | **Deferred**                                           | No production job, provider flow, or endpoint                                                                 |
+| Bakery operations                  | **Model/capacity present; workflow planned**           | Branch/offering/capacity models exist; onboarding, queue, printing, and full portal do not                    |
+| Courier operations                 | **Model and early surface; planned**                   | Partner/courier/task entities and app shell exist; dispatch, tracking, and proof flow do not                  |
+| Notifications and printing         | **Architecture planned**                               | Outbox exists; delivery workers, providers, and print agent do not                                            |
+| CRM and support                    | **Data foundation**                                    | Customer events, support cases, and incidents exist; CRM UI, segmentation, and automation are deferred        |
+| Admin/operations panel             | **Planned**                                            | No production management UI                                                                                   |
+| External store integrations        | **Planned**                                            | No external store adapter or synchronization runtime                                                          |
 
 <a id="platform-architecture"></a>
 
@@ -422,9 +422,10 @@ pnpm dev:courier-mobile
 
 The API defaults to `http://localhost:3001`. `GET /health` is
 external-dependency independent; `GET /ready` depends on PostgreSQL. OTP request
-deliberately returns `503` without an approved SMS provider. Payment execution
-is not registered by the production server until a real adapter and resolver are
-injected.
+deliberately returns `503` without an approved SMS provider and adapter; the
+delivery, abuse-control, and recovery foundation is not real SMS delivery.
+Payment execution is not registered by the production server until a real
+adapter and resolver are injected.
 
 ### Local gates
 
@@ -495,7 +496,7 @@ the current test result.
 
 - Canonical specification:
   [`packages/contracts/openapi/alo-noon.v1.yaml`](packages/contracts/openapi/alo-noon.v1.yaml),
-  OpenAPI `3.1.0`, current API document version `0.10.0`.
+  OpenAPI `3.1.0`, current API document version `0.11.0`.
 - Runtime schemas: [`packages/contracts/src/v1`](packages/contracts/src/v1).
 - Transport invariants are independent of Prisma models and APIs return safe
   error envelopes.
@@ -537,8 +538,9 @@ This order communicates technical dependency, not committed dates.
 2. **Payment execution path:** approved real Iranian gateway adapter, secret
    manager, outbound transport, redirect, callback verification, inquiry, and
    transactional capture.
-3. **Production authentication:** approved SMS provider, operational abuse
-   controls, and OTP delivery runbook.
+3. **Production authentication activation:** approved SMS provider, real
+   adapter, secret provisioning, and metrics/alert integration; abuse controls
+   and the runbook exist.
 4. **Bakery operations:** onboarding, operational capacity, production/packaging
    queue, Order acceptance, and printing.
 5. **Courier operations:** dispatch, assignment commands, proof, tracking, and
