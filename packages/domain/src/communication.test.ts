@@ -47,8 +47,15 @@ describe('communication template governance', () => {
     expect(() => approveTemplateVersion(review, 'editor-1', new Date())).toThrow(
       'cannot approve',
     )
-    const approved = approveTemplateVersion(review, 'approver-1', new Date('2026-08-04T00:00:00Z'))
-    expect(approved).toMatchObject({ status: 'APPROVED', reviewedByActorId: 'approver-1' })
+    const approved = approveTemplateVersion(
+      review,
+      'approver-1',
+      new Date('2026-08-04T00:00:00Z'),
+    )
+    expect(approved).toMatchObject({
+      status: 'APPROVED',
+      reviewedByActorId: 'approver-1',
+    })
     expect(activateTemplateVersion(approved).status).toBe('ACTIVE')
   })
 
@@ -71,7 +78,9 @@ describe('communication template governance', () => {
     expect(() => renderTemplate(approved, { otp: '123456', extra: 'leak' })).toThrow(
       'Unknown template variable',
     )
-    expect(() => renderTemplate(approved, { otp: '1234567' })).toThrow('variable is invalid')
+    expect(() => renderTemplate(approved, { otp: '1234567' })).toThrow(
+      'variable is invalid',
+    )
   })
 
   it('requires email subject and HTTPS URL variables', () => {
@@ -118,7 +127,10 @@ describe('communication template governance', () => {
         providerTemplateReference: 'otp-login-v1',
         enabled: true,
       }),
-    ).toMatchObject({ providerCode: 'IR_SMS', providerTemplateReference: 'otp-login-v1' })
+    ).toMatchObject({
+      providerCode: 'IR_SMS',
+      providerTemplateReference: 'otp-login-v1',
+    })
     expect(() =>
       createProviderTemplateBinding({
         id: 'binding-2',
