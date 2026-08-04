@@ -3,12 +3,7 @@ import { DomainError } from './errors'
 export type CommunicationChannel = 'SMS' | 'EMAIL'
 export type CommunicationScope = 'PLATFORM' | 'TENANT'
 export type CommunicationLocale = 'fa-IR' | 'en-US'
-export type MessageTemplateStatus =
-  | 'DRAFT'
-  | 'IN_REVIEW'
-  | 'APPROVED'
-  | 'ACTIVE'
-  | 'ARCHIVED'
+export type MessageTemplateStatus = 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'ACTIVE' | 'ARCHIVED'
 export type MessageTemplatePurpose =
   | 'AUTH_OTP'
   | 'SECURITY_ALERT'
@@ -68,9 +63,7 @@ export interface CreateTemplateVersionInput {
 const variableNamePattern = /^[a-z][a-zA-Z0-9]{0,63}$/
 const providerCodePattern = /^[A-Z][A-Z0-9_]{1,31}$/
 
-export function createTemplateVersion(
-  input: CreateTemplateVersionInput,
-): MessageTemplateVersion {
+export function createTemplateVersion(input: CreateTemplateVersionInput): MessageTemplateVersion {
   const body = input.body.trim()
   if (!body || body.length > 20_000) {
     throw new DomainError('COMMUNICATION_TEMPLATE_INVALID', 'Template body is invalid')
@@ -101,9 +94,7 @@ export function createTemplateVersion(
   })
 }
 
-export function submitTemplateForReview(
-  version: MessageTemplateVersion,
-): MessageTemplateVersion {
+export function submitTemplateForReview(version: MessageTemplateVersion): MessageTemplateVersion {
   assertStatus(version, 'DRAFT')
   return Object.freeze({ ...version, status: 'IN_REVIEW' })
 }
@@ -132,16 +123,12 @@ export function approveTemplateVersion(
   })
 }
 
-export function activateTemplateVersion(
-  version: MessageTemplateVersion,
-): MessageTemplateVersion {
+export function activateTemplateVersion(version: MessageTemplateVersion): MessageTemplateVersion {
   assertStatus(version, 'APPROVED')
   return Object.freeze({ ...version, status: 'ACTIVE' })
 }
 
-export function archiveTemplateVersion(
-  version: MessageTemplateVersion,
-): MessageTemplateVersion {
+export function archiveTemplateVersion(version: MessageTemplateVersion): MessageTemplateVersion {
   if (version.status !== 'APPROVED' && version.status !== 'ACTIVE') {
     throw invalidTransition(version.status, 'ARCHIVED')
   }
@@ -152,10 +139,7 @@ export function createProviderTemplateBinding(
   input: ProviderTemplateBinding,
 ): ProviderTemplateBinding {
   if (!providerCodePattern.test(input.providerCode)) {
-    throw new DomainError(
-      'COMMUNICATION_PROVIDER_BINDING_INVALID',
-      'Provider code is invalid',
-    )
+    throw new DomainError('COMMUNICATION_PROVIDER_BINDING_INVALID', 'Provider code is invalid')
   }
   const reference = input.providerTemplateReference.trim()
   if (!reference || reference.length > 200) {
@@ -291,10 +275,7 @@ function normalizeSubject(
   return normalized
 }
 
-function normalizeVariableValue(
-  variable: TemplateVariableDefinition,
-  raw: unknown,
-): string {
+function normalizeVariableValue(variable: TemplateVariableDefinition, raw: unknown): string {
   let value: string
   switch (variable.type) {
     case 'STRING':
@@ -333,17 +314,11 @@ function requiredIdentifier(value: string, label: string): string {
   return normalized
 }
 
-function assertStatus(
-  version: MessageTemplateVersion,
-  expected: MessageTemplateStatus,
-): void {
+function assertStatus(version: MessageTemplateVersion, expected: MessageTemplateStatus): void {
   if (version.status !== expected) throw invalidTransition(version.status, expected)
 }
 
-function invalidTransition(
-  from: MessageTemplateStatus,
-  to: MessageTemplateStatus,
-): DomainError {
+function invalidTransition(from: MessageTemplateStatus, to: MessageTemplateStatus): DomainError {
   return new DomainError(
     'COMMUNICATION_TEMPLATE_TRANSITION_INVALID',
     `Template transition ${from} -> ${to} is not allowed`,
