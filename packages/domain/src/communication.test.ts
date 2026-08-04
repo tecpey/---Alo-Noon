@@ -44,14 +44,8 @@ describe('communication template governance', () => {
   it('enforces review and creator/approver segregation', () => {
     const review = submitTemplateForReview(baseSms())
     expect(review.status).toBe('IN_REVIEW')
-    expect(() => approveTemplateVersion(review, 'editor-1', new Date())).toThrow(
-      'cannot approve',
-    )
-    const approved = approveTemplateVersion(
-      review,
-      'approver-1',
-      new Date('2026-08-04T00:00:00Z'),
-    )
+    expect(() => approveTemplateVersion(review, 'editor-1', new Date())).toThrow('cannot approve')
+    const approved = approveTemplateVersion(review, 'approver-1', new Date('2026-08-04T00:00:00Z'))
     expect(approved).toMatchObject({
       status: 'APPROVED',
       reviewedByActorId: 'approver-1',
@@ -78,9 +72,7 @@ describe('communication template governance', () => {
     expect(() => renderTemplate(approved, { otp: '123456', extra: 'leak' })).toThrow(
       'Unknown template variable',
     )
-    expect(() => renderTemplate(approved, { otp: '1234567' })).toThrow(
-      'variable is invalid',
-    )
+    expect(() => renderTemplate(approved, { otp: '1234567' })).toThrow('variable is invalid')
   })
 
   it('requires email subject and HTTPS URL variables', () => {
