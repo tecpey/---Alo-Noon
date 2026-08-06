@@ -6,8 +6,10 @@ import { buildApp } from './app'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
 import { authenticationSessionDigest } from './modules/auth-delivery'
 import {
+  createEnvironmentPaymentCredentialResolver,
   isRetryablePaymentExecutionConflict,
   paymentExecutionRequestKey,
+  PaymentExecutionError,
   type PaymentExecutionService,
 } from './modules/payment-execution'
 
@@ -171,5 +173,38 @@ describe('payment execution retry classification', () => {
       ),
     ).toBe(false)
     expect(isRetryablePaymentExecutionConflict({ code: 'P2002' }, true)).toBe(false)
+  })
+})
+
+describe('environment payment credential resolver', () => {
+  it('resolves disposable material from a matching env:// reference', async () => {
+    const resolver = createEnvironmentPaymentCredentialResolver({
+      PAYMENT_PROVIDER_TEST_GATEWAY_API_KEY: 'a-sufficiently-long-secret-value',
+    })
+    const credential = await resolver.resolve(
+      'env://PAYMENT_PROVIDER_TEST_GATEWAY_API_KEY',
+      tenantId,
+      'TEST_GATEWAY',
+    )
+    expect(Buffer.from(credential.material).toString('utf8')).toBe(
+      'a-sufficiently-long-secret-value',
+    )
+    credential.dispose()
+    expect(Buffer.from(credential.material).every((byte) => byte === 0)).toBe(true)
+  })
+
+  it('rejects an unresolvable or too-short reference as a safe 503', async () => {
+    const resolver = createEnvironmentPaymentCredentialResolver({
+      PAYMENT_PROVIDER_TEST_GATEWAY_API_KEY: 'short',
+    })
+    await expect(
+      resolver.resolve('env://PAYMENT_PROVIDER_MISSING_KEY', tenantId, 'TEST_GATEWAY'),
+    ).rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_CREDENTIAL_UNAVAILABLE', status: 503 })
+    await expect(
+      resolver.resolve('env://PAYMENT_PROVIDER_TEST_GATEWAY_API_KEY', tenantId, 'TEST_GATEWAY'),
+    ).rejects.toBeInstanceOf(PaymentExecutionError)
+    await expect(
+      resolver.resolve('vault://alo-noon/other-reference', tenantId, 'TEST_GATEWAY'),
+    ).rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_CREDENTIAL_UNAVAILABLE' })
   })
 })

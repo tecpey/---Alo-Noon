@@ -5,6 +5,8 @@ import { PrismaClient } from '@alo-noon/database'
 import {
   createAuthenticationDeliveryPolicy,
   createAuthenticationDeliveryRegistry,
+  createPaymentProviderAdapterRegistry,
+  createProviderExecutionPolicy,
 } from '@alo-noon/domain'
 
 import { buildApp } from './app.js'
@@ -22,6 +24,10 @@ import {
 import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
+import {
+  createEnvironmentPaymentCredentialResolver,
+  createPrismaPaymentExecutionService,
+} from './modules/payment-execution.js'
 
 const env = getEnv()
 const prisma = new PrismaClient()
@@ -56,6 +62,24 @@ const auth = {
   sessionPepper: env.AUTH_SESSION_PEPPER ?? randomBytes(32).toString('hex'),
   secureCookie: env.NODE_ENV === 'production',
 }
+// No adapter is registered yet: no Iranian payment gateway has been approved and
+// integrated. Registering the route now (instead of omitting it) means a request
+// fails safely with PAYMENT_PROVIDER_MISSING/PAYMENT_PROVIDER_ADAPTER_UNAVAILABLE
+// (503) instead of the route not existing at all, and the moment a real adapter is
+// added to this array plus a matching PaymentProviderConfiguration is provisioned,
+// no further server wiring changes are required.
+const paymentProviderAdapterRegistry = createPaymentProviderAdapterRegistry([])
+const paymentExecutionPolicy = createProviderExecutionPolicy({
+  environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
+  maxPersistenceAttempts: 3,
+  invocationTimeoutMs: 10_000,
+})
+const paymentExecutionService = createPrismaPaymentExecutionService(prisma, {
+  adapterRegistry: paymentProviderAdapterRegistry,
+  secretResolver: createEnvironmentPaymentCredentialResolver(process.env),
+  policy: paymentExecutionPolicy,
+})
+
 const app = await buildApp({
   logger: true,
   trustProxyHops: env.API_TRUST_PROXY_HOPS,
@@ -74,6 +98,7 @@ const app = await buildApp({
   commerceRepository: createPrismaCommerceRepository(prisma),
   addressRepository: createPrismaAddressRepository(prisma),
   orderRepository: createPrismaOrderRepository(prisma),
+  paymentExecutionService,
 })
 
 const close = async (signal: string): Promise<void> => {
