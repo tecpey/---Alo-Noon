@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 
+import * as Sentry from '@sentry/node'
+
 import { getEnv, parseCorsOrigins } from '@alo-noon/config'
 import { PrismaClient } from '@alo-noon/database'
 import {
@@ -30,6 +32,17 @@ import {
 } from './modules/payment-execution.js'
 
 const env = getEnv()
+
+// Error reporting is opt-in: without SENTRY_DSN this stays fully inert, so
+// development and CI never depend on an external service being reachable.
+if (env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: env.SENTRY_DSN,
+    environment: env.NODE_ENV,
+    tracesSampleRate: 0,
+  })
+}
+
 const prisma = new PrismaClient()
 const otpPepper = env.AUTH_OTP_PEPPER ?? randomBytes(32).toString('hex')
 const abusePepper = env.AUTH_ABUSE_PEPPER ?? randomBytes(32).toString('hex')
@@ -100,6 +113,10 @@ const app = await buildApp({
   orderRepository: createPrismaOrderRepository(prisma),
   paymentExecutionService,
 })
+
+if (env.SENTRY_DSN) {
+  Sentry.setupFastifyErrorHandler(app)
+}
 
 const close = async (signal: string): Promise<void> => {
   app.log.info({ signal }, 'Shutting down')
