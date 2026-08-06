@@ -90,38 +90,42 @@ export function registerPaymentExecutionRoutes(
   app: FastifyInstance,
   dependencies: PaymentExecutionDependencies,
 ): void {
-  app.post('/api/v1/payments/initialize', async (request, reply) => {
-    reply.header('Cache-Control', 'no-store')
-    const customer = await authenticatedCustomer(request, dependencies.auth)
-    if (!customer) {
-      return reply
-        .code(401)
-        .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
-    }
-    const parsed = paymentExecutionInitializeSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply
-        .code(400)
-        .send(errorEnvelope('INVALID_PAYMENT_EXECUTION_REQUEST', 'Payment request is invalid.'))
-    }
+  app.post(
+    '/api/v1/payments/initialize',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const customer = await authenticatedCustomer(request, dependencies.auth)
+      if (!customer) {
+        return reply
+          .code(401)
+          .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
+      }
+      const parsed = paymentExecutionInitializeSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_PAYMENT_EXECUTION_REQUEST', 'Payment request is invalid.'))
+      }
 
-    try {
-      const result = await dependencies.service.initialize(
-        customer.tenantId,
-        { type: 'CUSTOMER', id: customer.customerId },
-        parsed.data,
-        dependencies.now?.() ?? new Date(),
-        randomUUID(),
-      )
-      return reply.code(result.replayed ? 200 : 201).send({
-        success: true,
-        data: result,
-        meta: responseMeta(),
-      })
-    } catch (error) {
-      return executionFailure(request, reply, error)
-    }
-  })
+      try {
+        const result = await dependencies.service.initialize(
+          customer.tenantId,
+          { type: 'CUSTOMER', id: customer.customerId },
+          parsed.data,
+          dependencies.now?.() ?? new Date(),
+          randomUUID(),
+        )
+        return reply.code(result.replayed ? 200 : 201).send({
+          success: true,
+          data: result,
+          meta: responseMeta(),
+        })
+      } catch (error) {
+        return executionFailure(request, reply, error)
+      }
+    },
+  )
 }
 
 export function createPrismaPaymentExecutionService(

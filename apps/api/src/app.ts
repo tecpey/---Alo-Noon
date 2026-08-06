@@ -1,7 +1,14 @@
 import cors from '@fastify/cors'
+import helmet from '@fastify/helmet'
+import rateLimit from '@fastify/rate-limit'
 import Fastify, { LogController, type FastifyInstance } from 'fastify'
 
-import type { HealthResponse, ReadyResponse, ResponseMeta } from '@alo-noon/contracts'
+import type {
+  ErrorEnvelope,
+  HealthResponse,
+  ReadyResponse,
+  ResponseMeta,
+} from '@alo-noon/contracts'
 
 import {
   registerDiscoveryRoutes,
@@ -37,6 +44,9 @@ export interface AppOptions {
   logger?: boolean
   trustProxyHops?: number
 }
+
+const RATE_LIMIT_WINDOW = '1 minute'
+const GLOBAL_RATE_LIMIT_MAX = 600
 
 const unavailableCatalogRepository: CatalogRepository = {
   listProducts: async () => {
@@ -80,6 +90,14 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   })
   const readinessCheck = options.readinessCheck ?? (async () => true)
 
+  await app.register(helmet, { contentSecurityPolicy: false })
+  await app.register(rateLimit, {
+    global: true,
+    max: GLOBAL_RATE_LIMIT_MAX,
+    timeWindow: RATE_LIMIT_WINDOW,
+    errorResponseBuilder: () =>
+      errorEnvelope('RATE_LIMIT_EXCEEDED', 'Too many requests. Please slow down and retry.'),
+  })
   await app.register(cors, {
     origin: options.corsOrigins?.length ? options.corsOrigins : false,
     credentials: true,
@@ -167,4 +185,8 @@ function responseMeta(): ResponseMeta {
     timestamp: new Date().toISOString(),
     version: 'v1',
   }
+}
+
+function errorEnvelope(code: string, message: string): ErrorEnvelope {
+  return { success: false, error: { code, message }, meta: responseMeta() }
 }

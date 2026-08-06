@@ -106,115 +106,127 @@ export interface PrismaAuthRepositoryOptions {
 }
 
 export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDependencies): void {
-  app.post('/api/v1/auth/otp/request', async (request, reply) => {
-    reply.header('Cache-Control', 'no-store')
-    const tenantId = await resolveTenantId(request, dependencies)
-    if (!tenantId)
-      return reply
-        .code(404)
-        .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
-    const parsed = otpRequestSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply
-        .code(400)
-        .send(
-          errorEnvelope('INVALID_OTP_REQUEST', 'OTP request is invalid.', parsed.error.flatten()),
-        )
-    }
-
-    try {
-      const parsedIdempotencyKey = otpIdempotencyKeySchema.safeParse(
-        request.headers['idempotency-key'],
-      )
-      if (!parsedIdempotencyKey.success) {
+  app.post(
+    '/api/v1/auth/otp/request',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const tenantId = await resolveTenantId(request, dependencies)
+      if (!tenantId)
+        return reply
+          .code(404)
+          .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
+      const parsed = otpRequestSchema.safeParse(request.body)
+      if (!parsed.success) {
         return reply
           .code(400)
-          .send(errorEnvelope('INVALID_IDEMPOTENCY_KEY', 'OTP request is invalid.'))
+          .send(
+            errorEnvelope('INVALID_OTP_REQUEST', 'OTP request is invalid.', parsed.error.flatten()),
+          )
       }
-      const accepted = await requestOtp(
-        parsed.data.mobileE164,
-        tenantId,
-        parsedIdempotencyKey.data,
-        request.ip,
-        dependencies,
-      )
-      return reply.code(202).send({
-        success: true,
-        data: accepted,
-        meta: responseMeta(),
-      })
-    } catch (error) {
-      if (error instanceof AuthenticationDeliveryError) {
-        if (error.status === 409) {
+
+      try {
+        const parsedIdempotencyKey = otpIdempotencyKeySchema.safeParse(
+          request.headers['idempotency-key'],
+        )
+        if (!parsedIdempotencyKey.success) {
           return reply
-            .code(409)
-            .send(errorEnvelope(error.code, 'The idempotency key was already used.'))
+            .code(400)
+            .send(errorEnvelope('INVALID_IDEMPOTENCY_KEY', 'OTP request is invalid.'))
         }
-        request.log.warn({ code: error.code }, 'OTP delivery unavailable')
+        const accepted = await requestOtp(
+          parsed.data.mobileE164,
+          tenantId,
+          parsedIdempotencyKey.data,
+          request.ip,
+          dependencies,
+        )
+        return reply.code(202).send({
+          success: true,
+          data: accepted,
+          meta: responseMeta(),
+        })
+      } catch (error) {
+        if (error instanceof AuthenticationDeliveryError) {
+          if (error.status === 409) {
+            return reply
+              .code(409)
+              .send(errorEnvelope(error.code, 'The idempotency key was already used.'))
+          }
+          request.log.warn({ code: error.code }, 'OTP delivery unavailable')
+          return reply
+            .code(503)
+            .send(
+              errorEnvelope('OTP_DELIVERY_UNAVAILABLE', 'Verification is temporarily unavailable.'),
+            )
+        }
+        request.log.error({ errorType: errorName(error) }, 'OTP delivery persistence failed')
         return reply
           .code(503)
           .send(
             errorEnvelope('OTP_DELIVERY_UNAVAILABLE', 'Verification is temporarily unavailable.'),
           )
       }
-      request.log.error({ errorType: errorName(error) }, 'OTP delivery persistence failed')
-      return reply
-        .code(503)
-        .send(errorEnvelope('OTP_DELIVERY_UNAVAILABLE', 'Verification is temporarily unavailable.'))
-    }
-  })
+    },
+  )
 
-  app.post('/api/v1/auth/otp/verify', async (request, reply) => {
-    reply.header('Cache-Control', 'no-store')
-    const tenantId = await resolveTenantId(request, dependencies)
-    if (!tenantId)
-      return reply
-        .code(404)
-        .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
-    const parsed = otpVerifySchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply
-        .code(400)
-        .send(
-          errorEnvelope(
-            'INVALID_OTP_VERIFICATION',
-            'OTP verification request is invalid.',
-            parsed.error.flatten(),
-          ),
-        )
-    }
-
-    try {
-      const result = await verifyOtp(
-        parsed.data.challengeId,
-        parsed.data.code,
-        tenantId,
-        request.ip,
-        dependencies,
-      )
-      reply.header(
-        'Set-Cookie',
-        sessionCookie(result.token, result.context.expiresAt, dependencies),
-      )
-      return {
-        success: true,
-        data: result.context,
-        meta: responseMeta(),
-      }
-    } catch (error) {
-      if (error instanceof InvalidOtpError) {
+  app.post(
+    '/api/v1/auth/otp/verify',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const tenantId = await resolveTenantId(request, dependencies)
+      if (!tenantId)
         return reply
-          .code(401)
-          .send(errorEnvelope('OTP_INVALID_OR_EXPIRED', 'Verification code is invalid or expired.'))
+          .code(404)
+          .send(errorEnvelope('TENANT_NOT_FOUND', 'The requested service is unavailable.'))
+      const parsed = otpVerifySchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(
+            errorEnvelope(
+              'INVALID_OTP_VERIFICATION',
+              'OTP verification request is invalid.',
+              parsed.error.flatten(),
+            ),
+          )
       }
-      request.log.error({ errorType: errorName(error) }, 'OTP verification persistence failed')
-      return reply
-        .code(503)
-        .send(
-          errorEnvelope('AUTHENTICATION_UNAVAILABLE', 'Verification is temporarily unavailable.'),
+
+      try {
+        const result = await verifyOtp(
+          parsed.data.challengeId,
+          parsed.data.code,
+          tenantId,
+          request.ip,
+          dependencies,
         )
-    }
-  })
+        reply.header(
+          'Set-Cookie',
+          sessionCookie(result.token, result.context.expiresAt, dependencies),
+        )
+        return {
+          success: true,
+          data: result.context,
+          meta: responseMeta(),
+        }
+      } catch (error) {
+        if (error instanceof InvalidOtpError) {
+          return reply
+            .code(401)
+            .send(
+              errorEnvelope('OTP_INVALID_OR_EXPIRED', 'Verification code is invalid or expired.'),
+            )
+        }
+        request.log.error({ errorType: errorName(error) }, 'OTP verification persistence failed')
+        return reply
+          .code(503)
+          .send(
+            errorEnvelope('AUTHENTICATION_UNAVAILABLE', 'Verification is temporarily unavailable.'),
+          )
+      }
+    },
+  )
 
   app.get('/api/v1/auth/session', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
