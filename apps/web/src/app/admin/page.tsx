@@ -1,0 +1,334 @@
+import { redirect } from 'next/navigation'
+
+import {
+  createPaymentConfigurationAction,
+  createPaymentCredentialAction,
+  createSmsConfigurationAction,
+  governPaymentConfigurationAction,
+  setPaymentHealthAction,
+  setSmsHealthAction,
+  signOutAction,
+} from '../../lib/admin-actions'
+import {
+  isUnauthenticated,
+  listPaymentConfigurations,
+  listSmsConfigurations,
+  type PaymentConfigurationSummary,
+  type SmsConfigurationSummary,
+} from '../../lib/admin-api'
+import { ActionForm, Field, SelectField } from './action-form'
+
+// Provider state is governance data that changes by operator action, so it is
+// read fresh on every request rather than served from a build-time render.
+export const dynamic = 'force-dynamic'
+
+const ENVIRONMENTS = [
+  { value: 'TEST', label: 'آزمایشی (TEST)' },
+  { value: 'PRODUCTION', label: 'عملیاتی (PRODUCTION)' },
+]
+
+const HEALTH_LABELS: Readonly<Record<string, string>> = {
+  UNKNOWN: 'نامشخص',
+  HEALTHY: 'سالم',
+  DEGRADED: 'کاهش‌یافته',
+  UNHEALTHY: 'ناسالم',
+}
+
+export default async function AdminPage() {
+  const [payments, sms] = await Promise.all([listPaymentConfigurations(), listSmsConfigurations()])
+
+  // The lists themselves are the authorization check. A separate session probe
+  // would gate the page on session.self.read, a permission a governance-only
+  // operator has no reason to hold — and the page would be unreachable for
+  // exactly the accounts it exists for.
+  if (
+    (!payments.ok && isUnauthenticated(payments.error)) ||
+    (!sms.ok && isUnauthenticated(sms.error))
+  ) {
+    redirect('/admin/login')
+  }
+
+  return (
+    <main className="admin">
+      <header className="admin-header">
+        <div>
+          <h1>پنل مدیریت سرویس‌دهنده‌ها</h1>
+          <p className="muted">درگاه پرداخت و سرویس پیامکِ کد ورود</p>
+        </div>
+        <form action={signOutAction}>
+          <button type="submit" className="ghost">
+            خروج
+          </button>
+        </form>
+      </header>
+
+      <aside className="note">
+        هیچ کلید یا رمزی از این پنل عبور نمی‌کند. آنچه ثبت می‌کنید فقط یک <em>ارجاع</em> به محل
+        نگه‌داری کلید است؛ مقدار کلید در محیط اجرا می‌ماند و از این‌جا نه ذخیره می‌شود و نه قابل
+        خواندن است.
+      </aside>
+
+      <section>
+        <h2>درگاه‌های پرداخت</h2>
+        {payments.ok ? (
+          <PaymentTable configurations={payments.data} />
+        ) : (
+          <p className="error-box">{readFailureMessage(payments.error.code)}</p>
+        )}
+
+        <details className="card">
+          <summary>افزودن درگاه جدید</summary>
+          <p className="muted">
+            سه مرحله پشت سر هم: ثبت ارجاع کلید، ساخت پیکربندی، سپس فعال‌سازی و ثبت سلامت. درگاه تا
+            وقتی «سالم» علامت نخورده باشد انتخاب نمی‌شود.
+          </p>
+
+          <h3>۱. ثبت ارجاع کلید</h3>
+          <ActionForm action={createPaymentCredentialAction} submitLabel="ثبت ارجاع">
+            <Field
+              label="کد درگاه"
+              name="providerCode"
+              required
+              dir="ltr"
+              placeholder="IDPAY"
+              hint="با حروف بزرگ لاتین، مطابق آداپتور نصب‌شده."
+            />
+            <Field
+              label="ارجاع کلید"
+              name="reference"
+              required
+              dir="ltr"
+              placeholder="local-encrypted://IDPAY"
+              hint="یکی از vault:// ، aws-sm:// ، gcp-sm:// یا local-encrypted:// . مقدار کلید را این‌جا وارد نکنید."
+            />
+            <Field label="نسخهٔ کلید" name="keyVersion" dir="ltr" defaultValue="v1" />
+          </ActionForm>
+
+          <h3>۲. ساخت پیکربندی</h3>
+          <ActionForm action={createPaymentConfigurationAction} submitLabel="ساخت پیکربندی">
+            <Field label="کد درگاه" name="providerCode" required dir="ltr" placeholder="IDPAY" />
+            <Field
+              label="شناسهٔ ارجاع کلید"
+              name="credentialReferenceId"
+              required
+              dir="ltr"
+              hint="شناسه‌ای که در مرحلهٔ قبل برگردانده شد."
+            />
+            <Field
+              label="شناسهٔ پذیرنده"
+              name="merchantReference"
+              required
+              dir="ltr"
+              hint="کد پذیرندهٔ شما نزد درگاه."
+            />
+            <Field label="نسخهٔ آداپتور" name="adapterVersion" dir="ltr" defaultValue="1.0.0" />
+            <SelectField
+              label="محیط"
+              name="environment"
+              options={ENVIRONMENTS}
+              defaultValue="TEST"
+            />
+            <Field label="دلیل" name="reason" required hint="در تاریخچهٔ ممیزی ثبت می‌شود." />
+          </ActionForm>
+        </details>
+      </section>
+
+      <section>
+        <h2>سرویس‌های پیامک</h2>
+        {sms.ok ? (
+          <SmsTable configurations={sms.data} />
+        ) : (
+          <p className="error-box">{readFailureMessage(sms.error.code)}</p>
+        )}
+
+        <details className="card">
+          <summary>افزودن سرویس پیامک</summary>
+          <p className="muted">
+            این پیکربندی پس از ثبت تغییرناپذیر است؛ برای خارج کردن از چرخه، سلامت آن را «ناسالم»
+            کنید.
+          </p>
+          <ActionForm action={createSmsConfigurationAction} submitLabel="ثبت سرویس پیامک">
+            <Field label="کد سرویس" name="providerCode" required dir="ltr" placeholder="LIMOOSMS" />
+            <Field
+              label="ارجاع کلید"
+              name="credentialReference"
+              required
+              dir="ltr"
+              placeholder="env://AUTH_SMS_LIMOOSMS_API_KEY"
+              hint="ارجاع env:// باید با AUTH_SMS_ شروع شود."
+            />
+            <Field label="شمارهٔ فرستنده" name="senderReference" required dir="ltr" />
+            <Field label="شناسهٔ الگوی پیام" name="templateReference" required dir="ltr" />
+            <Field label="نسخهٔ آداپتور" name="adapterVersion" dir="ltr" defaultValue="1.0.0" />
+            <SelectField
+              label="محیط"
+              name="environment"
+              options={ENVIRONMENTS}
+              defaultValue="TEST"
+            />
+            <SelectField
+              label="فعال"
+              name="enabled"
+              options={[
+                { value: 'true', label: 'بله' },
+                { value: 'false', label: 'خیر' },
+              ]}
+              defaultValue="true"
+            />
+            <SelectField
+              label="پیش‌فرض"
+              name="isDefault"
+              options={[
+                { value: 'true', label: 'بله' },
+                { value: 'false', label: 'خیر' },
+              ]}
+              defaultValue="true"
+              hint="در هر محیط فقط یک سرویس فعالِ پیش‌فرض مجاز است."
+            />
+            <Field
+              label="اولویت"
+              name="priority"
+              dir="ltr"
+              inputMode="numeric"
+              hint="عدد بین ۱ تا ۱۰۰۰. خالی بگذارید تا مقدار پیش‌فرض اعمال شود."
+            />
+            <Field label="دلیل" name="reason" required />
+          </ActionForm>
+        </details>
+      </section>
+    </main>
+  )
+}
+
+function readFailureMessage(code: string): string {
+  switch (code) {
+    case 'PROVIDER_GOVERNANCE_FORBIDDEN':
+    case 'PAYMENT_PROVIDER_OPERATION_FORBIDDEN':
+    case 'AUTH_DELIVERY_PROVIDER_OPERATION_FORBIDDEN':
+      return 'این حساب اجازهٔ مدیریت سرویس‌دهنده‌ها را ندارد. دسترسی مدیریت باید روی حساب شما ثبت شود.'
+    case 'API_UNREACHABLE':
+      return 'ارتباط با سرویس برقرار نشد.'
+    default:
+      return `خواندن فهرست ناموفق بود (${code}).`
+  }
+}
+
+function PaymentTable({
+  configurations,
+}: Readonly<{ configurations: PaymentConfigurationSummary[] }>) {
+  if (configurations.length === 0) {
+    return <p className="muted">هیچ درگاهی پیکربندی نشده است.</p>
+  }
+  return (
+    <div className="rows">
+      {configurations.map((configuration) => (
+        <article key={configuration.id} className="row">
+          <div className="row-head">
+            <strong dir="ltr">{configuration.providerCode}</strong>
+            <span className="badge">{configuration.environment}</span>
+            <span className={`badge health-${configuration.healthStatus.toLowerCase()}`}>
+              {HEALTH_LABELS[configuration.healthStatus] ?? configuration.healthStatus}
+            </span>
+            {configuration.isActive && <span className="badge on">فعال</span>}
+            {configuration.isDefault && <span className="badge on">پیش‌فرض</span>}
+          </div>
+          <dl className="row-meta">
+            <div>
+              <dt>شناسه</dt>
+              <dd dir="ltr">{configuration.id}</dd>
+            </div>
+            <div>
+              <dt>پذیرنده</dt>
+              <dd dir="ltr">{configuration.merchantReference}</dd>
+            </div>
+            <div>
+              <dt>نسخهٔ آداپتور</dt>
+              <dd dir="ltr">{configuration.adapterVersion}</dd>
+            </div>
+          </dl>
+          <div className="row-actions">
+            <ActionForm
+              action={governPaymentConfigurationAction}
+              submitLabel={configuration.isActive ? 'غیرفعال کن' : 'فعال و پیش‌فرض کن'}
+            >
+              <input type="hidden" name="configurationId" value={configuration.id} />
+              <input
+                type="hidden"
+                name="governanceVersion"
+                value={String(configuration.governanceVersion)}
+              />
+              <input type="hidden" name="targetActive" value={String(!configuration.isActive)} />
+              <input type="hidden" name="makeDefault" value={String(!configuration.isActive)} />
+              <Field label="دلیل" name="reason" required />
+            </ActionForm>
+            <ActionForm action={setPaymentHealthAction} submitLabel="ثبت سلامت">
+              <input type="hidden" name="configurationId" value={configuration.id} />
+              <SelectField
+                label="وضعیت سلامت"
+                name="healthStatus"
+                options={Object.entries(HEALTH_LABELS).map(([value, label]) => ({ value, label }))}
+                defaultValue={configuration.healthStatus}
+              />
+              <Field label="دلیل" name="reason" required />
+            </ActionForm>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function SmsTable({ configurations }: Readonly<{ configurations: SmsConfigurationSummary[] }>) {
+  if (configurations.length === 0) {
+    return <p className="muted">هیچ سرویس پیامکی پیکربندی نشده است؛ ارسال کد ورود کار نمی‌کند.</p>
+  }
+  return (
+    <div className="rows">
+      {configurations.map((configuration) => (
+        <article key={configuration.id} className="row">
+          <div className="row-head">
+            <strong dir="ltr">{configuration.providerCode}</strong>
+            <span className="badge">{configuration.environment}</span>
+            <span className={`badge health-${configuration.healthStatus.toLowerCase()}`}>
+              {HEALTH_LABELS[configuration.healthStatus] ?? configuration.healthStatus}
+            </span>
+            {configuration.enabled && <span className="badge on">فعال</span>}
+            {configuration.isDefault && <span className="badge on">پیش‌فرض</span>}
+          </div>
+          <dl className="row-meta">
+            <div>
+              <dt>شناسه</dt>
+              <dd dir="ltr">{configuration.id}</dd>
+            </div>
+            <div>
+              <dt>فرستنده</dt>
+              <dd dir="ltr">{configuration.senderReference}</dd>
+            </div>
+            <div>
+              <dt>اولویت</dt>
+              <dd dir="ltr">{configuration.priority}</dd>
+            </div>
+          </dl>
+          <div className="row-actions">
+            <ActionForm action={setSmsHealthAction} submitLabel="ثبت سلامت">
+              <input type="hidden" name="configurationId" value={configuration.id} />
+              <SelectField
+                label="وضعیت سلامت"
+                name="healthStatus"
+                // UNKNOWN is absent by design: nothing may claim a provider was
+                // never observed once it has been.
+                options={[
+                  { value: 'HEALTHY', label: 'سالم' },
+                  { value: 'DEGRADED', label: 'کاهش‌یافته' },
+                  { value: 'UNHEALTHY', label: 'ناسالم' },
+                ]}
+                defaultValue={configuration.healthStatus === 'HEALTHY' ? 'UNHEALTHY' : 'HEALTHY'}
+              />
+              <Field label="دلیل" name="reason" required />
+            </ActionForm>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}

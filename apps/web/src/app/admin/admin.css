@@ -1,0 +1,232 @@
+/*
+ * Admin panel styling. Deliberately plain and dense: this is an operator tool
+ * used a handful of times before launch and during incidents, so legibility of
+ * state beats visual polish. Persian-first, RTL, with LTR islands for the
+ * identifiers and references that are always Latin.
+ */
+.admin-shell {
+  --surface: #ffffff;
+  --ground: #fffaf5;
+  --ink: #431407;
+  --ink-muted: #7c2d12;
+  --line: #fed7aa;
+  --accent: #c2410c;
+  --ok: #16a34a;
+  --warn: #ca8a04;
+  --bad: #dc2626;
+
+  min-height: 100vh;
+  background: var(--ground);
+  color: var(--ink);
+  padding: 2rem 1rem 4rem;
+}
+
+.admin,
+.admin-login {
+  max-width: 62rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.admin-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1rem;
+}
+
+.admin h1,
+.admin-login h1 {
+  font-size: 1.6rem;
+  margin: 0;
+}
+.admin h2 {
+  font-size: 1.2rem;
+  margin: 0 0 0.75rem;
+}
+.admin h3 {
+  font-size: 1rem;
+  margin: 1.5rem 0 0.5rem;
+  color: var(--accent);
+}
+
+.muted {
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+  line-height: 1.9;
+  margin: 0.25rem 0;
+}
+
+.note,
+.error-box {
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  padding: 0.9rem 1.1rem;
+  font-size: 0.92rem;
+  line-height: 2;
+}
+.error-box {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: var(--bad);
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  padding: 1.1rem 1.25rem;
+}
+.card > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.row {
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  padding: 1rem 1.15rem;
+}
+
+.row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.78rem;
+  background: #fff7ed;
+}
+.badge.on {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: var(--ok);
+}
+.badge.health-healthy {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: var(--ok);
+}
+.badge.health-degraded {
+  border-color: #fde68a;
+  background: #fefce8;
+  color: var(--warn);
+}
+.badge.health-unhealthy {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: var(--bad);
+}
+
+.row-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.9rem;
+}
+.row-meta dt {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+.row-meta dd {
+  margin: 0;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.row-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1rem;
+  border-top: 1px dashed var(--line);
+  padding-top: 0.9rem;
+}
+
+.action-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.field > span {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.field input,
+.field select {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: #fffdfb;
+  color: inherit;
+}
+.field input:focus-visible,
+.field select:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.field small {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  line-height: 1.8;
+}
+
+button {
+  font: inherit;
+  font-weight: 700;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  align-self: flex-start;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+button.ghost {
+  background: transparent;
+  color: var(--accent);
+}
+
+.form-message {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.9;
+}
+.form-message.ok {
+  color: var(--ok);
+}
+.form-message.error {
+  color: var(--bad);
+}
