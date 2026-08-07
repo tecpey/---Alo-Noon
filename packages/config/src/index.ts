@@ -38,6 +38,10 @@ export const envSchema = z
     // Where the customer's browser is sent after returning from the gateway.
     // Carries no payment verdict — only an opaque reference.
     PAYMENT_RESULT_REDIRECT_URL: z.string().url().optional(),
+    // Base64 32-byte AES-256-GCM key that opens `local-encrypted://` payment
+    // credentials. Kept apart from the encrypted values themselves so leaking the
+    // configuration does not leak the gateway secret.
+    PAYMENT_SECRET_ENCRYPTION_KEY: z.string().optional(),
     // Observability
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),

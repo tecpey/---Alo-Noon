@@ -177,24 +177,10 @@ export function createPrismaPaymentExecutionService(
   }
 }
 
-export function createEnvironmentPaymentCredentialResolver(
-  environment: Readonly<Record<string, string | undefined>>,
-): ProviderSecretResolver {
-  return Object.freeze({
-    async resolve(reference: string) {
-      const match = /^env:\/(?:\/)?(PAYMENT_PROVIDER_[A-Z0-9_]{1,120})$/.exec(reference)
-      const value = match ? environment[match[1]!] : undefined
-      if (!value || value.length < 16) {
-        throw new PaymentExecutionError('PAYMENT_PROVIDER_CREDENTIAL_UNAVAILABLE', 503)
-      }
-      const material = Buffer.from(value, 'utf8')
-      return {
-        material,
-        dispose: () => material.fill(0),
-      }
-    },
-  })
-}
+// Payment credentials are resolved by createLocalEncryptedPaymentSecretResolver
+// in ../providers/secret-resolver.ts. There is deliberately no env:// resolver:
+// the database CHECK constraint on ProviderCredentialReference rejects env://
+// for payment credentials, so such a reference could never be stored to resolve.
 
 async function prepareExecution(
   prisma: PrismaClient,

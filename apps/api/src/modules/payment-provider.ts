@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import {
   paymentAttemptEventPayloadSchema,
@@ -69,6 +69,19 @@ export type GovernProviderConfigurationCommand = GovernanceActor & {
   reason: string
 }
 
+/**
+ * Provider selection requires healthStatus HEALTHY. A newly created
+ * configuration starts UNKNOWN, and only callback verification ever promoted it,
+ * so a gateway provisioned by an operator could never become selectable. This is
+ * the governed way to attest a gateway is live, and to pull it out of rotation
+ * during an incident without deactivating and re-creating it.
+ */
+export type SetProviderConfigurationHealthCommand = GovernanceActor & {
+  providerConfigurationId: string
+  healthStatus: 'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY'
+  reason: string
+}
+
 export interface CreatePaymentAttemptCommand {
   paymentId: string
   environment: 'TEST' | 'PRODUCTION'
@@ -116,6 +129,12 @@ export interface PaymentProviderService {
   governConfiguration(
     tenantId: string,
     command: GovernProviderConfigurationCommand,
+    now: Date,
+    correlationId: string,
+  ): Promise<PaymentProviderConfigurationSummary>
+  setConfigurationHealth(
+    tenantId: string,
+    command: SetProviderConfigurationHealthCommand,
     now: Date,
     correlationId: string,
   ): Promise<PaymentProviderConfigurationSummary>
@@ -417,6 +436,35 @@ export function createPrismaPaymentProviderService(
           command.actor,
           command.actorId,
           `payment_provider.configuration_${command.targetActive ? 'activated' : 'deactivated'}`,
+          correlationId,
+          now,
+        )
+        await options.beforeCommit?.(transaction)
+        return mapConfiguration(updated)
+      })
+    },
+
+    async setConfigurationHealth(tenantId, command, now, correlationId) {
+      if (!command.reason.trim()) throw new PaymentProviderError('PROVIDER_REASON_REQUIRED')
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await authorizeGovernanceActor(transaction, tenantId, command, now, options)
+        const configuration = await transaction.paymentProviderConfiguration.findFirst({
+          where: { id: command.providerConfigurationId, tenantId },
+        })
+        if (!configuration) throw new PaymentProviderError('PROVIDER_CONFIGURATION_NOT_FOUND')
+
+        const updated = await transaction.paymentProviderConfiguration.update({
+          where: { id: configuration.id },
+          data: { healthStatus: command.healthStatus, updatedAt: now },
+        })
+        await writeProviderGovernanceRecords(
+          transaction,
+          tenantId,
+          updated,
+          randomUUID(),
+          command.actor,
+          command.actorId,
+          'payment_provider.configuration_health_changed',
           correlationId,
           now,
         )

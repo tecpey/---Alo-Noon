@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
+    "provision": "tsx src/provision.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

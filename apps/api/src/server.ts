@@ -26,10 +26,8 @@ import {
 import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
-import {
-  createEnvironmentPaymentCredentialResolver,
-  createPrismaPaymentExecutionService,
-} from './modules/payment-execution.js'
+import { createPrismaPaymentExecutionService } from './modules/payment-execution.js'
+import { createPaymentSecretResolver } from './providers/secret-resolver.js'
 import { createPrismaPaymentProviderService } from './modules/payment-provider.js'
 import { createIdPayAdapter } from './providers/idpay.js'
 import { createNextPayAdapter } from './providers/nextpay.js'
@@ -113,7 +111,7 @@ const paymentExecutionPolicy = createProviderExecutionPolicy({
 })
 const paymentExecutionService = createPrismaPaymentExecutionService(prisma, {
   adapterRegistry: paymentProviderAdapterRegistry,
-  secretResolver: createEnvironmentPaymentCredentialResolver(process.env),
+  secretResolver: createPaymentSecretResolver(process.env, env.PAYMENT_SECRET_ENCRYPTION_KEY),
   policy: paymentExecutionPolicy,
 })
 
