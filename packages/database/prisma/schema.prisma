@@ -1053,6 +1053,8 @@ model BakeryProductOffering {
   availability       OfferingAvailabilityStatus @default(DRAFT)
   dailyCapacity      Int?
   preparationMinutes Int?
+  stockTracked       Boolean                    @default(false)
+  stockOnHand        Int?
   availableFrom      DateTime?
   availableUntil     DateTime?
   orderItems         OrderItem[]

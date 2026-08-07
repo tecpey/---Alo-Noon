@@ -22,7 +22,10 @@ import type { AuthDependencies } from './auth.js'
 import { authenticatedCustomer, serviceDateAt } from './commerce.js'
 
 const quoteForOrderInclude = {
-  items: { orderBy: { id: 'asc' } },
+  items: {
+    orderBy: { id: 'asc' },
+    include: { bakeryProductOffering: { select: { stockTracked: true } } },
+  },
   deliveryAddress: true,
   deliveryPricingRule: true,
   order: { select: { id: true } },
@@ -185,6 +188,20 @@ export function createPrismaOrderRepository(
             RETURNING "id"
           `
           if (reserved.length !== 1) throw new OrderError('CAPACITY_UNAVAILABLE', 422)
+
+          for (const item of quote.items) {
+            if (!item.bakeryProductOffering.stockTracked) continue
+            const decremented = await transaction.$queryRaw<Array<{ id: string }>>`
+              UPDATE "BakeryProductOffering"
+              SET "stockOnHand" = "stockOnHand" - ${item.quantity}, "updatedAt" = ${now}
+              WHERE "id" = ${item.bakeryProductOfferingId}::uuid
+                AND "tenantId" = ${tenantId}::uuid
+                AND "stockTracked"
+                AND "stockOnHand" >= ${item.quantity}
+              RETURNING "id"
+            `
+            if (decremented.length !== 1) throw new OrderError('STOCK_UNAVAILABLE', 422)
+          }
 
           const order = await transaction.order.create({
             data: {
@@ -487,6 +504,7 @@ function orderFailure(
     QUOTE_PRICING_UNAVAILABLE: 422,
     BAKERY_BRANCH_UNAVAILABLE: 422,
     CAPACITY_UNAVAILABLE: 422,
+    STOCK_UNAVAILABLE: 422,
   }
   if (code && statuses[code]) {
     const messages: Record<string, string> = {
@@ -499,6 +517,7 @@ function orderFailure(
       QUOTE_EXPIRED: 'The quote has expired.',
       ORDER_CONCURRENCY_CONFLICT: 'Order creation conflicted; retry safely.',
       CAPACITY_UNAVAILABLE: 'Bakery capacity is unavailable.',
+      STOCK_UNAVAILABLE: 'One or more items are out of stock.',
     }
     return reply
       .code(statuses[code]!)

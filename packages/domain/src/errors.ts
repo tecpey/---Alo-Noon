@@ -57,6 +57,9 @@ export type DomainErrorCode =
   | 'AUTH_DELIVERY_RESPONSE_INVALID'
   | 'INVALID_IRANIAN_MOBILE'
   | 'INVALID_AUTH_DELIVERY_TRANSITION'
+  | 'INVALID_OFFERING_STOCK_SHAPE'
+  | 'INVALID_STOCK_QUANTITY'
+  | 'OFFERING_STOCK_UNAVAILABLE'
 
 export class DomainError extends Error {
   constructor(
