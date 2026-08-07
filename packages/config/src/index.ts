@@ -25,7 +25,13 @@ export const envSchema = z
     AUTH_OTP_PEPPER: z.string().min(32).optional(),
     AUTH_SESSION_PEPPER: z.string().min(32).optional(),
     AUTH_ABUSE_PEPPER: z.string().min(32).optional(),
-    API_TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).default(0),
+    // Deliberately not defaulted: production must state its topology explicitly.
+    // Rate limiting and OTP abuse control both key on request.ip, so leaving this
+    // at 0 behind a load balancer silently collapses every user into one shared
+    // bucket — throttling real customers while giving an attacker no per-IP limit
+    // at all. Absent means "no trusted proxy", which is only correct when the API
+    // is exposed directly.
+    API_TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).optional(),
     // Payment provider adapters resolve this to build each gateway's callback URL;
     // no adapter can initialize a payment without it.
     PAYMENT_CALLBACK_BASE_URL: z.string().url().optional(),
@@ -58,6 +64,14 @@ export const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['AUTH_OTP_PEPPER'],
         message: 'Authentication peppers must be independent production secrets',
+      })
+    }
+    if (env.API_TRUST_PROXY_HOPS === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['API_TRUST_PROXY_HOPS'],
+        message:
+          'API_TRUST_PROXY_HOPS must be set explicitly in production. Use the number of trusted reverse-proxy hops in front of the API, or 0 only when it is exposed directly. Guessing wrong disables per-IP rate limiting and OTP abuse control.',
       })
     }
   })

@@ -19,6 +19,7 @@ describe('environment configuration', () => {
       AUTH_OTP_PEPPER: 'o'.repeat(32),
       AUTH_SESSION_PEPPER: 's'.repeat(32),
       AUTH_ABUSE_PEPPER: 'a'.repeat(32),
+      API_TRUST_PROXY_HOPS: '0',
     })
     expect(configured.success).toBe(true)
 
@@ -34,6 +35,27 @@ describe('environment configuration', () => {
   it('bounds explicitly trusted proxy hops', () => {
     expect(validateEnv({ API_TRUST_PROXY_HOPS: '3' }).success).toBe(true)
     expect(validateEnv({ API_TRUST_PROXY_HOPS: '4' }).success).toBe(false)
+  })
+
+  it('refuses to start in production until the proxy topology is stated', () => {
+    const productionSecrets = {
+      NODE_ENV: 'production',
+      AUTH_OTP_PEPPER: 'o'.repeat(32),
+      AUTH_SESSION_PEPPER: 's'.repeat(32),
+      AUTH_ABUSE_PEPPER: 'a'.repeat(32),
+    }
+
+    // Silently defaulting this behind a load balancer would key rate limiting
+    // and OTP abuse control on the proxy address for every user.
+    const unset = validateEnv(productionSecrets)
+    expect(unset.success).toBe(false)
+    if (!unset.success) {
+      expect(unset.errors.join(' ')).toContain('API_TRUST_PROXY_HOPS')
+    }
+
+    // Both answers are acceptable, as long as the operator gave one.
+    expect(validateEnv({ ...productionSecrets, API_TRUST_PROXY_HOPS: '0' }).success).toBe(true)
+    expect(validateEnv({ ...productionSecrets, API_TRUST_PROXY_HOPS: '1' }).success).toBe(true)
   })
 
   it('requires a valid URL for the payment callback base when provided', () => {

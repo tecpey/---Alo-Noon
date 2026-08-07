@@ -95,6 +95,21 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   })
   const readinessCheck = options.readinessCheck ?? (async () => true)
 
+  // A forwarding header arriving while proxy trust is off is direct evidence the
+  // API sits behind a proxy that was never declared. Every request then reports
+  // the proxy's address, so rate limiting and OTP abuse control silently share
+  // one bucket across all users. Warn once rather than per request.
+  if (!options.trustProxyHops) {
+    let warned = false
+    app.addHook('onRequest', async (request) => {
+      if (warned || !request.headers['x-forwarded-for']) return
+      warned = true
+      request.log.warn(
+        'Received X-Forwarded-For while proxy trust is disabled: per-IP rate limiting and OTP abuse control are keying on the proxy address, not the client. Set API_TRUST_PROXY_HOPS to the number of trusted hops.',
+      )
+    })
+  }
+
   await app.register(helmet, { contentSecurityPolicy: false })
   await app.register(rateLimit, {
     global: true,

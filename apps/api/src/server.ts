@@ -130,7 +130,7 @@ const paymentCallback = env.PAYMENT_RESULT_REDIRECT_URL
 
 const app = await buildApp({
   logger: true,
-  trustProxyHops: env.API_TRUST_PROXY_HOPS,
+  ...(env.API_TRUST_PROXY_HOPS !== undefined && { trustProxyHops: env.API_TRUST_PROXY_HOPS }),
   readinessCheck: async () => {
     await prisma.$queryRaw`SELECT 1`
     return env.NODE_ENV !== 'production' || authenticationDatabaseRoleIsSafe(prisma)
