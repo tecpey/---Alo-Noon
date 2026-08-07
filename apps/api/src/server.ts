@@ -30,6 +30,7 @@ import {
   createEnvironmentPaymentCredentialResolver,
   createPrismaPaymentExecutionService,
 } from './modules/payment-execution.js'
+import { createPrismaPaymentProviderService } from './modules/payment-provider.js'
 import { createIdPayAdapter } from './providers/idpay.js'
 import { createNextPayAdapter } from './providers/nextpay.js'
 import { createShepaAdapter } from './providers/shepa.js'
@@ -85,15 +86,21 @@ const auth = {
 // currently a script/console action). Until PAYMENT_CALLBACK_BASE_URL is set, no
 // adapter is registered at all and the route fails safely with
 // PAYMENT_PROVIDER_MISSING (503) instead of not existing.
-const paymentCallbackUrl = env.PAYMENT_CALLBACK_BASE_URL
-  ? new URL('/api/v1/payments/callback', env.PAYMENT_CALLBACK_BASE_URL).toString()
-  : undefined
+// Each gateway gets its own callback path so the receiving route knows which
+// provider a redirect belongs to without trusting a request parameter for it.
+const callbackUrlFor = (providerCode: string): string | undefined =>
+  env.PAYMENT_CALLBACK_BASE_URL
+    ? new URL(
+        `/api/v1/payments/callback/${providerCode.toLowerCase()}`,
+        env.PAYMENT_CALLBACK_BASE_URL,
+      ).toString()
+    : undefined
 const paymentProviderAdapterRegistry = createPaymentProviderAdapterRegistry(
-  paymentCallbackUrl
+  env.PAYMENT_CALLBACK_BASE_URL
     ? [
-        createNextPayAdapter({ callbackUrl: paymentCallbackUrl }),
-        createShepaAdapter({ callbackUrl: paymentCallbackUrl }),
-        createIdPayAdapter({ callbackUrl: paymentCallbackUrl }),
+        createNextPayAdapter({ callbackUrl: callbackUrlFor('NEXTPAY')! }),
+        createShepaAdapter({ callbackUrl: callbackUrlFor('SHEPA')! }),
+        createIdPayAdapter({ callbackUrl: callbackUrlFor('IDPAY')! }),
       ]
     : [],
 )
@@ -107,6 +114,19 @@ const paymentExecutionService = createPrismaPaymentExecutionService(prisma, {
   secretResolver: createEnvironmentPaymentCredentialResolver(process.env),
   policy: paymentExecutionPolicy,
 })
+
+// Recording an inbound gateway redirect is a system-actor write, so this
+// service instance is deliberately separate from any customer-driven one.
+const paymentCallback = env.PAYMENT_RESULT_REDIRECT_URL
+  ? {
+      providerService: createPrismaPaymentProviderService(prisma, {
+        allowSystemOperations: true,
+        adapterRegistry: paymentProviderAdapterRegistry,
+      }),
+      resultRedirectUrl: env.PAYMENT_RESULT_REDIRECT_URL,
+      environment: paymentExecutionPolicy.environment,
+    }
+  : undefined
 
 const app = await buildApp({
   logger: true,
@@ -127,6 +147,7 @@ const app = await buildApp({
   addressRepository: createPrismaAddressRepository(prisma),
   orderRepository: createPrismaOrderRepository(prisma),
   paymentExecutionService,
+  ...(paymentCallback && { paymentCallback }),
 })
 
 if (env.SENTRY_DSN) {

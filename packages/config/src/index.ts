@@ -29,6 +29,9 @@ export const envSchema = z
     // Payment provider adapters resolve this to build each gateway's callback URL;
     // no adapter can initialize a payment without it.
     PAYMENT_CALLBACK_BASE_URL: z.string().url().optional(),
+    // Where the customer's browser is sent after returning from the gateway.
+    // Carries no payment verdict — only an opaque reference.
+    PAYMENT_RESULT_REDIRECT_URL: z.string().url().optional(),
     // Observability
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),

@@ -28,6 +28,10 @@ import {
   registerPaymentExecutionRoutes,
   type PaymentExecutionService,
 } from './modules/payment-execution.js'
+import {
+  registerPaymentCallbackRoutes,
+  type PaymentCallbackDependencies,
+} from './modules/payment-callback.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -40,6 +44,7 @@ export interface AppOptions {
   addressRepository?: AddressRepository
   orderRepository?: OrderRepository
   paymentExecutionService?: PaymentExecutionService
+  paymentCallback?: Omit<PaymentCallbackDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
   trustProxyHops?: number
@@ -128,6 +133,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       service: options.paymentExecutionService,
       auth: options.auth,
     })
+  }
+  if (options.auth && options.paymentCallback) {
+    registerPaymentCallbackRoutes(app, { ...options.paymentCallback, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({
