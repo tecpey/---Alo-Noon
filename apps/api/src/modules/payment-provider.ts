@@ -449,6 +449,8 @@ export function createPrismaPaymentProviderService(
             updatedAt: replay.createdAt,
           })
         }
+        // ownership-established: staff/system provider operation; authority is the
+        // actor check at the service entry, not customer scoping.
         const payment = await transaction.payment.findFirst({
           where: { id: command.paymentId, tenantId },
         })

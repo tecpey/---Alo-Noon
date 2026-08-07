@@ -223,6 +223,10 @@ async function prepareExecution(
         WHERE "id" = ${command.paymentId}::uuid AND "tenantId" = ${tenantId}::uuid
         FOR UPDATE
       `
+      // ownership-established: ownsPayment() below rejects a payment belonging to
+      // another customer, and reports it as NOT_FOUND so existence is not leaked.
+      // Ownership is asserted here rather than in the where clause because a
+      // SYSTEM actor is legitimately allowed to act on any customer's payment.
       const payment = await transaction.payment.findFirst({
         where: { id: command.paymentId, tenantId },
         include: { order: true },

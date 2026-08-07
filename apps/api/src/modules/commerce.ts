@@ -283,6 +283,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             offeringOperationalZoneId: offering.bakeryBranch.operationalZoneId,
             offeringBakeryBranchId: offering.bakeryBranchId,
           })
+          // ownership-established: cart was loaded above filtered by customerId.
           const updated = await transaction.cart.updateMany({
             where: { id: cart.id, state: 'ACTIVE', version: cart.version },
             data: { version: { increment: 1 } },
@@ -340,6 +341,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           where: { cartId: cart.id, bakeryProductOfferingId: offeringId },
         })
         if (removed.count !== 1) throw new CommerceError('CART_ITEM_NOT_FOUND', 404)
+        // ownership-established: cart was loaded above filtered by customerId.
         const updated = await transaction.cart.updateMany({
           where: { id: cart.id, state: 'ACTIVE', version: cart.version },
           data: { version: { increment: 1 } },
@@ -374,6 +376,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             throw new CommerceError('IDEMPOTENCY_KEY_CONFLICT', 409)
           }
           if (replay.status === 'ACTIVE' && replay.expiresAt <= now) {
+            // ownership-established: replay was found filtered by customerId.
             return mapQuote(
               await transaction.quote.update({
                 where: { id: replay.id },
@@ -489,6 +492,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
         )
         const delivery = calculateDeliveryFee(pricingRule, subtotal.amount, distanceMeters)
         const total = subtotal.add(Money.irr(delivery.deliveryFeeAmount))
+        // ownership-established: scoped to a cart loaded above filtered by customerId.
         await transaction.quote.updateMany({
           where: { cartId: cart.id, status: 'ACTIVE' },
           data: { status: 'SUPERSEDED' },
@@ -661,10 +665,16 @@ export function serviceDateAt(now: Date, timezone: string): Date {
   return new Date(`${part('year')}-${part('month')}-${part('day')}T00:00:00.000Z`)
 }
 
+/**
+ * Internal helper. Callers must pass a cartId they resolved under a customerId
+ * filter — never one taken from request input, which would read another
+ * customer's cart.
+ */
 async function loadCart(
   transaction: Prisma.TransactionClient,
   cartId: string,
 ): Promise<CartSummary> {
+  // ownership-established: callers resolve cartId under a customerId filter.
   const cart = await transaction.cart.findUnique({ where: { id: cartId }, include: cartInclude })
   if (!cart) throw new CommerceError('CART_NOT_FOUND', 404)
   return mapCart(cart)
@@ -753,6 +763,7 @@ async function invalidateQuotes(
   cartId: string,
   now: Date,
 ): Promise<void> {
+  // ownership-established: callers resolve cartId under a customerId filter.
   await transaction.quote.updateMany({
     where: { cartId, status: 'ACTIVE' },
     data: { status: 'SUPERSEDED', expiresAt: now },

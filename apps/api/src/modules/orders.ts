@@ -275,15 +275,19 @@ export function createPrismaOrderRepository(
               occurredAt: now,
             },
           })
+          // ownership-established: order was just created for this customerId,
+          // and quote/cart were resolved under the same customerId filter above.
           await transaction.order.update({
             where: { id: order.id },
             data: { state: 'PENDING_CONFIRMATION' },
           })
+          // ownership-established: quote was resolved under this customerId above.
           const quoteAccepted = await transaction.quote.updateMany({
             where: { id: quote.id, status: 'ACTIVE' },
             data: { status: 'ACCEPTED' },
           })
           if (quoteAccepted.count !== 1) throw new OrderError('QUOTE_NOT_ACTIVE', 409)
+          // ownership-established: cart is the one referenced by that same quote.
           await transaction.cart.update({
             where: { id: quote.cartId },
             data: { state: 'CONVERTED' },
@@ -332,6 +336,7 @@ export function createPrismaOrderRepository(
           ])
           await options.beforeCommit?.(transaction)
 
+          // ownership-established: re-reads the order just created for this customerId.
           const completed = await transaction.order.findUnique({
             where: { id: order.id },
             include: orderInclude,

@@ -252,6 +252,9 @@ export function createPrismaPaymentLedgerService(
             occurredAt: now,
           },
         })
+        // ownership-established: staff/system financial operation on a payment
+        // already loaded tenant-scoped; authority is the actor check at the
+        // service entry, not customer scoping.
         await Promise.all([
           transaction.payment.update({
             where: { id: payment.id },
@@ -356,10 +359,13 @@ export function createPrismaPaymentLedgerService(
             occurredAt: now,
           },
         })
+        // ownership-established: staff/system capture on a payment already loaded
+        // tenant-scoped; authority is the actor check at the service entry.
         await transaction.payment.update({
           where: { id: payment.id },
           data: { state: 'CAPTURED', version: nextVersion },
         })
+        // ownership-established: the order backing that same staff/system-captured payment.
         await transaction.order.update({
           where: { id: payment.orderId },
           data: { paymentState: 'PAID' },
@@ -518,6 +524,9 @@ async function loadPayment(
   tenantId: string,
   paymentId: string,
 ): Promise<PaymentRecord> {
+  // ownership-established: internal helper for staff/system financial services,
+  // which are authorized by actor rather than by customer ownership. Do not reuse
+  // it for a customer-facing read without adding a customerId filter.
   const payment = await transaction.payment.findFirst({
     where: { id: paymentId, tenantId },
     include: paymentInclude,
