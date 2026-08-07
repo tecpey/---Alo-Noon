@@ -58,16 +58,18 @@ async function requestWithPagination<T>(
   return pagination ? { ...result, pagination } : result
 }
 
-async function request<T>(
-  path: string,
-  init: { method: 'GET' | 'POST' | 'DELETE'; body?: unknown },
-): Promise<ApiResult<T>> {
+async function request<T>(path: string, init: RequestInit_): Promise<ApiResult<T>> {
   return (await requestRaw<T>(path, init)).result
+}
+
+interface RequestInit_ {
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  body?: unknown
 }
 
 async function requestRaw<T>(
   path: string,
-  init: { method: 'GET' | 'POST' | 'DELETE'; body?: unknown },
+  init: RequestInit_,
 ): Promise<{ result: ApiResult<T>; meta?: unknown }> {
   let response: Response
   try {
@@ -268,6 +270,107 @@ export async function readOrder(orderId: string): Promise<ApiResult<AdminOrderDe
 
 export async function post<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   return request<T>(path, { method: 'POST', body })
+}
+
+export async function patch<T>(path: string, body: unknown): Promise<ApiResult<T>> {
+  return request<T>(path, { method: 'PATCH', body })
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+export interface CatalogCategory {
+  id: string
+  code: string
+  nameFa: string
+  productCount: number
+}
+
+export interface AdminVariant {
+  id: string
+  productId: string
+  sku: string
+  nameFa: string
+  fulfillmentClass: string
+  freshnessClaim: string
+  productionMode: string
+  fulfillmentControl: string
+  lifecycle: string
+  ingredients: string[]
+  allergens: string[]
+  dietaryAttributes: string[]
+  offeringCount: number
+}
+
+export interface AdminProduct {
+  id: string
+  categoryId: string
+  categoryNameFa: string
+  slug: string
+  nameFa: string
+  descriptionFa: string | null
+  mediaRef: string | null
+  lifecycle: string
+  variants: AdminVariant[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminBranch {
+  id: string
+  bakeryId: string
+  bakeryNameFa: string
+  cityId: string
+  code: string
+  nameFa: string
+  operationalStatus: string
+  qualityStatus: string
+  offeringCount: number
+}
+
+export interface AdminOffering {
+  id: string
+  bakeryBranchId: string
+  branchNameFa: string
+  productVariantId: string
+  sku: string
+  productNameFa: string
+  variantNameFa: string
+  variantLifecycle: string
+  price: Money
+  availability: string
+  dailyCapacity: number | null
+  preparationMinutes: number | null
+  stockTracked: boolean
+  stockOnHand: number | null
+  availableFrom: string | null
+  availableUntil: string | null
+  updatedAt: string
+}
+
+export async function listCatalogCategories(): Promise<ApiResult<CatalogCategory[]>> {
+  return request<CatalogCategory[]>('/api/v1/admin/catalog/categories', { method: 'GET' })
+}
+
+export async function listCatalogProducts(
+  params: Readonly<Record<string, string>>,
+): Promise<ApiResult<AdminProduct[]> & { pagination?: PaginationMeta }> {
+  const query = new URLSearchParams(params)
+  return requestWithPagination<AdminProduct[]>(`/api/v1/admin/catalog/products?${query.toString()}`)
+}
+
+export async function listCatalogBranches(): Promise<ApiResult<AdminBranch[]>> {
+  return request<AdminBranch[]>('/api/v1/admin/catalog/branches', { method: 'GET' })
+}
+
+export async function listCatalogOfferings(
+  params: Readonly<Record<string, string>>,
+): Promise<ApiResult<AdminOffering[]> & { pagination?: PaginationMeta }> {
+  const query = new URLSearchParams(params)
+  return requestWithPagination<AdminOffering[]>(
+    `/api/v1/admin/catalog/offerings?${query.toString()}`,
+  )
 }
 
 /**

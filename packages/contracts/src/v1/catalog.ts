@@ -54,7 +54,7 @@ export const bakeryBranchSummarySchema = z.object({
   cityId: uuidSchema,
   operationalZoneId: uuidSchema,
   nameFa: z.string().min(1).max(200),
-  status: z.enum(['ONBOARDING', 'ACTIVE', 'SUSPENDED', 'TERMINATED']),
+  status: z.enum(['ONBOARDING', 'ACTIVE', 'TEMPORARILY_SUSPENDED', 'CLOSED']),
   qualityStatus: z.enum(['PENDING_REVIEW', 'APPROVED', 'WATCHLIST', 'SUSPENDED']),
 })
 export type BakeryBranchSummary = z.infer<typeof bakeryBranchSummarySchema>

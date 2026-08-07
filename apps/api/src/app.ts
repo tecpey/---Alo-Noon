@@ -40,6 +40,10 @@ import {
   registerAdminReportingRoutes,
   type AdminReportingDependencies,
 } from './modules/admin-reporting.js'
+import {
+  registerAdminCatalogRoutes,
+  type AdminCatalogDependencies,
+} from './modules/admin-catalog-routes.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -55,6 +59,7 @@ export interface AppOptions {
   paymentCallback?: Omit<PaymentCallbackDependencies, 'auth'>
   adminProviders?: Omit<AdminProviderDependencies, 'auth'>
   adminReporting?: Omit<AdminReportingDependencies, 'auth'>
+  adminCatalog?: Omit<AdminCatalogDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
   trustProxyHops?: number
@@ -167,6 +172,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.adminReporting) {
     registerAdminReportingRoutes(app, { ...options.adminReporting, auth: options.auth })
+  }
+  if (options.auth && options.adminCatalog) {
+    registerAdminCatalogRoutes(app, { ...options.adminCatalog, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

@@ -5,6 +5,8 @@ import { signOutAction } from '../../lib/admin-actions'
 const SECTIONS = [
   { href: '/admin', label: 'داشبورد' },
   { href: '/admin/orders', label: 'سفارش‌ها' },
+  { href: '/admin/catalog', label: 'کاتالوگ' },
+  { href: '/admin/pricing', label: 'قیمت‌گذاری' },
   { href: '/admin/providers', label: 'سرویس‌دهنده‌ها' },
 ] as const
 

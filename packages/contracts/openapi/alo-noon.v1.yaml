@@ -623,6 +623,320 @@ paths:
         '403': { description: The account may not read orders. }
         '404': { description: No such order in this tenant. }
         '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/catalog/categories:
+    get:
+      operationId: listAdminCatalogCategories
+      summary: Product categories, with how many products each holds.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every category in the tenant, by code.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogCategoryListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '503': { description: The catalogue is temporarily unavailable. }
+    post:
+      operationId: createAdminCatalogCategory
+      summary: Create a product category.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCatalogCategoryCommand' }
+      responses:
+        '201':
+          description: The category.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogCategoryEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '409': { description: A category already uses that code. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/products:
+    get:
+      operationId: listAdminCatalogProducts
+      summary: Browse products with their variants.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: categoryId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: lifecycle
+          in: query
+          schema: { $ref: '#/components/schemas/ProductLifecycle' }
+        - name: search
+          in: query
+          description: Case-insensitive match on the Persian name or the slug.
+          schema: { type: string, minLength: 2, maxLength: 120 }
+      responses:
+        '200':
+          description: Paginated products, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProductPage' }
+        '400': { description: The product query is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '503': { description: The catalogue is temporarily unavailable. }
+    post:
+      operationId: createAdminCatalogProduct
+      summary: Create a product. It always starts as a draft.
+      description: >-
+        A product describes what the bread is. Pricing belongs to an offering, which is a
+        branch's decision to sell one of this product's variants. A new product is a draft
+        because a product that went live the moment it was named would be sellable before
+        anyone priced it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProductCommand' }
+      responses:
+        '201':
+          description: The draft product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProductEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such category in this tenant. }
+        '409': { description: A product already uses that slug. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/products/{productId}:
+    get:
+      operationId: getAdminCatalogProduct
+      summary: One product with all of its variants.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProductEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such product in this tenant. }
+        '503': { description: The catalogue is temporarily unavailable. }
+    patch:
+      operationId: updateAdminCatalogProduct
+      summary: Rename, re-describe, or move a product's lifecycle.
+      description: >-
+        RETIRED is terminal. Bringing a retired product back would resurrect a name that
+        order snapshots and customers' history already treat as finished; if the bakery
+        sells it again, it is a new product. Retiring one is refused while any branch is
+        still selling its variants.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProductCommand' }
+      responses:
+        '200':
+          description: The updated product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProductEnvelope' }
+        '400': { description: The command is malformed or changes nothing. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such product in this tenant. }
+        '409': { description: The lifecycle change is not allowed, or offerings are still live. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/products/{productId}/variants:
+    post:
+      operationId: createAdminCatalogVariant
+      summary: Add a variant to a product.
+      description: >-
+        Classification fields are required together and validated as a set: a freshness
+        claim is only meaningful against a fulfillment class, and a packaged class without
+        packaging is not a half-filled form but an invalid product. The same rule refuses
+        the combination here that would refuse it at checkout.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVariantCommand' }
+      responses:
+        '201':
+          description: The draft variant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminVariantEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such product in this tenant. }
+        '409': { description: A variant already uses that SKU, or the product is retired. }
+        '422': { description: The classification is not a valid combination. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/variants/{variantId}:
+    patch:
+      operationId: updateAdminCatalogVariant
+      summary: Rename a variant, revise its ingredients, or move its lifecycle.
+      description: >-
+        Classification is not patchable. Those fields decide how the order pipeline
+        schedules, holds, and hands over the item; changing them under live offerings
+        would silently re-plan work already committed.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: variantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVariantCommand' }
+      responses:
+        '200':
+          description: The updated variant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminVariantEnvelope' }
+        '400': { description: The command is malformed or changes nothing. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such variant in this tenant. }
+        '409': { description: The lifecycle change is not allowed, or offerings are still live. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/branches:
+    get:
+      operationId: listAdminCatalogBranches
+      summary: Branches that can carry offerings.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every branch in the tenant, with how many offerings it carries.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBranchListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/offerings:
+    get:
+      operationId: listAdminCatalogOfferings
+      summary: Browse what each branch sells, and at what price.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: bakeryBranchId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: productVariantId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: availability
+          in: query
+          schema: { $ref: '#/components/schemas/OfferingAvailability' }
+      responses:
+        '200':
+          description: Paginated offerings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOfferingPage' }
+        '400': { description: The offering query is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '503': { description: The catalogue is temporarily unavailable. }
+    post:
+      operationId: createAdminCatalogOffering
+      summary: Offer a variant at a branch, at a price.
+      description: >-
+        One offering per branch per variant: a second would give the same bread two prices
+        at the same counter, and the selector has no rule for choosing between them. A new
+        offering starts as a draft — price, capacity, and preparation time all deserve a
+        second look before customers see it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOfferingCommand' }
+      responses:
+        '201':
+          description: The draft offering.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOfferingEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such branch or variant in this tenant. }
+        '409': { description: This branch already offers that variant, or the variant is retired. }
+        '422': { description: Stock on hand must be set exactly when stock is tracked. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/offerings/{offeringId}:
+    patch:
+      operationId: updateAdminCatalogOffering
+      summary: Reprice an offering, pause it, or adjust its stock.
+      description: >-
+        Price and availability are one command on purpose: an operator correcting a
+        mispriced offering usually pauses it in the same breath, and splitting the two
+        would leave a window where the wrong price is live. Repricing never rewrites an
+        order — order lines carry their own price snapshot taken when the quote was
+        accepted. The previous price is recorded on the audit trail, because reconciling a
+        customer's complaint months later means knowing what the price was at the time.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: offeringId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOfferingCommand' }
+      responses:
+        '200':
+          description: The updated offering.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOfferingEnvelope' }
+        '400': { description: The command is malformed or changes nothing. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such offering in this tenant. }
+        '409': { description: The variant or product is not active, or the offering is retired. }
+        '422': { description: Stock on hand must be set exactly when stock is tracked. }
+        '503': { description: The catalogue is temporarily unavailable. }
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -1572,6 +1886,367 @@ components:
         data:
           type: array
           items: { $ref: '#/components/schemas/AdminOrderSummary' }
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/ResponseMeta'
+            - type: object
+              required: [pagination]
+              properties:
+                pagination: { $ref: '#/components/schemas/PaginationMeta' }
+    ProductLifecycle:
+      type: string
+      enum: [DRAFT, ACTIVE, SUSPENDED, RETIRED]
+    OfferingAvailability:
+      type: string
+      enum: [DRAFT, AVAILABLE, PAUSED, SOLD_OUT, RETIRED]
+    ProductFulfillmentClass:
+      type: string
+      enum:
+        [SIGNATURE_FRESH, PACKAGED_TRADITIONAL, PACKAGED_FANTASY, PACKAGED_DIETARY, LIMITED_EDITION]
+    FreshnessClaim:
+      type: string
+      enum: [FRESHLY_PRODUCED, PACKAGED, SHELF_STABLE, NONE]
+    ProductionMode:
+      type: string
+      enum: [MADE_TO_ORDER, SCHEDULED_BATCH, READY_STOCK, EXTERNAL_PACKAGED_SUPPLY]
+    FulfillmentControl:
+      type: string
+      enum: [CONTROLLED_PICKUP, PARTNER_HANDOFF, PLATFORM_STOCK, THIRD_PARTY_SUPPLY]
+    PackagingType:
+      type: string
+      enum: [ALO_NOON_SEALED, PARTNER_SEALED, MANUFACTURER_PACKAGED]
+    CatalogCategory:
+      type: object
+      required: [id, code, nameFa, productCount]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, maxLength: 32 }
+        nameFa: { type: string, maxLength: 200 }
+        productCount: { type: integer, minimum: 0 }
+    CreateCatalogCategoryCommand:
+      type: object
+      additionalProperties: false
+      required: [code, nameFa]
+      properties:
+        code: { type: string, pattern: '^[A-Z0-9]+(?:_[A-Z0-9]+)*$', maxLength: 32 }
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+    CatalogCategoryEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/CatalogCategory' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    CatalogCategoryListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogCategory' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminVariant:
+      type: object
+      required:
+        [
+          id,
+          productId,
+          sku,
+          nameFa,
+          fulfillmentClass,
+          freshnessClaim,
+          productionMode,
+          fulfillmentControl,
+          packagingType,
+          shelfLifeMinutes,
+          productionWindowMinutes,
+          pickupWithinMinutes,
+          freshnessWindowMinutes,
+          ingredients,
+          allergens,
+          dietaryAttributes,
+          lifecycle,
+          offeringCount,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        sku: { type: string, maxLength: 64 }
+        nameFa: { type: string, maxLength: 200 }
+        fulfillmentClass: { $ref: '#/components/schemas/ProductFulfillmentClass' }
+        freshnessClaim: { $ref: '#/components/schemas/FreshnessClaim' }
+        productionMode: { $ref: '#/components/schemas/ProductionMode' }
+        fulfillmentControl: { $ref: '#/components/schemas/FulfillmentControl' }
+        packagingType:
+          oneOf:
+            - $ref: '#/components/schemas/PackagingType'
+            - type: 'null'
+        shelfLifeMinutes: { type: [integer, 'null'], minimum: 1 }
+        productionWindowMinutes: { type: [integer, 'null'], minimum: 1 }
+        pickupWithinMinutes: { type: [integer, 'null'], minimum: 1 }
+        freshnessWindowMinutes: { type: [integer, 'null'], minimum: 1 }
+        ingredients: { type: array, items: { type: string } }
+        allergens: { type: array, items: { type: string } }
+        dietaryAttributes: { type: array, items: { type: string } }
+        lifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        offeringCount:
+          type: integer
+          minimum: 0
+          description: Branches currently offering this variant, in any availability.
+    AdminProduct:
+      type: object
+      required:
+        [
+          id,
+          categoryId,
+          categoryNameFa,
+          slug,
+          nameFa,
+          descriptionFa,
+          mediaRef,
+          lifecycle,
+          variants,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        categoryId: { type: string, format: uuid }
+        categoryNameFa: { type: string, maxLength: 200 }
+        slug: { type: string, maxLength: 100 }
+        nameFa: { type: string, maxLength: 200 }
+        descriptionFa: { type: [string, 'null'] }
+        mediaRef: { type: [string, 'null'], maxLength: 500 }
+        lifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/AdminVariant' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateProductCommand:
+      type: object
+      additionalProperties: false
+      required: [categoryId, slug, nameFa]
+      properties:
+        categoryId: { type: string, format: uuid }
+        slug:
+          type: string
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          minLength: 3
+          maxLength: 100
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+        descriptionFa: { type: string, maxLength: 2000 }
+        mediaRef: { type: string, maxLength: 500 }
+    UpdateProductCommand:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >-
+        At least one field other than `reason` must be present. A request that changes
+        nothing and reports success is how an operator concludes they saved work they
+        did not save.
+      properties:
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+        descriptionFa: { type: [string, 'null'], maxLength: 2000 }
+        mediaRef: { type: [string, 'null'], maxLength: 500 }
+        lifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    CreateVariantCommand:
+      type: object
+      additionalProperties: false
+      required: [sku, nameFa, fulfillmentClass, freshnessClaim, productionMode, fulfillmentControl]
+      properties:
+        sku:
+          type: string
+          pattern: '^[A-Z0-9]+(?:-[A-Z0-9]+)*$'
+          minLength: 3
+          maxLength: 64
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+        fulfillmentClass: { $ref: '#/components/schemas/ProductFulfillmentClass' }
+        freshnessClaim: { $ref: '#/components/schemas/FreshnessClaim' }
+        productionMode: { $ref: '#/components/schemas/ProductionMode' }
+        fulfillmentControl: { $ref: '#/components/schemas/FulfillmentControl' }
+        packagingType: { $ref: '#/components/schemas/PackagingType' }
+        shelfLifeMinutes: { type: integer, minimum: 1, maximum: 525600 }
+        productionWindowMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        pickupWithinMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        freshnessWindowMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        ingredients: { type: array, items: { type: string, maxLength: 120 }, maxItems: 100 }
+        allergens: { type: array, items: { type: string, maxLength: 120 }, maxItems: 50 }
+        dietaryAttributes: { type: array, items: { type: string, maxLength: 80 }, maxItems: 50 }
+    UpdateVariantCommand:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+        ingredients: { type: array, items: { type: string, maxLength: 120 }, maxItems: 100 }
+        allergens: { type: array, items: { type: string, maxLength: 120 }, maxItems: 50 }
+        dietaryAttributes: { type: array, items: { type: string, maxLength: 80 }, maxItems: 50 }
+        lifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminProductEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminProduct' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminVariantEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminVariant' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminProductPage:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminProduct' }
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/ResponseMeta'
+            - type: object
+              required: [pagination]
+              properties:
+                pagination: { $ref: '#/components/schemas/PaginationMeta' }
+    AdminBranch:
+      type: object
+      required:
+        [
+          id,
+          bakeryId,
+          bakeryNameFa,
+          cityId,
+          code,
+          nameFa,
+          operationalStatus,
+          qualityStatus,
+          offeringCount,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        bakeryId: { type: string, format: uuid }
+        bakeryNameFa: { type: string, maxLength: 200 }
+        cityId: { type: string, format: uuid }
+        code: { type: string, maxLength: 32 }
+        nameFa: { type: string, maxLength: 200 }
+        operationalStatus:
+          type: string
+          enum: [ONBOARDING, ACTIVE, TEMPORARILY_SUSPENDED, CLOSED]
+        qualityStatus:
+          type: string
+          enum: [PENDING_REVIEW, APPROVED, WATCHLIST, SUSPENDED]
+        offeringCount: { type: integer, minimum: 0 }
+    AdminBranchListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminBranch' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminOffering:
+      type: object
+      required:
+        [
+          id,
+          bakeryBranchId,
+          branchNameFa,
+          productVariantId,
+          sku,
+          productNameFa,
+          variantNameFa,
+          variantLifecycle,
+          price,
+          availability,
+          dailyCapacity,
+          preparationMinutes,
+          stockTracked,
+          stockOnHand,
+          availableFrom,
+          availableUntil,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        bakeryBranchId: { type: string, format: uuid }
+        branchNameFa: { type: string, maxLength: 200 }
+        productVariantId: { type: string, format: uuid }
+        sku: { type: string, maxLength: 64 }
+        productNameFa: { type: string, maxLength: 200 }
+        variantNameFa: { type: string, maxLength: 200 }
+        variantLifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        price: { $ref: '#/components/schemas/Money' }
+        availability: { $ref: '#/components/schemas/OfferingAvailability' }
+        dailyCapacity: { type: [integer, 'null'], minimum: 1 }
+        preparationMinutes: { type: [integer, 'null'], minimum: 1 }
+        stockTracked: { type: boolean }
+        stockOnHand: { type: [integer, 'null'], minimum: 0 }
+        availableFrom: { type: [string, 'null'], format: date-time }
+        availableUntil: { type: [string, 'null'], format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateOfferingCommand:
+      type: object
+      additionalProperties: false
+      required: [bakeryBranchId, productVariantId, price, reason]
+      properties:
+        bakeryBranchId: { type: string, format: uuid }
+        productVariantId: { type: string, format: uuid }
+        price:
+          type: string
+          pattern: '^[1-9][0-9]{0,17}$'
+          description: >-
+            A positive whole number of Rial. Zero is refused rather than treated as free.
+        dailyCapacity: { type: integer, minimum: 1, maximum: 100000 }
+        preparationMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        stockTracked: { type: boolean, default: false }
+        stockOnHand:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+          description: Required exactly when stockTracked is true, and forbidden otherwise.
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    UpdateOfferingCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        price: { type: string, pattern: '^[1-9][0-9]{0,17}$' }
+        availability: { $ref: '#/components/schemas/OfferingAvailability' }
+        dailyCapacity: { type: [integer, 'null'], minimum: 1, maximum: 100000 }
+        preparationMinutes: { type: [integer, 'null'], minimum: 1, maximum: 1440 }
+        stock:
+          type: object
+          additionalProperties: false
+          required: [stockTracked, stockOnHand]
+          properties:
+            stockTracked: { type: boolean }
+            stockOnHand: { type: [integer, 'null'], minimum: 0, maximum: 1000000 }
+        availableFrom: { type: [string, 'null'], format: date-time }
+        availableUntil: { type: [string, 'null'], format: date-time }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminOfferingEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminOffering' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminOfferingPage:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminOffering' }
         meta:
           allOf:
             - $ref: '#/components/schemas/ResponseMeta'

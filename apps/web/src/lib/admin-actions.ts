@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
 import type { ActionState } from './action-state'
-import { adminApiBaseUrl, post, revokeSession, upstreamHeaders } from './admin-api'
+import { adminApiBaseUrl, patch, post, revokeSession, upstreamHeaders } from './admin-api'
 import {
   derivedIdempotencyKey,
   PROVIDER_ERROR_MESSAGES,
@@ -286,4 +286,220 @@ async function authFetch(
   } catch {
     return null
   }
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue and pricing
+// ---------------------------------------------------------------------------
+
+/**
+ * A price typed into a form arrives with whatever separators the operator uses
+ * — Persian digits, thousands commas, spaces. The API takes Rial as a plain
+ * decimal string, so normalise here and refuse anything left over rather than
+ * stripping characters until something parses.
+ */
+function priceField(form: FormData, name: string): string | null {
+  const raw = field(form, name)
+  if (!raw) return null
+  const latin = raw
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+    .replace(/[,٬\s]/g, '')
+  return /^[1-9][0-9]{0,17}$/.test(latin) ? latin : null
+}
+
+function numberField(form: FormData, name: string): number | undefined {
+  const raw = field(form, name)
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined
+}
+
+export async function createCatalogCategoryAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const result = await post<{ id: string }>('/api/v1/admin/catalog/categories', {
+    code: field(form, 'code').toUpperCase(),
+    nameFa: field(form, 'nameFa'),
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت دسته ناموفق بود.'))
+  revalidatePath('/admin/catalog')
+  return success('دسته ساخته شد.')
+}
+
+export async function createProductAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const descriptionFa = field(form, 'descriptionFa')
+  const result = await post<{ id: string }>('/api/v1/admin/catalog/products', {
+    categoryId: field(form, 'categoryId'),
+    slug: field(form, 'slug').toLowerCase(),
+    nameFa: field(form, 'nameFa'),
+    ...(descriptionFa && { descriptionFa }),
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت محصول ناموفق بود.'))
+  revalidatePath('/admin/catalog')
+  return success('محصول به صورت پیش‌نویس ساخته شد. برای فروش باید فعال شود.')
+}
+
+export async function createVariantAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const productId = field(form, 'productId')
+  const fulfillmentClass = field(form, 'fulfillmentClass')
+  // The two classification families need different windows, and sending the
+  // wrong set is what the domain refuses. Pick by class rather than posting
+  // every field and hoping.
+  const fresh = fulfillmentClass === 'SIGNATURE_FRESH'
+  const result = await post<{ id: string }>(
+    `/api/v1/admin/catalog/products/${productId}/variants`,
+    {
+      sku: field(form, 'sku').toUpperCase(),
+      nameFa: field(form, 'nameFa'),
+      fulfillmentClass,
+      freshnessClaim: fresh ? 'FRESHLY_PRODUCED' : 'PACKAGED',
+      productionMode: fresh ? 'MADE_TO_ORDER' : 'READY_STOCK',
+      fulfillmentControl: fresh ? 'CONTROLLED_PICKUP' : 'PLATFORM_STOCK',
+      ...(fresh
+        ? {
+            productionWindowMinutes: numberField(form, 'productionWindowMinutes') ?? 30,
+            pickupWithinMinutes: numberField(form, 'pickupWithinMinutes') ?? 15,
+            freshnessWindowMinutes: numberField(form, 'freshnessWindowMinutes') ?? 90,
+          }
+        : {
+            packagingType: 'MANUFACTURER_PACKAGED',
+            shelfLifeMinutes: numberField(form, 'shelfLifeMinutes') ?? 10_080,
+          }),
+      ingredients: splitList(field(form, 'ingredients')),
+      allergens: splitList(field(form, 'allergens')),
+      dietaryAttributes: [],
+    },
+  )
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت گونه ناموفق بود.'))
+  revalidatePath('/admin/catalog')
+  return success('گونه به صورت پیش‌نویس ساخته شد.')
+}
+
+export async function setProductLifecycleAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const productId = field(form, 'productId')
+  const lifecycle = field(form, 'lifecycle')
+  const result = await patch(`/api/v1/admin/catalog/products/${productId}`, {
+    lifecycle,
+    reason: field(form, 'reason') || 'تغییر وضعیت از پنل مدیریت',
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'تغییر وضعیت محصول ناموفق بود.'))
+  revalidatePath('/admin/catalog')
+  return success(lifecycle === 'ACTIVE' ? 'محصول فعال شد.' : 'وضعیت محصول تغییر کرد.')
+}
+
+export async function setVariantLifecycleAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const variantId = field(form, 'variantId')
+  const lifecycle = field(form, 'lifecycle')
+  const result = await patch(`/api/v1/admin/catalog/variants/${variantId}`, {
+    lifecycle,
+    reason: field(form, 'reason') || 'تغییر وضعیت از پنل مدیریت',
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'تغییر وضعیت گونه ناموفق بود.'))
+  revalidatePath('/admin/catalog')
+  return success(lifecycle === 'ACTIVE' ? 'گونه فعال شد.' : 'وضعیت گونه تغییر کرد.')
+}
+
+export async function createOfferingAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const price = priceField(form, 'price')
+  if (!price) return failure('قیمت باید عددی مثبت به ریال باشد.')
+  const stockOnHand = numberField(form, 'stockOnHand')
+  const dailyCapacity = numberField(form, 'dailyCapacity')
+  const preparationMinutes = numberField(form, 'preparationMinutes')
+
+  const result = await post<{ id: string }>('/api/v1/admin/catalog/offerings', {
+    bakeryBranchId: field(form, 'bakeryBranchId'),
+    productVariantId: field(form, 'productVariantId'),
+    price,
+    ...(dailyCapacity !== undefined && { dailyCapacity }),
+    ...(preparationMinutes !== undefined && { preparationMinutes }),
+    stockTracked: stockOnHand !== undefined,
+    ...(stockOnHand !== undefined && { stockOnHand }),
+    reason: field(form, 'reason') || 'قیمت‌گذاری از پنل مدیریت',
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت عرضه ناموفق بود.'))
+  revalidatePath('/admin/pricing')
+  return success('عرضه به صورت پیش‌نویس ثبت شد. تا انتشار، به مشتری نمایش داده نمی‌شود.')
+}
+
+export async function repriceOfferingAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const price = priceField(form, 'price')
+  if (!price) return failure('قیمت باید عددی مثبت به ریال باشد.')
+  const result = await patch(`/api/v1/admin/catalog/offerings/${field(form, 'offeringId')}`, {
+    price,
+    reason: field(form, 'reason') || 'تغییر قیمت از پنل مدیریت',
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'تغییر قیمت ناموفق بود.'))
+  revalidatePath('/admin/pricing')
+  return success('قیمت جدید ثبت شد. سفارش‌های ثبت‌شده با قیمت خودشان می‌مانند.')
+}
+
+export async function setOfferingAvailabilityAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const availability = field(form, 'availability')
+  const result = await patch(`/api/v1/admin/catalog/offerings/${field(form, 'offeringId')}`, {
+    availability,
+    reason: field(form, 'reason') || 'تغییر وضعیت عرضه از پنل مدیریت',
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'تغییر وضعیت عرضه ناموفق بود.'))
+  revalidatePath('/admin/pricing')
+  return success(
+    availability === 'AVAILABLE' ? 'عرضه منتشر شد و قابل سفارش است.' : 'عرضه از فروش خارج شد.',
+  )
+}
+
+export async function setOfferingStockAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const tracked = field(form, 'stockTracked') === 'true'
+  const stockOnHand = numberField(form, 'stockOnHand')
+  if (tracked && stockOnHand === undefined && field(form, 'stockOnHand') !== '0') {
+    return failure('برای شمارش موجودی، تعداد موجود را وارد کنید.')
+  }
+  const result = await patch(`/api/v1/admin/catalog/offerings/${field(form, 'offeringId')}`, {
+    stock: {
+      stockTracked: tracked,
+      stockOnHand: tracked ? (stockOnHand ?? 0) : null,
+    },
+    reason: field(form, 'reason') || 'به‌روزرسانی موجودی از پنل مدیریت',
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'ثبت موجودی ناموفق بود.'))
+  revalidatePath('/admin/pricing')
+  return success(tracked ? 'موجودی ثبت شد.' : 'شمارش موجودی برای این عرضه خاموش شد.')
+}
+
+/** Comma or newline separated free text into a list, with blanks discarded. */
+function splitList(raw: string): string[] {
+  return raw
+    .split(/[,\n،]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .slice(0, 50)
 }

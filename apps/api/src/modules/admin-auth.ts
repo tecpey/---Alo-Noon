@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import type { FastifyReply, FastifyRequest } from 'fastify'
 
+import type { Prisma } from '@alo-noon/database'
 import type { ErrorEnvelope, ResponseMeta } from '@alo-noon/contracts'
 
 import { authenticateRequest, authorizeGrants, type AuthDependencies } from './auth.js'
@@ -93,6 +94,54 @@ function activeGlobalPermissions(
     for (const permission of grant.permissions) permissions.add(permission)
   }
   return [...permissions]
+}
+
+/**
+ * Re-checks a permission inside a write transaction, against live grant rows.
+ *
+ * This is the authoritative half of the two-step check `authenticatedStaff`
+ * describes. A session carries a snapshot of its grants taken at sign-in, so a
+ * revocation a minute ago is invisible to it; the rows this reads are current,
+ * and reading them inside the same transaction as the write means a revocation
+ * cannot slip between the check and the change it guards.
+ *
+ * Returns whether the account still holds the permission rather than throwing,
+ * because each module raises its own error type and status.
+ */
+export async function holdsPermissionInTransaction(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  accountId: string,
+  permission: string,
+  now: Date,
+): Promise<boolean> {
+  const authorized = await transaction.identityAccount.findFirst({
+    where: {
+      id: accountId,
+      status: 'ACTIVE',
+      tenantMemberships: {
+        some: {
+          tenantId,
+          status: 'ACTIVE',
+          activeAt: { lte: now },
+          suspendedAt: null,
+          revokedAt: null,
+        },
+      },
+      accessGrants: {
+        some: {
+          scopeType: 'GLOBAL',
+          scopeId: null,
+          activeAt: { lte: now },
+          revokedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          role: { permissions: { some: { permission: { code: permission } } } },
+        },
+      },
+    },
+    select: { id: true },
+  })
+  return authorized !== null
 }
 
 export function adminResponseMeta(): ResponseMeta {

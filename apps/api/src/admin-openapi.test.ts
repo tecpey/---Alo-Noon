@@ -13,7 +13,10 @@ const openapi = readFileSync(
  * spelled out rather than derived so that adding a route without documenting it
  * — or documenting one without registering it — fails here.
  */
-const ADMIN_OPERATIONS: ReadonlyArray<{ path: string; methods: ReadonlyArray<'GET' | 'POST'> }> = [
+const ADMIN_OPERATIONS: ReadonlyArray<{
+  path: string
+  methods: ReadonlyArray<'GET' | 'POST' | 'PATCH'>
+}> = [
   { path: '/api/v1/admin/payment-providers/credentials', methods: ['POST'] },
   { path: '/api/v1/admin/payment-providers/configurations', methods: ['GET', 'POST'] },
   {
@@ -32,6 +35,14 @@ const ADMIN_OPERATIONS: ReadonlyArray<{ path: string; methods: ReadonlyArray<'GE
   { path: '/api/v1/admin/reports/sales', methods: ['GET'] },
   { path: '/api/v1/admin/orders', methods: ['GET'] },
   { path: '/api/v1/admin/orders/{orderId}', methods: ['GET'] },
+  { path: '/api/v1/admin/catalog/categories', methods: ['GET', 'POST'] },
+  { path: '/api/v1/admin/catalog/products', methods: ['GET', 'POST'] },
+  { path: '/api/v1/admin/catalog/products/{productId}', methods: ['GET', 'PATCH'] },
+  { path: '/api/v1/admin/catalog/products/{productId}/variants', methods: ['POST'] },
+  { path: '/api/v1/admin/catalog/variants/{variantId}', methods: ['PATCH'] },
+  { path: '/api/v1/admin/catalog/branches', methods: ['GET'] },
+  { path: '/api/v1/admin/catalog/offerings', methods: ['GET', 'POST'] },
+  { path: '/api/v1/admin/catalog/offerings/{offeringId}', methods: ['PATCH'] },
 ]
 
 /** The contiguous block of admin paths, which the spec keeps together. */
@@ -111,6 +122,7 @@ describe('admin OpenAPI boundary', () => {
         authDeliveryProviderService: {} as never,
       },
       adminReporting: { service: {} as never },
+      adminCatalog: { service: {} as never },
     })
 
     try {
@@ -118,6 +130,9 @@ describe('admin OpenAPI boundary', () => {
         const url = operation.path
           .replace('{configurationId}', 'c1')
           .replace('{orderId}', 'o1')
+          .replace('{productId}', 'p1')
+          .replace('{variantId}', 'v1')
+          .replace('{offeringId}', 'f1')
           .concat(operation.path.endsWith('reports/sales') ? '?from=x&to=y' : '')
         for (const method of operation.methods) {
           const response = await app.inject({ method, url, payload: {} })

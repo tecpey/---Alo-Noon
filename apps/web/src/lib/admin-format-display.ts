@@ -120,3 +120,39 @@ export function recentRange(days: number, now = new Date()): { from: string; to:
   const from = new Date(to.getTime() - days * 86_400_000)
   return { from: from.toISOString(), to: to.toISOString() }
 }
+
+/**
+ * Catalogue lifecycle and availability, in the words an operator uses.
+ *
+ * "بازنشسته" is terminal in both: the panel says so where the choice is made,
+ * because the API's refusal to undo it arrives too late to be useful.
+ */
+export const PRODUCT_LIFECYCLE_LABELS: Readonly<Record<string, string>> = {
+  DRAFT: 'پیش‌نویس',
+  ACTIVE: 'فعال',
+  SUSPENDED: 'متوقف',
+  RETIRED: 'بازنشسته',
+}
+
+export const OFFERING_AVAILABILITY_LABELS: Readonly<Record<string, string>> = {
+  DRAFT: 'پیش‌نویس',
+  AVAILABLE: 'در دسترس',
+  PAUSED: 'متوقف',
+  SOLD_OUT: 'تمام‌شده',
+  RETIRED: 'بازنشسته',
+}
+
+export const FULFILLMENT_CLASS_LABELS: Readonly<Record<string, string>> = {
+  SIGNATURE_FRESH: 'تازه‌پخت',
+  PACKAGED_TRADITIONAL: 'بسته‌بندی سنتی',
+  PACKAGED_FANTASY: 'بسته‌بندی فانتزی',
+  PACKAGED_DIETARY: 'بسته‌بندی رژیمی',
+  LIMITED_EDITION: 'محدود',
+}
+
+export const BRANCH_STATUS_LABELS: Readonly<Record<string, string>> = {
+  ONBOARDING: 'در حال راه‌اندازی',
+  ACTIVE: 'فعال',
+  TEMPORARILY_SUSPENDED: 'موقتاً متوقف',
+  CLOSED: 'بسته',
+}
