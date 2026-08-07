@@ -36,6 +36,12 @@ describe('environment configuration', () => {
     expect(validateEnv({ API_TRUST_PROXY_HOPS: '4' }).success).toBe(false)
   })
 
+  it('requires a valid URL for the payment callback base when provided', () => {
+    expect(validateEnv({}).success).toBe(true)
+    expect(validateEnv({ PAYMENT_CALLBACK_BASE_URL: 'https://api.alonoon.ir' }).success).toBe(true)
+    expect(validateEnv({ PAYMENT_CALLBACK_BASE_URL: 'not-a-url' }).success).toBe(false)
+  })
+
   it('parses exact credential-safe CORS origins', () => {
     expect(parseCorsOrigins('http://localhost:3000, https://app.alonoon.ir')).toEqual([
       'http://localhost:3000',

@@ -26,6 +26,9 @@ export const envSchema = z
     AUTH_SESSION_PEPPER: z.string().min(32).optional(),
     AUTH_ABUSE_PEPPER: z.string().min(32).optional(),
     API_TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).default(0),
+    // Payment provider adapters resolve this to build each gateway's callback URL;
+    // no adapter can initialize a payment without it.
+    PAYMENT_CALLBACK_BASE_URL: z.string().url().optional(),
     // Observability
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),

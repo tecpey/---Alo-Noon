@@ -30,6 +30,9 @@ import {
   createEnvironmentPaymentCredentialResolver,
   createPrismaPaymentExecutionService,
 } from './modules/payment-execution.js'
+import { createIdPayAdapter } from './providers/idpay.js'
+import { createNextPayAdapter } from './providers/nextpay.js'
+import { createShepaAdapter } from './providers/shepa.js'
 
 const env = getEnv()
 
@@ -75,13 +78,25 @@ const auth = {
   sessionPepper: env.AUTH_SESSION_PEPPER ?? randomBytes(32).toString('hex'),
   secureCookie: env.NODE_ENV === 'production',
 }
-// No adapter is registered yet: no Iranian payment gateway has been approved and
-// integrated. Registering the route now (instead of omitting it) means a request
-// fails safely with PAYMENT_PROVIDER_MISSING/PAYMENT_PROVIDER_ADAPTER_UNAVAILABLE
-// (503) instead of the route not existing at all, and the moment a real adapter is
-// added to this array plus a matching PaymentProviderConfiguration is provisioned,
-// no further server wiring changes are required.
-const paymentProviderAdapterRegistry = createPaymentProviderAdapterRegistry([])
+// Adapters alone do not make a gateway live for any tenant: selectPaymentProvider
+// only finds one once an operator provisions a matching, active, healthy, default
+// PaymentProviderConfiguration + ProviderCredentialReference for that tenant via
+// createPrismaPaymentProviderService (no HTTP route exists for that yet, so it is
+// currently a script/console action). Until PAYMENT_CALLBACK_BASE_URL is set, no
+// adapter is registered at all and the route fails safely with
+// PAYMENT_PROVIDER_MISSING (503) instead of not existing.
+const paymentCallbackUrl = env.PAYMENT_CALLBACK_BASE_URL
+  ? new URL('/api/v1/payments/callback', env.PAYMENT_CALLBACK_BASE_URL).toString()
+  : undefined
+const paymentProviderAdapterRegistry = createPaymentProviderAdapterRegistry(
+  paymentCallbackUrl
+    ? [
+        createNextPayAdapter({ callbackUrl: paymentCallbackUrl }),
+        createShepaAdapter({ callbackUrl: paymentCallbackUrl }),
+        createIdPayAdapter({ callbackUrl: paymentCallbackUrl }),
+      ]
+    : [],
+)
 const paymentExecutionPolicy = createProviderExecutionPolicy({
   environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
   maxPersistenceAttempts: 3,
