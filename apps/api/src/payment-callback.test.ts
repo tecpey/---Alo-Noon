@@ -6,6 +6,7 @@ import { buildApp } from './app'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
 import { callbackIdempotencyKey } from './modules/payment-callback'
 import type { PaymentProviderService } from './modules/payment-provider'
+import type { PaymentSettlementService } from './modules/payment-settlement'
 
 const tenantId = '00000000-0000-4000-8000-000000000001'
 const resultRedirectUrl = 'https://app.alonoon.ir/payments/result'
@@ -24,21 +25,30 @@ function authFixture(resolvesTenant = true): AuthDependencies {
   }
 }
 
-function providerServiceFixture(receiveCallback = vi.fn().mockResolvedValue({})) {
+function providerServiceFixture(receiveCallback = vi.fn().mockResolvedValue({ id: 'receipt-1' })) {
   return {
     service: { receiveCallback } as unknown as PaymentProviderService,
     receiveCallback,
   }
 }
 
+function settlementFixture(settle = vi.fn().mockResolvedValue({ status: 'SETTLED' })) {
+  return { service: { settle } as unknown as PaymentSettlementService, settle }
+}
+
 const apps: Awaited<ReturnType<typeof buildApp>>[] = []
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())))
 
-async function callbackApp(options: { auth?: AuthDependencies; service?: PaymentProviderService }) {
+async function callbackApp(options: {
+  auth?: AuthDependencies
+  service?: PaymentProviderService
+  settlementService?: PaymentSettlementService
+}) {
   const app = await buildApp({
     auth: options.auth ?? authFixture(),
     paymentCallback: {
       providerService: options.service ?? providerServiceFixture().service,
+      ...(options.settlementService && { settlementService: options.settlementService }),
       resultRedirectUrl,
       environment: 'TEST',
     },
@@ -153,6 +163,61 @@ describe('payment callback route', () => {
 
     expect(response.statusCode).toBe(303)
     expect(receiveCallback).not.toHaveBeenCalled()
+  })
+
+  it('settles the recorded callback without telling the customer the verdict', async () => {
+    const { service } = providerServiceFixture()
+    const settlement = settlementFixture()
+    const app = await callbackApp({ service, settlementService: settlement.service })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/payments/callback/idpay?id=tx-abc&status=100',
+    })
+
+    expect(settlement.settle).toHaveBeenCalledTimes(1)
+    const [tenant, command] = settlement.settle.mock.calls[0] as [
+      string,
+      { callbackReceiptId: string },
+    ]
+    expect(tenant).toBe(tenantId)
+    expect(command.callbackReceiptId).toBe('receipt-1')
+
+    // The redirect is identical whether or not the payment settled: it carries
+    // an opaque reference and no verdict.
+    expect(response.statusCode).toBe(303)
+    const location = new URL(response.headers['location'] as string)
+    expect(location.searchParams.get('reference')).toBe('tx-abc')
+    expect([...location.searchParams.keys()]).toEqual(['reference'])
+  })
+
+  it('still returns the customer safely when settlement cannot reach the gateway', async () => {
+    // The receipt stays unprocessed for the sweep; the customer is not shown an
+    // error for something that may well have succeeded.
+    const settlement = settlementFixture(vi.fn().mockRejectedValue(new Error('ECONNRESET')))
+    const app = await callbackApp({ settlementService: settlement.service })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/payments/callback/idpay?id=tx-abc',
+    })
+
+    expect(response.statusCode).toBe(303)
+    expect(response.headers['location']).toContain('reference=tx-abc')
+  })
+
+  it('does not attempt settlement when the callback could not be recorded', async () => {
+    const receiveCallback = vi.fn().mockRejectedValue(new Error('CALLBACK_REPLAY_CONFLICT'))
+    const settlement = settlementFixture()
+    const app = await callbackApp({
+      service: providerServiceFixture(receiveCallback).service,
+      settlementService: settlement.service,
+    })
+
+    await app.inject({ method: 'GET', url: '/api/v1/payments/callback/idpay?id=tx-abc' })
+
+    // There is no receipt to settle, and inventing one would settle nothing.
+    expect(settlement.settle).not.toHaveBeenCalled()
   })
 
   it('is not registered at all when no result redirect is configured', async () => {

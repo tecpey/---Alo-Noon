@@ -155,7 +155,9 @@ export async function createPaymentConfigurationAction(
     paymentContext: 'CHECKOUT',
     currency: 'IRR',
     callbackPolicy: 'SIGNED_ONLY',
-    capabilities: ['PAYMENT_INITIALIZATION'],
+    // Both, always: a gateway that can start a payment but not verify it takes
+    // money and never records it.
+    capabilities: ['PAYMENT_INITIALIZATION', 'CALLBACK_VERIFICATION'],
     credentialReferenceId,
     idempotencyKey: derivedIdempotencyKey(
       'configuration',

@@ -12,8 +12,11 @@ info:
     opaque credential-reference, payment-attempt, and callback replay foundation
     are implemented without a real gateway adapter. No public payment-status or ledger-governance
     write endpoint is exposed. The authenticated initialization orchestrator is implemented as an
-    injectable, fail-closed boundary; the production server does not configure a real adapter or
-    credential resolver, so real payment execution remains unavailable. Authentication delivery
+    injectable, fail-closed boundary. Gateway callbacks are recorded and then settled by
+    server-to-server verification: a payment is captured, posted to the double-entry ledger,
+    and marked paid on its order only when the gateway confirms it for the exact expected
+    amount. No settlement surface is exposed publicly — the customer's return carries an
+    opaque reference and no verdict. Authentication delivery
     now has tenant-scoped persistence, abuse controls, a versioned provider SPI, and recoverable
     two-transaction orchestration; no Iranian SMS provider is approved or enabled.
     Payment gateway and authentication-delivery provider governance is exposed to staff

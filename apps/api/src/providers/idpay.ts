@@ -4,8 +4,11 @@ import type {
   ProviderInitializationResult,
   ProviderNormalizedOutcome,
   ProviderPaymentRequest,
+  ProviderVerificationInput,
+  ProviderVerificationResult,
 } from '@alo-noon/domain'
 
+import { parseRialAmount } from './amounts.js'
 import { parseJsonCredential } from './credential.js'
 
 /**
@@ -13,10 +16,14 @@ import { parseJsonCredential } from './credential.js'
  * open-source parsisolution/gateway library (api.idpay.ir/v1.1/payment).
  * Amount is Rial (its driver calls Amount::getRiyal()) — no conversion, and
  * the redirect is a plain GET link, unlike SizPay's POST-form requirement.
- * Only PAYMENT_INITIALIZATION is implemented — callback receipt verification
- * (POST .../verify) is a separate, not-yet-built HTTP surface (ADR-0010 phase 2).
+ *
+ * Settlement is a server-to-server POST to .../verify keyed by the transaction
+ * id IDPay issued at initialization. That call is what actually finalizes the
+ * payment at IDPay; until it succeeds the money is not ours, which is why the
+ * customer's redirect alone is never treated as payment.
  */
 const BASE_URL = 'https://api.idpay.ir/v1.1/payment'
+const VERIFY_URL = `${BASE_URL}/verify`
 
 // https://idpay.ir docs, mirrored in parsisolution/gateway's getStatusMessage().
 const STATUS_OUTCOMES: Readonly<Record<number, ProviderNormalizedOutcome>> = Object.freeze({
@@ -52,7 +59,10 @@ export function createIdPayAdapter(options: CreateIdPayAdapterOptions): PaymentP
     code: 'IDPAY',
     adapterVersion: '1.0.0',
     spiVersion: 1,
-    capabilities: new Set<PaymentProviderCapability>(['PAYMENT_INITIALIZATION']),
+    capabilities: new Set<PaymentProviderCapability>([
+      'PAYMENT_INITIALIZATION',
+      'CALLBACK_VERIFICATION',
+    ]),
     ...(options.testOnly !== undefined && { testOnly: options.testOnly }),
 
     mapProviderStatus(providerStatus: string): ProviderNormalizedOutcome {
@@ -116,6 +126,88 @@ export function createIdPayAdapter(options: CreateIdPayAdapterOptions): PaymentP
           normalizedCode: 'IDPAY_REQUEST_FAILED',
           customerMessageKey: 'payment.initialization_unavailable',
         }
+      } finally {
+        clearTimeout(timeout)
+      }
+    },
+
+    async verifyCallback(input: ProviderVerificationInput): Promise<ProviderVerificationResult> {
+      if (!input.providerReference || !input.paymentAttemptId) {
+        // Without IDPay's own transaction id there is nothing to verify. Saying
+        // so as an unverified FAILED keeps the caller retrying rather than
+        // treating the absence as a rejection.
+        return {
+          verified: false,
+          normalizedOutcome: 'FAILED',
+          reasonCode: 'IDPAY_REFERENCE_MISSING',
+        }
+      }
+      let credential: IdPayCredential
+      try {
+        credential = parseJsonCredential(input.credential.material, isIdPayCredential)
+      } catch {
+        return {
+          verified: false,
+          normalizedOutcome: 'FAILED',
+          reasonCode: 'IDPAY_CREDENTIAL_INVALID',
+        }
+      }
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? 15_000)
+      try {
+        const response = await fetch(VERIFY_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': credential.apiKey,
+            'X-SANDBOX': input.configuration.environment === 'PRODUCTION' ? 'false' : 'true',
+          },
+          // order_id is the attempt id we sent at initialization; IDPay checks
+          // the pair, so a reference belonging to another order fails here.
+          body: JSON.stringify({ id: input.providerReference, order_id: input.paymentAttemptId }),
+          signal: controller.signal,
+        })
+        const body = (await response.json().catch(() => null)) as {
+          status?: number
+          track_id?: string | number
+          amount?: string | number
+          id?: string
+        } | null
+
+        if (response.status !== 200 || body?.status === undefined) {
+          return {
+            verified: false,
+            normalizedOutcome: 'FAILED',
+            reasonCode: `IDPAY_VERIFY_HTTP_${response.status}`,
+          }
+        }
+
+        const outcome = this.mapProviderStatus(String(body.status))
+        if (outcome !== 'VERIFIED' || !body.track_id) {
+          return {
+            verified: false,
+            normalizedOutcome: outcome,
+            reasonCode: `IDPAY_VERIFY_STATUS_${body.status}`,
+          }
+        }
+
+        // IDPay reports Rial, the same unit the payment is stored in. Reporting
+        // no usable amount leaves settledAmount absent, which the settlement
+        // rule treats as unverifiable rather than as agreement.
+        const settledAmount = parseRialAmount(body.amount)
+        return {
+          verified: true,
+          normalizedOutcome: 'VERIFIED',
+          providerReference: body.id ?? input.providerReference,
+          externalEventId: String(body.track_id),
+          // 101 is IDPay's "already verified", which is what makes a retried
+          // verify safe rather than a double capture.
+          alreadySettled: body.status === 101 || body.status === 200,
+          ...(settledAmount !== null && { settledAmount }),
+        }
+      } catch {
+        return { verified: false, normalizedOutcome: 'FAILED', reasonCode: 'IDPAY_VERIFY_FAILED' }
       } finally {
         clearTimeout(timeout)
       }

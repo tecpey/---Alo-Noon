@@ -4,8 +4,11 @@ import type {
   ProviderInitializationResult,
   ProviderNormalizedOutcome,
   ProviderPaymentRequest,
+  ProviderVerificationInput,
+  ProviderVerificationResult,
 } from '@alo-noon/domain'
 
+import { parseRialAmount } from './amounts.js'
 import { parseJsonCredential } from './credential.js'
 
 /**
@@ -18,8 +21,13 @@ import { parseJsonCredential } from './credential.js'
  * research, so every rejected/invalid response defaults to RETRYABLE_FAILURE
  * (the same conservative default used elsewhere in this codebase for
  * unclassified provider errors) rather than guessing which codes are
- * permanent. Only PAYMENT_INITIALIZATION is implemented — callback receipt
- * verification is a separate, not-yet-built HTTP surface (ADR-0010 phase 2).
+ * permanent.
+ *
+ * Settlement is a server-to-server POST to /verify carrying the token and the
+ * amount. Shepa's driver reads the amount back out of the response, which is
+ * what the caller compares against the payment; Shepa publishes no distinct
+ * "already verified" code, so a repeat verify is reported as an ordinary
+ * success and idempotency rests on the caller's own keys.
  */
 const PRODUCTION_URL = 'https://merchant.shepa.com/api/v1/'
 const SANDBOX_URL = 'https://sandbox.shepa.com/api/v1/'
@@ -56,7 +64,10 @@ export function createShepaAdapter(options: CreateShepaAdapterOptions): PaymentP
     code: 'SHEPA',
     adapterVersion: '1.0.0',
     spiVersion: 1,
-    capabilities: new Set<PaymentProviderCapability>(['PAYMENT_INITIALIZATION']),
+    capabilities: new Set<PaymentProviderCapability>([
+      'PAYMENT_INITIALIZATION',
+      'CALLBACK_VERIFICATION',
+    ]),
     ...(options.testOnly !== undefined && { testOnly: options.testOnly }),
 
     mapProviderStatus(providerStatus: string): ProviderNormalizedOutcome {
@@ -119,6 +130,72 @@ export function createShepaAdapter(options: CreateShepaAdapterOptions): PaymentP
           normalizedCode: 'SHEPA_REQUEST_FAILED',
           customerMessageKey: 'payment.initialization_unavailable',
         }
+      } finally {
+        clearTimeout(timeout)
+      }
+    },
+
+    async verifyCallback(input: ProviderVerificationInput): Promise<ProviderVerificationResult> {
+      if (!input.providerReference || input.expectedAmount === undefined) {
+        return {
+          verified: false,
+          normalizedOutcome: 'FAILED',
+          reasonCode: 'SHEPA_REFERENCE_MISSING',
+        }
+      }
+      let credential: ShepaCredential
+      try {
+        credential = parseJsonCredential(input.credential.material, isShepaCredential)
+      } catch {
+        return {
+          verified: false,
+          normalizedOutcome: 'FAILED',
+          reasonCode: 'SHEPA_CREDENTIAL_INVALID',
+        }
+      }
+
+      const baseUrl =
+        input.configuration.environment === 'PRODUCTION' ? PRODUCTION_URL : SANDBOX_URL
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? 15_000)
+      try {
+        const response = await fetch(`${baseUrl}verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            api: credential.apiKey,
+            amount: input.expectedAmount.toString(),
+            token: input.providerReference,
+          }),
+          signal: controller.signal,
+        })
+        const body = (await response.json().catch(() => null)) as {
+          success?: boolean
+          result?: { refid?: string; transaction_id?: string; amount?: string | number }
+          errorCode?: number | string
+        } | null
+
+        if (!response.ok || !body?.success || !body.result) {
+          return {
+            verified: false,
+            normalizedOutcome: 'FAILED',
+            reasonCode: shepaFailureCode(body?.errorCode, response.status).replace(
+              'TOKEN',
+              'VERIFY',
+            ),
+          }
+        }
+
+        const settledAmount = parseRialAmount(body.result.amount)
+        return {
+          verified: true,
+          normalizedOutcome: 'VERIFIED',
+          providerReference: input.providerReference,
+          ...(body.result.refid && { externalEventId: String(body.result.refid) }),
+          ...(settledAmount !== null && { settledAmount }),
+        }
+      } catch {
+        return { verified: false, normalizedOutcome: 'FAILED', reasonCode: 'SHEPA_VERIFY_FAILED' }
       } finally {
         clearTimeout(timeout)
       }

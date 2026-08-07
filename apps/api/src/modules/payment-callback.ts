@@ -10,6 +10,7 @@ import {
 import type { AuthDependencies } from './auth.js'
 import { resolveTenantId } from './auth.js'
 import type { PaymentProviderService } from './payment-provider.js'
+import type { PaymentSettlementService } from './payment-settlement.js'
 
 /**
  * Receives the gateway's browser redirect after a customer returns from
@@ -18,16 +19,28 @@ import type { PaymentProviderService } from './payment-provider.js'
  * a payment succeeded, never mutate Payment or Order state, and never echo the
  * provider's claims back to the customer.
  *
- * All it does is record the callback durably and idempotently, then send the
- * customer to a neutral result page. The authoritative outcome comes later from
- * server-to-server verification, which is deliberately not performed here (see
- * ADR-0010: verification, inquiry, and capture are a separate phase).
+ * It records the callback durably and idempotently, then asks the settlement
+ * service to establish the truth by calling the gateway server-to-server. The
+ * verdict never reaches the customer here: they are sent to a neutral result
+ * page either way, because a redirect that announced success would be announcing
+ * something this request has no standing to know.
+ *
+ * Settling inline is only the fastest trigger, never the guarantee. Anything it
+ * misses — an unreachable gateway, a customer who closed the tab — is recovered
+ * by the sweep over unprocessed receipts.
  */
 export interface PaymentCallbackDependencies {
   providerService: PaymentProviderService
   auth: AuthDependencies
   resultRedirectUrl: string
   environment: 'TEST' | 'PRODUCTION'
+  /**
+   * Settles the recorded callback. Optional so the route still records receipts
+   * in a deployment with no settlement configured; where it is present, the
+   * customer's return is the fastest trigger available, and the recovery sweep
+   * catches whatever this misses.
+   */
+  settlementService?: PaymentSettlementService
   now?: () => Date
 }
 
@@ -60,8 +73,9 @@ export function registerPaymentCallbackRoutes(
       return redirectToResult(reply, dependencies.resultRedirectUrl, null)
     }
 
+    let receiptId: string | null = null
     try {
-      await dependencies.providerService.receiveCallback(
+      const receipt = await dependencies.providerService.receiveCallback(
         tenantId,
         {
           providerCode,
@@ -79,10 +93,27 @@ export function registerPaymentCallbackRoutes(
         dependencies.now?.() ?? new Date(),
         randomUUID(),
       )
+      receiptId = receipt.id
     } catch (error) {
       // A failure to record must not strand the customer on an error page, and
       // must not imply anything about whether their payment went through.
       request.log.error({ err: error, providerCode }, 'Payment callback could not be recorded')
+    }
+
+    if (receiptId && dependencies.settlementService) {
+      try {
+        await dependencies.settlementService.settle(
+          tenantId,
+          { callbackReceiptId: receiptId },
+          dependencies.now?.() ?? new Date(),
+          randomUUID(),
+        )
+      } catch (error) {
+        // Settling here is an optimisation, not the guarantee. An unreachable
+        // gateway leaves the receipt unprocessed for the sweep, and the customer
+        // still lands on a page that promises nothing either way.
+        request.log.warn({ err: error, providerCode }, 'Payment callback settlement deferred')
+      }
     }
 
     return redirectToResult(reply, dependencies.resultRedirectUrl, externalEventId)

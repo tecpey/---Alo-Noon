@@ -296,7 +296,10 @@ async function main(): Promise<void> {
           paymentContext: 'CHECKOUT',
           currency: 'IRR',
           callbackPolicy: 'SIGNED_ONLY',
-          capabilities: ['PAYMENT_INITIALIZATION'],
+          // Both, always: a gateway that can start a payment but not verify it
+          // takes money and never records it. The callback intake route refuses
+          // a configuration without CALLBACK_VERIFICATION for the same reason.
+          capabilities: ['PAYMENT_INITIALIZATION', 'CALLBACK_VERIFICATION'],
           credentialReferenceId: credential.id,
           idempotencyKey: `${idempotencyKey}-configuration`,
           reason: flags['reason'] ?? 'Operator provisioning',

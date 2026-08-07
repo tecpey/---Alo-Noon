@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 
 import * as Sentry from '@sentry/node'
 
@@ -29,6 +29,8 @@ import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
 import { createPrismaPaymentExecutionService } from './modules/payment-execution.js'
+import { createPrismaPaymentLedgerService } from './modules/payment-ledger.js'
+import { createPrismaPaymentSettlementService } from './modules/payment-settlement.js'
 import { createPaymentSecretResolver } from './providers/secret-resolver.js'
 import { createPrismaPaymentProviderService } from './modules/payment-provider.js'
 import { createIdPayAdapter } from './providers/idpay.js'
@@ -36,6 +38,11 @@ import { createNextPayAdapter } from './providers/nextpay.js'
 import { createShepaAdapter } from './providers/shepa.js'
 
 const env = getEnv()
+
+// Frequent enough that a stranded payment is noticed in minutes, bounded so a
+// backlog cannot turn the sweep into a load test against the checkout database.
+const SETTLEMENT_SWEEP_INTERVAL_MS = 60_000
+const SETTLEMENT_SWEEP_BATCH = 25
 
 // Error reporting is opt-in: without SENTRY_DSN this stays fully inert, so
 // development and CI never depend on an external service being reachable.
@@ -116,14 +123,24 @@ const paymentExecutionService = createPrismaPaymentExecutionService(prisma, {
   policy: paymentExecutionPolicy,
 })
 
-// Recording an inbound gateway redirect is a system-actor write, so this
-// service instance is deliberately separate from any customer-driven one.
+// Recording an inbound gateway redirect and settling it are both system-actor
+// writes, so this service instance is deliberately separate from any
+// customer-driven or staff-driven one.
+const systemProviderService = createPrismaPaymentProviderService(prisma, {
+  allowSystemOperations: true,
+  adapterRegistry: paymentProviderAdapterRegistry,
+})
+const paymentSettlementService = createPrismaPaymentSettlementService(prisma, {
+  adapterRegistry: paymentProviderAdapterRegistry,
+  secretResolver: createPaymentSecretResolver(process.env, env.PAYMENT_SECRET_ENCRYPTION_KEY),
+  ledgerService: createPrismaPaymentLedgerService(prisma),
+  providerService: systemProviderService,
+})
+
 const paymentCallback = env.PAYMENT_RESULT_REDIRECT_URL
   ? {
-      providerService: createPrismaPaymentProviderService(prisma, {
-        allowSystemOperations: true,
-        adapterRegistry: paymentProviderAdapterRegistry,
-      }),
+      providerService: systemProviderService,
+      settlementService: paymentSettlementService,
       resultRedirectUrl: env.PAYMENT_RESULT_REDIRECT_URL,
       environment: paymentExecutionPolicy.environment,
     }
@@ -172,8 +189,49 @@ if (env.SENTRY_DSN) {
   Sentry.setupFastifyErrorHandler(app)
 }
 
+/**
+ * Recovers callbacks the inline path could not settle: a gateway that was
+ * unreachable, a customer who closed the tab before the redirect landed, a
+ * process that died mid-flight. Without this a real payment can sit taken from
+ * the customer and unrecorded by us indefinitely.
+ *
+ * Deliberately a plain interval rather than a queue: it is idempotent, bounded,
+ * and this deployment has one API process. Several processes would each sweep,
+ * which is safe — the verdict is terminal and the second writer is refused —
+ * just wasteful.
+ */
+const settlementSweep = setInterval(() => {
+  void (async () => {
+    try {
+      const tenants = await prisma.tenant.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true },
+      })
+      for (const tenant of tenants) {
+        const results = await paymentSettlementService.settlePending(
+          tenant.id,
+          SETTLEMENT_SWEEP_BATCH,
+          new Date(),
+          randomUUID(),
+        )
+        const unresolved = results.filter((result) => result.status === 'PENDING')
+        if (unresolved.length > 0) {
+          app.log.warn(
+            { tenantId: tenant.id, pending: unresolved.length },
+            'Payment callbacks still awaiting settlement',
+          )
+        }
+      }
+    } catch (error) {
+      app.log.error({ err: error }, 'Payment settlement sweep failed')
+    }
+  })()
+}, SETTLEMENT_SWEEP_INTERVAL_MS)
+settlementSweep.unref()
+
 const close = async (signal: string): Promise<void> => {
   app.log.info({ signal }, 'Shutting down')
+  clearInterval(settlementSweep)
   await app.close()
   await prisma.$disconnect()
   process.exit(0)

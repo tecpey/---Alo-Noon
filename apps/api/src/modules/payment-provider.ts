@@ -106,6 +106,40 @@ export interface ReceivePaymentCallbackCommand {
   idempotencyKey: string
 }
 
+/**
+ * Drives an attempt to its settled end state after the gateway has answered.
+ *
+ * `transitionAttempt` deliberately refuses VERIFIED: reaching it means a
+ * provider actually confirmed the payment, which no generic transition can
+ * assert. This command is that adapter-backed path. It walks every intermediate
+ * state the machine requires so the history stays contiguous, and writes the
+ * audit and outbox records each transition's deferred constraint demands.
+ */
+export interface SettlePaymentAttemptCommand {
+  paymentAttemptId: string
+  outcome: 'VERIFIED' | 'REJECTED'
+  normalizedOutcome: ProviderNormalizedOutcome
+  /** Anchors every derived transition key; re-running produces the same ones. */
+  idempotencyKey: string
+}
+
+/**
+ * Records the settlement verdict on a callback receipt.
+ *
+ * The receipt's terminal state is guarded twice by the database: an immutability
+ * trigger refuses a second verdict, and a deferred constraint refuses any verdict
+ * that is not accompanied by matching `payment.callback_verified` or
+ * `payment.callback_rejected` audit and outbox records. Writing that pairing is
+ * why this lives here rather than in the settlement orchestrator.
+ */
+export interface ConcludeCallbackCommand {
+  callbackReceiptId: string
+  verified: boolean
+  /** Recorded alongside the verdict so an operator can see why it went this way. */
+  reasonCode: string
+  idempotencyKey: string
+}
+
 export interface VerifyPaymentCallbackCommand {
   callbackReceiptId: string
   idempotencyKey: string
@@ -155,6 +189,12 @@ export interface PaymentProviderService {
     now: Date,
     correlationId: string,
   ): Promise<PaymentAttemptSummary>
+  settleAttempt(
+    tenantId: string,
+    command: SettlePaymentAttemptCommand,
+    now: Date,
+    correlationId: string,
+  ): Promise<PaymentAttemptSummary>
   receiveCallback(
     tenantId: string,
     command: ReceivePaymentCallbackCommand,
@@ -164,6 +204,12 @@ export interface PaymentProviderService {
   verifyCallback(
     tenantId: string,
     command: VerifyPaymentCallbackCommand,
+    now: Date,
+    correlationId: string,
+  ): Promise<PaymentCallbackReceiptSummary>
+  concludeCallback(
+    tenantId: string,
+    command: ConcludeCallbackCommand,
     now: Date,
     correlationId: string,
   ): Promise<PaymentCallbackReceiptSummary>
@@ -665,6 +711,81 @@ export function createPrismaPaymentProviderService(
       })
     },
 
+    async settleAttempt(tenantId, command, now, correlationId) {
+      if (options.allowSystemOperations !== true) {
+        throw new PaymentProviderError('PAYMENT_PROVIDER_OPERATION_FORBIDDEN')
+      }
+      // The machine has no edge straight from where a customer's return leaves an
+      // attempt to its settled end, and the intermediate states are what make the
+      // history readable afterwards.
+      const path =
+        command.outcome === 'VERIFIED'
+          ? (['CALLBACK_RECEIVED', 'VERIFICATION_PENDING', 'VERIFIED'] as const)
+          : (['CALLBACK_RECEIVED', 'REJECTED'] as const)
+
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await transaction.$queryRaw`
+          SELECT "id" FROM "PaymentAttempt"
+          WHERE "id" = ${command.paymentAttemptId}::uuid AND "tenantId" = ${tenantId}::uuid
+          FOR UPDATE
+        `
+        let attempt = await loadAttempt(transaction, tenantId, command.paymentAttemptId)
+
+        for (const target of path) {
+          if (attempt.state === target) continue
+          try {
+            transitionPaymentAttempt(attempt.state, target)
+          } catch {
+            // Already past this hop, or terminal from an earlier run. Neither is
+            // a reason to fail a settlement that has otherwise been decided.
+            continue
+          }
+          const idempotencyKey = createHash('sha256')
+            .update(`${command.idempotencyKey}:${target}`)
+            .digest('hex')
+          const replay = await transaction.paymentAttemptStateTransition.findFirst({
+            where: { tenantId, idempotencyKey },
+          })
+          if (replay) continue
+
+          const version = attempt.version + 1
+          const transition = await transaction.paymentAttemptStateTransition.create({
+            data: {
+              tenantId,
+              paymentAttemptId: attempt.id,
+              fromState: attempt.state,
+              toState: target,
+              version,
+              providerOutcome: command.normalizedOutcome,
+              idempotencyKey,
+              correlationId,
+              occurredAt: now,
+            },
+          })
+          const updated = await transaction.paymentAttempt.update({
+            where: { id: attempt.id },
+            data: { state: target, version, updatedAt: now },
+          })
+          // Every transition needs its own audit and outbox row: a deferred
+          // constraint checks the pairing at commit, so omitting them aborts the
+          // whole settlement rather than just losing the trail.
+          await writeAttemptRecords(
+            transaction,
+            tenantId,
+            updated,
+            transition.id,
+            'payment.attempt_state_changed',
+            correlationId,
+            now,
+          )
+          attempt = await loadAttempt(transaction, tenantId, attempt.id)
+        }
+
+        await options.beforeCommit?.(transaction)
+        return mapAttempt(attempt)
+      })
+    },
+
     async receiveCallback(tenantId, command, now, correlationId) {
       if (options.allowSystemOperations !== true) {
         throw new PaymentProviderError('PAYMENT_PROVIDER_OPERATION_FORBIDDEN')
@@ -738,6 +859,68 @@ export function createPrismaPaymentProviderService(
         )
         await options.beforeCommit?.(transaction)
         return mapCallback(receipt)
+      })
+    },
+
+    async concludeCallback(tenantId, command, now, correlationId) {
+      if (options.allowSystemOperations !== true) {
+        throw new PaymentProviderError('PAYMENT_PROVIDER_OPERATION_FORBIDDEN')
+      }
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        const receipt = await transaction.paymentCallbackReceipt.findFirst({
+          where: { id: command.callbackReceiptId, tenantId },
+        })
+        if (!receipt) throw new PaymentProviderError('CALLBACK_RECEIPT_NOT_FOUND')
+
+        // A verdict is terminal. Replaying the same one is how a retried
+        // settlement converges; contradicting an earlier one is a bug worth
+        // surfacing rather than overwriting.
+        if (receipt.processingIdempotencyKey) {
+          const sameVerdict =
+            receipt.verificationStatus === (command.verified ? 'VERIFIED' : 'REJECTED')
+          if (!sameVerdict || receipt.processingIdempotencyKey !== command.idempotencyKey) {
+            throw new PaymentProviderError('CALLBACK_VERDICT_CONFLICT')
+          }
+          return mapCallback(receipt)
+        }
+
+        const updated = await transaction.paymentCallbackReceipt.update({
+          where: { id: receipt.id },
+          data: {
+            verificationStatus: command.verified ? 'VERIFIED' : 'REJECTED',
+            processingStatus: command.verified ? 'PROCESSED' : 'REJECTED',
+            processingIdempotencyKey: command.idempotencyKey,
+            // A digest by schema constraint, not free text; the readable reason
+            // rides on the audit event below.
+            processingFingerprint: createHash('sha256')
+              .update(`${command.idempotencyKey}:${command.reasonCode}`)
+              .digest('hex'),
+            updatedAt: now,
+          },
+        })
+        await writeCallbackRecords(
+          transaction,
+          tenantId,
+          updated,
+          command.verified ? 'payment.callback_verified' : 'payment.callback_rejected',
+          correlationId,
+          now,
+        )
+        await transaction.auditEvent.create({
+          data: {
+            tenantId,
+            actorType: 'SYSTEM',
+            action: 'payment.callback_settlement_decided',
+            entityType: 'payment_callback_receipt',
+            entityId: updated.id,
+            summary: `Callback settlement: ${command.reasonCode}`,
+            correlationId,
+            metadata: { reasonCode: command.reasonCode, verified: command.verified },
+            occurredAt: now,
+          },
+        })
+        await options.beforeCommit?.(transaction)
+        return mapCallback(updated)
       })
     },
 

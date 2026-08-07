@@ -4,8 +4,11 @@ import type {
   ProviderInitializationResult,
   ProviderNormalizedOutcome,
   ProviderPaymentRequest,
+  ProviderVerificationInput,
+  ProviderVerificationResult,
 } from '@alo-noon/domain'
 
+import { parseTomanAmount } from './amounts.js'
 import { parseJsonCredential } from './credential.js'
 
 /**
@@ -13,11 +16,16 @@ import { parseJsonCredential } from './credential.js'
  * nextpay-ir/class-nextpay-payment-gateway repository (token.http/verify.http
  * flow, code -1 = token success, code 0 = verified). NextPay bills in Toman;
  * this codebase's money is integer IRR, so amounts must be a multiple of 10.
- * Only PAYMENT_INITIALIZATION is implemented here — callback receipt
- * verification is a separate, not-yet-built HTTP surface (ADR-0010 phase 2).
+ *
+ * Settlement is a server-to-server POST to verify.http carrying the amount in
+ * Toman. NextPay answers a repeated verify with code -27 (already verified),
+ * which is what makes a retried settlement safe rather than a double capture.
  */
 const TOKEN_URL = 'https://api.nextpay.org/gateway/token.http'
+const VERIFY_URL = 'https://api.nextpay.org/gateway/verify.http'
 const PAYMENT_URL = 'https://api.nextpay.org/gateway/payment'
+// NextPay's own code for "this transaction was already verified".
+const VERIFY_ALREADY_CODE = -27
 const TOKEN_SUCCESS_CODE = -1
 const VERIFY_SUCCESS_CODE = 0
 const VERIFY_PENDING_CODE = -1
@@ -58,7 +66,10 @@ export function createNextPayAdapter(options: CreateNextPayAdapterOptions): Paym
     code: 'NEXTPAY',
     adapterVersion: '1.0.0',
     spiVersion: 1,
-    capabilities: new Set<PaymentProviderCapability>(['PAYMENT_INITIALIZATION']),
+    capabilities: new Set<PaymentProviderCapability>([
+      'PAYMENT_INITIALIZATION',
+      'CALLBACK_VERIFICATION',
+    ]),
     ...(options.testOnly !== undefined && { testOnly: options.testOnly }),
 
     mapProviderStatus(providerStatus: string): ProviderNormalizedOutcome {
@@ -139,5 +150,84 @@ export function createNextPayAdapter(options: CreateNextPayAdapterOptions): Paym
         clearTimeout(timeout)
       }
     },
+
+    async verifyCallback(input: ProviderVerificationInput): Promise<ProviderVerificationResult> {
+      if (!input.providerReference || input.expectedAmount === undefined) {
+        return {
+          verified: false,
+          normalizedOutcome: 'FAILED',
+          reasonCode: 'NEXTPAY_REFERENCE_MISSING',
+        }
+      }
+      let credential: NextPayCredential
+      let amountToman: string
+      try {
+        credential = parseJsonCredential(input.credential.material, isNextPayCredential)
+        amountToman = toToman(input.expectedAmount)
+      } catch {
+        return {
+          verified: false,
+          normalizedOutcome: 'FAILED',
+          reasonCode: 'NEXTPAY_VERIFY_REQUEST_INVALID',
+        }
+      }
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? 15_000)
+      try {
+        const response = await fetch(VERIFY_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            api_key: credential.apiKey,
+            trans_id: input.providerReference,
+            amount: amountToman,
+          }),
+          signal: controller.signal,
+        })
+        const body = (await response.json().catch(() => null)) as {
+          code?: number
+          amount?: string | number
+          Shaparak_Ref_Id?: string
+        } | null
+
+        if (!response.ok || body?.code === undefined) {
+          return {
+            verified: false,
+            normalizedOutcome: 'FAILED',
+            reasonCode: `NEXTPAY_VERIFY_HTTP_${response.status}`,
+          }
+        }
+        const alreadySettled = body.code === VERIFY_ALREADY_CODE
+        if (body.code !== VERIFY_SUCCESS_CODE && !alreadySettled) {
+          return {
+            verified: false,
+            normalizedOutcome: this.mapProviderStatus(String(body.code)),
+            reasonCode: verifyFailureCode(body.code),
+          }
+        }
+
+        // NextPay speaks Toman; the ledger speaks Rial. Converting what it
+        // reports — rather than echoing what we asked for — is what makes the
+        // caller's amount comparison meaningful.
+        const settledAmount = parseTomanAmount(body.amount)
+        return {
+          verified: true,
+          normalizedOutcome: 'VERIFIED',
+          providerReference: input.providerReference,
+          alreadySettled,
+          ...(body.Shaparak_Ref_Id && { externalEventId: body.Shaparak_Ref_Id }),
+          ...(settledAmount !== null && { settledAmount }),
+        }
+      } catch {
+        return { verified: false, normalizedOutcome: 'FAILED', reasonCode: 'NEXTPAY_VERIFY_FAILED' }
+      } finally {
+        clearTimeout(timeout)
+      }
+    },
   }
+}
+
+function verifyFailureCode(code: number): string {
+  return `NEXTPAY_VERIFY_${code < 0 ? `NEG${Math.abs(code)}` : String(code)}`
 }
