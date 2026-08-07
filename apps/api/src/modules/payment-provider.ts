@@ -138,6 +138,11 @@ export interface PaymentProviderService {
     now: Date,
     correlationId: string,
   ): Promise<PaymentProviderConfigurationSummary>
+  listConfigurations(
+    tenantId: string,
+    actor: GovernanceActor,
+    now: Date,
+  ): Promise<PaymentProviderConfigurationSummary[]>
   createAttempt(
     tenantId: string,
     command: CreatePaymentAttemptCommand,
@@ -470,6 +475,23 @@ export function createPrismaPaymentProviderService(
         )
         await options.beforeCommit?.(transaction)
         return mapConfiguration(updated)
+      })
+    },
+
+    /**
+     * Governance-gated read. The summary carries the credential *reference* id
+     * only, never the reference string and never the material it points at, so
+     * an operator can audit which gateway is live without the panel ever being a
+     * path to a secret.
+     */
+    async listConfigurations(tenantId, actor, now) {
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await authorizeGovernanceActor(transaction, tenantId, actor, now, options)
+        const configurations = await transaction.paymentProviderConfiguration.findMany({
+          where: { tenantId },
+          orderBy: [{ environment: 'asc' }, { providerCode: 'asc' }, { createdAt: 'desc' }],
+        })
+        return configurations.map((configuration) => mapConfiguration(configuration))
       })
     },
 

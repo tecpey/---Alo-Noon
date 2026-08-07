@@ -413,6 +413,12 @@ async function prepareDelivery(
           resendAvailableAt,
           maxAttempts: options.policy.maxVerificationAttempts,
           correlationId: command.correlationId,
+          // expiresAt and resendAvailableAt are derived from command.now, and
+          // auth_challenge_time_check compares all three. Letting createdAt
+          // default to the database clock mixes two clocks inside one row, so
+          // any skew between them turns a valid challenge into a constraint
+          // violation. Pin it to the same instant the window was computed from.
+          createdAt: command.now,
         },
       })
       const attempt = await transaction.authOtpDeliveryAttempt.create({

@@ -23,6 +23,7 @@ import {
   createEnvironmentAuthenticationCredentialResolver,
   createPrismaAuthenticationDeliveryService,
 } from './modules/auth-delivery.js'
+import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
@@ -81,11 +82,10 @@ const auth = {
 }
 // Adapters alone do not make a gateway live for any tenant: selectPaymentProvider
 // only finds one once an operator provisions a matching, active, healthy, default
-// PaymentProviderConfiguration + ProviderCredentialReference for that tenant via
-// createPrismaPaymentProviderService (no HTTP route exists for that yet, so it is
-// currently a script/console action). Until PAYMENT_CALLBACK_BASE_URL is set, no
-// adapter is registered at all and the route fails safely with
-// PAYMENT_PROVIDER_MISSING (503) instead of not existing.
+// PaymentProviderConfiguration + ProviderCredentialReference for that tenant —
+// from the admin routes below, or from the provisioning CLI. Until
+// PAYMENT_CALLBACK_BASE_URL is set, no adapter is registered at all and the route
+// fails safely with PAYMENT_PROVIDER_MISSING (503) instead of not existing.
 // Each gateway gets its own callback path so the receiving route knows which
 // provider a redirect belongs to without trusting a request parameter for it.
 const callbackUrlFor = (providerCode: string): string | undefined =>
@@ -128,6 +128,17 @@ const paymentCallback = env.PAYMENT_RESULT_REDIRECT_URL
     }
   : undefined
 
+// Staff-driven governance. `allowSystemOperations` is deliberately absent: every
+// write through these services must be attributable to a real account holding a
+// GLOBAL governance grant, which the services verify inside their own write
+// transactions. Only the provisioning CLI opts into SYSTEM operations.
+const adminProviders = {
+  paymentProviderService: createPrismaPaymentProviderService(prisma, {
+    adapterRegistry: paymentProviderAdapterRegistry,
+  }),
+  authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
+}
+
 const app = await buildApp({
   logger: true,
   ...(env.API_TRUST_PROXY_HOPS !== undefined && { trustProxyHops: env.API_TRUST_PROXY_HOPS }),
@@ -148,6 +159,7 @@ const app = await buildApp({
   orderRepository: createPrismaOrderRepository(prisma),
   paymentExecutionService,
   ...(paymentCallback && { paymentCallback }),
+  adminProviders,
 })
 
 if (env.SENTRY_DSN) {

@@ -15,9 +15,16 @@ import type { Prisma, PrismaClient } from '@alo-noon/database'
  * marking a configuration UNHEALTHY is how an operator takes a provider out of
  * rotation without a migration.
  */
-export interface CreateAuthDeliveryConfigurationCommand {
-  actor: 'STAFF' | 'SYSTEM'
-  actorId?: string
+/**
+ * A STAFF actor is authorized inside the same transaction that performs the
+ * write, against a GLOBAL-scoped grant carrying the governance permission. A
+ * SYSTEM actor has no account to check and is only accepted when the caller is
+ * a trusted composition root — the provisioning CLI — which opts in explicitly.
+ */
+export type AuthDeliveryGovernanceActor =
+  { actor: 'STAFF'; actorId: string } | { actor: 'SYSTEM'; actorId?: never }
+
+export type CreateAuthDeliveryConfigurationCommand = AuthDeliveryGovernanceActor & {
   providerCode: string
   adapterVersion: string
   environment: 'TEST' | 'PRODUCTION'
@@ -30,9 +37,7 @@ export interface CreateAuthDeliveryConfigurationCommand {
   reason: string
 }
 
-export interface SetAuthDeliveryConfigurationHealthCommand {
-  actor: 'STAFF' | 'SYSTEM'
-  actorId?: string
+export type SetAuthDeliveryConfigurationHealthCommand = AuthDeliveryGovernanceActor & {
   configurationId: string
   healthStatus: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY'
   reason: string
@@ -66,7 +71,11 @@ export interface AuthDeliveryProviderService {
     now: Date,
     correlationId: string,
   ): Promise<AuthDeliveryConfigurationSummary>
-  listConfigurations(tenantId: string): Promise<AuthDeliveryConfigurationSummary[]>
+  listConfigurations(
+    tenantId: string,
+    actor: AuthDeliveryGovernanceActor,
+    now: Date,
+  ): Promise<AuthDeliveryConfigurationSummary[]>
 }
 
 export class AuthDeliveryProviderError extends Error {
@@ -89,6 +98,7 @@ const CREDENTIAL_REFERENCE = /^(?:env|vault|aws-sm|gcp-sm|azure-kv):\/\/[A-Za-z0
 // The environment-backed resolver only accepts this shape, so an env:// reference
 // that does not match would resolve to nothing at send time.
 const ENV_CREDENTIAL_REFERENCE = /^env:\/\/AUTH_SMS_[A-Z0-9_]{1,120}$/
+const DELIVERY_GOVERN_PERMISSION = 'auth-delivery-provider.configuration.govern'
 
 export function createPrismaAuthDeliveryProviderService(
   prisma: PrismaClient,
@@ -96,18 +106,12 @@ export function createPrismaAuthDeliveryProviderService(
 ): AuthDeliveryProviderService {
   const maxAttempts = options.maxSerializationAttempts ?? 3
 
-  const assertAuthorized = (): void => {
-    if (options.allowSystemOperations !== true) {
-      throw new AuthDeliveryProviderError('AUTH_DELIVERY_PROVIDER_OPERATION_FORBIDDEN')
-    }
-  }
-
   return {
     async createConfiguration(tenantId, command, now, correlationId) {
-      assertAuthorized()
       validateCreateCommand(command)
 
       return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await authorizeGovernanceActor(transaction, tenantId, command, now, options)
         const existing = await transaction.authDeliveryProviderConfiguration.findFirst({
           where: {
             tenantId,
@@ -176,12 +180,12 @@ export function createPrismaAuthDeliveryProviderService(
     },
 
     async setConfigurationHealth(tenantId, command, now, correlationId) {
-      assertAuthorized()
       if (!command.reason.trim()) {
         throw new AuthDeliveryProviderError('AUTH_DELIVERY_REASON_REQUIRED')
       }
 
       return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await authorizeGovernanceActor(transaction, tenantId, command, now, options)
         const existing = await transaction.authDeliveryProviderConfiguration.findFirst({
           where: { id: command.configurationId, tenantId },
         })
@@ -215,9 +219,9 @@ export function createPrismaAuthDeliveryProviderService(
       })
     },
 
-    async listConfigurations(tenantId) {
-      assertAuthorized()
+    async listConfigurations(tenantId, actor, now) {
       return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await authorizeGovernanceActor(transaction, tenantId, actor, now, options)
         const configurations = await transaction.authDeliveryProviderConfiguration.findMany({
           where: { tenantId },
           orderBy: [{ environment: 'asc' }, { priority: 'asc' }],
@@ -262,6 +266,54 @@ function validateCreateCommand(command: CreateAuthDeliveryConfigurationCommand):
   if (!command.reason.trim()) {
     throw new AuthDeliveryProviderError('AUTH_DELIVERY_REASON_REQUIRED')
   }
+}
+
+/**
+ * Mirrors payment-provider governance: the account must be ACTIVE, an ACTIVE
+ * member of *this* tenant, and hold an unexpired GLOBAL-scoped grant carrying
+ * the governance permission. Checking inside the write transaction means a grant
+ * revoked concurrently cannot be raced past.
+ */
+async function authorizeGovernanceActor(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  actor: AuthDeliveryGovernanceActor,
+  now: Date,
+  options: AuthDeliveryProviderOptions,
+): Promise<void> {
+  if (actor.actor === 'SYSTEM') {
+    if (options.allowSystemOperations === true) return
+    throw new AuthDeliveryProviderError('AUTH_DELIVERY_PROVIDER_OPERATION_FORBIDDEN')
+  }
+  const authorized = await transaction.identityAccount.findFirst({
+    where: {
+      id: actor.actorId,
+      status: 'ACTIVE',
+      tenantMemberships: {
+        some: {
+          tenantId,
+          status: 'ACTIVE',
+          activeAt: { lte: now },
+          suspendedAt: null,
+          revokedAt: null,
+        },
+      },
+      accessGrants: {
+        some: {
+          scopeType: 'GLOBAL',
+          scopeId: null,
+          activeAt: { lte: now },
+          revokedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          role: {
+            permissions: { some: { permission: { code: DELIVERY_GOVERN_PERMISSION } } },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  })
+  if (!authorized) throw new AuthDeliveryProviderError('AUTH_DELIVERY_PROVIDER_OPERATION_FORBIDDEN')
 }
 
 async function writeAudit(

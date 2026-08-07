@@ -16,6 +16,9 @@ info:
     credential resolver, so real payment execution remains unavailable. Authentication delivery
     now has tenant-scoped persistence, abuse controls, a versioned provider SPI, and recoverable
     two-transaction orchestration; no Iranian SMS provider is approved or enabled.
+    Payment gateway and authentication-delivery provider governance is exposed to staff
+    holding a GLOBAL governance grant. Those routes carry opaque credential references
+    only: no secret material is ever accepted, stored, or returned by this API.
 servers:
   - url: http://localhost:3001
 paths:
@@ -343,6 +346,189 @@ paths:
         '422': { description: Payment is not eligible for provider initialization. }
         '503':
           { description: Provider, adapter, credential, or persistence boundary is unavailable. }
+  /api/v1/admin/payment-providers/credentials:
+    post:
+      operationId: createAdminPaymentProviderCredential
+      summary: Register an opaque credential reference for a payment gateway.
+      description: >-
+        Accepts only a reference into the deployment's secret store. The secret value
+        itself never travels through this API, is never persisted by it, and can never
+        be read back through it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderCredentialCreate' }
+      responses:
+        '201':
+          description: Credential reference registered or replayed idempotently.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProviderCredentialEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '409': { description: Idempotency or concurrency conflict. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/payment-providers/configurations:
+    get:
+      operationId: listAdminPaymentProviderConfigurations
+      summary: List the tenant's payment gateway configurations.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Configurations, newest first, without any credential material.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminPaymentProviderConfiguration
+      summary: Create a payment gateway configuration bound to a credential reference.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationCreate' }
+      responses:
+        '201':
+          description: Configuration created or replayed idempotently, inactive and UNKNOWN.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '409': { description: Idempotency or concurrency conflict. }
+        '422': { description: No adapter serves the requested provider, version, or capabilities. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/payment-providers/configurations/{configurationId}/governance:
+    post:
+      operationId: governAdminPaymentProviderConfiguration
+      summary: Activate, deactivate, or make default a payment gateway configuration.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPaymentProviderGovernance' }
+      responses:
+        '200':
+          description: Governance applied or replayed idempotently.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '404': { description: No such configuration for this tenant. }
+        '409': { description: Idempotency or concurrency conflict. }
+        '422': { description: No adapter serves this configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/payment-providers/configurations/{configurationId}/health:
+    post:
+      operationId: setAdminPaymentProviderHealth
+      summary: Attest or withdraw a payment gateway's health.
+      description: >-
+        Selection only ever picks a HEALTHY configuration, so this is what makes a newly
+        created gateway usable, and what removes it from rotation during an incident.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPaymentProviderHealth' }
+      responses:
+        '200':
+          description: Health recorded with an audited reason.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '404': { description: No such configuration for this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/sms-providers/configurations:
+    get:
+      operationId: listAdminAuthDeliveryConfigurations
+      summary: List the tenant's authentication SMS provider configurations.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Configurations without any credential material.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminAuthDeliveryConfiguration
+      summary: Configure the SMS provider that delivers authentication codes.
+      description: >-
+        A configuration is frozen by the database after insert, so it is created in its
+        final governed shape. Health is the only field that can change afterwards.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationCreate' }
+      responses:
+        '201':
+          description: Configuration created, or returned unchanged when identical.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '409':
+          description: >-
+            An immutable configuration differs from the request, an enabled default
+            already exists, or a concurrency conflict occurred.
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/sms-providers/configurations/{configurationId}/health:
+    post:
+      operationId: setAdminAuthDeliveryHealth
+      summary: Take an SMS provider out of, or back into, rotation.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAuthDeliveryHealth' }
+      responses:
+        '200':
+          description: Health recorded with an audited reason.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '404': { description: No such configuration for this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -884,6 +1070,204 @@ components:
         governanceVersion: { type: integer, minimum: 1 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    ProviderCredentialReference:
+      type: string
+      minLength: 12
+      maxLength: 500
+      pattern: '^(vault|aws-sm|gcp-sm|local-encrypted)://[A-Za-z0-9/_:.-]+$'
+      description: >-
+        Opaque pointer into the deployment's secret store. The value it points at is
+        never accepted, stored, or returned by this API.
+    GovernanceReason:
+      type: string
+      minLength: 4
+      maxLength: 500
+      description: Human-readable justification recorded in the audit trail.
+    IdempotencyKey:
+      type: string
+      minLength: 16
+      maxLength: 128
+    AdminProviderCredentialCreate:
+      type: object
+      required: [providerCode, reference, keyVersion, idempotencyKey]
+      additionalProperties: false
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        reference: { $ref: '#/components/schemas/ProviderCredentialReference' }
+        keyVersion: { type: string, minLength: 1, maxLength: 64 }
+        metadata:
+          type: object
+          additionalProperties: { type: string, maxLength: 200 }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+    AdminProviderCredentialSummary:
+      type: object
+      required: [id, providerCode, keyVersion, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        keyVersion: { type: string, minLength: 1, maxLength: 64 }
+        createdAt: { type: string, format: date-time }
+    AdminProviderCredentialEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminProviderCredentialSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminPaymentProviderConfigurationCreate:
+      type: object
+      required:
+        [
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          merchantReference,
+          environment,
+          paymentContext,
+          currency,
+          callbackPolicy,
+          capabilities,
+          credentialReferenceId,
+          idempotencyKey,
+          reason,
+        ]
+      additionalProperties: false
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion:
+          { type: string, maxLength: 64, pattern: '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        merchantReference: { type: string, minLength: 1, maxLength: 128 }
+        environment: { $ref: '#/components/schemas/PaymentProviderEnvironment' }
+        paymentContext: { type: string, const: CHECKOUT }
+        currency: { type: string, const: IRR }
+        callbackPolicy: { type: string, const: SIGNED_ONLY }
+        capabilities:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/PaymentProviderCapability' }
+        credentialReferenceId: { type: string, format: uuid }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminPaymentProviderGovernance:
+      type: object
+      required: [targetActive, makeDefault, idempotencyKey, reason]
+      additionalProperties: false
+      properties:
+        targetActive: { type: boolean }
+        makeDefault: { type: boolean }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminPaymentProviderHealth:
+      type: object
+      required: [healthStatus, reason]
+      additionalProperties: false
+      properties:
+        healthStatus: { $ref: '#/components/schemas/ProviderHealthStatus' }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminPaymentProviderConfigurationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/PaymentProviderConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminPaymentProviderConfigurationListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentProviderConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminAuthDeliveryConfigurationCreate:
+      type: object
+      required:
+        [
+          providerCode,
+          adapterVersion,
+          environment,
+          credentialReference,
+          senderReference,
+          templateReference,
+          enabled,
+          isDefault,
+          reason,
+        ]
+      additionalProperties: false
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion:
+          { type: string, maxLength: 64, pattern: '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' }
+        environment: { $ref: '#/components/schemas/PaymentProviderEnvironment' }
+        credentialReference:
+          type: string
+          minLength: 8
+          maxLength: 250
+          pattern: '^(env|vault|aws-sm|gcp-sm|azure-kv)://[A-Za-z0-9_./:-]{1,240}$'
+        senderReference: { type: string, minLength: 1, maxLength: 128 }
+        templateReference: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminAuthDeliveryHealth:
+      type: object
+      required: [healthStatus, reason]
+      additionalProperties: false
+      properties:
+        healthStatus: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminAuthDeliveryConfigurationSummary:
+      type: object
+      required:
+        [
+          id,
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          environment,
+          senderReference,
+          templateReference,
+          enabled,
+          isDefault,
+          priority,
+          healthStatus,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion:
+          { type: string, maxLength: 64, pattern: '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        environment: { $ref: '#/components/schemas/PaymentProviderEnvironment' }
+        senderReference: { type: string, minLength: 1, maxLength: 128 }
+        templateReference: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        healthStatus: { $ref: '#/components/schemas/ProviderHealthStatus' }
+        createdAt: { type: string, format: date-time }
+    AdminAuthDeliveryConfigurationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminAuthDeliveryConfigurationListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentAttemptSummary:
       type: object
       required:

@@ -32,6 +32,10 @@ import {
   registerPaymentCallbackRoutes,
   type PaymentCallbackDependencies,
 } from './modules/payment-callback.js'
+import {
+  registerAdminProviderRoutes,
+  type AdminProviderDependencies,
+} from './modules/admin-providers.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -45,6 +49,7 @@ export interface AppOptions {
   orderRepository?: OrderRepository
   paymentExecutionService?: PaymentExecutionService
   paymentCallback?: Omit<PaymentCallbackDependencies, 'auth'>
+  adminProviders?: Omit<AdminProviderDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
   trustProxyHops?: number
@@ -151,6 +156,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.paymentCallback) {
     registerPaymentCallbackRoutes(app, { ...options.paymentCallback, auth: options.auth })
+  }
+  if (options.auth && options.adminProviders) {
+    registerAdminProviderRoutes(app, { ...options.adminProviders, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

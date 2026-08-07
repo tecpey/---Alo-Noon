@@ -1,5 +1,6 @@
 const ROUTE_METHODS = new Set(['get', 'post', 'put', 'delete', 'patch'])
-const REQUIRED_CALL_PATTERN = /\b(?:resolveTenantId|authenticatedCustomer|authenticateRequest)\s*\(/
+const REQUIRED_CALL_PATTERN =
+  /\b(?:resolveTenantId|authenticatedCustomer|authenticatedStaff|authenticateRequest)\s*\(/
 
 /**
  * Every route registered on the Fastify `app` instance in apps/api/src/modules

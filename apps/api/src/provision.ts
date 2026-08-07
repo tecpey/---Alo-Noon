@@ -63,12 +63,31 @@ function asBoolean(flags: Flags, name: string, fallback: boolean): boolean {
 const COMMANDS = [
   'generate-encryption-key',
   'encrypt-payment-secret',
+  'grant-provider-governance',
+  'revoke-provider-governance',
   'configure-payment-gateway',
   'set-payment-gateway-health',
   'configure-sms-provider',
   'list-sms-providers',
   'set-sms-provider-health',
 ] as const
+
+/**
+ * Bootstrap only. Governance grants are what let a staff account reach the admin
+ * routes at all, so the very first one cannot itself be issued through those
+ * routes. Everything after that is done from the admin panel.
+ */
+const GOVERNANCE_ROLE = 'PROVIDER_GOVERNOR'
+const GOVERNANCE_PERMISSIONS: ReadonlyArray<{ code: string; description: string }> = [
+  {
+    code: 'payment-provider.configuration.govern',
+    description: 'Configure, activate, and attest payment gateway configurations',
+  },
+  {
+    code: 'auth-delivery-provider.configuration.govern',
+    description: 'Configure authentication SMS providers and control their rotation',
+  },
+]
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2)
@@ -101,6 +120,104 @@ async function main(): Promise<void> {
   const tenantId = required(flags, 'tenant')
 
   try {
+    if (command === 'grant-provider-governance' || command === 'revoke-provider-governance') {
+      const mobileE164 = required(flags, 'mobile')
+      // The account is created by the operator signing in with OTP first, which
+      // is also what proves they control the number.
+      const account = await prisma.identityAccount.findUnique({ where: { mobileE164 } })
+      if (!account) {
+        throw new Error(`No identity account for ${mobileE164}; sign in once with OTP first`)
+      }
+      const membership = await prisma.tenantMembership.findFirst({
+        where: { tenantId, accountId: account.id, status: 'ACTIVE', revokedAt: null },
+      })
+      if (!membership) {
+        throw new Error(`${mobileE164} is not an active member of tenant ${tenantId}`)
+      }
+
+      const role = await prisma.authorizationRole.upsert({
+        where: { code: GOVERNANCE_ROLE },
+        update: {},
+        create: { code: GOVERNANCE_ROLE, name: 'Provider governor' },
+      })
+      for (const { code, description } of GOVERNANCE_PERMISSIONS) {
+        const permission = await prisma.authorizationPermission.upsert({
+          where: { code },
+          update: {},
+          create: { code, description },
+        })
+        await prisma.rolePermission.upsert({
+          where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+          update: {},
+          create: { roleId: role.id, permissionId: permission.id },
+        })
+      }
+
+      // Governance spans every city and branch, so the grant is GLOBAL. The
+      // services accept nothing narrower.
+      const existing = await prisma.accessGrant.findFirst({
+        where: {
+          accountId: account.id,
+          roleId: role.id,
+          scopeType: 'GLOBAL',
+          scopeId: null,
+          revokedAt: null,
+        },
+      })
+
+      if (command === 'revoke-provider-governance') {
+        if (!existing) {
+          process.stdout.write(`${mobileE164} holds no provider governance grant\n`)
+          return
+        }
+        await prisma.accessGrant.update({
+          where: { id: existing.id },
+          data: { revokedAt: now },
+        })
+        await prisma.auditEvent.create({
+          data: {
+            tenantId,
+            actorType: 'SYSTEM',
+            action: 'authorization.provider_governance.revoked',
+            entityType: 'access_grant',
+            entityId: existing.id,
+            summary: `Provider governance revoked from ${mobileE164}`,
+            correlationId,
+            metadata: { reason: required(flags, 'reason') },
+            occurredAt: now,
+          },
+        })
+        process.stdout.write(`Provider governance revoked from ${mobileE164}\n`)
+        return
+      }
+
+      if (existing) {
+        process.stdout.write(`${mobileE164} already holds provider governance\n`)
+        return
+      }
+      const grant = await prisma.accessGrant.create({
+        data: { accountId: account.id, roleId: role.id, scopeType: 'GLOBAL', activeAt: now },
+      })
+      await prisma.auditEvent.create({
+        data: {
+          tenantId,
+          actorType: 'SYSTEM',
+          action: 'authorization.provider_governance.granted',
+          entityType: 'access_grant',
+          entityId: grant.id,
+          summary: `Provider governance granted to ${mobileE164}`,
+          correlationId,
+          metadata: { reason: required(flags, 'reason') },
+          occurredAt: now,
+        },
+      })
+      process.stdout.write(
+        `Provider governance granted to ${mobileE164}\n` +
+          'They can now configure payment gateways and SMS providers from the admin API.\n',
+      )
+      return
+    }
+
     if (command === 'set-payment-gateway-health') {
       const providerService = createPrismaPaymentProviderService(prisma, {
         allowSystemOperations: true,
@@ -234,7 +351,7 @@ async function main(): Promise<void> {
     }
 
     if (command === 'list-sms-providers') {
-      const configurations = await smsService.listConfigurations(tenantId)
+      const configurations = await smsService.listConfigurations(tenantId, { actor: 'SYSTEM' }, now)
       if (configurations.length === 0) {
         process.stdout.write('No SMS provider is configured for this tenant.\n')
         return
