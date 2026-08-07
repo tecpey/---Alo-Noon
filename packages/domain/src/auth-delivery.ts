@@ -17,6 +17,13 @@ export interface AuthenticationDeliveryPolicy {
   readonly maxPhoneSendsPerHour: number
   readonly maxIpSendsPerTenMinutes: number
   readonly maxTenantSendsPerHour: number
+  /**
+   * Hard ceiling on a tenant's daily SMS spend. The hourly limit alone bounds
+   * bursts but not sustained cost: a tenant sustaining its hourly cap runs up
+   * 24x that many paid messages a day. Sending is real money, so the day has
+   * its own limit rather than being an unbounded multiple of the hour.
+   */
+  readonly maxTenantSendsPerDay: number
   readonly maxProviderSendsPerMinute: number
   readonly circuitFailureThreshold: number
   readonly circuitOpenMs: number
@@ -143,6 +150,20 @@ export function createAuthenticationDeliveryPolicy(
     return value
   }
 
+  // A daily ceiling below the hourly limit would make the hourly limit
+  // unreachable and is always a misconfiguration, so it is rejected rather than
+  // silently clamped.
+  const boundedDailyCeiling = (value: number, hourly: number): number => {
+    const daily = bounded(value, 10, 1_000_000, 'Tenant daily send limit')
+    if (daily < hourly) {
+      throw new DomainError(
+        'AUTH_DELIVERY_POLICY_INVALID',
+        'Tenant daily send limit must be at least the hourly send limit',
+      )
+    }
+    return daily
+  }
+
   return Object.freeze({
     ...input,
     otpDigits: 6,
@@ -152,6 +173,10 @@ export function createAuthenticationDeliveryPolicy(
     maxPhoneSendsPerHour: bounded(input.maxPhoneSendsPerHour, 2, 10, 'Phone send limit'),
     maxIpSendsPerTenMinutes: bounded(input.maxIpSendsPerTenMinutes, 5, 100, 'IP send limit'),
     maxTenantSendsPerHour: bounded(input.maxTenantSendsPerHour, 10, 100_000, 'Tenant send limit'),
+    maxTenantSendsPerDay: boundedDailyCeiling(
+      input.maxTenantSendsPerDay,
+      input.maxTenantSendsPerHour,
+    ),
     maxProviderSendsPerMinute: bounded(
       input.maxProviderSendsPerMinute,
       1,

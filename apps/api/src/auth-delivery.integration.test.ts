@@ -542,6 +542,7 @@ function deliveryService(hooks: { beforeFinalizationCommit?: () => Promise<void>
       maxPhoneSendsPerHour: 5,
       maxIpSendsPerTenMinutes: 20,
       maxTenantSendsPerHour: 500,
+      maxTenantSendsPerDay: 5_000,
       maxProviderSendsPerMinute: 300,
       circuitFailureThreshold: 5,
       circuitOpenMs: 5 * 60_000,

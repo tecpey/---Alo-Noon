@@ -59,6 +59,8 @@ const authenticationDeliveryPolicy = createAuthenticationDeliveryPolicy({
   maxPhoneSendsPerHour: 5,
   maxIpSendsPerTenMinutes: 20,
   maxTenantSendsPerHour: 500,
+  // Well under the 12,000 the hourly cap alone would allow across a full day.
+  maxTenantSendsPerDay: 5_000,
   maxProviderSendsPerMinute: 300,
   circuitFailureThreshold: 5,
   circuitOpenMs: 5 * 60_000,

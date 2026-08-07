@@ -332,43 +332,53 @@ async function prepareDelivery(
         }
       }
 
-      const [phoneCount, ipCount, tenantCount, providerCount] = await Promise.all([
-        transaction.authAbuseEvent.count({
-          where: {
-            tenantId: command.tenantId,
-            action: 'OTP_REQUEST',
-            mobileDigest,
-            occurredAt: { gte: new Date(command.now.getTime() - 60 * 60_000) },
-          },
-        }),
-        transaction.authAbuseEvent.count({
-          where: {
-            tenantId: command.tenantId,
-            action: 'OTP_REQUEST',
-            sourceIpDigest,
-            occurredAt: { gte: new Date(command.now.getTime() - 10 * 60_000) },
-          },
-        }),
-        transaction.authAbuseEvent.count({
-          where: {
-            tenantId: command.tenantId,
-            action: 'OTP_REQUEST',
-            occurredAt: { gte: new Date(command.now.getTime() - 60 * 60_000) },
-          },
-        }),
-        transaction.authAbuseEvent.count({
-          where: {
-            tenantId: command.tenantId,
-            action: 'OTP_REQUEST',
-            providerConfigurationId: selected.id,
-            occurredAt: { gte: new Date(command.now.getTime() - 60_000) },
-          },
-        }),
-      ])
+      const [phoneCount, ipCount, tenantCount, tenantDailyCount, providerCount] = await Promise.all(
+        [
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              mobileDigest,
+              occurredAt: { gte: new Date(command.now.getTime() - 60 * 60_000) },
+            },
+          }),
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              sourceIpDigest,
+              occurredAt: { gte: new Date(command.now.getTime() - 10 * 60_000) },
+            },
+          }),
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              occurredAt: { gte: new Date(command.now.getTime() - 60 * 60_000) },
+            },
+          }),
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              occurredAt: { gte: new Date(command.now.getTime() - 24 * 60 * 60_000) },
+            },
+          }),
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              providerConfigurationId: selected.id,
+              occurredAt: { gte: new Date(command.now.getTime() - 60_000) },
+            },
+          }),
+        ],
+      )
       if (
         phoneCount >= options.policy.maxPhoneSendsPerHour ||
         ipCount >= options.policy.maxIpSendsPerTenMinutes ||
         tenantCount >= options.policy.maxTenantSendsPerHour ||
+        tenantDailyCount >= options.policy.maxTenantSendsPerDay ||
         providerCount >= options.policy.maxProviderSendsPerMinute
       ) {
         await writeSuppressionRecords(
