@@ -11,7 +11,7 @@
 export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   API_UNREACHABLE: 'ارتباط با سرویس برقرار نشد.',
   SESSION_UNAUTHORIZED: 'نشست معتبر نیست. دوباره وارد شوید.',
-  PROVIDER_GOVERNANCE_FORBIDDEN: 'این حساب اجازهٔ مدیریت سرویس‌دهنده‌ها را ندارد.',
+  ADMIN_PERMISSION_DENIED: 'این حساب دسترسی لازم برای این کار را ندارد.',
   PAYMENT_PROVIDER_OPERATION_FORBIDDEN: 'دسترسی این حساب لغو شده است.',
   AUTH_DELIVERY_PROVIDER_OPERATION_FORBIDDEN: 'دسترسی این حساب لغو شده است.',
   PROVIDER_CONFIGURATION_NOT_FOUND: 'این پیکربندی یافت نشد.',

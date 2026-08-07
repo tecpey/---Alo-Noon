@@ -281,7 +281,7 @@ describe('admin provider governance routes', () => {
     })
 
     expect(response.statusCode).toBe(403)
-    expect(response.json().error.code).toBe('PROVIDER_GOVERNANCE_FORBIDDEN')
+    expect(response.json().error.code).toBe('ADMIN_PERMISSION_DENIED')
     expect(services.paymentProviderService.listConfigurations).not.toHaveBeenCalled()
   })
 

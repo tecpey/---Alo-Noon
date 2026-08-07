@@ -23,6 +23,7 @@ import {
   createEnvironmentAuthenticationCredentialResolver,
   createPrismaAuthenticationDeliveryService,
 } from './modules/auth-delivery.js'
+import { createPrismaAdminReportingService } from './modules/admin-reporting.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
@@ -139,6 +140,10 @@ const adminProviders = {
   authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
 }
 
+// Read-only, and gated on its own permissions, so it shares no service instance
+// with the governance path above.
+const adminReporting = { service: createPrismaAdminReportingService(prisma) }
+
 const app = await buildApp({
   logger: true,
   ...(env.API_TRUST_PROXY_HOPS !== undefined && { trustProxyHops: env.API_TRUST_PROXY_HOPS }),
@@ -160,6 +165,7 @@ const app = await buildApp({
   paymentExecutionService,
   ...(paymentCallback && { paymentCallback }),
   adminProviders,
+  adminReporting,
 })
 
 if (env.SENTRY_DSN) {

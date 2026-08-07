@@ -36,6 +36,10 @@ import {
   registerAdminProviderRoutes,
   type AdminProviderDependencies,
 } from './modules/admin-providers.js'
+import {
+  registerAdminReportingRoutes,
+  type AdminReportingDependencies,
+} from './modules/admin-reporting.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -50,6 +54,7 @@ export interface AppOptions {
   paymentExecutionService?: PaymentExecutionService
   paymentCallback?: Omit<PaymentCallbackDependencies, 'auth'>
   adminProviders?: Omit<AdminProviderDependencies, 'auth'>
+  adminReporting?: Omit<AdminReportingDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
   trustProxyHops?: number
@@ -159,6 +164,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.adminProviders) {
     registerAdminProviderRoutes(app, { ...options.adminProviders, auth: options.auth })
+  }
+  if (options.auth && options.adminReporting) {
+    registerAdminReportingRoutes(app, { ...options.adminReporting, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

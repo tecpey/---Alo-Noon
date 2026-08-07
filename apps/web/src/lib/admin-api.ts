@@ -49,10 +49,26 @@ export async function upstreamHeaders(): Promise<Record<string, string>> {
   }
 }
 
+/** Same as `request`, but surfaces the pagination block the list routes attach. */
+async function requestWithPagination<T>(
+  path: string,
+): Promise<ApiResult<T> & { pagination?: PaginationMeta }> {
+  const { result, meta } = await requestRaw<T>(path, { method: 'GET' })
+  const pagination = (meta as { pagination?: PaginationMeta } | undefined)?.pagination
+  return pagination ? { ...result, pagination } : result
+}
+
 async function request<T>(
   path: string,
   init: { method: 'GET' | 'POST' | 'DELETE'; body?: unknown },
 ): Promise<ApiResult<T>> {
+  return (await requestRaw<T>(path, init)).result
+}
+
+async function requestRaw<T>(
+  path: string,
+  init: { method: 'GET' | 'POST' | 'DELETE'; body?: unknown },
+): Promise<{ result: ApiResult<T>; meta?: unknown }> {
   let response: Response
   try {
     response = await fetch(new URL(path, adminApiBaseUrl()), {
@@ -68,7 +84,12 @@ async function request<T>(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
   } catch {
-    return { ok: false, error: { code: 'API_UNREACHABLE', message: 'ارتباط با سرویس برقرار نشد.' } }
+    return {
+      result: {
+        ok: false,
+        error: { code: 'API_UNREACHABLE', message: 'ارتباط با سرویس برقرار نشد.' },
+      },
+    }
   }
 
   let payload: unknown
@@ -83,9 +104,10 @@ async function request<T>(
       payload && typeof payload === 'object' && 'error' in payload
         ? (payload.error as ApiFailure)
         : { code: `HTTP_${response.status}`, message: 'درخواست ناموفق بود.' }
-    return { ok: false, error }
+    return { result: { ok: false, error } }
   }
-  return { ok: true, data: (payload as { data: T }).data }
+  const envelope = payload as { data: T; meta?: unknown }
+  return { result: { ok: true, data: envelope.data }, meta: envelope.meta }
 }
 
 export interface PaymentConfigurationSummary {
@@ -139,6 +161,109 @@ export async function listSmsConfigurations(): Promise<ApiResult<SmsConfiguratio
   return request<SmsConfigurationSummary[]>('/api/v1/admin/sms-providers/configurations', {
     method: 'GET',
   })
+}
+
+export interface SalesReport {
+  range: { from: string; to: string }
+  totals: {
+    placedOrders: number
+    placedValue: Money
+    paidOrders: number
+    paidValue: Money
+    cancelledOrders: number
+    cancelledValue: Money
+    averageOrderValue: Money
+    deliveryFees: Money
+    discounts: Money
+  }
+  ordersByState: Record<string, number>
+  ordersByPaymentState: Record<string, number>
+  daily: Array<{ date: string; placedOrders: number; placedValue: Money }>
+  topProducts: Array<{
+    sku: string
+    productNameFa: string
+    variantNameFa: string
+    quantity: number
+    revenue: Money
+  }>
+  conversion: { carts: number; quotes: number; orders: number; quoteToOrderRate: number | null }
+}
+
+export interface Money {
+  amount: string
+  currency: 'IRR'
+}
+
+export interface AdminOrderSummary {
+  id: string
+  publicId: string
+  state: string
+  paymentState: string
+  productionState: string
+  deliveryState: string
+  customerId: string
+  recipientNameSnapshot: string
+  bakeryNameSnapshot: string
+  totalAmount: Money
+  itemCount: number
+  requestedDeliveryAt: string | null
+  createdAt: string
+}
+
+export interface AdminOrderDetail extends AdminOrderSummary {
+  subtotalAmount: Money
+  deliveryFeeAmount: Money
+  discountAmount: Money
+  recipientPhoneSnapshot: string
+  deliveryAddressSnapshot: string
+  deliveryInstructionsSnapshot: string | null
+  customerNotes: string | null
+  cancellationReasonCode: string | null
+  items: Array<{
+    sku: string
+    productNameFa: string
+    variantNameFa: string
+    quantity: number
+    unitPrice: Money
+    lineTotal: Money
+  }>
+  transitions: Array<{
+    fromState: string | null
+    toState: string
+    reasonCode: string | null
+    occurredAt: string
+  }>
+  updatedAt: string
+}
+
+export interface PaginationMeta {
+  page: number
+  pageSize: number
+  totalItems: number
+  totalPages: number
+  hasNextPage: boolean
+  hasPreviousPage: boolean
+}
+
+export async function readSalesReport(from: string, to: string): Promise<ApiResult<SalesReport>> {
+  const query = new URLSearchParams({ from, to })
+  return request<SalesReport>(`/api/v1/admin/reports/sales?${query.toString()}`, { method: 'GET' })
+}
+
+export async function listOrders(
+  params: Readonly<Record<string, string>>,
+): Promise<ApiResult<AdminOrderSummary[]> & { pagination?: PaginationMeta }> {
+  const query = new URLSearchParams(params)
+  return requestWithPagination<AdminOrderSummary[]>(`/api/v1/admin/orders?${query.toString()}`)
+}
+
+export async function readOrder(orderId: string): Promise<ApiResult<AdminOrderDetail>> {
+  // The id is interpolated into a path segment, so anything that could change
+  // the path's shape is refused before the request rather than sent upstream.
+  if (!/^[0-9a-fA-F-]{36}$/.test(orderId)) {
+    return { ok: false, error: { code: 'ORDER_NOT_FOUND', message: 'شناسهٔ سفارش معتبر نیست.' } }
+  }
+  return request<AdminOrderDetail>(`/api/v1/admin/orders/${orderId}`, { method: 'GET' })
 }
 
 export async function post<T>(path: string, body: unknown): Promise<ApiResult<T>> {

@@ -30,6 +30,20 @@
   gap: 1.75rem;
 }
 
+/* Every direct child is pinned to the column's width rather than allowed to size
+ * itself from its content. Without this, a section holding a wide table sizes to
+ * that table, the `100%` inside it becomes circular and resolves to auto, and
+ * the operator scrolls the whole document sideways on a phone. Overflow belongs
+ * to the element that opts into it, never to the page. */
+.admin > *,
+.admin-login > * {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.split > * {
+  min-inline-size: 0;
+}
+
 .admin-header {
   display: flex;
   flex-wrap: wrap;
@@ -38,6 +52,15 @@
   justify-content: space-between;
   border-bottom: 1px solid var(--line);
   padding-bottom: 1rem;
+}
+.admin-header > div {
+  /* The title carries an order's public id, which is longer than a phone is
+   * wide. Without this the header pushes past the viewport and, in RTL, the
+   * whole document scrolls to the left. */
+  min-inline-size: 0;
+}
+.admin h1 {
+  overflow-wrap: anywhere;
 }
 
 .admin h1,
@@ -229,4 +252,189 @@ button.ghost {
 }
 .form-message.error {
   color: var(--bad);
+}
+
+/* Navigation and reporting surfaces. */
+.admin-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-top: 0.6rem;
+}
+.admin-nav a,
+.range-picker a,
+.pager a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+  padding: 0.15rem 0;
+  border-bottom: 2px solid transparent;
+}
+.admin-nav a.current,
+.range-picker a.current {
+  border-bottom-color: var(--accent);
+  font-weight: 700;
+}
+.admin-nav a:hover,
+.range-picker a:hover,
+.pager a:hover {
+  text-decoration: underline;
+}
+
+.range-picker {
+  display: flex;
+  gap: 1rem;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+}
+.tile {
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.tile span {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+.tile strong {
+  font-size: 1.15rem;
+  /* Long Rial figures must wrap rather than widen the grid past the viewport. */
+  overflow-wrap: anywhere;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1.5rem;
+  align-items: start;
+}
+
+table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+th,
+td {
+  text-align: start;
+  padding: 0.5rem 0.6rem;
+  border-block-end: 1px solid var(--line);
+  vertical-align: top;
+}
+thead th {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  font-weight: 700;
+}
+td small {
+  color: var(--ink-muted);
+}
+td a {
+  color: var(--accent);
+}
+
+/* Wide tables scroll inside their own box; the page itself never does. */
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  /* The scroller needs a definite width of its own, or it grows to fit the table
+   * and the operator scrolls the whole document sideways on a phone instead of
+   * just the table. `100%` resolves against the section, which the flex column
+   * has already constrained. */
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.table-scroll table {
+  /* Columns keep their natural width and the scroller absorbs the excess, rather
+   * than eight columns being crushed into 390px of phone. */
+  min-inline-size: max-content;
+}
+
+.bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.bars li {
+  display: grid;
+  grid-template-columns: 5rem 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+.bar-track {
+  block-size: 0.7rem;
+  border-radius: 999px;
+  background: #ffedd5;
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  block-size: 100%;
+  background: var(--accent);
+}
+.bar-value {
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  padding: 1rem;
+}
+.filters .field {
+  min-inline-size: 14rem;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+.pager span:last-child {
+  display: flex;
+  gap: 1rem;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.timeline li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+  border-inline-start: 3px solid var(--line);
+  padding-inline-start: 0.75rem;
+  font-size: 0.88rem;
+}
+.timeline span {
+  color: var(--ink-muted);
+  min-inline-size: 9rem;
 }

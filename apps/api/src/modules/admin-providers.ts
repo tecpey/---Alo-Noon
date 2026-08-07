@@ -9,15 +9,20 @@ import {
   adminPaymentProviderGovernanceSchema,
   adminPaymentProviderHealthSchema,
   adminProviderCredentialCreateSchema,
-  type ErrorEnvelope,
-  type ResponseMeta,
 } from '@alo-noon/contracts'
+
+import { ADMIN_PERMISSIONS } from '@alo-noon/domain'
 
 import {
   AuthDeliveryProviderError,
   type AuthDeliveryProviderService,
 } from './auth-delivery-provider.js'
-import { authenticateRequest, authorizeGrants, type AuthDependencies } from './auth.js'
+import {
+  adminResponseMeta,
+  authenticatedStaff,
+  errorEnvelope,
+  type AdminAuthDependencies,
+} from './admin-auth.js'
 import { PaymentProviderError, type PaymentProviderService } from './payment-provider.js'
 
 /**
@@ -38,61 +43,16 @@ import { PaymentProviderError, type PaymentProviderService } from './payment-pro
  *   the authoritative check. The session copy of a grant can be stale; the
  *   in-transaction one cannot.
  */
-const PAYMENT_GOVERN_PERMISSION = 'payment-provider.configuration.govern'
-const DELIVERY_GOVERN_PERMISSION = 'auth-delivery-provider.configuration.govern'
+const PAYMENT_GOVERN_PERMISSION = ADMIN_PERMISSIONS.paymentProviderGovern
+const DELIVERY_GOVERN_PERMISSION = ADMIN_PERMISSIONS.authDeliveryProviderGovern
 
 // Governance is low-volume and high-consequence. A tighter budget than the
 // global one limits how fast a stolen staff session can churn configuration.
 const ADMIN_RATE_LIMIT = { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }
 
-export interface AdminProviderDependencies {
-  auth: AuthDependencies
+export interface AdminProviderDependencies extends AdminAuthDependencies {
   paymentProviderService: PaymentProviderService
   authDeliveryProviderService: AuthDeliveryProviderService
-  now?: () => Date
-}
-
-export interface AdminActor {
-  tenantId: string
-  accountId: string
-}
-
-/**
- * Resolves the acting staff account, or answers the request and returns null.
- * Callers must stop as soon as this returns null: the reply is already sent.
- *
- * Deliberately shaped like `authenticatedCustomer`, and allow-listed by the same
- * lint rule, so every admin handler still derives tenant identity from the
- * session rather than from anything the client sent.
- */
-export async function authenticatedStaff(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  dependencies: AdminProviderDependencies,
-  permission: string,
-): Promise<AdminActor | null> {
-  reply.header('Cache-Control', 'no-store')
-  const session = await authenticateRequest(request, dependencies.auth)
-  if (!session) {
-    await reply
-      .code(401)
-      .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid staff session is required.'))
-    return null
-  }
-  // Provider governance is tenant-wide, so only a GLOBAL grant qualifies; a
-  // city- or branch-scoped operator cannot reach it.
-  if (!authorizeGrants(session.grants, permission, {}, dependencies.now?.() ?? new Date())) {
-    await reply
-      .code(403)
-      .send(
-        errorEnvelope(
-          'PROVIDER_GOVERNANCE_FORBIDDEN',
-          'This account may not govern provider configuration.',
-        ),
-      )
-    return null
-  }
-  return { tenantId: session.tenantId, accountId: session.accountId }
 }
 
 export function registerAdminProviderRoutes(
@@ -133,7 +93,7 @@ export function registerAdminProviderRoutes(
           currentTime(),
           randomUUID(),
         )
-        return reply.code(201).send({ success: true, data: credential, meta: responseMeta() })
+        return reply.code(201).send({ success: true, data: credential, meta: adminResponseMeta() })
       } catch (error) {
         return paymentGovernanceFailure(request, reply, error)
       }
@@ -158,7 +118,7 @@ export function registerAdminProviderRoutes(
           { actor: 'STAFF', actorId: actor.accountId },
           currentTime(),
         )
-        return reply.send({ success: true, data: configurations, meta: responseMeta() })
+        return reply.send({ success: true, data: configurations, meta: adminResponseMeta() })
       } catch (error) {
         return paymentGovernanceFailure(request, reply, error)
       }
@@ -190,7 +150,9 @@ export function registerAdminProviderRoutes(
           currentTime(),
           randomUUID(),
         )
-        return reply.code(201).send({ success: true, data: configuration, meta: responseMeta() })
+        return reply
+          .code(201)
+          .send({ success: true, data: configuration, meta: adminResponseMeta() })
       } catch (error) {
         return paymentGovernanceFailure(request, reply, error)
       }
@@ -227,7 +189,7 @@ export function registerAdminProviderRoutes(
           currentTime(),
           randomUUID(),
         )
-        return reply.send({ success: true, data: configuration, meta: responseMeta() })
+        return reply.send({ success: true, data: configuration, meta: adminResponseMeta() })
       } catch (error) {
         return paymentGovernanceFailure(request, reply, error)
       }
@@ -264,7 +226,7 @@ export function registerAdminProviderRoutes(
           currentTime(),
           randomUUID(),
         )
-        return reply.send({ success: true, data: configuration, meta: responseMeta() })
+        return reply.send({ success: true, data: configuration, meta: adminResponseMeta() })
       } catch (error) {
         return paymentGovernanceFailure(request, reply, error)
       }
@@ -289,7 +251,7 @@ export function registerAdminProviderRoutes(
           { actor: 'STAFF', actorId: actor.accountId },
           currentTime(),
         )
-        return reply.send({ success: true, data: configurations, meta: responseMeta() })
+        return reply.send({ success: true, data: configurations, meta: adminResponseMeta() })
       } catch (error) {
         return deliveryGovernanceFailure(request, reply, error)
       }
@@ -327,7 +289,9 @@ export function registerAdminProviderRoutes(
           currentTime(),
           randomUUID(),
         )
-        return reply.code(201).send({ success: true, data: configuration, meta: responseMeta() })
+        return reply
+          .code(201)
+          .send({ success: true, data: configuration, meta: adminResponseMeta() })
       } catch (error) {
         return deliveryGovernanceFailure(request, reply, error)
       }
@@ -364,7 +328,7 @@ export function registerAdminProviderRoutes(
           currentTime(),
           randomUUID(),
         )
-        return reply.send({ success: true, data: configuration, meta: responseMeta() })
+        return reply.send({ success: true, data: configuration, meta: adminResponseMeta() })
       } catch (error) {
         return deliveryGovernanceFailure(request, reply, error)
       }
@@ -450,7 +414,7 @@ function deliveryGovernanceFailure(
 function governanceMessage(status: number): string {
   switch (status) {
     case 403:
-      return 'This account may not govern provider configuration.'
+      return 'This account does not hold the permission this operation requires.'
     case 404:
       return 'No such provider configuration for this tenant.'
     case 409:
@@ -460,16 +424,4 @@ function governanceMessage(status: number): string {
     default:
       return 'The command is invalid.'
   }
-}
-
-function responseMeta(): ResponseMeta {
-  return {
-    requestId: randomUUID(),
-    timestamp: new Date().toISOString(),
-    version: 'v1',
-  }
-}
-
-function errorEnvelope(code: string, message: string): ErrorEnvelope {
-  return { success: false, error: { code, message }, meta: responseMeta() }
 }

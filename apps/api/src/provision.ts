@@ -12,7 +12,14 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 
 import { PrismaClient } from '@alo-noon/database'
-import { createPaymentProviderAdapterRegistry } from '@alo-noon/domain'
+import {
+  ADMIN_PERMISSION_DEFINITIONS,
+  ADMIN_ROLES,
+  adminRoleCodes,
+  createPaymentProviderAdapterRegistry,
+  findAdminRole,
+  type AdminRoleDefinition,
+} from '@alo-noon/domain'
 
 import { createIdPayAdapter } from './providers/idpay.js'
 import { createNextPayAdapter } from './providers/nextpay.js'
@@ -63,8 +70,10 @@ function asBoolean(flags: Flags, name: string, fallback: boolean): boolean {
 const COMMANDS = [
   'generate-encryption-key',
   'encrypt-payment-secret',
-  'grant-provider-governance',
-  'revoke-provider-governance',
+  'list-roles',
+  'grant-role',
+  'revoke-role',
+  'list-staff',
   'configure-payment-gateway',
   'set-payment-gateway-health',
   'configure-sms-provider',
@@ -73,22 +82,13 @@ const COMMANDS = [
 ] as const
 
 /**
- * Bootstrap only. Governance grants are what let a staff account reach the admin
+ * Bootstrap only. A role grant is what lets a staff account reach the admin
  * routes at all, so the very first one cannot itself be issued through those
  * routes. Everything after that is done from the admin panel.
+ *
+ * Roles and permissions come from the domain catalogue rather than being spelled
+ * out here, so a role this CLI creates is always one the routes actually check.
  */
-const GOVERNANCE_ROLE = 'PROVIDER_GOVERNOR'
-const GOVERNANCE_PERMISSIONS: ReadonlyArray<{ code: string; description: string }> = [
-  {
-    code: 'payment-provider.configuration.govern',
-    description: 'Configure, activate, and attest payment gateway configurations',
-  },
-  {
-    code: 'auth-delivery-provider.configuration.govern',
-    description: 'Configure authentication SMS providers and control their rotation',
-  },
-]
-
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2)
   const flags = parseFlags(rest)
@@ -114,14 +114,53 @@ async function main(): Promise<void> {
     return
   }
 
+  // Listing the catalogue reads nothing, so it works before any deployment and
+  // before a tenant exists.
+  if (command === 'list-roles') {
+    for (const role of ADMIN_ROLES) {
+      process.stdout.write(`${role.code}  ${role.name}\n`)
+      for (const permission of role.permissions) process.stdout.write(`    ${permission}\n`)
+    }
+    return
+  }
+
   const prisma = new PrismaClient()
   const now = new Date()
   const correlationId = randomUUID()
   const tenantId = required(flags, 'tenant')
 
   try {
-    if (command === 'grant-provider-governance' || command === 'revoke-provider-governance') {
+    if (command === 'list-staff') {
+      const grants = await prisma.accessGrant.findMany({
+        where: {
+          revokedAt: null,
+          scopeType: 'GLOBAL',
+          role: { code: { in: [...adminRoleCodes()] } },
+          account: { tenantMemberships: { some: { tenantId, status: 'ACTIVE', revokedAt: null } } },
+        },
+        include: { account: true, role: true },
+        orderBy: { createdAt: 'asc' },
+      })
+      if (grants.length === 0) {
+        process.stdout.write('No staff account holds an admin role in this tenant.\n')
+        return
+      }
+      for (const grant of grants) {
+        const expiry = grant.expiresAt ? ` expires=${grant.expiresAt.toISOString()}` : ''
+        process.stdout.write(`${grant.account.mobileE164}  ${grant.role.code}${expiry}\n`)
+      }
+      return
+    }
+
+    if (command === 'grant-role' || command === 'revoke-role') {
       const mobileE164 = required(flags, 'mobile')
+      const roleCode = required(flags, 'role').toUpperCase()
+      const definition = findAdminRole(roleCode)
+      if (!definition) {
+        throw new Error(`Unknown role ${roleCode}. Known roles: ${adminRoleCodes().join(', ')}`)
+      }
+      const reason = required(flags, 'reason')
+
       // The account is created by the operator signing in with OTP first, which
       // is also what proves they control the number.
       const account = await prisma.identityAccount.findUnique({ where: { mobileE164 } })
@@ -135,26 +174,9 @@ async function main(): Promise<void> {
         throw new Error(`${mobileE164} is not an active member of tenant ${tenantId}`)
       }
 
-      const role = await prisma.authorizationRole.upsert({
-        where: { code: GOVERNANCE_ROLE },
-        update: {},
-        create: { code: GOVERNANCE_ROLE, name: 'Provider governor' },
-      })
-      for (const { code, description } of GOVERNANCE_PERMISSIONS) {
-        const permission = await prisma.authorizationPermission.upsert({
-          where: { code },
-          update: {},
-          create: { code, description },
-        })
-        await prisma.rolePermission.upsert({
-          where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
-          update: {},
-          create: { roleId: role.id, permissionId: permission.id },
-        })
-      }
-
-      // Governance spans every city and branch, so the grant is GLOBAL. The
-      // services accept nothing narrower.
+      const role = await ensureRole(prisma, definition)
+      // Admin capabilities are tenant-wide, so the grant is GLOBAL. The services
+      // accept nothing narrower.
       const existing = await prisma.accessGrant.findFirst({
         where: {
           accountId: account.id,
@@ -165,55 +187,44 @@ async function main(): Promise<void> {
         },
       })
 
-      if (command === 'revoke-provider-governance') {
+      if (command === 'revoke-role') {
         if (!existing) {
-          process.stdout.write(`${mobileE164} holds no provider governance grant\n`)
+          process.stdout.write(`${mobileE164} does not hold ${roleCode}\n`)
           return
         }
-        await prisma.accessGrant.update({
-          where: { id: existing.id },
-          data: { revokedAt: now },
+        await prisma.accessGrant.update({ where: { id: existing.id }, data: { revokedAt: now } })
+        await writeGrantAudit(prisma, {
+          tenantId,
+          entityId: existing.id,
+          action: 'authorization.role.revoked',
+          summary: `Role ${roleCode} revoked from ${mobileE164}`,
+          reason,
+          correlationId,
+          now,
         })
-        await prisma.auditEvent.create({
-          data: {
-            tenantId,
-            actorType: 'SYSTEM',
-            action: 'authorization.provider_governance.revoked',
-            entityType: 'access_grant',
-            entityId: existing.id,
-            summary: `Provider governance revoked from ${mobileE164}`,
-            correlationId,
-            metadata: { reason: required(flags, 'reason') },
-            occurredAt: now,
-          },
-        })
-        process.stdout.write(`Provider governance revoked from ${mobileE164}\n`)
+        process.stdout.write(`Role ${roleCode} revoked from ${mobileE164}\n`)
         return
       }
 
       if (existing) {
-        process.stdout.write(`${mobileE164} already holds provider governance\n`)
+        process.stdout.write(`${mobileE164} already holds ${roleCode}\n`)
         return
       }
       const grant = await prisma.accessGrant.create({
         data: { accountId: account.id, roleId: role.id, scopeType: 'GLOBAL', activeAt: now },
       })
-      await prisma.auditEvent.create({
-        data: {
-          tenantId,
-          actorType: 'SYSTEM',
-          action: 'authorization.provider_governance.granted',
-          entityType: 'access_grant',
-          entityId: grant.id,
-          summary: `Provider governance granted to ${mobileE164}`,
-          correlationId,
-          metadata: { reason: required(flags, 'reason') },
-          occurredAt: now,
-        },
+      await writeGrantAudit(prisma, {
+        tenantId,
+        entityId: grant.id,
+        action: 'authorization.role.granted',
+        summary: `Role ${roleCode} granted to ${mobileE164}`,
+        reason,
+        correlationId,
+        now,
       })
       process.stdout.write(
-        `Provider governance granted to ${mobileE164}\n` +
-          'They can now configure payment gateways and SMS providers from the admin API.\n',
+        `Role ${roleCode} granted to ${mobileE164}\n` +
+          `Permissions: ${definition.permissions.join(', ')}\n`,
       )
       return
     }
@@ -387,6 +398,78 @@ async function main(): Promise<void> {
   } finally {
     await prisma.$disconnect()
   }
+}
+
+/**
+ * Creates the role and its permission rows if they are missing, and reconciles
+ * the role's permissions with the catalogue. Reconciling matters on upgrade: a
+ * role granted last month must gain a permission added since, or an operator
+ * would hold a role whose name no longer matches what it opens.
+ */
+async function ensureRole(
+  prisma: PrismaClient,
+  definition: AdminRoleDefinition,
+): Promise<{ id: string }> {
+  const role = await prisma.authorizationRole.upsert({
+    where: { code: definition.code },
+    update: { name: definition.name },
+    create: { code: definition.code, name: definition.name },
+  })
+  for (const code of definition.permissions) {
+    const description =
+      ADMIN_PERMISSION_DEFINITIONS.find((entry) => entry.code === code)?.description ?? code
+    const permission = await prisma.authorizationPermission.upsert({
+      where: { code },
+      update: {},
+      create: { code, description },
+    })
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+      update: {},
+      create: { roleId: role.id, permissionId: permission.id },
+    })
+  }
+  // Permissions dropped from a role in the catalogue are removed here too, so a
+  // narrowed role actually narrows rather than keeping its old reach.
+  const keep = new Set<string>(definition.permissions)
+  const attached = await prisma.rolePermission.findMany({
+    where: { roleId: role.id },
+    include: { permission: true },
+  })
+  const stale = attached.filter((entry) => !keep.has(entry.permission.code))
+  if (stale.length > 0) {
+    await prisma.rolePermission.deleteMany({
+      where: { roleId: role.id, permissionId: { in: stale.map((entry) => entry.permissionId) } },
+    })
+  }
+  return role
+}
+
+async function writeGrantAudit(
+  prisma: PrismaClient,
+  input: {
+    tenantId: string
+    entityId: string
+    action: string
+    summary: string
+    reason: string
+    correlationId: string
+    now: Date
+  },
+): Promise<void> {
+  await prisma.auditEvent.create({
+    data: {
+      tenantId: input.tenantId,
+      actorType: 'SYSTEM',
+      action: input.action,
+      entityType: 'access_grant',
+      entityId: input.entityId,
+      summary: input.summary,
+      correlationId: input.correlationId,
+      metadata: { reason: input.reason },
+      occurredAt: input.now,
+    },
+  })
 }
 
 main().catch((error: unknown) => {

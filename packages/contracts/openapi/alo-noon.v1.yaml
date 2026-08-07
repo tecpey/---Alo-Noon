@@ -529,6 +529,97 @@ paths:
         '403': { description: The account may not govern provider configuration. }
         '404': { description: No such configuration for this tenant. }
         '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/reports/sales:
+    get:
+      operationId: getAdminSalesReport
+      summary: Sales and order aggregates for a period.
+      description: >-
+        Amounts are IRR minor units as decimal strings; an order total routinely exceeds
+        what a JSON number holds exactly. The range is closed-open, so consecutive periods
+        tile without counting the boundary twice. Draft orders are excluded everywhere:
+        a draft is an order the customer never placed.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Aggregates for the requested period.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalesReportEnvelope' }
+        '400': { description: The reporting range is malformed or inverted. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not read reports. }
+        '422': { description: The reporting range covers too long a period. }
+        '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/orders:
+    get:
+      operationId: listAdminOrders
+      summary: Browse the tenant's placed orders.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/OrderState' }
+        - name: paymentState
+          in: query
+          schema: { $ref: '#/components/schemas/PaymentState' }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: search
+          in: query
+          description: >-
+            Exact match against an order's public id or the recipient's mobile. Deliberately
+            not a prefix or substring search, which would let an operator enumerate
+            customers one digit at a time.
+          schema: { type: string, minLength: 3, maxLength: 64 }
+      responses:
+        '200':
+          description: Paginated orders, newest first, excluding drafts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOrderPage' }
+        '400': { description: The order query is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not read orders. }
+        '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/orders/{orderId}:
+    get:
+      operationId: getAdminOrder
+      summary: Inspect one order, with items and its state history.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOrderDetailEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not read orders. }
+        '404': { description: No such order in this tenant. }
+        '503': { description: Reporting is temporarily unavailable. }
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -1268,6 +1359,223 @@ components:
           type: array
           items: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationSummary' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
+    OrderState:
+      type: string
+      enum:
+        [
+          DRAFT,
+          PENDING_CONFIRMATION,
+          CONFIRMED,
+          IN_FULFILLMENT,
+          CANCEL_REQUESTED,
+          DELIVERY_FAILED,
+          COMPLETED,
+          CANCELLED,
+        ]
+    PaymentState:
+      type: string
+      enum: [NOT_STARTED, PENDING, PAID, REFUND_PENDING, REFUNDED]
+    ProductionState:
+      type: string
+      enum: [NOT_REQUIRED, UNSCHEDULED, SCHEDULED, IN_PRODUCTION, READY, HANDED_OFF]
+    DeliveryState:
+      type: string
+      enum: [NOT_REQUIRED, UNASSIGNED, ASSIGNED, PICKED_UP, OUT_FOR_DELIVERY, DELIVERED, FAILED]
+    SalesTotals:
+      type: object
+      required:
+        [
+          placedOrders,
+          placedValue,
+          paidOrders,
+          paidValue,
+          cancelledOrders,
+          cancelledValue,
+          averageOrderValue,
+          deliveryFees,
+          discounts,
+        ]
+      properties:
+        placedOrders: { type: integer, minimum: 0 }
+        placedValue: { $ref: '#/components/schemas/Money' }
+        paidOrders:
+          type: integer
+          minimum: 0
+          description: >-
+            Orders the payment pipeline marked PAID. Nothing reaches that state until
+            capture is implemented, so this reads zero by design rather than by accident.
+        paidValue: { $ref: '#/components/schemas/Money' }
+        cancelledOrders: { type: integer, minimum: 0 }
+        cancelledValue: { $ref: '#/components/schemas/Money' }
+        averageOrderValue: { $ref: '#/components/schemas/Money' }
+        deliveryFees: { $ref: '#/components/schemas/Money' }
+        discounts: { $ref: '#/components/schemas/Money' }
+    SalesDailyPoint:
+      type: object
+      required: [date, placedOrders, placedValue]
+      properties:
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        placedOrders: { type: integer, minimum: 0 }
+        placedValue: { $ref: '#/components/schemas/Money' }
+    TopProduct:
+      type: object
+      required: [sku, productNameFa, variantNameFa, quantity, revenue]
+      properties:
+        sku: { type: string, minLength: 1, maxLength: 64 }
+        productNameFa: { type: string, minLength: 1 }
+        variantNameFa: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 0 }
+        revenue: { $ref: '#/components/schemas/Money' }
+    ConversionFunnel:
+      type: object
+      required: [carts, quotes, orders, quoteToOrderRate]
+      properties:
+        carts: { type: integer, minimum: 0 }
+        quotes: { type: integer, minimum: 0 }
+        orders: { type: integer, minimum: 0 }
+        quoteToOrderRate: { type: [number, 'null'], minimum: 0, maximum: 1 }
+    SalesReport:
+      type: object
+      required: [range, totals, ordersByState, ordersByPaymentState, daily, topProducts, conversion]
+      properties:
+        range:
+          type: object
+          required: [from, to]
+          properties:
+            from: { type: string, format: date-time }
+            to: { type: string, format: date-time }
+        totals: { $ref: '#/components/schemas/SalesTotals' }
+        ordersByState:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        ordersByPaymentState:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        daily:
+          type: array
+          items: { $ref: '#/components/schemas/SalesDailyPoint' }
+        topProducts:
+          type: array
+          items: { $ref: '#/components/schemas/TopProduct' }
+        conversion: { $ref: '#/components/schemas/ConversionFunnel' }
+    SalesReportEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/SalesReport' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminOrderSummary:
+      type: object
+      required:
+        [
+          id,
+          publicId,
+          state,
+          paymentState,
+          productionState,
+          deliveryState,
+          customerId,
+          recipientNameSnapshot,
+          bakeryNameSnapshot,
+          totalAmount,
+          itemCount,
+          requestedDeliveryAt,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        publicId: { type: string, minLength: 1, maxLength: 32 }
+        state: { $ref: '#/components/schemas/OrderState' }
+        paymentState: { $ref: '#/components/schemas/PaymentState' }
+        productionState: { $ref: '#/components/schemas/ProductionState' }
+        deliveryState: { $ref: '#/components/schemas/DeliveryState' }
+        customerId: { type: string, format: uuid }
+        recipientNameSnapshot: { type: string, minLength: 1 }
+        bakeryNameSnapshot: { type: string, minLength: 1 }
+        totalAmount: { $ref: '#/components/schemas/Money' }
+        itemCount: { type: integer, minimum: 0 }
+        requestedDeliveryAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    AdminOrderItem:
+      type: object
+      required: [sku, productNameFa, variantNameFa, quantity, unitPrice, lineTotal]
+      properties:
+        sku: { type: string, minLength: 1, maxLength: 64 }
+        productNameFa: { type: string, minLength: 1 }
+        variantNameFa: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 1 }
+        unitPrice: { $ref: '#/components/schemas/Money' }
+        lineTotal: { $ref: '#/components/schemas/Money' }
+    AdminOrderTransition:
+      type: object
+      required: [fromState, toState, reasonCode, occurredAt]
+      properties:
+        fromState:
+          oneOf: [{ $ref: '#/components/schemas/OrderState' }, { type: 'null' }]
+        toState: { $ref: '#/components/schemas/OrderState' }
+        reasonCode: { type: [string, 'null'], maxLength: 64 }
+        occurredAt: { type: string, format: date-time }
+    AdminOrderDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminOrderSummary'
+        - type: object
+          required:
+            [
+              subtotalAmount,
+              deliveryFeeAmount,
+              discountAmount,
+              recipientPhoneSnapshot,
+              deliveryAddressSnapshot,
+              items,
+              transitions,
+              updatedAt,
+            ]
+          properties:
+            subtotalAmount: { $ref: '#/components/schemas/Money' }
+            deliveryFeeAmount: { $ref: '#/components/schemas/Money' }
+            discountAmount: { $ref: '#/components/schemas/Money' }
+            recipientPhoneSnapshot:
+              type: string
+              minLength: 1
+              maxLength: 16
+              description: >-
+                Present on detail only, never in the list. An operator handling a failed
+                delivery has no other way to reach the recipient, but a browsed list has
+                no reason to carry it.
+            deliveryAddressSnapshot: { type: string, minLength: 1 }
+            deliveryInstructionsSnapshot: { type: [string, 'null'] }
+            customerNotes: { type: [string, 'null'] }
+            cancellationReasonCode: { type: [string, 'null'], maxLength: 64 }
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/AdminOrderItem' }
+            transitions:
+              type: array
+              items: { $ref: '#/components/schemas/AdminOrderTransition' }
+            updatedAt: { type: string, format: date-time }
+    AdminOrderDetailEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminOrderDetail' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminOrderPage:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminOrderSummary' }
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/ResponseMeta'
+            - type: object
+              required: [pagination]
+              properties:
+                pagination: { $ref: '#/components/schemas/PaginationMeta' }
     PaymentAttemptSummary:
       type: object
       required:

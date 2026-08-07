@@ -1,4 +1,5 @@
 export * from './admin-providers'
+export * from './admin-reporting'
 export * from './ai-control-plane'
 export * from './ai-observability'
 export * from './ai-sandbox'

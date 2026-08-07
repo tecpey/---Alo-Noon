@@ -76,8 +76,8 @@ describe('derived idempotency key', () => {
 
 describe('provider error translation', () => {
   it('renders a known code in Persian', () => {
-    expect(translateProviderError('PROVIDER_GOVERNANCE_FORBIDDEN', 'ناموفق')).toBe(
-      'این حساب اجازهٔ مدیریت سرویس‌دهنده‌ها را ندارد.',
+    expect(translateProviderError('ADMIN_PERMISSION_DENIED', 'ناموفق')).toBe(
+      'این حساب دسترسی لازم برای این کار را ندارد.',
     )
   })
 
