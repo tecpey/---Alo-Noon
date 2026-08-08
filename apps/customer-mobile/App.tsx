@@ -3,6 +3,7 @@ import * as Location from 'expo-location'
 import { StatusBar } from 'expo-status-bar'
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -17,6 +18,8 @@ import type {
   AddressSummary,
   CartSummary,
   OrderSummary,
+  PaymentExecutionSummary,
+  PaymentSummary,
   ProductSummary,
   QuoteSummary,
   SessionContext,
@@ -65,6 +68,9 @@ export default function App() {
   const [addressCommandKey, setAddressCommandKey] = useState<string>()
   const [quoteCommandKey, setQuoteCommandKey] = useState<string>()
   const [orderCommandKey, setOrderCommandKey] = useState<string>()
+  const [payment, setPayment] = useState<PaymentSummary | null>(null)
+  const [execution, setExecution] = useState<PaymentExecutionSummary | null>(null)
+  const [paymentCommandKey, setPaymentCommandKey] = useState<string>()
   const [phone, setPhone] = useState('')
   const [otpCommand, setOtpCommand] = useState<{ mobileE164: string; idempotencyKey: string }>()
   const [otp, setOtp] = useState('')
@@ -262,6 +268,7 @@ export default function App() {
     setMessage(undefined)
     setQuote(null)
     setOrder(null)
+    resetPayment()
     try {
       const updated = await api.setCartItem(product.offeringId, {
         cityId: selectedCityId,
@@ -283,6 +290,7 @@ export default function App() {
     setMessage(undefined)
     setQuote(null)
     setOrder(null)
+    resetPayment()
     try {
       setCart(await api.removeCartItem(offeringId, cart.version))
     } catch (error) {
@@ -333,6 +341,8 @@ export default function App() {
     try {
       setQuote(await api.createQuote(selectedAddressId, cart.version, idempotencyKey))
       setOrder(null)
+      resetPayment()
+      resetPayment()
       setQuoteCommandKey(undefined)
     } catch (error) {
       handleAuthenticatedError(error)
@@ -357,6 +367,72 @@ export default function App() {
     }
   }
 
+  const resetPayment = () => {
+    setPayment(null)
+    setExecution(null)
+    setPaymentCommandKey(undefined)
+  }
+
+  /**
+   * Opens the payment and asks the gateway for a page to send the customer to.
+   *
+   * Both steps share one idempotency key so a double tap replays onto the same
+   * payment and the same attempt rather than opening a second of either. The
+   * key is only cleared once a URL is in hand: if the second call fails, the
+   * retry must reuse it.
+   */
+  const startPayment = async () => {
+    if (!api || !order || busy) return
+    const idempotencyKey = paymentCommandKey ?? commandKey('mobile-payment')
+    setPaymentCommandKey(idempotencyKey)
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      const opened = payment ?? (await api.startPayment(order.id, idempotencyKey))
+      setPayment(opened)
+      const result = await api.initializePayment(opened.id, idempotencyKey)
+      setExecution(result)
+      if (result.customerAction) {
+        setPaymentCommandKey(undefined)
+        await Linking.openURL(result.customerAction.url)
+      } else {
+        // No page to send them to means the gateway refused before the customer
+        // ever saw it. Its own message is the useful one when there is one.
+        setMessage(
+          result.failure?.customerMessageKey
+            ? customerCopy.paymentRefused
+            : customerCopy.paymentUnavailable,
+        )
+      }
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Asks the API what actually happened, after the customer comes back.
+   *
+   * Deliberately not driven by the return URL: every parameter on it is
+   * attacker-controllable, and the verdict comes from the gateway's own
+   * server-to-server answer. Settlement may not have finished when they return,
+   * which is why this is a button they can press again rather than a one-shot
+   * read.
+   */
+  const refreshPayment = async () => {
+    if (!api || !payment || busy) return
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      setPayment(await api.readPayment(payment.id))
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const logout = async () => {
     if (!api || busy) return
     setBusy(true)
@@ -371,6 +447,8 @@ export default function App() {
       setCart(null)
       setQuote(null)
       setOrder(null)
+      resetPayment()
+      resetPayment()
       setAddresses([])
       setSelectedAddressId(undefined)
       setCoordinates(undefined)
@@ -397,6 +475,8 @@ export default function App() {
       setCart(null)
       setQuote(null)
       setOrder(null)
+      resetPayment()
+      resetPayment()
       setAddresses([])
       setSelectedAddressId(undefined)
       setCoordinates(undefined)
@@ -548,11 +628,15 @@ export default function App() {
               cart={cart}
               quote={quote}
               order={order}
+              payment={payment}
+              awaitingReturn={Boolean(execution?.customerAction)}
               addressSelected={Boolean(selectedAddressId)}
               busy={busy}
               onRemove={(offeringId) => void removeCartItem(offeringId)}
               onQuote={() => void createQuote()}
               onOrder={() => void createOrder()}
+              onPay={() => void startPayment()}
+              onRefreshPayment={() => void refreshPayment()}
             />
           )}
           {message && <InlineMessage text={message} />}
@@ -564,6 +648,8 @@ export default function App() {
               setOperationalZoneId(undefined)
               setQuote(null)
               setOrder(null)
+              resetPayment()
+              resetPayment()
               setScreen('location')
             }}
           >
@@ -800,20 +886,29 @@ function CartCard({
   cart,
   quote,
   order,
+  payment,
+  awaitingReturn,
   addressSelected,
   busy,
   onRemove,
   onQuote,
   onOrder,
+  onPay,
+  onRefreshPayment,
 }: {
   cart: CartSummary
   quote: QuoteSummary | null
   order: OrderSummary | null
+  payment: PaymentSummary | null
+  /** True once the customer has been handed a gateway page to open. */
+  awaitingReturn: boolean
   addressSelected: boolean
   busy: boolean
   onRemove: (offeringId: string) => void
   onQuote: () => void
   onOrder: () => void
+  onPay: () => void
+  onRefreshPayment: () => void
 }) {
   return (
     <View style={styles.cartCard}>
@@ -870,13 +965,46 @@ function CartCard({
         <View accessibilityLiveRegion="polite" style={styles.orderConfirmation}>
           <Text style={styles.quoteTitle}>سفارش با موفقیت ثبت شد</Text>
           <Text style={styles.quoteMeta}>شماره سفارش: {order.publicId}</Text>
-          <Text style={styles.quoteMeta}>وضعیت: در انتظار تأیید</Text>
+          <Text style={styles.quoteMeta}>وضعیت: {PAYMENT_STATE_FA[payment?.state ?? 'NONE']}</Text>
           <Text style={styles.quoteTotal}>{formatRials(order.total.amount)}</Text>
-          <Text style={styles.quoteNotice}>پرداخت هنوز آغاز نشده است.</Text>
+
+          {payment?.state === 'CAPTURED' ? (
+            <Text style={styles.quoteNotice}>پرداخت شما تأیید شد.</Text>
+          ) : (
+            <>
+              {awaitingReturn && (
+                <Text style={styles.quoteNotice}>{customerCopy.paymentReturn}</Text>
+              )}
+              <PrimaryButton
+                label={awaitingReturn ? 'پرداخت دوباره' : 'پرداخت'}
+                busy={busy}
+                onPress={onPay}
+              />
+              {payment && (
+                <PrimaryButton label="بررسی وضعیت پرداخت" busy={busy} onPress={onRefreshPayment} />
+              )}
+            </>
+          )}
         </View>
       )}
     </View>
   )
+}
+
+/**
+ * What a payment state means to the person who just paid.
+ *
+ * `AUTHORIZED` is not "paid": the gateway has agreed but the money has not been
+ * captured, and telling a customer they are done before it has would be a lie
+ * the ledger disagrees with.
+ */
+const PAYMENT_STATE_FA: Readonly<Record<string, string>> = {
+  NONE: 'در انتظار پرداخت',
+  CREATED: 'در انتظار پرداخت',
+  PENDING: 'در حال بررسی با درگاه',
+  AUTHORIZED: 'در حال بررسی با درگاه',
+  CAPTURED: 'پرداخت‌شده',
+  FAILED: 'پرداخت ناموفق',
 }
 
 function InlineMessage({ text }: { text: string }) {

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { isoDateTimeSchema, moneySchema, uuidSchema } from './common'
+import { isoDateTimeSchema, moneySchema, responseMetaSchema, uuidSchema } from './common'
 
 export const paymentAggregateStateSchema = z.enum([
   'CREATED',
@@ -66,6 +66,28 @@ export const paymentSummarySchema = z.object({
   updatedAt: isoDateTimeSchema,
 })
 export type PaymentSummary = z.infer<typeof paymentSummarySchema>
+
+/**
+ * Opening a payment for an order the caller owns.
+ *
+ * Carries only the order and an idempotency key: the amount comes from the
+ * order's own total, never from the request, because a client-supplied amount
+ * is a client-chosen price.
+ */
+export const paymentCheckoutStartSchema = z
+  .object({
+    orderId: uuidSchema,
+    idempotencyKey: z.string().min(16).max(128),
+  })
+  .strict()
+export type PaymentCheckoutStart = z.infer<typeof paymentCheckoutStartSchema>
+
+export const paymentEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: paymentSummarySchema,
+  meta: responseMetaSchema,
+})
+export type PaymentEnvelopeContract = z.infer<typeof paymentEnvelopeSchema>
 
 export const ledgerEntrySummarySchema = z.object({
   id: uuidSchema,

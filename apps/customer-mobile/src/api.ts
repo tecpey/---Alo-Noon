@@ -8,6 +8,8 @@ import {
   otpRequestEnvelopeSchema,
   quoteEnvelopeSchema,
   orderEnvelopeSchema,
+  paymentEnvelopeSchema,
+  paymentExecutionEnvelopeSchema,
   serviceabilityEnvelopeSchema,
   sessionEnvelopeSchema,
   type ActiveCitySummary,
@@ -18,6 +20,8 @@ import {
   type ProductSummary,
   type QuoteSummary,
   type OrderSummary,
+  type PaymentExecutionSummary,
+  type PaymentSummary,
   type ServiceabilityResponse,
   type SessionContext,
 } from '@alo-noon/contracts'
@@ -69,6 +73,27 @@ export interface CustomerApiClient {
     idempotencyKey: string,
   ): Promise<QuoteSummary>
   createOrder(quoteId: string, idempotencyKey: string): Promise<OrderSummary>
+  /**
+   * Opens the payment for a placed order. The amount is never sent — it comes
+   * from the order's own total, because a client-supplied amount would be a
+   * client-chosen price.
+   */
+  startPayment(orderId: string, idempotencyKey: string): Promise<PaymentSummary>
+  /**
+   * Asks the gateway for a page to send the customer to. `customerAction.url`
+   * is where they go; a result without one means the gateway refused before the
+   * customer ever saw it.
+   */
+  initializePayment(paymentId: string, idempotencyKey: string): Promise<PaymentExecutionSummary>
+  /**
+   * Reads a payment back after the customer returns from the gateway.
+   *
+   * The return redirect proves nothing — every parameter on it is
+   * attacker-controllable, and settlement decides from the gateway's own
+   * server-to-server answer — so the screen asks the API what happened rather
+   * than believing the URL it landed on.
+   */
+  readPayment(paymentId: string): Promise<PaymentSummary>
 }
 
 export function createCustomerApiClient(
@@ -173,6 +198,18 @@ export function createCustomerApiClient(
         method: 'POST',
         body: JSON.stringify({ quoteId, idempotencyKey }),
       }),
+    startPayment: async (orderId, idempotencyKey) =>
+      request('/api/v1/payments', paymentEnvelopeSchema, {
+        method: 'POST',
+        body: JSON.stringify({ orderId, idempotencyKey }),
+      }),
+    initializePayment: async (paymentId, idempotencyKey) =>
+      request('/api/v1/payments/initialize', paymentExecutionEnvelopeSchema, {
+        method: 'POST',
+        body: JSON.stringify({ paymentId, idempotencyKey }),
+      }),
+    readPayment: async (paymentId) =>
+      request(`/api/v1/payments/${encodeURIComponent(paymentId)}`, paymentEnvelopeSchema),
   }
 }
 

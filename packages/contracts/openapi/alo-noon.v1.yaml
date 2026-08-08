@@ -10,8 +10,10 @@ info:
     internal; the versioned tenant chart of accounts and governed account state
     foundation are implemented. The tenant-scoped, SPI-versioned payment-provider abstraction,
     opaque credential-reference, payment-attempt, and callback replay foundation
-    are implemented without a real gateway adapter. No public payment-status or ledger-governance
-    write endpoint is exposed. The authenticated initialization orchestrator is implemented as an
+    are implemented without a real gateway adapter. A customer may open the payment for an
+    order they own and read it back, and nothing more: no public endpoint lets a client name
+    a payment amount or assert a payment state, and no ledger-governance write endpoint is
+    exposed at all. The authenticated initialization orchestrator is implemented as an
     injectable, fail-closed boundary. Gateway callbacks are recorded and then settled by
     server-to-server verification: a payment is captured, posted to the double-entry ledger,
     and marked paid on its order only when the gateway confirms it for the exact expected
@@ -316,6 +318,61 @@ paths:
         '404': { description: Quote is not available to the caller. }
         '409': { description: Quote or idempotency/concurrency conflict. }
         '422': { description: Snapshot, pricing, branch, or capacity is unavailable. }
+  /api/v1/payments:
+    post:
+      operationId: startPayment
+      summary: Open the payment for an order the caller owns.
+      description: >-
+        The amount is never sent — it comes from the order's own total, because a
+        client-supplied amount would be a client-chosen price. The payment is opened in
+        CREATED and stays there: settlement walks it to PENDING, AUTHORIZED and captured
+        when the gateway confirms, and letting a customer request any of those would be
+        letting them assert they had paid. Replaying the same idempotency key returns the
+        same payment rather than opening a second.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentCheckoutStart' }
+      responses:
+        '201':
+          description: The opened payment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentEnvelope' }
+        '400': { description: The request is malformed. }
+        '401': { description: A valid customer session is required. }
+        '404': { description: No such order for this customer. }
+        '409': { description: This order already has a payment. }
+        '422': { description: The order cannot be paid in its current state. }
+        '503': { description: Payments are temporarily unavailable. }
+  /api/v1/payments/{paymentId}:
+    get:
+      operationId: readPayment
+      summary: Read a payment back, after returning from the gateway.
+      description: >-
+        The screen a gateway returns to needs this. The return redirect proves nothing on
+        its own — every parameter on it is attacker-controllable, and the verdict comes
+        from the gateway's own server-to-server answer — so the app asks what actually
+        happened rather than believing the URL it landed on. Settlement may not have
+        finished when the customer returns, so a state short of CAPTURED is a reason to
+        ask again, not a failure.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The payment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentEnvelope' }
+        '401': { description: A valid customer session is required. }
+        '404': { description: No such payment for this customer. }
+        '503': { description: Payments are temporarily unavailable. }
   /api/v1/payments/initialize:
     post:
       operationId: initializePaymentExecution
@@ -2623,6 +2680,20 @@ components:
       properties:
         paymentId: { type: string, format: uuid }
         idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    PaymentCheckoutStart:
+      type: object
+      additionalProperties: false
+      required: [orderId, idempotencyKey]
+      properties:
+        orderId: { type: string, format: uuid }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    PaymentEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/PaymentSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentExecutionSummary:
       type: object
       required:

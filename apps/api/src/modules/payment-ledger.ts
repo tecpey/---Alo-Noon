@@ -73,6 +73,18 @@ export interface PaymentLedgerService {
     now: Date,
     correlationId: string,
   ): Promise<PaymentCaptureResult>
+  /**
+   * Reads a payment back for the customer who owns it.
+   *
+   * The screen a gateway returns to needs this: the return redirect proves
+   * nothing — settlement decides from the gateway's own answer — so the app
+   * asks what actually happened rather than trusting the URL it landed on.
+   */
+  findForCustomer(
+    tenantId: string,
+    customerId: string,
+    paymentId: string,
+  ): Promise<PaymentSummary | null>
 }
 
 export interface PrismaPaymentLedgerOptions {
@@ -280,6 +292,25 @@ export function createPrismaPaymentLedgerService(
         await options.beforeCommit?.(transaction)
         return mapPayment(await loadPayment(transaction, tenantId, payment.id))
       })
+    },
+
+    async findForCustomer(tenantId, customerId, paymentId) {
+      // A read, so ReadCommitted: polling the return screen must never contend
+      // with the settlement that is trying to capture the same payment.
+      return prisma.$transaction(
+        async (transaction) => {
+          await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+          // ownership-established: filtered on the session's customerId, so a
+          // payment belonging to anyone else reads as absent rather than as a
+          // refusal that confirms it exists.
+          const payment = await transaction.payment.findFirst({
+            where: { id: paymentId, tenantId, customerId },
+            include: paymentInclude,
+          })
+          return payment ? mapPayment(payment) : null
+        },
+        { isolationLevel: 'ReadCommitted' },
+      )
     },
 
     async capture(tenantId, command, now, correlationId) {

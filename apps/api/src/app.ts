@@ -33,6 +33,10 @@ import {
   type PaymentCallbackDependencies,
 } from './modules/payment-callback.js'
 import {
+  registerPaymentCheckoutRoutes,
+  type PaymentCheckoutDependencies,
+} from './modules/payment-checkout.js'
+import {
   registerAdminProviderRoutes,
   type AdminProviderDependencies,
 } from './modules/admin-providers.js'
@@ -61,6 +65,7 @@ export interface AppOptions {
   orderRepository?: OrderRepository
   paymentExecutionService?: PaymentExecutionService
   paymentCallback?: Omit<PaymentCallbackDependencies, 'auth'>
+  paymentCheckout?: Omit<PaymentCheckoutDependencies, 'auth'>
   adminProviders?: Omit<AdminProviderDependencies, 'auth'>
   adminReporting?: Omit<AdminReportingDependencies, 'auth'>
   adminCatalog?: Omit<AdminCatalogDependencies, 'auth'>
@@ -168,6 +173,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       service: options.paymentExecutionService,
       auth: options.auth,
     })
+  }
+  if (options.auth && options.paymentCheckout) {
+    registerPaymentCheckoutRoutes(app, { ...options.paymentCheckout, auth: options.auth })
   }
   if (options.auth && options.paymentCallback) {
     registerPaymentCallbackRoutes(app, { ...options.paymentCallback, auth: options.auth })

@@ -133,12 +133,19 @@ const systemProviderService = createPrismaPaymentProviderService(prisma, {
   allowSystemOperations: true,
   adapterRegistry: paymentProviderAdapterRegistry,
 })
+// One ledger service, shared: settlement walks a payment to captured, and the
+// customer-facing checkout opens it in the first place. Two instances would be
+// two retry budgets over the same rows for no reason.
+const paymentLedgerService = createPrismaPaymentLedgerService(prisma)
+
 const paymentSettlementService = createPrismaPaymentSettlementService(prisma, {
   adapterRegistry: paymentProviderAdapterRegistry,
   secretResolver: createPaymentSecretResolver(process.env, env.PAYMENT_SECRET_ENCRYPTION_KEY),
-  ledgerService: createPrismaPaymentLedgerService(prisma),
+  ledgerService: paymentLedgerService,
   providerService: systemProviderService,
 })
+
+const paymentCheckout = { service: paymentLedgerService }
 
 const paymentCallback = env.PAYMENT_RESULT_REDIRECT_URL
   ? {
@@ -194,6 +201,7 @@ const app = await buildApp({
   addressRepository: createPrismaAddressRepository(prisma),
   orderRepository: createPrismaOrderRepository(prisma),
   paymentExecutionService,
+  paymentCheckout,
   ...(paymentCallback && { paymentCallback }),
   adminProviders,
   adminReporting,
