@@ -937,6 +937,95 @@ paths:
         '409': { description: The variant or product is not active, or the offering is retired. }
         '422': { description: Stock on hand must be set exactly when stock is tracked. }
         '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/access/roles:
+    get:
+      operationId: listAdminAccessRoles
+      summary: The role catalogue, marked with what this caller may grant.
+      description: >-
+        `grantable` is false when the role carries a permission the caller does not itself
+        hold. Roles are still listed, so an operator can see what they would need rather
+        than wondering why a role is missing.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every admin role.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoleListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage staff access. }
+  /api/v1/admin/access/staff:
+    get:
+      operationId: listAdminStaff
+      summary: Accounts in this tenant that hold, or have held, an admin role.
+      description: >-
+        Deliberately not every tenant member. The tenant's customers are identity accounts
+        too, and listing them here would turn an access screen into a customer directory.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Staff accounts with their live grants.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffMemberListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage staff access. }
+        '503': { description: Access management is temporarily unavailable. }
+  /api/v1/admin/access/grants:
+    post:
+      operationId: grantAdminRole
+      summary: Grant a role to a mobile number.
+      description: >-
+        Refused when the role carries any permission the caller does not hold, measured
+        against live grant rows rather than the caller's session. The target must have
+        signed in once with that number — signing in is what creates the account and what
+        proves whoever holds the number asked to be here. Re-granting a role someone
+        already holds is a no-op, not an error.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantRoleCommand' }
+      responses:
+        '201':
+          description: The staff member, with their grants after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffMemberEnvelope' }
+        '400': { description: The command is malformed, or names an unknown role. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage access, or the role exceeds its own. }
+        '404': { description: No account for that number. }
+        '409': { description: That account is not active, or not a member of this tenant. }
+        '503': { description: Access management is temporarily unavailable. }
+  /api/v1/admin/access/revocations:
+    post:
+      operationId: revokeAdminRole
+      summary: Revoke a role grant.
+      description: >-
+        Measured by the same yardstick as granting: revoking a role the caller could not
+        have granted is refused, because otherwise a narrow operator could strip every
+        wider one and be left alone in the tenant. An account cannot revoke its own grant —
+        recovering from that needs shell access to the database server.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RevokeRoleCommand' }
+      responses:
+        '200':
+          description: The staff member, with their grants after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffMemberEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage access, or the role exceeds its own. }
+        '404': { description: No such grant in this tenant. }
+        '409': { description: An account cannot revoke its own access. }
+        '503': { description: Access management is temporarily unavailable. }
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -2254,6 +2343,81 @@ components:
               required: [pagination]
               properties:
                 pagination: { $ref: '#/components/schemas/PaginationMeta' }
+    AdminRoleSummary:
+      type: object
+      required: [code, name, permissions, grantable]
+      properties:
+        code: { type: string, maxLength: 64 }
+        name: { type: string, maxLength: 120 }
+        permissions: { type: array, items: { type: string, maxLength: 100 } }
+        grantable:
+          type: boolean
+          description: False when the role carries a permission the caller does not hold.
+    StaffMember:
+      type: object
+      required: [accountId, mobileE164, status, roles, permissions, isSelf]
+      properties:
+        accountId: { type: string, format: uuid }
+        mobileE164: { type: string, maxLength: 16 }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, CLOSED] }
+        roles:
+          type: array
+          items:
+            type: object
+            required: [grantId, code, name, grantedAt, expiresAt]
+            properties:
+              grantId: { type: string, format: uuid }
+              code: { type: string, maxLength: 64 }
+              name: { type: string, maxLength: 120 }
+              grantedAt: { type: string, format: date-time }
+              expiresAt: { type: [string, 'null'], format: date-time }
+        permissions:
+          type: array
+          items: { type: string, maxLength: 100 }
+          description: Union of every permission this account's live grants carry.
+        isSelf:
+          type: boolean
+          description: True for the account making the request, which may not revoke itself.
+    GrantRoleCommand:
+      type: object
+      additionalProperties: false
+      required: [mobileE164, roleCode, reason]
+      properties:
+        mobileE164: { type: string, pattern: '^\+989\d{9}$' }
+        roleCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$' }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    RevokeRoleCommand:
+      type: object
+      additionalProperties: false
+      required: [grantId, reason]
+      properties:
+        grantId: { type: string, format: uuid }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminRoleListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminRoleSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    StaffMemberEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/StaffMember' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    StaffMemberListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/StaffMember' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentAttemptSummary:
       type: object
       required:

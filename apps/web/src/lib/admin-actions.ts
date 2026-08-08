@@ -503,3 +503,57 @@ function splitList(raw: string): string[] {
     .filter((entry) => entry.length > 0)
     .slice(0, 50)
 }
+
+// ---------------------------------------------------------------------------
+// Staff access
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalises a mobile number typed however the operator types it — Persian
+ * digits, a leading zero, spaces — into the +989xxxxxxxxx form the API takes.
+ * Anything that does not land on exactly that shape is refused rather than
+ * patched into something plausible: granting a role to the wrong number is not
+ * a mistake worth guessing at.
+ */
+function mobileField(form: FormData, name: string): string | null {
+  const latin = field(form, name)
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+    .replace(/[\s-]/g, '')
+  const normalised = latin.startsWith('09')
+    ? `+98${latin.slice(1)}`
+    : latin.startsWith('989')
+      ? `+${latin}`
+      : latin
+  return /^\+989\d{9}$/.test(normalised) ? normalised : null
+}
+
+export async function grantRoleAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const mobileE164 = mobileField(form, 'mobileE164')
+  if (!mobileE164) return failure('شمارهٔ موبایل باید به شکل ۰۹xxxxxxxxx باشد.')
+
+  const result = await post<{ mobileE164: string }>('/api/v1/admin/access/grants', {
+    mobileE164,
+    roleCode: field(form, 'roleCode'),
+    reason: field(form, 'reason') || 'اعطای دسترسی از پنل مدیریت',
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'اعطای نقش ناموفق بود.'))
+  revalidatePath('/admin/access')
+  return success('نقش داده شد. تغییر بلافاصله اثر می‌کند.')
+}
+
+export async function revokeRoleAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const result = await post('/api/v1/admin/access/revocations', {
+    grantId: field(form, 'grantId'),
+    reason: field(form, 'reason') || 'لغو دسترسی از پنل مدیریت',
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'لغو نقش ناموفق بود.'))
+  revalidatePath('/admin/access')
+  return success('نقش لغو شد.')
+}

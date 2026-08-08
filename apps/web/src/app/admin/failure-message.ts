@@ -16,9 +16,12 @@ export function readFailureMessage(code: string): string {
       return 'ارتباط با سرویس برقرار نشد.'
     case 'CATALOG_OPERATION_FORBIDDEN':
       return 'این حساب اجازهٔ مدیریت کاتالوگ را ندارد. دسترسی باید روی حساب شما ثبت شود.'
+    case 'ACCESS_OPERATION_FORBIDDEN':
+      return 'این حساب اجازهٔ مدیریت دسترسی‌ها را ندارد. این دسترسی عمداً جدا نگه داشته می‌شود.'
     case 'REPORTING_UNAVAILABLE':
     case 'PROVIDER_GOVERNANCE_UNAVAILABLE':
     case 'CATALOG_UNAVAILABLE':
+    case 'ACCESS_UNAVAILABLE':
       return 'سرویس موقتاً در دسترس نیست. کمی بعد دوباره تلاش کنید.'
     case 'REPORT_RANGE_TOO_WIDE':
       return 'بازهٔ انتخابی بیش از حد طولانی است.'

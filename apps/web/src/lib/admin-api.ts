@@ -380,3 +380,37 @@ export async function listCatalogOfferings(
 export async function revokeSession(): Promise<void> {
   await request('/api/v1/auth/session', { method: 'DELETE' })
 }
+
+// ---------------------------------------------------------------------------
+// Staff access
+// ---------------------------------------------------------------------------
+
+export interface AdminRoleSummary {
+  code: string
+  name: string
+  permissions: string[]
+  grantable: boolean
+}
+
+export interface StaffMember {
+  accountId: string
+  mobileE164: string
+  status: string
+  roles: Array<{
+    grantId: string
+    code: string
+    name: string
+    grantedAt: string
+    expiresAt: string | null
+  }>
+  permissions: string[]
+  isSelf: boolean
+}
+
+export async function listAccessRoles(): Promise<ApiResult<AdminRoleSummary[]>> {
+  return request<AdminRoleSummary[]>('/api/v1/admin/access/roles', { method: 'GET' })
+}
+
+export async function listStaff(): Promise<ApiResult<StaffMember[]>> {
+  return request<StaffMember[]>('/api/v1/admin/access/staff', { method: 'GET' })
+}

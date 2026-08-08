@@ -43,6 +43,10 @@ const ADMIN_OPERATIONS: ReadonlyArray<{
   { path: '/api/v1/admin/catalog/branches', methods: ['GET'] },
   { path: '/api/v1/admin/catalog/offerings', methods: ['GET', 'POST'] },
   { path: '/api/v1/admin/catalog/offerings/{offeringId}', methods: ['PATCH'] },
+  { path: '/api/v1/admin/access/roles', methods: ['GET'] },
+  { path: '/api/v1/admin/access/staff', methods: ['GET'] },
+  { path: '/api/v1/admin/access/grants', methods: ['POST'] },
+  { path: '/api/v1/admin/access/revocations', methods: ['POST'] },
 ]
 
 /** The contiguous block of admin paths, which the spec keeps together. */
@@ -123,6 +127,7 @@ describe('admin OpenAPI boundary', () => {
       },
       adminReporting: { service: {} as never },
       adminCatalog: { service: {} as never },
+      adminAccess: { service: {} as never },
     })
 
     try {

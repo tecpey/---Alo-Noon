@@ -8,6 +8,7 @@ const SECTIONS = [
   { href: '/admin/catalog', label: 'کاتالوگ' },
   { href: '/admin/pricing', label: 'قیمت‌گذاری' },
   { href: '/admin/providers', label: 'سرویس‌دهنده‌ها' },
+  { href: '/admin/access', label: 'دسترسی‌ها' },
 ] as const
 
 /**

@@ -60,6 +60,19 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   INVALID_PRODUCT_COMMAND: 'مقادیر فرم معتبر نیست.',
   INVALID_VARIANT_COMMAND: 'مقادیر فرم معتبر نیست.',
   INVALID_OFFERING_COMMAND: 'مقادیر فرم معتبر نیست.',
+  ACCESS_OPERATION_FORBIDDEN: 'این حساب اجازهٔ مدیریت دسترسی‌ها را ندارد.',
+  ACCESS_UNAVAILABLE: 'سرویس مدیریت دسترسی موقتاً در دسترس نیست.',
+  ACCESS_WRITE_CONFLICT: 'تغییر دیگری زودتر ثبت شد. صفحه را تازه کنید.',
+  ROLE_UNKNOWN: 'چنین نقشی وجود ندارد.',
+  ROLE_EXCEEDS_GRANTER:
+    'این نقش دسترسی‌ای دارد که حساب شما ندارد؛ نمی‌توانید آن را بدهید یا بگیرید.',
+  ACCOUNT_NOT_FOUND: 'حسابی با این شماره نیست. اول یک بار با همان شماره وارد شوند.',
+  ACCOUNT_NOT_ACTIVE: 'این حساب فعال نیست.',
+  ACCOUNT_NOT_IN_TENANT: 'این حساب عضو این tenant نیست.',
+  GRANT_NOT_FOUND: 'این دسترسی یافت نشد.',
+  CANNOT_REVOKE_SELF: 'حساب نمی‌تواند دسترسی خودش را لغو کند.',
+  INVALID_GRANT_COMMAND: 'مقادیر فرم معتبر نیست.',
+  INVALID_REVOKE_COMMAND: 'مقادیر فرم معتبر نیست.',
 }
 
 /**
