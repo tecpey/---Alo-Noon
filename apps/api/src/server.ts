@@ -24,6 +24,7 @@ import {
   createPrismaAuthenticationDeliveryService,
 } from './modules/auth-delivery.js'
 import { createPrismaAdminReportingService } from './modules/admin-reporting.js'
+import { createPrismaAdminFinancialReportingService } from './modules/admin-financial-reporting.js'
 import { createPrismaAdminCatalogService } from './modules/admin-catalog.js'
 import { createPrismaAdminAccessService } from './modules/admin-access.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
@@ -161,7 +162,10 @@ const adminProviders = {
 
 // Read-only, and gated on its own permissions, so it shares no service instance
 // with the governance path above.
-const adminReporting = { service: createPrismaAdminReportingService(prisma) }
+const adminReporting = {
+  service: createPrismaAdminReportingService(prisma),
+  financialService: createPrismaAdminFinancialReportingService(prisma),
+}
 
 // Catalogue writes re-check the acting account's permission inside their own
 // transaction, so this instance carries no ambient authority of its own.

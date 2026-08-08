@@ -33,6 +33,7 @@ const ADMIN_OPERATIONS: ReadonlyArray<{
     methods: ['POST'],
   },
   { path: '/api/v1/admin/reports/sales', methods: ['GET'] },
+  { path: '/api/v1/admin/reports/financial', methods: ['GET'] },
   { path: '/api/v1/admin/orders', methods: ['GET'] },
   { path: '/api/v1/admin/orders/{orderId}', methods: ['GET'] },
   { path: '/api/v1/admin/catalog/categories', methods: ['GET', 'POST'] },
@@ -125,7 +126,7 @@ describe('admin OpenAPI boundary', () => {
         paymentProviderService: {} as never,
         authDeliveryProviderService: {} as never,
       },
-      adminReporting: { service: {} as never },
+      adminReporting: { service: {} as never, financialService: {} as never },
       adminCatalog: { service: {} as never },
       adminAccess: { service: {} as never },
     })
@@ -138,7 +139,7 @@ describe('admin OpenAPI boundary', () => {
           .replace('{productId}', 'p1')
           .replace('{variantId}', 'v1')
           .replace('{offeringId}', 'f1')
-          .concat(operation.path.endsWith('reports/sales') ? '?from=x&to=y' : '')
+          .concat(operation.path.includes('/reports/') ? '?from=x&to=y' : '')
         for (const method of operation.methods) {
           const response = await app.inject({ method, url, payload: {} })
           expect(`${method} ${operation.path} -> ${response.statusCode}`).toBe(

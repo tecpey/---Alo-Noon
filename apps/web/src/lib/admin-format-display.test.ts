@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  formatSignedMoney,
   formatCount,
   formatDate,
   formatMoney,
@@ -88,5 +89,12 @@ describe('state labels', () => {
 
   it('shows an unknown state verbatim rather than hiding a schema change', () => {
     expect(label(ORDER_STATE_LABELS, 'SOME_NEW_STATE')).toBe('SOME_NEW_STATE')
+  })
+
+  it('keeps the sign on money that may legitimately be negative', () => {
+    expect(formatSignedMoney({ amount: '-250000', currency: 'IRR' })).toContain('−')
+    expect(formatSignedMoney({ amount: '250000', currency: 'IRR' })).not.toContain('−')
+    // A gap of zero is neither a surplus nor a shortfall.
+    expect(formatSignedMoney({ amount: '0', currency: 'IRR' })).toBe('۰ ریال')
   })
 })

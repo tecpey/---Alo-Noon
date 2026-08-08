@@ -562,6 +562,39 @@ paths:
         '403': { description: The account may not read reports. }
         '422': { description: The reporting range covers too long a period. }
         '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/reports/financial:
+    get:
+      operationId: getAdminFinancialReport
+      summary: Trial balance, settlement reconciliation, and gateway funnel.
+      description: >-
+        Three questions answered separately because they fail separately: whether the
+        ledger balances, whether the money customers paid actually arrived, and which
+        gateway is failing. The trial balance is cumulative as of the range's end rather
+        than confined to it — a balance for one week in isolation omits everything carried
+        in — while settlement and funnel figures cover the range itself. Paid orders are
+        dated by the capture that paid them, not by the order's own `updatedAt`, which is
+        auto-managed and would move an order into whatever period it was last edited in.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: The financial position and settlement state for the period.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinancialReportEnvelope' }
+        '400': { description: The reporting range is malformed or inverted. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not read reports. }
+        '422': { description: The reporting range covers too long a period. }
+        '503': { description: Reporting is temporarily unavailable. }
   /api/v1/admin/orders:
     get:
       operationId: listAdminOrders
@@ -2417,6 +2450,136 @@ components:
         data:
           type: array
           items: { $ref: '#/components/schemas/StaffMember' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    SignedMoney:
+      type: object
+      required: [amount, currency]
+      description: Money that may legitimately be negative — a ledger balance, or a gap.
+      properties:
+        amount: { type: string, pattern: '^-?\d+$' }
+        currency: { type: string, enum: [IRR] }
+    TrialBalanceRow:
+      type: object
+      required: [accountCode, accountName, accountType, debits, credits, balance, entryCount]
+      properties:
+        accountCode: { type: string, maxLength: 64 }
+        accountName: { type: string }
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        debits: { $ref: '#/components/schemas/Money' }
+        credits: { $ref: '#/components/schemas/Money' }
+        balance:
+          allOf:
+            - $ref: '#/components/schemas/SignedMoney'
+            - description: >-
+                Signed by what the account type means: assets and expenses are positive
+                when debited, everything else when credited.
+        entryCount: { type: integer, minimum: 0 }
+    TrialBalance:
+      type: object
+      required: [asOf, rows, totalDebits, totalCredits, balanced]
+      properties:
+        asOf: { type: string, format: date-time }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/TrialBalanceRow' }
+        totalDebits: { $ref: '#/components/schemas/Money' }
+        totalCredits: { $ref: '#/components/schemas/Money' }
+        balanced:
+          type: boolean
+          description: >-
+            False means a posting landed with unequal sides, which database constraints
+            are meant to make impossible. Surfaced rather than asserted, because an
+            operator finding out beats a report that refuses to render.
+    SettlementReconciliation:
+      type: object
+      required:
+        [
+          capturedValue,
+          capturedCount,
+          paidOrders,
+          paidOrderValue,
+          captureToOrderGap,
+          paymentsByState,
+          receipts,
+        ]
+      properties:
+        capturedValue: { $ref: '#/components/schemas/Money' }
+        capturedCount: { type: integer, minimum: 0 }
+        paidOrders: { type: integer, minimum: 0 }
+        paidOrderValue: { $ref: '#/components/schemas/Money' }
+        captureToOrderGap:
+          allOf:
+            - $ref: '#/components/schemas/SignedMoney'
+            - description: >-
+                Non-zero means money moved that the order side does not acknowledge.
+        paymentsByState:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        receipts:
+          type: object
+          required: [total, awaitingProcessing, processed, rejected, oldestAwaitingAt]
+          properties:
+            total: { type: integer, minimum: 0 }
+            awaitingProcessing:
+              type: integer
+              minimum: 0
+              description: Received but not yet settled — the recovery sweep's backlog.
+            processed: { type: integer, minimum: 0 }
+            rejected:
+              type: integer
+              minimum: 0
+              description: >-
+                Refused settlement. Each is either an attack or a bug; the reason is on
+                the audit trail under payment.callback_settlement_decided.
+            oldestAwaitingAt: { type: [string, 'null'], format: date-time }
+    ProviderFunnelRow:
+      type: object
+      required:
+        [
+          providerCode,
+          environment,
+          attempts,
+          verified,
+          rejected,
+          failed,
+          inFlight,
+          verificationRate,
+        ]
+      properties:
+        providerCode: { type: string, maxLength: 64 }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        attempts: { type: integer, minimum: 0 }
+        verified: { type: integer, minimum: 0 }
+        rejected: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        inFlight:
+          type: integer
+          minimum: 0
+          description: Started but not concluded — still mid-flight, or abandoned.
+        verificationRate: { type: [number, 'null'], minimum: 0, maximum: 1 }
+    FinancialReport:
+      type: object
+      required: [range, trialBalance, settlement, providers]
+      properties:
+        range:
+          type: object
+          required: [from, to]
+          properties:
+            from: { type: string, format: date-time }
+            to: { type: string, format: date-time }
+        trialBalance: { $ref: '#/components/schemas/TrialBalance' }
+        settlement: { $ref: '#/components/schemas/SettlementReconciliation' }
+        providers:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderFunnelRow' }
+    FinancialReportEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/FinancialReport' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentAttemptSummary:
       type: object

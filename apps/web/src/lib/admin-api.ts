@@ -414,3 +414,66 @@ export async function listAccessRoles(): Promise<ApiResult<AdminRoleSummary[]>> 
 export async function listStaff(): Promise<ApiResult<StaffMember[]>> {
   return request<StaffMember[]>('/api/v1/admin/access/staff', { method: 'GET' })
 }
+
+// ---------------------------------------------------------------------------
+// Financial reporting
+// ---------------------------------------------------------------------------
+
+export interface SignedMoney {
+  amount: string
+  currency: 'IRR'
+}
+
+export interface FinancialReport {
+  range: { from: string; to: string }
+  trialBalance: {
+    asOf: string
+    rows: Array<{
+      accountCode: string
+      accountName: string
+      accountType: string
+      debits: Money
+      credits: Money
+      balance: SignedMoney
+      entryCount: number
+    }>
+    totalDebits: Money
+    totalCredits: Money
+    balanced: boolean
+  }
+  settlement: {
+    capturedValue: Money
+    capturedCount: number
+    paidOrders: number
+    paidOrderValue: Money
+    captureToOrderGap: SignedMoney
+    paymentsByState: Record<string, number>
+    receipts: {
+      total: number
+      awaitingProcessing: number
+      processed: number
+      rejected: number
+      oldestAwaitingAt: string | null
+    }
+  }
+  providers: Array<{
+    providerCode: string
+    environment: string
+    attempts: number
+    verified: number
+    rejected: number
+    failed: number
+    inFlight: number
+    verificationRate: number | null
+  }>
+}
+
+export async function readFinancialReport(
+  from: string,
+  to: string,
+): Promise<ApiResult<FinancialReport>> {
+  const query = new URLSearchParams({ from, to })
+  return request<FinancialReport>(`/api/v1/admin/reports/financial?${query.toString()}`, {
+    method: 'GET',
+  })
+}

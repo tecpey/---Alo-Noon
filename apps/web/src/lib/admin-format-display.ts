@@ -38,6 +38,21 @@ export function formatMoney(money: DisplayMoney | undefined): string {
   return `${toPersianDigits(groupDigits(money.amount))} ریال`
 }
 
+/**
+ * Money that may legitimately be negative — a ledger balance, or a gap between
+ * two figures that should agree.
+ *
+ * `formatMoney` clamps, because a negative order total is a data fault rather
+ * than a number to show. Here the sign is the whole point: a reconciliation gap
+ * that lost its minus would read as a surplus.
+ */
+export function formatSignedMoney(money: DisplayMoney | undefined): string {
+  if (!money) return '—'
+  const negative = money.amount.startsWith('-')
+  const digits = toPersianDigits(groupDigits(negative ? money.amount.slice(1) : money.amount))
+  return `${negative ? '−' : ''}${digits} ریال`
+}
+
 export function formatCount(value: number): string {
   return toPersianDigits(groupDigits(String(Math.trunc(Math.abs(value)))))
 }

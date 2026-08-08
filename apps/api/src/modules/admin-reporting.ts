@@ -18,6 +18,10 @@ import {
   errorEnvelope,
   type AdminAuthDependencies,
 } from './admin-auth.js'
+import {
+  AdminFinancialReportingError,
+  type AdminFinancialReportingService,
+} from './admin-financial-reporting.js'
 
 /**
  * Read-only reporting over the tenant's own orders.
@@ -435,6 +439,12 @@ async function tenantTransaction<T>(
 
 export interface AdminReportingDependencies extends AdminAuthDependencies {
   service: AdminReportingService
+  /**
+   * Optional so a deployment can serve sales reporting without the financial
+   * one; when absent the route is simply not registered rather than answering
+   * with an empty ledger, which would read as "the books are empty".
+   */
+  financialService?: AdminFinancialReportingService
 }
 
 // Reports scan; a tight budget keeps one impatient operator from becoming a
@@ -509,6 +519,32 @@ export function registerAdminReportingRoutes(
     }
   })
 
+  if (dependencies.financialService) {
+    const financialService = dependencies.financialService
+    app.get('/api/v1/admin/reports/financial', REPORT_RATE_LIMIT, async (request, reply) => {
+      const actor = await authenticatedStaff(
+        request,
+        reply,
+        dependencies,
+        ADMIN_PERMISSIONS.reportsRead,
+      )
+      if (!actor) return reply
+      const parsed = reportRangeQuerySchema.safeParse(request.query)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_REPORT_RANGE', 'The reporting range is invalid.'))
+      }
+
+      try {
+        const report = await financialService.financialReport(actor.tenantId, parsed.data)
+        return reply.send({ success: true, data: report, meta: adminResponseMeta() })
+      } catch (error) {
+        return reportingFailure(request, reply, error)
+      }
+    })
+  }
+
   app.get<{ Params: { orderId: string } }>(
     '/api/v1/admin/orders/:orderId',
     REPORT_RATE_LIMIT,
@@ -540,7 +576,7 @@ const REPORTING_STATUS: Readonly<Record<string, 400 | 422>> = {
 }
 
 function reportingFailure(request: FastifyRequest, reply: FastifyReply, error: unknown): unknown {
-  if (error instanceof AdminReportingError) {
+  if (error instanceof AdminReportingError || error instanceof AdminFinancialReportingError) {
     const status = REPORTING_STATUS[error.code]
     if (status) {
       return reply
