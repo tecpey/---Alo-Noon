@@ -185,7 +185,9 @@ const adminAccess = { service: createPrismaAdminAccessService(prisma) }
 
 // Order operations re-check admin.orders.manage inside their own write
 // transaction, so this instance carries no ambient authority of its own.
-const orderOperations = { service: createPrismaOrderOperationsService(prisma) }
+const orderOperations = {
+  service: createPrismaOrderOperationsService(prisma, { ledgerService: paymentLedgerService }),
+}
 
 const app = await buildApp({
   logger: true,

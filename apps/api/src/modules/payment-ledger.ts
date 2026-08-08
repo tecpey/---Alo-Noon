@@ -7,23 +7,37 @@ import {
 } from '@alo-noon/contracts'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
+  evaluateRefund,
   FinancialTransactionType,
   initializePayment,
   orderPaymentStateFor,
   PaymentAggregateState,
   postDoubleEntry,
+  RefundDecision,
+  refundJournal,
   transitionPayment,
   type LedgerEntrySide,
   type PaymentTransitionActor,
 } from '@alo-noon/domain'
 
+// A payment carries at most two postings now: the capture, and the refund that
+// reverses it. Ordered so the capture reads first, which is the order they
+// happened in.
 const paymentInclude = {
-  financialTransaction: {
+  financialTransactions: {
     include: { entries: { include: { ledgerAccount: true }, orderBy: { sequence: 'asc' } } },
+    orderBy: { postedAt: 'asc' },
   },
 } satisfies Prisma.PaymentInclude
 type PaymentRecord = Prisma.PaymentGetPayload<{ include: typeof paymentInclude }>
-type FinancialTransactionRecord = NonNullable<PaymentRecord['financialTransaction']>
+type FinancialTransactionRecord = PaymentRecord['financialTransactions'][number]
+
+function postingOf(
+  payment: PaymentRecord,
+  type: 'PAYMENT_CAPTURE' | 'PAYMENT_REFUND',
+): FinancialTransactionRecord | undefined {
+  return payment.financialTransactions.find((posting) => posting.type === type)
+}
 
 export interface InitializePaymentCommand {
   orderId: string
@@ -53,6 +67,26 @@ export interface PaymentCaptureResult {
   transaction: FinancialTransactionSummary
 }
 
+export interface RefundPaymentCommand {
+  paymentId: string
+  /**
+   * What the operator asked to send back. Checked against what was actually
+   * captured rather than trusted: a refund is the one place where a number
+   * typed by a person moves money out.
+   */
+  requestedAmount: bigint
+  actorId: string
+  idempotencyKey: string
+}
+
+export interface PaymentRefundResult {
+  decision: RefundDecision
+  reasonCode: string
+  payment: PaymentSummary
+  /** Present only when this run posted the reversal. */
+  transaction: FinancialTransactionSummary | null
+}
+
 export interface PaymentLedgerService {
   initialize(
     tenantId: string,
@@ -73,6 +107,20 @@ export interface PaymentLedgerService {
     now: Date,
     correlationId: string,
   ): Promise<PaymentCaptureResult>
+  /**
+   * Sends a captured payment back to the customer.
+   *
+   * Never automatic: only staff reach this, and the domain refuses anything but
+   * the exact captured amount. Returns a decision rather than throwing when
+   * there is nothing to refund, because cancelling an unpaid order is a normal
+   * thing to do and costs nothing.
+   */
+  refund(
+    tenantId: string,
+    command: RefundPaymentCommand,
+    now: Date,
+    correlationId: string,
+  ): Promise<PaymentRefundResult>
   /**
    * Reads a payment back for the customer who owns it.
    *
@@ -313,6 +361,137 @@ export function createPrismaPaymentLedgerService(
       )
     },
 
+    async refund(tenantId, command, now, correlationId) {
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await lockPayment(transaction, tenantId, command.paymentId)
+        const payment = await loadPayment(transaction, tenantId, command.paymentId)
+        const capture = postingOf(payment, 'PAYMENT_CAPTURE')
+
+        // The domain decides, from what was captured rather than from what was
+        // asked for. Everything below simply carries out its answer.
+        const evaluation = evaluateRefund({
+          paymentState: payment.state,
+          capturedAmount: capture?.amount ?? 0n,
+          requestedAmount: command.requestedAmount,
+        })
+        if (evaluation.decision !== RefundDecision.REFUND || evaluation.amount === null) {
+          return {
+            decision: evaluation.decision,
+            reasonCode: evaluation.reasonCode,
+            payment: mapPayment(payment),
+            transaction: null,
+          }
+        }
+
+        const amount = evaluation.amount
+        const lines = refundJournal(amount)
+        const codes = [...new Set(lines.map((line) => line.accountCode))]
+        const accounts = await transaction.ledgerAccount.findMany({
+          where: {
+            tenantId,
+            code: { in: codes },
+            isActive: true,
+            isPostable: true,
+            currency: 'IRR',
+          },
+        })
+        const accountsByCode = new Map(accounts.map((account) => [account.code, account]))
+        if (accounts.length !== codes.length) {
+          throw new PaymentLedgerError('LEDGER_ACCOUNT_NOT_FOUND')
+        }
+
+        // Both rules run before anything is written: the transition the payment
+        // is allowed to make, and the balance of the journal that records it.
+        transitionPayment({
+          paymentId: payment.id,
+          from: payment.state,
+          to: PaymentAggregateState.REFUNDED,
+          actor: 'STAFF',
+          actorId: command.actorId,
+          idempotencyKey: command.idempotencyKey,
+          correlationId,
+          occurredAt: now,
+        })
+        postDoubleEntry({
+          paymentId: payment.id,
+          orderId: payment.orderId,
+          type: FinancialTransactionType.PAYMENT_REFUND,
+          amount,
+          currency: payment.currency,
+          idempotencyKey: command.idempotencyKey,
+          correlationId,
+          occurredAt: now,
+          lines: lines.map((line) => ({
+            accountId: accountsByCode.get(line.accountCode)!.id,
+            side: line.side,
+            amount: line.amount,
+            currency: 'IRR' as const,
+          })),
+        })
+
+        const nextVersion = payment.version + 1
+        await transaction.paymentStateTransition.create({
+          data: {
+            tenantId,
+            paymentId: payment.id,
+            fromState: payment.state,
+            toState: 'REFUNDED',
+            actorType: 'STAFF',
+            actorId: command.actorId,
+            version: nextVersion,
+            idempotencyKey: command.idempotencyKey,
+            correlationId,
+            occurredAt: now,
+          },
+        })
+        // ownership-established: a staff refund on a payment already loaded
+        // tenant-scoped and locked; authority is the permission check the
+        // caller made before reaching this service.
+        await transaction.payment.update({
+          where: { id: payment.id },
+          data: { state: 'REFUNDED', version: nextVersion },
+        })
+        // ownership-established: the order backing that same staff-refunded payment.
+        await transaction.order.update({
+          where: { id: payment.orderId },
+          data: { paymentState: 'REFUNDED' },
+        })
+
+        const posting = await transaction.financialTransaction.create({
+          data: {
+            tenantId,
+            paymentId: payment.id,
+            orderId: payment.orderId,
+            type: 'PAYMENT_REFUND',
+            amount,
+            currency: payment.currency,
+            idempotencyKey: command.idempotencyKey,
+            correlationId,
+            occurredAt: now,
+            postedAt: now,
+            entries: {
+              create: lines.map((line, index) => ({
+                tenantId,
+                ledgerAccountId: accountsByCode.get(line.accountCode)!.id,
+                sequence: index + 1,
+                side: line.side,
+                amount: line.amount,
+                currency: 'IRR' as const,
+              })),
+            },
+          },
+          include: { entries: { include: { ledgerAccount: true }, orderBy: { sequence: 'asc' } } },
+        })
+
+        return {
+          decision: evaluation.decision,
+          reasonCode: evaluation.reasonCode,
+          payment: mapPayment(await loadPayment(transaction, tenantId, payment.id)),
+          transaction: mapFinancialTransaction(posting),
+        }
+      })
+    },
+
     async capture(tenantId, command, now, correlationId) {
       return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
         const replay = await transaction.financialTransaction.findFirst({
@@ -331,7 +510,7 @@ export function createPrismaPaymentLedgerService(
 
         await lockPayment(transaction, tenantId, command.paymentId)
         const payment = await loadPayment(transaction, tenantId, command.paymentId)
-        if (payment.financialTransaction) {
+        if (postingOf(payment, 'PAYMENT_CAPTURE')) {
           throw new PaymentLedgerError('PAYMENT_ALREADY_CAPTURED')
         }
         transitionPayment({

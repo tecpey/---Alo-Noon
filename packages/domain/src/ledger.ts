@@ -12,7 +12,10 @@ export type LedgerAccountType = (typeof LedgerAccountType)[keyof typeof LedgerAc
 export const LedgerEntrySide = { DEBIT: 'DEBIT', CREDIT: 'CREDIT' } as const
 export type LedgerEntrySide = (typeof LedgerEntrySide)[keyof typeof LedgerEntrySide]
 
-export const FinancialTransactionType = { PAYMENT_CAPTURE: 'PAYMENT_CAPTURE' } as const
+export const FinancialTransactionType = {
+  PAYMENT_CAPTURE: 'PAYMENT_CAPTURE',
+  PAYMENT_REFUND: 'PAYMENT_REFUND',
+} as const
 export type FinancialTransactionType =
   (typeof FinancialTransactionType)[keyof typeof FinancialTransactionType]
 

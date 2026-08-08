@@ -868,6 +868,42 @@ paths:
         '404': { description: No such order in this tenant. }
         '409': { description: The order is unpaid, or the step is unavailable. }
         '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrderWithRefund
+      summary: Cancel an order and give the money back.
+      description: >-
+        Cancelling and refunding are one act, because they are one decision. Splitting
+        them would let an operator cancel and forget the money, which is the failure that
+        matters to a customer. The refund runs first: a crash between the two leaves a
+        refunded payment on an order that still reads live — visible, wrong, and fixable —
+        where the reverse order would leave a cancelled order the customer paid for, which
+        looks finished and is not. Partial refunds are not supported; a request the ledger
+        cannot reconcile is quarantined and the order is deliberately left alone rather
+        than made to look finished.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The cancelled order, with what happened to the money.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CancellationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The step is unavailable, or the refund was quarantined. }
+        '503': { description: Order operations are unavailable. }
   /api/v1/admin/orders/{orderId}/production:
     post:
       operationId: advanceOrderProduction
@@ -2869,6 +2905,23 @@ components:
         data:
           type: array
           items: { $ref: '#/components/schemas/OrderSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    CancellationOutcome:
+      allOf:
+        - $ref: '#/components/schemas/OrderOperationOutcome'
+        - type: object
+          required: [refundDecision, refundReasonCode]
+          properties:
+            refundDecision:
+              type: string
+              enum: [REFUND, NOTHING_TO_REFUND, ALREADY_REFUNDED, QUARANTINE]
+            refundReasonCode: { type: string, maxLength: 64 }
+    CancellationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/CancellationOutcome' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentAttemptSummary:
       type: object

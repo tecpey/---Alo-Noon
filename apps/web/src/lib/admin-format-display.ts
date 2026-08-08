@@ -191,7 +191,12 @@ export function availableOrderSteps(
         { step: 'reject', label: 'رد سفارش' },
       ]
     case 'CONFIRMED':
-      return [{ step: 'start-fulfillment', label: 'شروع تحویل' }]
+      return [
+        { step: 'start-fulfillment', label: 'شروع تحویل' },
+        // Cancelling after acceptance means giving the money back, so it is a
+        // different act from rejecting an order nobody has paid for.
+        { step: 'cancel', label: 'لغو و بازگشت وجه' },
+      ]
     case 'IN_FULFILLMENT':
       return [{ step: 'complete', label: 'تکمیل سفارش' }]
     default:

@@ -13,6 +13,7 @@ import {
 } from '@alo-noon/domain'
 
 import { holdsPermissionInTransaction } from './admin-auth.js'
+import type { PaymentLedgerService } from './payment-ledger.js'
 
 /**
  * What happens to an order after a customer has paid for it.
@@ -102,6 +103,27 @@ export interface OrderOperationsService {
     now: Date,
     correlationId: string,
   ): Promise<OrderOperationOutcome>
+  /**
+   * Cancels an order and gives the money back if any was taken.
+   *
+   * Refund first, then cancel. A crash between them leaves a refunded payment
+   * on an order that still reads live — visible, wrong, and fixable. The
+   * reverse order would leave a cancelled order the customer paid for, which
+   * looks finished and is not.
+   */
+  cancelWithRefund(
+    tenantId: string,
+    actor: OrderOperationsActor,
+    command: OrderTransitionCommand,
+    now: Date,
+    correlationId: string,
+  ): Promise<CancellationOutcome>
+}
+
+export interface CancellationOutcome extends OrderOperationOutcome {
+  /** What happened to the money: refunded, or nothing was ever taken. */
+  refundDecision: string
+  refundReasonCode: string
 }
 
 export interface OrderOperationOutcome {
@@ -114,7 +136,15 @@ export interface OrderOperationOutcome {
   updatedAt: string
 }
 
-export function createPrismaOrderOperationsService(prisma: PrismaClient): OrderOperationsService {
+export interface OrderOperationsDependencies {
+  /** Only used to give money back; the rest of an order's life never touches it. */
+  ledgerService: PaymentLedgerService
+}
+
+export function createPrismaOrderOperationsService(
+  prisma: PrismaClient,
+  dependencies: OrderOperationsDependencies,
+): OrderOperationsService {
   const move = (
     to: OrderState,
     /** Refuse the step unless the money is in. */
@@ -184,13 +214,80 @@ export function createPrismaOrderOperationsService(prisma: PrismaClient): OrderO
       })
     }
 
+  // Bound once and shared, rather than reached through `this`: the service is
+  // handed around as a value, and a destructured method would lose its receiver.
+  const cancel = move(OrderState.CANCELLED, false)
+
   return {
     accept: move(OrderState.CONFIRMED, true),
     // Rejecting an unpaid order is exactly the case that needs rejecting, so
     // this one does not require payment.
-    reject: move(OrderState.CANCELLED, false),
+    reject: cancel,
     startFulfillment: move(OrderState.IN_FULFILLMENT, true),
     complete: move(OrderState.COMPLETED, true),
+
+    async cancelWithRefund(tenantId, actor, command, now, correlationId) {
+      // Read first, outside any write, so the refund runs against a payment
+      // that already exists rather than one this call is creating.
+      const target = await prisma.$transaction(
+        async (transaction) => {
+          await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+          // ownership-established: a staff surface gated on admin.orders.manage
+          // at GLOBAL scope; the tenant boundary holds through RLS and is
+          // restated in the filter.
+          return transaction.order.findFirst({
+            where: { id: command.orderId, tenantId },
+            select: { id: true, payment: { select: { id: true, amount: true } } },
+          })
+        },
+        { isolationLevel: 'ReadCommitted' },
+      )
+      if (!target) throw new OrderOperationsError('ORDER_NOT_FOUND', 404)
+
+      // Permission is checked here as well as inside the cancel below, because
+      // the refund happens first and must not run for someone who could not
+      // have cancelled.
+      const permitted = await prisma.$transaction(async (transaction) => {
+        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+        return holdsPermissionInTransaction(
+          transaction,
+          tenantId,
+          actor.accountId,
+          ADMIN_PERMISSIONS.ordersManage,
+          now,
+        )
+      })
+      if (!permitted) throw new OrderOperationsError('ORDER_OPERATION_FORBIDDEN', 403)
+
+      let refundDecision = 'NOTHING_TO_REFUND'
+      let refundReasonCode = 'NO_PAYMENT'
+      if (target.payment) {
+        const refunded = await dependencies.ledgerService.refund(
+          tenantId,
+          {
+            paymentId: target.payment.id,
+            requestedAmount: target.payment.amount,
+            actorId: actor.accountId,
+            // Derived from the order, so a retried cancellation replays onto
+            // the same refund instead of posting a second one.
+            idempotencyKey: `refund:${target.id}`,
+          },
+          now,
+          correlationId,
+        )
+        refundDecision = refunded.decision
+        refundReasonCode = refunded.reasonCode
+        // A quarantined refund is a refusal to move money that nobody
+        // understands yet. Cancelling on top of it would bury the problem
+        // under a finished-looking order.
+        if (refunded.decision === 'QUARANTINE') {
+          throw new OrderOperationsError('REFUND_QUARANTINED', 409)
+        }
+      }
+
+      const cancelled = await cancel(tenantId, actor, command, now, correlationId)
+      return { ...cancelled, refundDecision, refundReasonCode }
+    },
 
     async advanceProduction(tenantId, actor, command, now, correlationId) {
       return writeTransaction(prisma, tenantId, actor, now, async (transaction) => {

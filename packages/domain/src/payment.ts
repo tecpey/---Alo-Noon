@@ -5,6 +5,7 @@ export const PaymentAggregateState = {
   PENDING: 'PENDING',
   AUTHORIZED: 'AUTHORIZED',
   CAPTURED: 'CAPTURED',
+  REFUNDED: 'REFUNDED',
   FAILED: 'FAILED',
 } as const
 export type PaymentAggregateState =
@@ -65,7 +66,12 @@ const rules: Readonly<Record<PaymentAggregateState, readonly TransitionRule[]>> 
       actors: [PaymentTransitionActor.SYSTEM, PaymentTransitionActor.STAFF],
     },
   ],
-  CAPTURED: [],
+  CAPTURED: [
+    // Only staff, and only deliberately. Nothing in the automated pipeline has
+    // any business deciding to give a customer their money back.
+    { to: PaymentAggregateState.REFUNDED, actors: [PaymentTransitionActor.STAFF] },
+  ],
+  REFUNDED: [],
   FAILED: [],
 }
 
@@ -112,7 +118,7 @@ export function transitionPayment(input: PaymentTransition): Readonly<PaymentTra
 
 export function orderPaymentStateFor(
   state: PaymentAggregateState,
-): 'NOT_STARTED' | 'PENDING' | 'PAID' {
+): 'NOT_STARTED' | 'PENDING' | 'PAID' | 'REFUNDED' {
   switch (state) {
     case PaymentAggregateState.CREATED:
     case PaymentAggregateState.FAILED:
@@ -122,6 +128,8 @@ export function orderPaymentStateFor(
       return 'PENDING'
     case PaymentAggregateState.CAPTURED:
       return 'PAID'
+    case PaymentAggregateState.REFUNDED:
+      return 'REFUNDED'
   }
 }
 

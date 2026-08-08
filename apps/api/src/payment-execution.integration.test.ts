@@ -372,11 +372,12 @@ databaseDescribe('payment execution orchestrator on PostgreSQL', () => {
     }
     const payment = await prisma.payment.findUniqueOrThrow({
       where: { id: paymentId },
-      include: { order: true, financialTransaction: true },
+      include: { order: true, financialTransactions: true },
     })
     expect(payment).toMatchObject({
       state: 'CREATED',
-      financialTransaction: null,
+      // No posting at all: the relation is a list now, and nothing was written.
+      financialTransactions: [],
       order: { paymentState: 'NOT_STARTED' },
     })
   })

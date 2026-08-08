@@ -21,7 +21,10 @@ import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
  */
 const databaseDescribe = process.env['DATABASE_URL'] ? describe : describe.skip
 const prisma = new PrismaClient()
-const service: OrderOperationsService = createPrismaOrderOperationsService(prisma)
+const ledger = createPrismaPaymentLedgerService(prisma)
+const service: OrderOperationsService = createPrismaOrderOperationsService(prisma, {
+  ledgerService: ledger,
+})
 
 const suffix = randomUUID().slice(0, 8).toUpperCase()
 const now = new Date('2026-08-08T09:00:00.000Z')
@@ -204,22 +207,22 @@ databaseDescribe('order operations over PostgreSQL', () => {
   })
 })
 
-async function seedTenant(): Promise<Fixture> {
+async function seedTenant(label = suffix): Promise<Fixture> {
   const tenant = await prisma.tenant.create({
-    data: { slug: `ops-${suffix.toLowerCase()}`, name: `Ops ${suffix}` },
+    data: { slug: `ops-${label.toLowerCase()}`, name: `Ops ${label}` },
   })
   const tenantId = tenant.id
 
   const city = await prisma.city.create({
-    data: { tenantId, code: `OPS-${suffix}`, nameFa: 'شهر عملیات', isActive: true },
+    data: { tenantId, code: `OPS-${label}`, nameFa: 'شهر عملیات', isActive: true },
   })
   const zone = await prisma.operationalZone.create({
-    data: { tenantId, cityId: city.id, code: `OPSZ-${suffix}`, nameFa: 'ناحیه', isActive: true },
+    data: { tenantId, cityId: city.id, code: `OPSZ-${label}`, nameFa: 'ناحیه', isActive: true },
   })
   const bakery = await prisma.bakery.create({
     data: {
       tenantId,
-      legalName: `Ops Bakery ${suffix}`,
+      legalName: `Ops Bakery ${label}`,
       displayNameFa: 'نانوایی عملیات',
       partnerStatus: 'ACTIVE',
     },
@@ -230,7 +233,7 @@ async function seedTenant(): Promise<Fixture> {
       bakeryId: bakery.id,
       cityId: city.id,
       operationalZoneId: zone.id,
-      code: `OPSB-${suffix}`,
+      code: `OPSB-${label}`,
       nameFa: 'شعبه',
       addressLine: 'نشانی',
       latitude: '36.5442',
@@ -246,7 +249,7 @@ async function seedTenant(): Promise<Fixture> {
   // Capture posts into the tenant's chart, so the chart has to exist.
   await createPrismaFinancialOperationsService(prisma).provision(
     tenantId,
-    { idempotencyKey: `ops-provision-${suffix}` },
+    { idempotencyKey: `ops-provision-${label}` },
     now,
     randomUUID(),
   )
@@ -281,7 +284,6 @@ async function seedTenant(): Promise<Fixture> {
     // without exactly one captured transaction behind it, so there is no
     // shortcut here — and going the real way means acceptance is tested against
     // the state capture actually leaves.
-    const ledger = createPrismaPaymentLedgerService(prisma)
     const payment = await ledger.initialize(
       tenantId,
       customer.id,
@@ -318,18 +320,20 @@ async function seedTenant(): Promise<Fixture> {
     return created.id
   }
 
-  const operatorId = await createAccount(tenantId, 'ORDER_OPERATOR', [
-    ADMIN_PERMISSIONS.ordersRead,
-    ADMIN_PERMISSIONS.ordersManage,
-  ])
-  const outsiderId = await createAccount(tenantId, null, [])
+  const operatorId = await createAccount(
+    tenantId,
+    'ORDER_OPERATOR',
+    [ADMIN_PERMISSIONS.ordersRead, ADMIN_PERMISSIONS.ordersManage],
+    label,
+  )
+  const outsiderId = await createAccount(tenantId, null, [], label)
 
   return {
     tenantId,
     operatorId,
     outsiderId,
-    paidOrderId: await order(`ops-${suffix}-paid`, true),
-    unpaidOrderId: await order(`ops-${suffix}-unpaid`, false),
+    paidOrderId: await order(`ops-${label}-paid`, true),
+    unpaidOrderId: await order(`ops-${label}-unpaid`, false),
   }
 }
 
@@ -341,6 +345,7 @@ async function createAccount(
   tenantId: string,
   roleCode: string | null,
   permissions: readonly string[],
+  label: string,
 ): Promise<string> {
   const account = await prisma.identityAccount.create({
     data: { mobileE164: uniqueMobile(), verifiedAt: now },
@@ -354,9 +359,9 @@ async function createAccount(
   if (!roleCode) return account.id
 
   const role = await prisma.authorizationRole.upsert({
-    where: { code: `${roleCode}_${suffix}` },
+    where: { code: `${roleCode}_${label}` },
     update: {},
-    create: { code: `${roleCode}_${suffix}`, name: roleCode },
+    create: { code: `${roleCode}_${label}`, name: roleCode },
   })
   for (const code of permissions) {
     const permission = await prisma.authorizationPermission.upsert({
@@ -375,3 +380,109 @@ async function createAccount(
   })
   return account.id
 }
+
+/**
+ * The money leaving. This is the first path that ever draws down the clearing
+ * liability, so the ledger assertions matter as much as the state ones.
+ */
+databaseDescribe('cancellation and refund over PostgreSQL', () => {
+  let refundFixture: { tenantId: string; paidOrderId: string; unpaidOrderId: string }
+
+  beforeAll(async () => {
+    const seeded = await seedTenant(`${suffix}R`)
+    refundFixture = {
+      tenantId: seeded.tenantId,
+      paidOrderId: seeded.paidOrderId,
+      unpaidOrderId: seeded.unpaidOrderId,
+    }
+    // The operator account is per-seed, so reuse this seed's own.
+    fixture = seeded
+  }, 60_000)
+
+  it('cancels an unpaid order without pretending to refund anything', async () => {
+    const result = await service.cancelWithRefund(
+      refundFixture.tenantId,
+      actor(),
+      { orderId: refundFixture.unpaidOrderId, reason: 'مشتری منصرف شد' },
+      now,
+      randomUUID(),
+    )
+    expect(result.state).toBe('CANCELLED')
+    expect(result.refundDecision).toBe('NOTHING_TO_REFUND')
+
+    const postings = await prisma.financialTransaction.count({
+      where: { orderId: refundFixture.unpaidOrderId },
+    })
+    expect(postings).toBe(0)
+  })
+
+  it('refunds a paid order and reverses the capture exactly', async () => {
+    const result = await service.cancelWithRefund(
+      refundFixture.tenantId,
+      actor(),
+      { orderId: refundFixture.paidOrderId, reason: 'نانوایی نتوانست آماده کند' },
+      now,
+      randomUUID(),
+    )
+    expect(result.state).toBe('CANCELLED')
+    expect(result.refundDecision).toBe('REFUND')
+    expect(result.paymentState).toBe('REFUNDED')
+
+    const postings = await prisma.financialTransaction.findMany({
+      where: { orderId: refundFixture.paidOrderId },
+      include: { entries: { include: { ledgerAccount: true }, orderBy: { sequence: 'asc' } } },
+      orderBy: { type: 'asc' },
+    })
+    // Both postings are kept rather than netted away, so the ledger shows the
+    // money arriving and leaving instead of a payment that never happened.
+    expect(postings.map((row) => row.type)).toEqual(['PAYMENT_CAPTURE', 'PAYMENT_REFUND'])
+
+    const refund = postings.find((row) => row.type === 'PAYMENT_REFUND')!
+    expect(refund.amount).toBe(250_000n)
+    expect(
+      refund.entries.map((entry) => [entry.ledgerAccount.code, entry.side, entry.amount]),
+    ).toEqual([
+      ['L_2100_PAYMENT_CLEARING', 'DEBIT', 250_000n],
+      ['A_1100_CASH_CLEARING', 'CREDIT', 250_000n],
+    ])
+
+    // And the ledger still balances across both.
+    const entries = postings.flatMap((row) => row.entries)
+    const debits = entries
+      .filter((entry) => entry.side === 'DEBIT')
+      .reduce((sum, entry) => sum + entry.amount, 0n)
+    const credits = entries
+      .filter((entry) => entry.side === 'CREDIT')
+      .reduce((sum, entry) => sum + entry.amount, 0n)
+    expect(debits).toBe(credits)
+    // The clearing liability nets to nothing, which is the point: the money the
+    // business was holding for this customer is no longer held.
+    const clearing = entries.filter(
+      (entry) => entry.ledgerAccount.code === 'L_2100_PAYMENT_CLEARING',
+    )
+    const clearingBalance = clearing.reduce(
+      (sum, entry) => (entry.side === 'CREDIT' ? sum + entry.amount : sum - entry.amount),
+      0n,
+    )
+    expect(clearingBalance).toBe(0n)
+  })
+
+  it('is idempotent, so a retried cancellation cannot pay twice', async () => {
+    // The order is already cancelled, so the step itself is refused — but the
+    // refund that ran first must not have posted again on the way there.
+    await expect(
+      service.cancelWithRefund(
+        refundFixture.tenantId,
+        actor(),
+        { orderId: refundFixture.paidOrderId, reason: 'دوباره' },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'TRANSITION_NOT_ALLOWED' })
+
+    const refunds = await prisma.financialTransaction.count({
+      where: { orderId: refundFixture.paidOrderId, type: 'PAYMENT_REFUND' },
+    })
+    expect(refunds).toBe(1)
+  })
+})

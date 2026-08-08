@@ -349,6 +349,7 @@ enum PaymentAggregateState {
   PENDING
   AUTHORIZED
   CAPTURED
+  REFUNDED
   FAILED
 }
 
@@ -367,6 +368,7 @@ enum LedgerEntrySide {
 
 enum FinancialTransactionType {
   PAYMENT_CAPTURE
+  PAYMENT_REFUND
 }
 
 enum LedgerAccountGovernanceAction {
@@ -1374,7 +1376,7 @@ model Payment {
   idempotencyKey       String                   @db.VarChar(128)
   correlationId        String                   @db.Uuid
   transitions          PaymentStateTransition[]
-  financialTransaction FinancialTransaction?
+  financialTransactions FinancialTransaction[]
   attempts             PaymentAttempt[]
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
@@ -1641,7 +1643,7 @@ model LedgerAccountGovernanceEvent {
 model FinancialTransaction {
   id             String                   @id @default(uuid()) @db.Uuid
   tenantId       String                   @db.Uuid
-  paymentId      String                   @unique @db.Uuid
+  paymentId      String                   @db.Uuid
   payment        Payment                  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
   orderId        String                   @db.Uuid
   order          Order                    @relation(fields: [orderId], references: [id], onDelete: Restrict)
@@ -1655,6 +1657,10 @@ model FinancialTransaction {
   entries        LedgerEntry[]
   createdAt      DateTime                 @default(now())
 
+  // One posting of each kind per payment: a capture, and at most the refund
+  // that reverses it. The old single-posting rule could not express a refund
+  // at all, which is why money could only ever move one way.
+  @@unique([paymentId, type], map: "FinancialTransaction_payment_type_key")
   @@unique([tenantId, idempotencyKey], map: "FinancialTransaction_tenant_idempotency_key")
   @@unique([id, tenantId], map: "g3b_FinancialTransaction_id_tenant_key")
   @@index([paymentId, tenantId], map: "g3b_FinancialTransaction_paymentId_tenant_idx")

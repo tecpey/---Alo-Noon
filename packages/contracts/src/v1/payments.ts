@@ -7,6 +7,7 @@ export const paymentAggregateStateSchema = z.enum([
   'PENDING',
   'AUTHORIZED',
   'CAPTURED',
+  'REFUNDED',
   'FAILED',
 ])
 export type PaymentAggregateStateContract = z.infer<typeof paymentAggregateStateSchema>
@@ -19,7 +20,7 @@ export const ledgerAccountTypeSchema = z.enum([
   'EXPENSE',
 ])
 export const ledgerEntrySideSchema = z.enum(['DEBIT', 'CREDIT'])
-export const financialTransactionTypeSchema = z.enum(['PAYMENT_CAPTURE'])
+export const financialTransactionTypeSchema = z.enum(['PAYMENT_CAPTURE', 'PAYMENT_REFUND'])
 
 export const ledgerAccountGovernanceActionSchema = z.enum([
   'PROVISIONED',

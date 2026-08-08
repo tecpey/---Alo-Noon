@@ -569,6 +569,7 @@ export async function revokeRoleAction(
 const ORDER_STEPS: Readonly<Record<string, string>> = {
   accept: 'accept',
   reject: 'reject',
+  cancel: 'cancel',
   'start-fulfillment': 'start-fulfillment',
   complete: 'complete',
 }
@@ -576,6 +577,7 @@ const ORDER_STEPS: Readonly<Record<string, string>> = {
 const ORDER_STEP_SUCCESS: Readonly<Record<string, string>> = {
   accept: 'سفارش پذیرفته شد و به نانوایی رفت.',
   reject: 'سفارش رد شد.',
+  cancel: 'سفارش لغو شد و در صورت پرداخت، مبلغ بازگردانده شد.',
   'start-fulfillment': 'سفارش وارد مرحلهٔ تحویل شد.',
   complete: 'سفارش تکمیل شد.',
 }

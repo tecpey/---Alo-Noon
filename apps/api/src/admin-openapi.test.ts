@@ -40,6 +40,7 @@ const ADMIN_OPERATIONS: ReadonlyArray<{
   { path: '/api/v1/admin/orders/{orderId}/reject', methods: ['POST'] },
   { path: '/api/v1/admin/orders/{orderId}/start-fulfillment', methods: ['POST'] },
   { path: '/api/v1/admin/orders/{orderId}/complete', methods: ['POST'] },
+  { path: '/api/v1/admin/orders/{orderId}/cancel', methods: ['POST'] },
   { path: '/api/v1/admin/orders/{orderId}/production', methods: ['POST'] },
   { path: '/api/v1/admin/catalog/categories', methods: ['GET', 'POST'] },
   { path: '/api/v1/admin/catalog/products', methods: ['GET', 'POST'] },

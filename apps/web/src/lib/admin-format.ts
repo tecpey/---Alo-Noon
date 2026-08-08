@@ -83,6 +83,8 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   ORDER_WRITE_CONFLICT: 'کس دیگری زودتر این سفارش را جابه‌جا کرد. صفحه را تازه کنید.',
   INVALID_ORDER_COMMAND: 'مقادیر فرم معتبر نیست.',
   INVALID_PRODUCTION_COMMAND: 'مقادیر فرم معتبر نیست.',
+  REFUND_QUARANTINED:
+    'بازگشت وجه رد شد و نیاز به بررسی انسان دارد. سفارش عمداً لغو نشد تا مشکل زیر یک سفارشِ ظاهراً تمام‌شده پنهان نماند.',
 }
 
 /**

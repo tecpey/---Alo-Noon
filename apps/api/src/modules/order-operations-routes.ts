@@ -87,6 +87,39 @@ export function registerOrderOperationsRoutes(
   step('start-fulfillment', (service) => service.startFulfillment)
   step('complete', (service) => service.complete)
 
+  /**
+   * Cancelling and refunding in one act, because they are one decision.
+   * Splitting them would let an operator cancel and forget the money, which is
+   * the failure that matters to a customer.
+   */
+  app.post<{ Params: { orderId: string } }>(
+    '/api/v1/admin/orders/:orderId/cancel',
+    ORDERS_RATE_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(request, reply, dependencies, ORDERS_PERMISSION)
+      if (!actor) return reply
+      const parsed = orderTransitionCommandSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_ORDER_COMMAND', 'The command is invalid.'))
+      }
+
+      try {
+        const result = await dependencies.service.cancelWithRefund(
+          actor.tenantId,
+          { accountId: actor.accountId },
+          { orderId: request.params.orderId, reason: parsed.data.reason },
+          currentTime(),
+          randomUUID(),
+        )
+        return reply.send({ success: true, data: result, meta: adminResponseMeta() })
+      } catch (error) {
+        return operationsFailure(request, reply, error)
+      }
+    },
+  )
+
   app.post<{ Params: { orderId: string } }>(
     '/api/v1/admin/orders/:orderId/production',
     ORDERS_RATE_LIMIT,
@@ -128,6 +161,8 @@ const OPERATIONS_MESSAGES: Readonly<Record<string, string>> = {
   TRANSITION_NOT_PERMITTED: 'Staff may not take that step.',
   PRODUCTION_NOT_APPLICABLE: 'Production does not apply to an order in this state.',
   ORDER_WRITE_CONFLICT: 'Someone else moved this order first. Reload and try again.',
+  REFUND_QUARANTINED:
+    'The refund was refused and needs a human. The order was left as it is rather than looking finished.',
 }
 
 function operationsFailure(request: FastifyRequest, reply: FastifyReply, error: unknown): unknown {
