@@ -27,14 +27,16 @@ import {
  * credit and send a second message for a reason we invented.
  *
  * **There is no template endpoint.** Iranian gateways often have a separate
- * pattern API for one-time codes, which carriers deliver more reliably. This
- * one does not, so the OTP goes as ordinary text built from the configuration's
- * `templateReference`. If LimooSMS adds a pattern API later, that reference is
- * already the right place to name the pattern.
+ * pattern API for one-time codes, which carriers deliver more reliably. This one
+ * does not, so the code is rendered into the tenant's own message text — edited
+ * in the admin panel, carried on the request as `messageBody` — and sent as
+ * ordinary SMS. If LimooSMS adds a pattern API later, the configuration's
+ * `templateReference` is already the right place to name the pattern, and the
+ * unsubstituted code is already on the request.
  */
 const LIMOSMS_ENDPOINT = 'https://api.limosms.com/api/sendsms'
 
-/** Where the OTP is substituted into the configured template. */
+/** Where the OTP is substituted into the tenant's message. */
 const OTP_PLACEHOLDER = '{code}'
 
 interface LimoSmsResponse {
@@ -85,7 +87,7 @@ export function createLimoSmsAdapter(
             ApiKey: new TextDecoder().decode(request.credential.material),
           },
           body: JSON.stringify({
-            Message: renderMessage(request.configuration.templateReference, request.otp),
+            Message: renderMessage(request.messageBody, request.otp),
             SenderNumber: request.configuration.senderReference,
             MobileNumber: [mobile],
           }),
@@ -151,11 +153,12 @@ export function createLimoSmsAdapter(
 }
 
 /**
- * Renders the OTP into the configured template.
+ * Renders the OTP into the tenant's message.
  *
- * A template with no placeholder gets the code appended rather than silently
- * sending a message without it — an operator who forgot the placeholder should
- * see a slightly awkward message, not a customer who cannot sign in.
+ * The panel refuses to save a sign-in message without `{code}` in it, so this
+ * should never have to append. It does anyway, because the fallback path — a
+ * tenant with no template row at all — does not go through that validation, and
+ * an awkward message beats a customer who cannot sign in.
  */
 function renderMessage(template: string, otp: string): string {
   return template.includes(OTP_PLACEHOLDER)

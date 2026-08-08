@@ -1,6 +1,7 @@
 export * from './admin-access'
 export * from './admin-catalog'
 export * from './admin-financial'
+export * from './admin-messaging'
 export * from './admin-providers'
 export * from './admin-reporting'
 export * from './ai-control-plane'

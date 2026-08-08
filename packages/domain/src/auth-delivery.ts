@@ -68,6 +68,16 @@ export interface AuthenticationDeliveryRequest {
   readonly timeoutMs: number
   readonly signal: AuthenticationAbortSignal
   readonly configuration: AuthenticationProviderConfigurationView
+  /**
+   * The tenant's sign-in message text, with `{code}` still in it.
+   *
+   * The wording belongs to the operator, so it comes from the message template
+   * they edit rather than from the provider configuration — which is frozen at
+   * creation and could not be corrected without provisioning a new gateway. The
+   * code is left unsubstituted because a gateway with a real pattern API needs
+   * to send the two separately; adapters without one render it themselves.
+   */
+  readonly messageBody: string
   readonly credential: ResolvedAuthenticationCredential
 }
 

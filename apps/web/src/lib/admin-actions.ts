@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
 import type { ActionState } from './action-state'
-import { adminApiBaseUrl, patch, post, revokeSession, upstreamHeaders } from './admin-api'
+import { adminApiBaseUrl, patch, post, put, revokeSession, upstreamHeaders } from './admin-api'
 import {
   derivedIdempotencyKey,
   PROVIDER_ERROR_MESSAGES,
@@ -612,4 +612,58 @@ export async function advanceProductionAction(
     return failure(translateProviderError(result.error.code, 'تغییر وضعیت تولید انجام نشد.'))
   revalidatePath(`/admin/orders/${orderId}`)
   return success('وضعیت تولید ثبت شد.')
+}
+
+/**
+ * Which variable the API objected to, in the operator's words.
+ *
+ * The server answers with the variable name because it is the only thing that
+ * identifies which word in a paragraph of Persian was wrong. Translating it here
+ * rather than showing `UNKNOWN_VARIABLE` means the operator can find the word
+ * without knowing what a variable is.
+ */
+interface TemplateProblem {
+  code: string
+  name?: string
+  length?: number
+}
+
+function templateProblemMessage(problem: TemplateProblem): string {
+  switch (problem.code) {
+    case 'UNKNOWN_VARIABLE':
+      return `متغیر {${problem.name}} در این پیام وجود ندارد و همان‌طور برای مشتری فرستاده می‌شود.`
+    case 'MISSING_REQUIRED_VARIABLE':
+      return `متغیر {${problem.name}} اجباری است؛ بدون آن پیام بی‌فایده است.`
+    case 'MALFORMED_PLACEHOLDER':
+      return 'یک آکولاد بی‌جفت یا نام متغیر نادرست در متن هست.'
+    case 'BODY_TOO_LONG':
+      return `متن ${problem.length} کاراکتر است و از حد مجاز بیشتر است.`
+    case 'EMPTY_BODY':
+      return 'متن پیام خالی است.'
+    default:
+      return problem.code
+  }
+}
+
+export async function saveMessageTemplateAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const purpose = field(form, 'purpose')
+  const result = await put<{ segments: number }>(
+    `/api/v1/admin/messaging/templates/SMS/${purpose}`,
+    {
+      body: field(form, 'body'),
+      enabled: field(form, 'enabled') !== 'false',
+    },
+  )
+  if (!result.ok) {
+    const problems = (result.error as { details?: TemplateProblem[] }).details
+    if (problems && problems.length > 0) {
+      return failure(problems.map(templateProblemMessage).join(' '))
+    }
+    return failure(translateProviderError(result.error.code, 'ذخیرهٔ متن پیام ناموفق بود.'))
+  }
+  revalidatePath('/admin/messaging')
+  return success(`ذخیره شد. این پیام ${result.data.segments} پیامک حساب می‌شود.`)
 }

@@ -63,7 +63,7 @@ async function request<T>(path: string, init: RequestInit_): Promise<ApiResult<T
 }
 
 interface RequestInit_ {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
 }
 
@@ -274,6 +274,46 @@ export async function post<T>(path: string, body: unknown): Promise<ApiResult<T>
 
 export async function patch<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   return request<T>(path, { method: 'PATCH', body })
+}
+
+export async function put<T>(path: string, body: unknown): Promise<ApiResult<T>> {
+  return request<T>(path, { method: 'PUT', body })
+}
+
+// ---------------------------------------------------------------------------
+// Message templates
+// ---------------------------------------------------------------------------
+
+export interface MessageTemplateVariable {
+  name: string
+  required: boolean
+  labelFa: string
+  example: string
+}
+
+export interface MessageTemplate {
+  channel: 'SMS'
+  purpose: string
+  labelFa: string
+  descriptionFa: string
+  body: string
+  defaultBody: string
+  customized: boolean
+  enabled: boolean
+  version: number
+  variables: MessageTemplateVariable[]
+  preview: string
+  segments: number
+  updatedAt: string | null
+  updatedById: string | null
+}
+
+export async function listMessageTemplates(): Promise<ApiResult<MessageTemplate[]>> {
+  const result = await request<{ templates: MessageTemplate[] }>(
+    '/api/v1/admin/messaging/templates/SMS',
+    { method: 'GET' },
+  )
+  return result.ok ? { ok: true, data: result.data.templates } : result
 }
 
 // ---------------------------------------------------------------------------

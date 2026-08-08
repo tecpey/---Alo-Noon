@@ -23,6 +23,7 @@ function requestFor(overrides: Partial<AuthenticationDeliveryRequest> = {}) {
     requestFingerprint: 'f'.repeat(64),
     timeoutMs: 10_000,
     signal: { aborted: false, addEventListener: () => {} },
+    messageBody: 'کد ورود شما: {code}',
     configuration: {
       id: 'cfg',
       tenantId: 't1',
@@ -32,7 +33,9 @@ function requestFor(overrides: Partial<AuthenticationDeliveryRequest> = {}) {
       environment: 'PRODUCTION',
       credentialReference: 'env://AUTH_SMS_LIMOSMS_KEY',
       senderReference: '3000...',
-      templateReference: 'کد ورود شما: {code}',
+      // Kept for a gateway with a real pattern API; this one sends text, so
+      // the wording comes from messageBody above.
+      templateReference: 'otp-fa',
     },
     credential: {
       material: new TextEncoder().encode('secret-key'),
@@ -72,20 +75,15 @@ describe('LimooSMS adapter', () => {
     expect(JSON.stringify(body)).not.toContain('secret-key')
   })
 
-  it('appends the code when the template forgot the placeholder', async () => {
+  it('appends the code when the message forgot the placeholder', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(jsonResponse({ Success: true, Message: 'ok', MessageId: ['m-2'] }))
     const adapter = createLimoSmsAdapter({ fetch: fetchMock as never })
 
-    await adapter.deliverOtp(
-      requestFor({
-        configuration: {
-          ...(requestFor().configuration as object),
-          templateReference: 'کد ورود شما',
-        } as never,
-      }),
-    )
+    // The panel refuses to save this, but a tenant with no template row at all
+    // never went through that validation.
+    await adapter.deliverOtp(requestFor({ messageBody: 'کد ورود شما' } as never))
 
     // A customer who cannot sign in is worse than an awkward message.
     const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))

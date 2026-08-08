@@ -274,6 +274,20 @@ enum AuthDeliveryEnvironment {
   PRODUCTION
 }
 
+enum MessageChannel {
+  SMS
+}
+
+enum MessageTemplatePurpose {
+  AUTH_OTP
+  ORDER_ACCEPTED
+  ORDER_REJECTED
+  ORDER_READY
+  ORDER_OUT_FOR_DELIVERY
+  ORDER_COMPLETED
+  ORDER_CANCELLED
+}
+
 enum AuthProviderHealthStatus {
   HEALTHY
   DEGRADED
@@ -457,6 +471,7 @@ model Tenant {
   authOtpChallenges AuthOtpChallenge[]
   authDeliveryAttempts AuthOtpDeliveryAttempt[]
   authAbuseEvents AuthAbuseEvent[]
+  messageTemplates MessageTemplate[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -1997,4 +2012,33 @@ model AiControlPlaneAuditEvent {
   @@index([tenantId, occurredAt], map: "AiControlPlaneAuditEvent_tenant_occurred_idx")
   @@index([tenantId, proposalId, sequence], map: "AiControlPlaneAuditEvent_proposal_idx")
   @@index([tenantId, correlationId], map: "AiControlPlaneAuditEvent_correlation_idx")
+}
+
+/// The text of one kind of message, for one tenant.
+///
+/// Unlike AuthDeliveryProviderConfiguration — whose fields are frozen at
+/// creation because changing a credential reference or sender mid-flight would
+/// silently repoint live traffic — a template is meant to be edited. Wording is
+/// the operator's to change, and requiring a new provider configuration to fix
+/// a typo would be absurd. What is frozen is the row's identity: which tenant
+/// and which purpose it speaks for.
+model MessageTemplate {
+  id          String                 @id @default(uuid()) @db.Uuid
+  tenantId    String                 @db.Uuid
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  channel     MessageChannel
+  purpose     MessageTemplatePurpose
+  body        String                 @db.VarChar(480)
+  /// A disabled template stops its message being sent at all. The OTP purpose
+  /// refuses to be disabled — see the database guard — because that would lock
+  /// every customer out of the app from a settings page.
+  enabled     Boolean                @default(true)
+  version     Int                    @default(1)
+  updatedById String?                @db.Uuid
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@unique([tenantId, channel, purpose], map: "message_template_identity_key")
+  @@unique([id, tenantId], map: "message_template_id_tenant_key")
+  @@index([tenantId, channel], map: "message_template_tenant_channel_idx")
 }

@@ -27,6 +27,7 @@ import { createPrismaAdminReportingService } from './modules/admin-reporting.js'
 import { createPrismaAdminFinancialReportingService } from './modules/admin-financial-reporting.js'
 import { createPrismaAdminCatalogService } from './modules/admin-catalog.js'
 import { createPrismaAdminAccessService } from './modules/admin-access.js'
+import { createPrismaAdminMessagingService } from './modules/admin-messaging.js'
 import { createLimoSmsAdapter } from './providers/limosms.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
@@ -190,6 +191,10 @@ const adminCatalog = { service: createPrismaAdminCatalogService(prisma) }
 // withheld from an otherwise fully privileged operator.
 const adminAccess = { service: createPrismaAdminAccessService(prisma) }
 
+// Message wording is governed by notification-provider.configuration.govern, so
+// an operator trusted with gateways is trusted with what those gateways say.
+const adminMessaging = { service: createPrismaAdminMessagingService(prisma) }
+
 // Order operations re-check admin.orders.manage inside their own write
 // transaction, so this instance carries no ambient authority of its own.
 const orderOperations = {
@@ -221,6 +226,7 @@ const app = await buildApp({
   adminReporting,
   adminCatalog,
   adminAccess,
+  adminMessaging,
   orderOperations,
 })
 

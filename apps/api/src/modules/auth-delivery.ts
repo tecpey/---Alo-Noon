@@ -10,6 +10,7 @@ import {
   assertAuthenticationDeliveryTransition,
   createAuthenticationDeliveryPolicy,
   generateSecureOtp,
+  messageTemplateDefinition,
   normalizeAuthenticationDeliveryResult,
   normalizeIranianMobile,
   selectAuthenticationProvider,
@@ -90,6 +91,13 @@ type Preparation =
       adapter: AuthenticationDeliveryProvider
       otp: string
       fingerprint: string
+      /**
+       * The tenant's sign-in message, read in the same transaction that created
+       * the attempt. Read here rather than at send time so the wording that goes
+       * out is the wording that was live when the code was issued — an operator
+       * saving an edit mid-flight cannot land half of it on one message.
+       */
+      messageBody: string
     }
 
 export function createPrismaAuthenticationDeliveryService(
@@ -452,8 +460,26 @@ async function prepareDelivery(
         null,
         command.now,
       )
+      const template = await transaction.messageTemplate.findUnique({
+        where: {
+          tenantId_channel_purpose: {
+            tenantId: command.tenantId,
+            channel: 'SMS',
+            purpose: 'AUTH_OTP',
+          },
+        },
+      })
       await options.beforePreparationCommit?.(transaction)
-      return { kind: 'PREPARED', attempt, adapter, otp, fingerprint }
+      return {
+        kind: 'PREPARED',
+        attempt,
+        adapter,
+        otp,
+        fingerprint,
+        // A tenant that has never opened the messages page still sends a
+        // sensible code message rather than nothing.
+        messageBody: template?.body ?? messageTemplateDefinition('AUTH_OTP').defaultBody,
+      }
     },
   )
 }
@@ -496,6 +522,7 @@ async function invokeDelivery(
         timeoutMs: options.policy.invocationTimeoutMs,
         signal: controller.signal,
         configuration,
+        messageBody: preparation.messageBody,
         credential,
       }),
       timeoutResult,

@@ -438,3 +438,40 @@ td a {
   color: var(--ink-muted);
   min-inline-size: 9rem;
 }
+
+/* Message templates. The variable list and the preview are the two things an
+   operator needs in front of them while writing, so both sit next to the box. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.8rem;
+}
+.chips li {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.78rem;
+  background: var(--surface-muted, #fafafa);
+}
+.chips code {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.preview {
+  border: 1px dashed var(--line);
+  border-radius: 0.7rem;
+  margin: 0 0 0.9rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+  background: var(--surface-muted, #fafafa);
+}
+
+.field textarea {
+  font: inherit;
+  line-height: 1.7;
+  resize: vertical;
+}

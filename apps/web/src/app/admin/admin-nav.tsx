@@ -9,6 +9,7 @@ const SECTIONS = [
   { href: '/admin/catalog', label: 'کاتالوگ' },
   { href: '/admin/pricing', label: 'قیمت‌گذاری' },
   { href: '/admin/providers', label: 'سرویس‌دهنده‌ها' },
+  { href: '/admin/messaging', label: 'متن پیام‌ها' },
   { href: '/admin/access', label: 'دسترسی‌ها' },
 ] as const
 

@@ -99,3 +99,33 @@ export function SelectField({
     </label>
   )
 }
+
+export function TextAreaField({
+  label,
+  name,
+  hint,
+  defaultValue,
+  rows = 3,
+  maxLength,
+}: Readonly<{
+  label: string
+  name: string
+  hint?: string
+  defaultValue?: string
+  rows?: number
+  maxLength?: number
+}>) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <textarea
+        id={name}
+        name={name}
+        rows={rows}
+        maxLength={maxLength}
+        defaultValue={defaultValue}
+      />
+      {hint && <small>{hint}</small>}
+    </label>
+  )
+}

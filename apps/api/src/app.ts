@@ -53,6 +53,10 @@ import {
   type AdminAccessDependencies,
 } from './modules/admin-access-routes.js'
 import {
+  registerAdminMessagingRoutes,
+  type AdminMessagingDependencies,
+} from './modules/admin-messaging-routes.js'
+import {
   registerOrderOperationsRoutes,
   type OrderOperationsDependencies,
 } from './modules/order-operations-routes.js'
@@ -74,6 +78,7 @@ export interface AppOptions {
   adminReporting?: Omit<AdminReportingDependencies, 'auth'>
   adminCatalog?: Omit<AdminCatalogDependencies, 'auth'>
   adminAccess?: Omit<AdminAccessDependencies, 'auth'>
+  adminMessaging?: Omit<AdminMessagingDependencies, 'auth'>
   orderOperations?: Omit<OrderOperationsDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
@@ -196,6 +201,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.adminAccess) {
     registerAdminAccessRoutes(app, { ...options.adminAccess, auth: options.auth })
+  }
+  if (options.auth && options.adminMessaging) {
+    registerAdminMessagingRoutes(app, { ...options.adminMessaging, auth: options.auth })
   }
   if (options.auth && options.orderOperations) {
     registerOrderOperationsRoutes(app, { ...options.orderOperations, auth: options.auth })
