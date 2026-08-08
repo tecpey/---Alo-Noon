@@ -1,0 +1,184 @@
+import {
+  AUTH_DELIVERY_ADAPTER_SPI_VERSION,
+  type AuthenticationDeliveryProvider,
+  type AuthenticationDeliveryRequest,
+  type AuthenticationDeliveryResult,
+} from '@alo-noon/domain'
+
+/**
+ * LimooSMS — the OTP delivery gateway.
+ *
+ * One endpoint, documented as:
+ *
+ *     POST https://api.limosms.com/api/sendsms
+ *     ApiKey: <access code>          (header, not body)
+ *     { "Message": "...", "SenderNumber": "...", "MobileNumber": ["09..."] }
+ *
+ * and answering `{ Success, Message, MessageId[] }`.
+ *
+ * Two things about that contract shape the adapter more than anything else.
+ *
+ * **There are no error codes.** The gateway reports a boolean and a Persian
+ * sentence, so there is no reliable way to tell "insufficient credit" from
+ * "temporary glitch". Guessing from the text would be a parser tied to wording
+ * that can change without notice. So the retry decision is made from what *is*
+ * unambiguous — the transport — and a definite `Success: false` is treated as
+ * final: the gateway answered, it just said no. Retrying that would spend
+ * credit and send a second message for a reason we invented.
+ *
+ * **There is no template endpoint.** Iranian gateways often have a separate
+ * pattern API for one-time codes, which carriers deliver more reliably. This
+ * one does not, so the OTP goes as ordinary text built from the configuration's
+ * `templateReference`. If LimooSMS adds a pattern API later, that reference is
+ * already the right place to name the pattern.
+ */
+const LIMOSMS_ENDPOINT = 'https://api.limosms.com/api/sendsms'
+
+/** Where the OTP is substituted into the configured template. */
+const OTP_PLACEHOLDER = '{code}'
+
+interface LimoSmsResponse {
+  Success?: unknown
+  Message?: unknown
+  MessageId?: unknown
+}
+
+export interface LimoSmsAdapterOptions {
+  /** Injected so tests never reach the network. */
+  fetch?: typeof globalThis.fetch
+  endpoint?: string
+}
+
+export function createLimoSmsAdapter(
+  options: LimoSmsAdapterOptions = {},
+): AuthenticationDeliveryProvider {
+  const send = options.fetch ?? globalThis.fetch
+  const endpoint = options.endpoint ?? LIMOSMS_ENDPOINT
+
+  return {
+    code: 'LIMOSMS',
+    adapterVersion: '1.0.0',
+    spiVersion: AUTH_DELIVERY_ADAPTER_SPI_VERSION,
+
+    async deliverOtp(
+      request: AuthenticationDeliveryRequest,
+    ): Promise<AuthenticationDeliveryResult> {
+      const mobile = toIranianLocal(request.mobileE164)
+      if (!mobile) {
+        // Not the gateway's problem and not worth a round trip: a number this
+        // gateway cannot address will never become deliverable by retrying.
+        return {
+          outcome: 'PERMANENT_FAILURE',
+          normalizedCode: 'UNSUPPORTED_MOBILE',
+          retryable: false,
+        }
+      }
+
+      let response: Response
+      try {
+        response = await send(endpoint, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            // The credential is a header, never a body field, so it stays out
+            // of anything that logs a request payload.
+            ApiKey: new TextDecoder().decode(request.credential.material),
+          },
+          body: JSON.stringify({
+            Message: renderMessage(request.configuration.templateReference, request.otp),
+            SenderNumber: request.configuration.senderReference,
+            MobileNumber: [mobile],
+          }),
+          signal: request.signal as unknown as AbortSignal,
+        })
+      } catch {
+        // Timeouts, DNS, connection resets: the message may or may not have
+        // been sent, and only a retry can find out.
+        return {
+          outcome: 'TRANSIENT_FAILURE',
+          normalizedCode: 'TRANSPORT_FAILURE',
+          retryable: true,
+        }
+      } finally {
+        // The key is needed for exactly one call; holding it any longer widens
+        // the window in which a heap dump would contain it.
+        request.credential.dispose()
+      }
+
+      if (response.status >= 500) {
+        return {
+          outcome: 'TRANSIENT_FAILURE',
+          normalizedCode: 'PROVIDER_UNAVAILABLE',
+          retryable: true,
+        }
+      }
+      if (response.status === 401 || response.status === 403) {
+        // A bad key does not fix itself, and every retry burns a rate-limit
+        // slot on a request that cannot succeed.
+        return {
+          outcome: 'PERMANENT_FAILURE',
+          normalizedCode: 'PROVIDER_UNAUTHORIZED',
+          retryable: false,
+        }
+      }
+      if (!response.ok) {
+        return { outcome: 'REJECTED', normalizedCode: `HTTP_${response.status}`, retryable: false }
+      }
+
+      const payload = (await response.json().catch(() => null)) as LimoSmsResponse | null
+      if (payload === null || typeof payload.Success !== 'boolean') {
+        // A 200 whose body is not the documented shape means the gateway is
+        // answering something else. Treated as unknown rather than delivered:
+        // reporting a code sent that may not have been is the worse mistake.
+        return { outcome: 'UNKNOWN', normalizedCode: 'MALFORMED_RESPONSE', retryable: false }
+      }
+      if (!payload.Success) {
+        // The gateway gave a definite no. Without documented codes there is
+        // nothing to distinguish a retryable no from a final one, so it is
+        // final — a retry would spend credit on a guess.
+        return { outcome: 'REJECTED', normalizedCode: 'PROVIDER_REJECTED', retryable: false }
+      }
+
+      const reference = firstMessageId(payload.MessageId)
+      return {
+        outcome: 'DELIVERED',
+        ...(reference && { providerReference: reference }),
+        normalizedCode: 'ACCEPTED',
+        retryable: false,
+      }
+    },
+  }
+}
+
+/**
+ * Renders the OTP into the configured template.
+ *
+ * A template with no placeholder gets the code appended rather than silently
+ * sending a message without it — an operator who forgot the placeholder should
+ * see a slightly awkward message, not a customer who cannot sign in.
+ */
+function renderMessage(template: string, otp: string): string {
+  return template.includes(OTP_PLACEHOLDER)
+    ? template.split(OTP_PLACEHOLDER).join(otp)
+    : `${template} ${otp}`.trim()
+}
+
+/**
+ * The gateway addresses Iranian mobiles in local `09xxxxxxxxx` form; the system
+ * stores E.164. Anything that is not an Iranian mobile returns null rather than
+ * being coerced into something that looks like one.
+ */
+function toIranianLocal(mobileE164: string): string | null {
+  const match = /^\+98(9\d{9})$/.exec(mobileE164)
+  return match ? `0${match[1]}` : null
+}
+
+/**
+ * The gateway returns an array of message ids, one per recipient. We send to
+ * exactly one, so the first is the reference for this delivery.
+ */
+function firstMessageId(value: unknown): string | null {
+  if (!Array.isArray(value)) return null
+  const first = value[0]
+  return typeof first === 'string' && first.length > 0 && first.length <= 200 ? first : null
+}

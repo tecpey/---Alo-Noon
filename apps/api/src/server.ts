@@ -27,6 +27,7 @@ import { createPrismaAdminReportingService } from './modules/admin-reporting.js'
 import { createPrismaAdminFinancialReportingService } from './modules/admin-financial-reporting.js'
 import { createPrismaAdminCatalogService } from './modules/admin-catalog.js'
 import { createPrismaAdminAccessService } from './modules/admin-access.js'
+import { createLimoSmsAdapter } from './providers/limosms.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
@@ -61,7 +62,13 @@ if (env.SENTRY_DSN) {
 const prisma = new PrismaClient()
 const otpPepper = env.AUTH_OTP_PEPPER ?? randomBytes(32).toString('hex')
 const abusePepper = env.AUTH_ABUSE_PEPPER ?? randomBytes(32).toString('hex')
-const authenticationDeliveryRegistry = createAuthenticationDeliveryRegistry([])
+// The one real OTP gateway. Registered unconditionally: it reads nothing at
+// construction time, and the credential is resolved per send from the
+// configuration's own reference, so an unconfigured deployment simply never
+// selects it rather than failing to boot.
+const authenticationDeliveryRegistry = createAuthenticationDeliveryRegistry([
+  createLimoSmsAdapter(),
+])
 const authenticationDeliveryPolicy = createAuthenticationDeliveryPolicy({
   environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
   otpTtlMs: 5 * 60_000,
