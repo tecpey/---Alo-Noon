@@ -278,6 +278,16 @@ enum MessageChannel {
   SMS
 }
 
+enum CustomerNotificationState {
+  PENDING
+  SENT
+  FAILED
+  /// The tenant switched this message off, or the order has no reachable phone.
+  /// Recorded rather than skipped silently so "why did nobody get a text" has
+  /// an answer.
+  SUPPRESSED
+}
+
 enum MessageTemplatePurpose {
   AUTH_OTP
   ORDER_ACCEPTED
@@ -472,6 +482,7 @@ model Tenant {
   authDeliveryAttempts AuthOtpDeliveryAttempt[]
   authAbuseEvents AuthAbuseEvent[]
   messageTemplates MessageTemplate[]
+  customerNotifications CustomerNotification[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -1301,6 +1312,7 @@ model Order {
   fulfillment                  Fulfillment?
   supportCases                 SupportCase[]
   incidents                    OperationalIncident[]
+  notifications                CustomerNotification[]
   createdAt                    DateTime               @default(now())
   updatedAt                    DateTime               @updatedAt
 
@@ -2041,4 +2053,37 @@ model MessageTemplate {
   @@unique([tenantId, channel, purpose], map: "message_template_identity_key")
   @@unique([id, tenantId], map: "message_template_id_tenant_key")
   @@index([tenantId, channel], map: "message_template_tenant_channel_idx")
+}
+
+/// One message sent to one customer about one step of one order.
+///
+/// The unique key across tenant, order and purpose is the whole point: the
+/// outbox publisher is at-least-once, so without it a publisher that sent a
+/// message and then died before marking the event published would text the
+/// customer again on the next sweep. Claiming this row is what makes the send
+/// happen once.
+model CustomerNotification {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  tenantId           String                    @db.Uuid
+  tenant             Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orderId            String                    @db.Uuid
+  order              Order                     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  channel            MessageChannel
+  purpose            MessageTemplatePurpose
+  state              CustomerNotificationState @default(PENDING)
+  /// The message as sent. Kept because the template it came from is editable,
+  /// so the template alone cannot answer what a customer actually received.
+  body               String                    @db.VarChar(480)
+  mobileE164         String                    @db.VarChar(16)
+  templateVersion    Int                       @default(0)
+  providerReference  String?                   @db.VarChar(200)
+  failureCode        String?                   @db.VarChar(64)
+  attempts           Int                       @default(0)
+  correlationId      String                    @db.Uuid
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@unique([tenantId, orderId, purpose], map: "customer_notification_identity_key")
+  @@index([tenantId, state, createdAt], map: "customer_notification_state_idx")
+  @@index([orderId, tenantId], map: "g3b_CustomerNotification_orderId_tenant_idx")
 }

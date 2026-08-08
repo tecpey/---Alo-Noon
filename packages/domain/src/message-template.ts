@@ -70,8 +70,8 @@ const BAKERY_NAME: MessageTemplateVariable = {
 const ORDER_TOTAL: MessageTemplateVariable = {
   name: 'total',
   required: false,
-  labelFa: 'مبلغ سفارش (تومان)',
-  example: '۱۸۵٬۰۰۰',
+  labelFa: 'مبلغ سفارش (ریال)',
+  example: '۱٬۸۵۰٬۰۰۰',
 }
 const REASON: MessageTemplateVariable = {
   name: 'reason',

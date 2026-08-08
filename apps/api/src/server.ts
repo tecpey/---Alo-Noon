@@ -28,6 +28,8 @@ import { createPrismaAdminFinancialReportingService } from './modules/admin-fina
 import { createPrismaAdminCatalogService } from './modules/admin-catalog.js'
 import { createPrismaAdminAccessService } from './modules/admin-access.js'
 import { createPrismaAdminMessagingService } from './modules/admin-messaging.js'
+import { createPrismaCustomerNotificationService } from './modules/customer-notifications.js'
+import { createPrismaOutboxPublisher } from './modules/outbox-publisher.js'
 import { createLimoSmsAdapter } from './providers/limosms.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
@@ -50,6 +52,13 @@ const env = getEnv()
 const SETTLEMENT_SWEEP_INTERVAL_MS = 60_000
 const SETTLEMENT_SWEEP_BATCH = 25
 
+// Faster than settlement because this is what a customer is waiting on: a text
+// saying the bread is ready is worth little ten minutes after it was. Bounded
+// so a backlog after an outage drains steadily rather than arriving as a burst
+// of messages the tenant pays for all at once.
+const OUTBOX_SWEEP_INTERVAL_MS = 15_000
+const OUTBOX_SWEEP_BATCH = 50
+
 // Error reporting is opt-in: without SENTRY_DSN this stays fully inert, so
 // development and CI never depend on an external service being reachable.
 if (env.SENTRY_DSN) {
@@ -67,9 +76,8 @@ const abusePepper = env.AUTH_ABUSE_PEPPER ?? randomBytes(32).toString('hex')
 // construction time, and the credential is resolved per send from the
 // configuration's own reference, so an unconfigured deployment simply never
 // selects it rather than failing to boot.
-const authenticationDeliveryRegistry = createAuthenticationDeliveryRegistry([
-  createLimoSmsAdapter(),
-])
+const limoSmsAdapter = createLimoSmsAdapter()
+const authenticationDeliveryRegistry = createAuthenticationDeliveryRegistry([limoSmsAdapter])
 const authenticationDeliveryPolicy = createAuthenticationDeliveryPolicy({
   environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
   otpTtlMs: 5 * 60_000,
@@ -195,6 +203,20 @@ const adminAccess = { service: createPrismaAdminAccessService(prisma) }
 // an operator trusted with gateways is trusted with what those gateways say.
 const adminMessaging = { service: createPrismaAdminMessagingService(prisma) }
 
+// Customer notifications go out over the same SMS gateway that carries sign-in
+// codes, but through their own path: the wording comes from the tenant's
+// editable templates, and each message is claimed once per order step so an
+// event retried after a crash cannot text anyone twice.
+const customerNotificationService = createPrismaCustomerNotificationService(prisma, {
+  providers: [limoSmsAdapter],
+  credentialResolver: createEnvironmentAuthenticationCredentialResolver(process.env),
+  environment: authenticationDeliveryPolicy.environment,
+  messagingService: adminMessaging.service,
+})
+const outboxPublisher = createPrismaOutboxPublisher(prisma, {
+  notificationService: customerNotificationService,
+})
+
 // Order operations re-check admin.orders.manage inside their own write
 // transaction, so this instance carries no ambient authority of its own.
 const orderOperations = {
@@ -274,9 +296,42 @@ const settlementSweep = setInterval(() => {
 }, SETTLEMENT_SWEEP_INTERVAL_MS)
 settlementSweep.unref()
 
+/**
+ * Turns committed domain events into the messages they imply.
+ *
+ * Separate from the transitions that write those events on purpose: a slow or
+ * unreachable SMS gateway must not be able to fail an order step an operator
+ * has already acted on, and a send swallowed inline would never be retried.
+ */
+const outboxSweep = setInterval(() => {
+  void (async () => {
+    try {
+      const tenants = await prisma.tenant.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true },
+      })
+      for (const tenant of tenants) {
+        const summary = await outboxPublisher.publish(tenant.id, OUTBOX_SWEEP_BATCH, new Date())
+        if (summary.failed > 0) {
+          // Parked events: nobody will retry these, and each one is a customer
+          // who was not told something.
+          app.log.error(
+            { tenantId: tenant.id, failed: summary.failed },
+            'Domain events exhausted their publish attempts',
+          )
+        }
+      }
+    } catch (error) {
+      app.log.error({ err: error }, 'Outbox publish sweep failed')
+    }
+  })()
+}, OUTBOX_SWEEP_INTERVAL_MS)
+outboxSweep.unref()
+
 const close = async (signal: string): Promise<void> => {
   app.log.info({ signal }, 'Shutting down')
   clearInterval(settlementSweep)
+  clearInterval(outboxSweep)
   await app.close()
   await prisma.$disconnect()
   process.exit(0)

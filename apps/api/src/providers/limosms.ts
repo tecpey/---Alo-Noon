@@ -3,6 +3,9 @@ import {
   type AuthenticationDeliveryProvider,
   type AuthenticationDeliveryRequest,
   type AuthenticationDeliveryResult,
+  type ResolvedAuthenticationCredential,
+  type TextMessageProvider,
+  type TextMessageRequest,
 } from '@alo-noon/domain'
 
 /**
@@ -51,103 +54,141 @@ export interface LimoSmsAdapterOptions {
   endpoint?: string
 }
 
+/**
+ * One adapter, both jobs.
+ *
+ * A one-time code and an order notification are the same POST to the same
+ * endpoint; what differs is the policy around them, which lives elsewhere. The
+ * two entry points share `postMessage` so a change to how this gateway is
+ * spoken to cannot be applied to one of them and forgotten on the other.
+ */
 export function createLimoSmsAdapter(
   options: LimoSmsAdapterOptions = {},
-): AuthenticationDeliveryProvider {
+): AuthenticationDeliveryProvider & TextMessageProvider {
   const send = options.fetch ?? globalThis.fetch
   const endpoint = options.endpoint ?? LIMOSMS_ENDPOINT
+
+  async function postMessage(input: {
+    mobileE164: string
+    message: string
+    senderReference: string
+    credential: ResolvedAuthenticationCredential
+    signal: unknown
+  }): Promise<AuthenticationDeliveryResult> {
+    const mobile = toIranianLocal(input.mobileE164)
+    if (!mobile) {
+      // Not the gateway's problem and not worth a round trip: a number this
+      // gateway cannot address will never become deliverable by retrying.
+      input.credential.dispose()
+      return {
+        outcome: 'PERMANENT_FAILURE',
+        normalizedCode: 'UNSUPPORTED_MOBILE',
+        retryable: false,
+      }
+    }
+
+    let response: Response
+    try {
+      response = await send(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          // The credential is a header, never a body field, so it stays out
+          // of anything that logs a request payload.
+          ApiKey: new TextDecoder().decode(input.credential.material),
+        },
+        body: JSON.stringify({
+          Message: input.message,
+          SenderNumber: input.senderReference,
+          MobileNumber: [mobile],
+        }),
+        signal: input.signal as AbortSignal,
+      })
+    } catch {
+      // Timeouts, DNS, connection resets: the message may or may not have
+      // been sent, and only a retry can find out.
+      return {
+        outcome: 'TRANSIENT_FAILURE',
+        normalizedCode: 'TRANSPORT_FAILURE',
+        retryable: true,
+      }
+    } finally {
+      // The key is needed for exactly one call; holding it any longer widens
+      // the window in which a heap dump would contain it.
+      input.credential.dispose()
+    }
+
+    if (response.status >= 500) {
+      return {
+        outcome: 'TRANSIENT_FAILURE',
+        normalizedCode: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      }
+    }
+    if (response.status === 401 || response.status === 403) {
+      // A bad key does not fix itself, and every retry burns a rate-limit
+      // slot on a request that cannot succeed.
+      return {
+        outcome: 'PERMANENT_FAILURE',
+        normalizedCode: 'PROVIDER_UNAUTHORIZED',
+        retryable: false,
+      }
+    }
+    if (!response.ok) {
+      return { outcome: 'REJECTED', normalizedCode: `HTTP_${response.status}`, retryable: false }
+    }
+
+    const payload = (await response.json().catch(() => null)) as LimoSmsResponse | null
+    if (payload === null || typeof payload.Success !== 'boolean') {
+      // A 200 whose body is not the documented shape means the gateway is
+      // answering something else. Treated as unknown rather than delivered:
+      // reporting a code sent that may not have been is the worse mistake.
+      return { outcome: 'UNKNOWN', normalizedCode: 'MALFORMED_RESPONSE', retryable: false }
+    }
+    if (!payload.Success) {
+      // The gateway gave a definite no. Without documented codes there is
+      // nothing to distinguish a retryable no from a final one, so it is
+      // final — a retry would spend credit on a guess.
+      return { outcome: 'REJECTED', normalizedCode: 'PROVIDER_REJECTED', retryable: false }
+    }
+
+    const reference = firstMessageId(payload.MessageId)
+    return {
+      outcome: 'DELIVERED',
+      ...(reference && { providerReference: reference }),
+      normalizedCode: 'ACCEPTED',
+      retryable: false,
+    }
+  }
 
   return {
     code: 'LIMOSMS',
     adapterVersion: '1.0.0',
     spiVersion: AUTH_DELIVERY_ADAPTER_SPI_VERSION,
 
-    async deliverOtp(
-      request: AuthenticationDeliveryRequest,
-    ): Promise<AuthenticationDeliveryResult> {
-      const mobile = toIranianLocal(request.mobileE164)
-      if (!mobile) {
-        // Not the gateway's problem and not worth a round trip: a number this
-        // gateway cannot address will never become deliverable by retrying.
-        return {
-          outcome: 'PERMANENT_FAILURE',
-          normalizedCode: 'UNSUPPORTED_MOBILE',
-          retryable: false,
-        }
-      }
+    deliverOtp(request: AuthenticationDeliveryRequest): Promise<AuthenticationDeliveryResult> {
+      return postMessage({
+        mobileE164: request.mobileE164,
+        message: renderMessage(request.messageBody, request.otp),
+        senderReference: request.configuration.senderReference,
+        credential: request.credential,
+        signal: request.signal,
+      })
+    },
 
-      let response: Response
-      try {
-        response = await send(endpoint, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            // The credential is a header, never a body field, so it stays out
-            // of anything that logs a request payload.
-            ApiKey: new TextDecoder().decode(request.credential.material),
-          },
-          body: JSON.stringify({
-            Message: renderMessage(request.messageBody, request.otp),
-            SenderNumber: request.configuration.senderReference,
-            MobileNumber: [mobile],
-          }),
-          signal: request.signal as unknown as AbortSignal,
-        })
-      } catch {
-        // Timeouts, DNS, connection resets: the message may or may not have
-        // been sent, and only a retry can find out.
-        return {
-          outcome: 'TRANSIENT_FAILURE',
-          normalizedCode: 'TRANSPORT_FAILURE',
-          retryable: true,
-        }
-      } finally {
-        // The key is needed for exactly one call; holding it any longer widens
-        // the window in which a heap dump would contain it.
-        request.credential.dispose()
-      }
-
-      if (response.status >= 500) {
-        return {
-          outcome: 'TRANSIENT_FAILURE',
-          normalizedCode: 'PROVIDER_UNAVAILABLE',
-          retryable: true,
-        }
-      }
-      if (response.status === 401 || response.status === 403) {
-        // A bad key does not fix itself, and every retry burns a rate-limit
-        // slot on a request that cannot succeed.
-        return {
-          outcome: 'PERMANENT_FAILURE',
-          normalizedCode: 'PROVIDER_UNAUTHORIZED',
-          retryable: false,
-        }
-      }
-      if (!response.ok) {
-        return { outcome: 'REJECTED', normalizedCode: `HTTP_${response.status}`, retryable: false }
-      }
-
-      const payload = (await response.json().catch(() => null)) as LimoSmsResponse | null
-      if (payload === null || typeof payload.Success !== 'boolean') {
-        // A 200 whose body is not the documented shape means the gateway is
-        // answering something else. Treated as unknown rather than delivered:
-        // reporting a code sent that may not have been is the worse mistake.
-        return { outcome: 'UNKNOWN', normalizedCode: 'MALFORMED_RESPONSE', retryable: false }
-      }
-      if (!payload.Success) {
-        // The gateway gave a definite no. Without documented codes there is
-        // nothing to distinguish a retryable no from a final one, so it is
-        // final — a retry would spend credit on a guess.
-        return { outcome: 'REJECTED', normalizedCode: 'PROVIDER_REJECTED', retryable: false }
-      }
-
-      const reference = firstMessageId(payload.MessageId)
-      return {
-        outcome: 'DELIVERED',
-        ...(reference && { providerReference: reference }),
-        normalizedCode: 'ACCEPTED',
-        retryable: false,
-      }
+    /**
+     * Order notifications arrive already rendered: their template was resolved
+     * and filled before a provider was chosen, so there is nothing left to
+     * substitute here.
+     */
+    sendText(request: TextMessageRequest): Promise<AuthenticationDeliveryResult> {
+      return postMessage({
+        mobileE164: request.mobileE164,
+        message: request.body,
+        senderReference: request.senderReference,
+        credential: request.credential,
+        signal: request.signal,
+      })
     },
   }
 }
