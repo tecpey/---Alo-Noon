@@ -52,6 +52,10 @@ import {
   registerAdminAccessRoutes,
   type AdminAccessDependencies,
 } from './modules/admin-access-routes.js'
+import {
+  registerOrderOperationsRoutes,
+  type OrderOperationsDependencies,
+} from './modules/order-operations-routes.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -70,6 +74,7 @@ export interface AppOptions {
   adminReporting?: Omit<AdminReportingDependencies, 'auth'>
   adminCatalog?: Omit<AdminCatalogDependencies, 'auth'>
   adminAccess?: Omit<AdminAccessDependencies, 'auth'>
+  orderOperations?: Omit<OrderOperationsDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
   trustProxyHops?: number
@@ -191,6 +196,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.adminAccess) {
     registerAdminAccessRoutes(app, { ...options.adminAccess, auth: options.auth })
+  }
+  if (options.auth && options.orderOperations) {
+    registerOrderOperationsRoutes(app, { ...options.orderOperations, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

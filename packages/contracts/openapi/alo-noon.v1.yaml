@@ -300,6 +300,23 @@ paths:
         '422':
           description: Cart, address, pricing, or capacity is not quoteable.
   /api/v1/orders:
+    get:
+      operationId: listOrders
+      summary: The caller's own recent orders, newest first.
+      description: >-
+        Drafts are excluded — a draft is an order the customer never placed, and showing
+        abandoned checkouts back as orders would confuse more than it informs. Bounded
+        rather than paginated: a customer following their bread is looking at the last
+        few, not browsing a history.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Recent orders.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderListEnvelope' }
+        '401': { description: A valid customer session is required. }
+        '503': { description: Orders are temporarily unavailable. }
     post:
       operationId: createOrderFromQuote
       summary: Atomically accept a quote and reserve bakery capacity.
@@ -318,6 +335,30 @@ paths:
         '404': { description: Quote is not available to the caller. }
         '409': { description: Quote or idempotency/concurrency conflict. }
         '422': { description: Snapshot, pricing, branch, or capacity is unavailable. }
+  /api/v1/orders/{orderId}:
+    get:
+      operationId: readOrder
+      summary: Follow one of your own orders.
+      description: >-
+        Scoped to the session's own customer, so another customer's order reads as absent
+        rather than as a refusal that confirms it exists. This is where a paid order stops
+        being a void: before it existed, a customer paid and had no way to learn anything
+        ever happened.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderEnvelope' }
+        '401': { description: A valid customer session is required. }
+        '404': { description: No such order for this customer. }
+        '503': { description: Orders are temporarily unavailable. }
   /api/v1/payments:
     post:
       operationId: startPayment
@@ -713,6 +754,153 @@ paths:
         '403': { description: The account may not read orders. }
         '404': { description: No such order in this tenant. }
         '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/orders/{orderId}/accept:
+    post:
+      operationId: acceptOrder
+      summary: Accept a paid order into the bakery.
+      description: >-
+        Refused unless the order is paid. Accepting commits a bakery to bake bread, and
+        doing that before the money arrived is the mistake this rule exists to prevent.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The order after the step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The order is unpaid, or the step is unavailable from its state. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/reject:
+    post:
+      operationId: rejectOrder
+      summary: Refuse an order the bakery cannot take.
+      description: >-
+        Does not require the order to be paid — the unpaid case is exactly the one that
+        needs rejecting.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The cancelled order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The step is unavailable from the order current state. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/start-fulfillment:
+    post:
+      operationId: startOrderFulfillment
+      summary: Move an accepted order into fulfillment.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The order after the step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The order is unpaid, or the step is unavailable. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/complete:
+    post:
+      operationId: completeOrder
+      summary: Close a delivered order.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The completed order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The order is unpaid, or the step is unavailable. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/production:
+    post:
+      operationId: advanceOrderProduction
+      summary: Move the bread through the bakery.
+      description: >-
+        Production is tracked separately from the order because they answer different
+        questions and move at different speeds: an order is confirmed the moment the
+        bakery accepts it, but the bread is not scheduled, baking, or ready until it is.
+        Production only moves while the order is live, and only forwards — except
+        SCHEDULED back to UNSCHEDULED, which is a bakery releasing a slot it cannot fill.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductionTransitionCommand' }
+      responses:
+        '200':
+          description: The order after the production step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: Production does not apply, or the step is not a legal one. }
+        '503': { description: Order operations are unavailable. }
   /api/v1/admin/catalog/categories:
     get:
       operationId: listAdminCatalogCategories
@@ -2637,6 +2825,50 @@ components:
       properties:
         success: { type: boolean, const: true }
         data: { $ref: '#/components/schemas/FinancialReport' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    OrderTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      description: >-
+        The destination is not in the body: each step has its own route, because
+        accepting an order and cancelling one are different acts with different
+        consequences and should not differ by one enum value in a payload.
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    ProductionTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [to, reason]
+      properties:
+        to: { $ref: '#/components/schemas/ProductionState' }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    OrderOperationOutcome:
+      type: object
+      required: [orderId, publicId, state, paymentState, productionState, deliveryState, updatedAt]
+      properties:
+        orderId: { type: string, format: uuid }
+        publicId: { type: string, minLength: 8, maxLength: 32 }
+        state: { $ref: '#/components/schemas/OrderState' }
+        paymentState: { $ref: '#/components/schemas/PaymentState' }
+        productionState: { $ref: '#/components/schemas/ProductionState' }
+        deliveryState: { $ref: '#/components/schemas/DeliveryState' }
+        updatedAt: { type: string, format: date-time }
+    OrderOperationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/OrderOperationOutcome' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    OrderListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/OrderSummary' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentAttemptSummary:
       type: object

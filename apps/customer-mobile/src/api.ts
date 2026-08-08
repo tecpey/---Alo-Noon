@@ -8,6 +8,7 @@ import {
   otpRequestEnvelopeSchema,
   quoteEnvelopeSchema,
   orderEnvelopeSchema,
+  orderListEnvelopeSchema,
   paymentEnvelopeSchema,
   paymentExecutionEnvelopeSchema,
   serviceabilityEnvelopeSchema,
@@ -94,6 +95,13 @@ export interface CustomerApiClient {
    * than believing the URL it landed on.
    */
   readPayment(paymentId: string): Promise<PaymentSummary>
+  /**
+   * The customer's own recent orders, newest first. Drafts are excluded by the
+   * API — an abandoned checkout is not an order anyone placed.
+   */
+  listOrders(): Promise<OrderSummary[]>
+  /** One order, for following it after payment. */
+  readOrder(orderId: string): Promise<OrderSummary>
 }
 
 export function createCustomerApiClient(
@@ -210,6 +218,9 @@ export function createCustomerApiClient(
       }),
     readPayment: async (paymentId) =>
       request(`/api/v1/payments/${encodeURIComponent(paymentId)}`, paymentEnvelopeSchema),
+    listOrders: async () => request('/api/v1/orders', orderListEnvelopeSchema),
+    readOrder: async (orderId) =>
+      request(`/api/v1/orders/${encodeURIComponent(orderId)}`, orderEnvelopeSchema),
   }
 }
 

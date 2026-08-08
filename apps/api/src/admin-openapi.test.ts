@@ -36,6 +36,11 @@ const ADMIN_OPERATIONS: ReadonlyArray<{
   { path: '/api/v1/admin/reports/financial', methods: ['GET'] },
   { path: '/api/v1/admin/orders', methods: ['GET'] },
   { path: '/api/v1/admin/orders/{orderId}', methods: ['GET'] },
+  { path: '/api/v1/admin/orders/{orderId}/accept', methods: ['POST'] },
+  { path: '/api/v1/admin/orders/{orderId}/reject', methods: ['POST'] },
+  { path: '/api/v1/admin/orders/{orderId}/start-fulfillment', methods: ['POST'] },
+  { path: '/api/v1/admin/orders/{orderId}/complete', methods: ['POST'] },
+  { path: '/api/v1/admin/orders/{orderId}/production', methods: ['POST'] },
   { path: '/api/v1/admin/catalog/categories', methods: ['GET', 'POST'] },
   { path: '/api/v1/admin/catalog/products', methods: ['GET', 'POST'] },
   { path: '/api/v1/admin/catalog/products/{productId}', methods: ['GET', 'PATCH'] },
@@ -129,6 +134,7 @@ describe('admin OpenAPI boundary', () => {
       adminReporting: { service: {} as never, financialService: {} as never },
       adminCatalog: { service: {} as never },
       adminAccess: { service: {} as never },
+      orderOperations: { service: {} as never },
     })
 
     try {

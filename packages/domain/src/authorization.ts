@@ -18,6 +18,7 @@ export const ADMIN_PERMISSIONS = {
   notificationProviderGovern: 'notification-provider.configuration.govern',
   reportsRead: 'admin.reports.read',
   ordersRead: 'admin.orders.read',
+  ordersManage: 'admin.orders.manage',
   catalogManage: 'admin.catalog.manage',
   accessManage: 'admin.access.manage',
 } as const
@@ -45,6 +46,10 @@ export const ADMIN_PERMISSION_DEFINITIONS: readonly AdminPermissionDefinition[] 
   },
   { code: ADMIN_PERMISSIONS.reportsRead, description: 'Read tenant sales and operations reports' },
   { code: ADMIN_PERMISSIONS.ordersRead, description: 'Read any order in the tenant' },
+  {
+    code: ADMIN_PERMISSIONS.ordersManage,
+    description: 'Accept, reject, and advance orders through fulfillment',
+  },
   { code: ADMIN_PERMISSIONS.catalogManage, description: 'Manage catalog, offerings, and pricing' },
   {
     code: ADMIN_PERMISSIONS.accessManage,
@@ -83,6 +88,14 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     permissions: [ADMIN_PERMISSIONS.reportsRead, ADMIN_PERMISSIONS.ordersRead],
   },
   {
+    code: 'ORDER_OPERATOR',
+    name: 'Order operator',
+    // The person in the shop: they see the queue and move it. Deliberately
+    // without reports — accepting orders and reading revenue are different
+    // jobs, and the first is the one a counter needs.
+    permissions: [ADMIN_PERMISSIONS.ordersRead, ADMIN_PERMISSIONS.ordersManage],
+  },
+  {
     code: 'CATALOG_MANAGER',
     name: 'Catalog manager',
     permissions: [ADMIN_PERMISSIONS.catalogManage, ADMIN_PERMISSIONS.reportsRead],
@@ -101,6 +114,7 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
       ADMIN_PERMISSIONS.notificationProviderGovern,
       ADMIN_PERMISSIONS.reportsRead,
       ADMIN_PERMISSIONS.ordersRead,
+      ADMIN_PERMISSIONS.ordersManage,
       ADMIN_PERMISSIONS.catalogManage,
       ADMIN_PERMISSIONS.accessManage,
     ],

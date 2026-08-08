@@ -96,3 +96,43 @@ export const orderEnvelopeSchema = z.object({
   data: orderSummarySchema,
   meta: responseMetaSchema,
 })
+
+export const orderListEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.array(orderSummarySchema),
+  meta: responseMetaSchema,
+})
+export type OrderListEnvelopeContract = z.infer<typeof orderListEnvelopeSchema>
+
+/**
+ * A staff command that moves an order.
+ *
+ * The destination is not in the body: each step has its own route, because
+ * accepting an order and cancelling one are different acts with different
+ * consequences and should not differ by one enum value in a payload.
+ */
+export const orderTransitionCommandSchema = z
+  .object({
+    reason: z.string().min(3).max(280),
+  })
+  .strict()
+export type OrderTransitionCommand = z.infer<typeof orderTransitionCommandSchema>
+
+export const productionTransitionCommandSchema = z
+  .object({
+    to: productionStateSchema,
+    reason: z.string().min(3).max(280),
+  })
+  .strict()
+export type ProductionTransitionCommand = z.infer<typeof productionTransitionCommandSchema>
+
+export const orderOperationOutcomeSchema = z.object({
+  orderId: uuidSchema,
+  publicId: z.string().min(8).max(32),
+  state: orderStateSchema,
+  paymentState: paymentStateSchema,
+  productionState: productionStateSchema,
+  deliveryState: deliveryStateSchema,
+  updatedAt: z.string().datetime({ offset: true }),
+})
+export type OrderOperationOutcomeContract = z.infer<typeof orderOperationOutcomeSchema>

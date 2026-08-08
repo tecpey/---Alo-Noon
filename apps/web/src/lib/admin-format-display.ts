@@ -171,3 +171,43 @@ export const BRANCH_STATUS_LABELS: Readonly<Record<string, string>> = {
   TEMPORARILY_SUSPENDED: 'موقتاً متوقف',
   CLOSED: 'بسته',
 }
+
+/**
+ * Which steps a staff operator can take from where the order is now.
+ *
+ * Mirrors the domain's own rules so the panel offers only what the API will
+ * accept. It is a projection, not the authority: the server checks again, and a
+ * step that slipped through here still gets refused there.
+ */
+export function availableOrderSteps(
+  state: string,
+  paymentState: string,
+): ReadonlyArray<{ step: string; label: string }> {
+  switch (state) {
+    case 'PENDING_CONFIRMATION':
+      return [
+        // Accepting commits the bakery, so it appears only once paid.
+        ...(paymentState === 'PAID' ? [{ step: 'accept', label: 'پذیرش سفارش' }] : []),
+        { step: 'reject', label: 'رد سفارش' },
+      ]
+    case 'CONFIRMED':
+      return [{ step: 'start-fulfillment', label: 'شروع تحویل' }]
+    case 'IN_FULFILLMENT':
+      return [{ step: 'complete', label: 'تکمیل سفارش' }]
+    default:
+      return []
+  }
+}
+
+/** Production steps reachable from the current one, in the domain's order. */
+export function availableProductionSteps(current: string): readonly string[] {
+  const next: Readonly<Record<string, readonly string[]>> = {
+    NOT_REQUIRED: [],
+    UNSCHEDULED: ['SCHEDULED', 'IN_PRODUCTION'],
+    SCHEDULED: ['IN_PRODUCTION', 'UNSCHEDULED'],
+    IN_PRODUCTION: ['READY'],
+    READY: ['HANDED_OFF'],
+    HANDED_OFF: [],
+  }
+  return next[current] ?? []
+}

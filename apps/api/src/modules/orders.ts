@@ -48,6 +48,20 @@ export interface OrderRepository {
     now: Date,
     correlationId: string,
   ): Promise<OrderSummary>
+  /**
+   * The customer's own orders, newest first.
+   *
+   * Drafts are excluded: a draft is an order the customer never placed, and
+   * showing abandoned checkouts back to them as orders would be confusing at
+   * best. Bounded rather than paginated — a customer following their bread is
+   * looking at the last few, not browsing a history.
+   */
+  listForCustomer(tenantId: string, customerId: string, limit: number): Promise<OrderSummary[]>
+  findForCustomer(
+    tenantId: string,
+    customerId: string,
+    orderId: string,
+  ): Promise<OrderSummary | null>
 }
 
 export interface OrderDependencies {
@@ -71,6 +85,56 @@ export class OrderError extends Error {
 }
 
 export function registerOrderRoutes(app: FastifyInstance, dependencies: OrderDependencies): void {
+  /**
+   * A customer following their own bread.
+   *
+   * Read-only and scoped to the session's customer. This is where a paid order
+   * stops being a void: before it existed, a customer paid and had no way to
+   * learn anything ever happened.
+   */
+  app.get('/api/v1/orders', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const customer = await authenticatedCustomer(request, dependencies.auth)
+    if (!customer) {
+      return reply
+        .code(401)
+        .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
+    }
+    try {
+      const orders = await dependencies.repository.listForCustomer(
+        customer.tenantId,
+        customer.customerId,
+        CUSTOMER_ORDER_LIMIT,
+      )
+      return reply.send({ success: true, data: orders, meta: responseMeta() })
+    } catch (error) {
+      return orderFailure(request, reply, error)
+    }
+  })
+
+  app.get<{ Params: { orderId: string } }>('/api/v1/orders/:orderId', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const customer = await authenticatedCustomer(request, dependencies.auth)
+    if (!customer) {
+      return reply
+        .code(401)
+        .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
+    }
+    try {
+      const order = await dependencies.repository.findForCustomer(
+        customer.tenantId,
+        customer.customerId,
+        request.params.orderId,
+      )
+      if (!order) {
+        return reply.code(404).send(errorEnvelope('ORDER_NOT_FOUND', 'No such order.'))
+      }
+      return reply.send({ success: true, data: order, meta: responseMeta() })
+    } catch (error) {
+      return orderFailure(request, reply, error)
+    }
+  })
+
   app.post('/api/v1/orders', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
     const customer = await authenticatedCustomer(request, dependencies.auth)
@@ -108,6 +172,36 @@ export function createPrismaOrderRepository(
   options: PrismaOrderRepositoryOptions = {},
 ): OrderRepository {
   return {
+    async listForCustomer(tenantId, customerId, limit) {
+      return readTransaction(prisma, tenantId, async (transaction) => {
+        // ownership-established: filtered on the session's own customerId, so
+        // this can only ever return the caller's orders.
+        const orders = await transaction.order.findMany({
+          where: { tenantId, customerId, state: { not: 'DRAFT' } },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          include: orderInclude,
+        })
+        // An order placed before the quote provenance rules existed would throw
+        // from `mapOrder`; in a list that would hide every other order behind
+        // one bad row, so those are skipped rather than fatal.
+        return orders.flatMap((order) => (order.quoteId ? [mapOrder(order)] : []))
+      })
+    },
+
+    async findForCustomer(tenantId, customerId, orderId) {
+      return readTransaction(prisma, tenantId, async (transaction) => {
+        // ownership-established: scoped to the session's customerId, so another
+        // customer's order reads as absent rather than as a refusal that
+        // confirms it exists.
+        const order = await transaction.order.findFirst({
+          where: { id: orderId, tenantId, customerId, state: { not: 'DRAFT' } },
+          include: orderInclude,
+        })
+        return order ? mapOrder(order) : null
+      })
+    },
+
     async create(tenantId, customerId, input, now, correlationId) {
       return serializableWithRetry(
         prisma,
@@ -454,6 +548,27 @@ export function isSerializationFailure(error: unknown): boolean {
     Reflect.get(meta, 'code') === '40001'
   )
 }
+
+/**
+ * A tenant-scoped read. ReadCommitted because a customer refreshing their order
+ * must never contend with the settlement trying to capture its payment.
+ */
+async function readTransaction<T>(
+  prisma: PrismaClient,
+  tenantId: string,
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(
+    async (transaction) => {
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+      return operation(transaction)
+    },
+    { isolationLevel: 'ReadCommitted' },
+  )
+}
+
+/** How many recent orders a customer sees without asking for more. */
+export const CUSTOMER_ORDER_LIMIT = 20
 
 function mapOrder(order: OrderRecord): OrderSummary {
   if (!order.quoteId) throw new OrderError('ORDER_PROVENANCE_INCOMPLETE', 503)

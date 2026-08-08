@@ -154,3 +154,84 @@ export function canCancelOrder(state: OrderState): boolean {
   ]
   return cancellableStates.includes(state)
 }
+
+/**
+ * How a batch of bread moves through a bakery.
+ *
+ * Separate from the order's own state because they answer different questions
+ * and move at different speeds: an order is CONFIRMED the moment the bakery
+ * accepts it, but the bread is not scheduled, baking, or ready until it is. A
+ * customer asking "where is my order" is asking this one.
+ *
+ * `NOT_REQUIRED` is for orders that carry nothing a bakery produces — packaged
+ * goods pulled from stock. It is a starting state, not somewhere production
+ * arrives at.
+ */
+const productionRules: Readonly<Record<ProductionState, readonly ProductionState[]>> = {
+  NOT_REQUIRED: [],
+  UNSCHEDULED: [ProductionState.SCHEDULED, ProductionState.IN_PRODUCTION],
+  SCHEDULED: [ProductionState.IN_PRODUCTION, ProductionState.UNSCHEDULED],
+  IN_PRODUCTION: [ProductionState.READY],
+  READY: [ProductionState.HANDED_OFF],
+  HANDED_OFF: [],
+}
+
+/**
+ * Which actors may move production at all.
+ *
+ * A courier appears only at hand-off: taking the bread is the one production
+ * fact a courier is in a position to assert, and it is exactly the moment
+ * responsibility for it changes hands.
+ */
+const productionActors: Readonly<Record<ProductionState, readonly TransitionActor[]>> = {
+  NOT_REQUIRED: [],
+  UNSCHEDULED: [TransitionActor.BAKERY, TransitionActor.STAFF],
+  SCHEDULED: [TransitionActor.BAKERY, TransitionActor.STAFF],
+  IN_PRODUCTION: [TransitionActor.BAKERY, TransitionActor.STAFF],
+  READY: [TransitionActor.BAKERY, TransitionActor.STAFF],
+  HANDED_OFF: [TransitionActor.BAKERY, TransitionActor.COURIER, TransitionActor.STAFF],
+}
+
+export interface ProductionTransition {
+  from: ProductionState
+  to: ProductionState
+  actor: TransitionActor
+}
+
+/**
+ * Validates a production step, or explains why it is not one.
+ *
+ * Going backwards is refused rather than tolerated: bread that was READY and is
+ * suddenly IN_PRODUCTION again is either a mistake or a second batch, and a
+ * second batch is a different order line. The one exception is SCHEDULED back
+ * to UNSCHEDULED, which is a bakery releasing a slot it cannot fill — a real
+ * thing that happens, and better recorded than worked around.
+ */
+export function transitionProduction(input: ProductionTransition): ProductionTransition {
+  if (input.from === input.to) {
+    throw new DomainError('INVALID_PRODUCTION_TRANSITION', 'Production state is already set')
+  }
+  if (!productionRules[input.from].includes(input.to)) {
+    throw new DomainError(
+      'INVALID_PRODUCTION_TRANSITION',
+      `Production cannot move from ${input.from} to ${input.to}`,
+    )
+  }
+  if (!productionActors[input.to].includes(input.actor)) {
+    throw new DomainError(
+      'UNAUTHORIZED_PRODUCTION_TRANSITION',
+      `${input.actor} cannot move production to ${input.to}`,
+    )
+  }
+  return Object.freeze(input)
+}
+
+/**
+ * Whether an order is far enough along that production applies to it.
+ *
+ * Before a bakery accepts, there is nothing to bake; after the order is
+ * cancelled or complete, there is nothing left to bake either.
+ */
+export function productionApplies(state: OrderState): boolean {
+  return state === OrderState.CONFIRMED || state === OrderState.IN_FULFILLMENT
+}

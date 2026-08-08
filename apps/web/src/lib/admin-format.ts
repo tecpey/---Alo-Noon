@@ -73,6 +73,16 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   CANNOT_REVOKE_SELF: 'حساب نمی‌تواند دسترسی خودش را لغو کند.',
   INVALID_GRANT_COMMAND: 'مقادیر فرم معتبر نیست.',
   INVALID_REVOKE_COMMAND: 'مقادیر فرم معتبر نیست.',
+  ORDER_OPERATION_FORBIDDEN: 'این حساب اجازهٔ اداره‌کردن سفارش‌ها را ندارد.',
+  ORDER_OPERATIONS_UNAVAILABLE: 'سرویس سفارش‌ها موقتاً در دسترس نیست.',
+  ORDER_NOT_FOUND: 'این سفارش یافت نشد.',
+  ORDER_NOT_PAID: 'این سفارش هنوز پرداخت نشده است.',
+  TRANSITION_NOT_ALLOWED: 'این مرحله از وضعیت فعلی سفارش در دسترس نیست.',
+  TRANSITION_NOT_PERMITTED: 'کارکنان مجاز به این مرحله نیستند.',
+  PRODUCTION_NOT_APPLICABLE: 'در این وضعیت سفارش، مرحلهٔ تولید معنا ندارد.',
+  ORDER_WRITE_CONFLICT: 'کس دیگری زودتر این سفارش را جابه‌جا کرد. صفحه را تازه کنید.',
+  INVALID_ORDER_COMMAND: 'مقادیر فرم معتبر نیست.',
+  INVALID_PRODUCTION_COMMAND: 'مقادیر فرم معتبر نیست.',
 }
 
 /**

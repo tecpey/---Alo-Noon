@@ -477,3 +477,17 @@ export async function readFinancialReport(
     method: 'GET',
   })
 }
+
+// ---------------------------------------------------------------------------
+// Order operations
+// ---------------------------------------------------------------------------
+
+export interface OrderOperationOutcome {
+  orderId: string
+  publicId: string
+  state: string
+  paymentState: string
+  productionState: string
+  deliveryState: string
+  updatedAt: string
+}

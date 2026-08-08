@@ -8,6 +8,21 @@ import type { AuthDependencies, AuthRepository } from './modules/auth'
 import { authenticationSessionDigest } from './modules/auth-delivery'
 import { isSerializationFailure, type OrderRepository } from './modules/orders'
 
+/**
+ * These tests exercise order creation only. The customer-facing readers are
+ * part of the repository contract but not of what is under test here, so they
+ * refuse rather than returning a plausible empty answer that could let a
+ * missing call pass unnoticed.
+ */
+const unusedOrderReaders = {
+  listForCustomer: async () => {
+    throw new Error('listForCustomer is not exercised by these tests')
+  },
+  findForCustomer: async () => {
+    throw new Error('findForCustomer is not exercised by these tests')
+  },
+}
+
 const tenantId = '00000000-0000-4000-8000-000000000001'
 const customerId = '11111111-1111-4111-8111-111111111111'
 const accountId = '22222222-2222-4222-8222-222222222222'
@@ -79,7 +94,7 @@ describe('authenticated checkout API boundary', () => {
     const app = await buildApp({
       auth: authFixture(),
       addressRepository: { list: async () => [], create: async () => address },
-      orderRepository: { create: async () => order },
+      orderRepository: { ...unusedOrderReaders, create: async () => order },
     })
     apps.push(app)
     const [addresses, createAddress, createOrder] = await Promise.all([
@@ -105,6 +120,7 @@ describe('authenticated checkout API boundary', () => {
       },
     }
     const orderRepository: OrderRepository = {
+      ...unusedOrderReaders,
       create: async (tenant, customer) => {
         calls.push(`order:${tenant}:${customer}`)
         return order
@@ -154,6 +170,7 @@ describe('authenticated checkout API boundary', () => {
     const app = await buildApp({
       auth: authFixture(),
       orderRepository: {
+        ...unusedOrderReaders,
         create: async () => {
           called = true
           return order

@@ -557,3 +557,57 @@ export async function revokeRoleAction(
   revalidatePath('/admin/access')
   return success('نقش لغو شد.')
 }
+
+// ---------------------------------------------------------------------------
+// Order operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Each step is its own route, so the form names the step rather than sending a
+ * destination the server has to interpret. A typo in an enum would be a refund.
+ */
+const ORDER_STEPS: Readonly<Record<string, string>> = {
+  accept: 'accept',
+  reject: 'reject',
+  'start-fulfillment': 'start-fulfillment',
+  complete: 'complete',
+}
+
+const ORDER_STEP_SUCCESS: Readonly<Record<string, string>> = {
+  accept: 'سفارش پذیرفته شد و به نانوایی رفت.',
+  reject: 'سفارش رد شد.',
+  'start-fulfillment': 'سفارش وارد مرحلهٔ تحویل شد.',
+  complete: 'سفارش تکمیل شد.',
+}
+
+export async function advanceOrderAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const orderId = field(form, 'orderId')
+  const step = ORDER_STEPS[field(form, 'step')]
+  if (!step) return failure('این مرحله شناخته نشد.')
+
+  const result = await post(`/api/v1/admin/orders/${orderId}/${step}`, {
+    reason: field(form, 'reason') || 'اقدام از پنل مدیریت',
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'این مرحله انجام نشد.'))
+  revalidatePath(`/admin/orders/${orderId}`)
+  revalidatePath('/admin/orders')
+  return success(ORDER_STEP_SUCCESS[step] ?? 'انجام شد.')
+}
+
+export async function advanceProductionAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const orderId = field(form, 'orderId')
+  const result = await post(`/api/v1/admin/orders/${orderId}/production`, {
+    to: field(form, 'to'),
+    reason: field(form, 'reason') || 'به‌روزرسانی تولید از پنل مدیریت',
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'تغییر وضعیت تولید انجام نشد.'))
+  revalidatePath(`/admin/orders/${orderId}`)
+  return success('وضعیت تولید ثبت شد.')
+}

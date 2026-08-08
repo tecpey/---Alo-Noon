@@ -425,7 +425,14 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     try {
-      setPayment(await api.readPayment(payment.id))
+      // Both, together: the customer asking "did it go through" and "where is
+      // my bread" is the same tap, and the answers live in two aggregates.
+      const [freshPayment, freshOrder] = await Promise.all([
+        api.readPayment(payment.id),
+        order ? api.readOrder(order.id) : Promise.resolve(null),
+      ])
+      setPayment(freshPayment)
+      if (freshOrder) setOrder(freshOrder)
     } catch (error) {
       handleAuthenticatedError(error)
     } finally {
@@ -965,7 +972,13 @@ function CartCard({
         <View accessibilityLiveRegion="polite" style={styles.orderConfirmation}>
           <Text style={styles.quoteTitle}>سفارش با موفقیت ثبت شد</Text>
           <Text style={styles.quoteMeta}>شماره سفارش: {order.publicId}</Text>
-          <Text style={styles.quoteMeta}>وضعیت: {PAYMENT_STATE_FA[payment?.state ?? 'NONE']}</Text>
+          <Text style={styles.quoteMeta}>پرداخت: {PAYMENT_STATE_FA[payment?.state ?? 'NONE']}</Text>
+          <Text style={styles.quoteMeta}>سفارش: {ORDER_STATE_FA[order.state] ?? order.state}</Text>
+          {order.productionState !== 'NOT_REQUIRED' && (
+            <Text style={styles.quoteMeta}>
+              تولید: {PRODUCTION_STATE_FA[order.productionState] ?? order.productionState}
+            </Text>
+          )}
           <Text style={styles.quoteTotal}>{formatRials(order.total.amount)}</Text>
 
           {payment?.state === 'CAPTURED' ? (
@@ -1005,6 +1018,30 @@ const PAYMENT_STATE_FA: Readonly<Record<string, string>> = {
   AUTHORIZED: 'در حال بررسی با درگاه',
   CAPTURED: 'پرداخت‌شده',
   FAILED: 'پرداخت ناموفق',
+}
+
+/**
+ * The order's own progress, which is the question a customer asks after paying.
+ * Kept separate from the payment states above because they answer different
+ * things: the money can be in while the bakery has not yet said yes.
+ */
+const ORDER_STATE_FA: Readonly<Record<string, string>> = {
+  DRAFT: 'پیش‌نویس',
+  PENDING_CONFIRMATION: 'در انتظار تأیید نانوایی',
+  CONFIRMED: 'تأییدشده',
+  IN_FULFILLMENT: 'در مسیر تحویل',
+  CANCEL_REQUESTED: 'درخواست لغو',
+  DELIVERY_FAILED: 'تحویل ناموفق',
+  COMPLETED: 'تحویل‌شده',
+  CANCELLED: 'لغوشده',
+}
+
+const PRODUCTION_STATE_FA: Readonly<Record<string, string>> = {
+  UNSCHEDULED: 'در نوبت',
+  SCHEDULED: 'زمان‌بندی‌شده',
+  IN_PRODUCTION: 'در حال پخت',
+  READY: 'آمادهٔ تحویل',
+  HANDED_OFF: 'تحویل به پیک',
 }
 
 function InlineMessage({ text }: { text: string }) {

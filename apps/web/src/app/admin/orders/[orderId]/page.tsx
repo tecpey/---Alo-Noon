@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import {
+  availableOrderSteps,
+  availableProductionSteps,
   DELIVERY_STATE_LABELS,
   formatCount,
   formatDateTime,
@@ -11,7 +13,9 @@ import {
   PAYMENT_STATE_LABELS,
   PRODUCTION_STATE_LABELS,
 } from '../../../../lib/admin-format-display'
+import { advanceOrderAction, advanceProductionAction } from '../../../../lib/admin-actions'
 import { isUnauthenticated, readOrder } from '../../../../lib/admin-api'
+import { ActionForm, Field, SelectField } from '../../action-form'
 import { AdminNav } from '../../admin-nav'
 import { readFailureMessage } from '../../failure-message'
 
@@ -49,6 +53,13 @@ export default async function AdminOrderDetailPage({
         <Tile label="تولید" value={label(PRODUCTION_STATE_LABELS, order.productionState)} />
         <Tile label="تحویل" value={label(DELIVERY_STATE_LABELS, order.deliveryState)} />
       </section>
+
+      <OrderControls
+        orderId={order.id}
+        state={order.state}
+        paymentState={order.paymentState}
+        productionState={order.productionState}
+      />
 
       <div className="split">
         <section className="card">
@@ -185,5 +196,74 @@ function Tile({ label: name, value }: Readonly<{ label: string; value: string }>
       <span>{name}</span>
       <strong>{value}</strong>
     </article>
+  )
+}
+
+/**
+ * The steps an operator can take on this order, right now.
+ *
+ * Only the ones the domain allows from the current state are offered. That is a
+ * projection of the server's rules rather than the rules themselves — the API
+ * checks again — but showing a button that always fails teaches an operator to
+ * distrust the panel.
+ */
+function OrderControls({
+  orderId,
+  state,
+  paymentState,
+  productionState,
+}: Readonly<{
+  orderId: string
+  state: string
+  paymentState: string
+  productionState: string
+}>) {
+  const steps = availableOrderSteps(state, paymentState)
+  const production = availableProductionSteps(productionState)
+  const productionOpen = state === 'CONFIRMED' || state === 'IN_FULFILLMENT'
+
+  if (steps.length === 0 && !(productionOpen && production.length > 0)) {
+    return (
+      <aside className="note">
+        {state === 'PENDING_CONFIRMATION' && paymentState !== 'PAID'
+          ? 'تا پرداخت مشتری تأیید نشود، سفارش پذیرفته نمی‌شود. رد کردن همچنان ممکن است.'
+          : 'در وضعیت فعلی این سفارش، اقدامی باقی نمانده است.'}
+      </aside>
+    )
+  }
+
+  return (
+    <section>
+      <h2>اقدام‌ها</h2>
+      <div className="row-actions">
+        {steps.map((step) => (
+          <ActionForm key={step.step} action={advanceOrderAction} submitLabel={step.label}>
+            <input type="hidden" name="orderId" value={orderId} />
+            <input type="hidden" name="step" value={step.step} />
+            <Field
+              label="دلیل"
+              name="reason"
+              required
+              placeholder={step.step === 'reject' ? 'چرا رد شد؟' : 'یادداشت کوتاه'}
+            />
+          </ActionForm>
+        ))}
+
+        {productionOpen && production.length > 0 && (
+          <ActionForm action={advanceProductionAction} submitLabel="ثبت وضعیت تولید">
+            <input type="hidden" name="orderId" value={orderId} />
+            <SelectField
+              label="مرحلهٔ تولید"
+              name="to"
+              options={production.map((code) => ({
+                value: code,
+                label: label(PRODUCTION_STATE_LABELS, code),
+              }))}
+            />
+            <Field label="دلیل" name="reason" placeholder="یادداشت کوتاه" />
+          </ActionForm>
+        )}
+      </div>
+    </section>
   )
 }

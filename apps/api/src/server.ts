@@ -27,6 +27,7 @@ import { createPrismaAdminReportingService } from './modules/admin-reporting.js'
 import { createPrismaAdminFinancialReportingService } from './modules/admin-financial-reporting.js'
 import { createPrismaAdminCatalogService } from './modules/admin-catalog.js'
 import { createPrismaAdminAccessService } from './modules/admin-access.js'
+import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
@@ -182,6 +183,10 @@ const adminCatalog = { service: createPrismaAdminCatalogService(prisma) }
 // withheld from an otherwise fully privileged operator.
 const adminAccess = { service: createPrismaAdminAccessService(prisma) }
 
+// Order operations re-check admin.orders.manage inside their own write
+// transaction, so this instance carries no ambient authority of its own.
+const orderOperations = { service: createPrismaOrderOperationsService(prisma) }
+
 const app = await buildApp({
   logger: true,
   ...(env.API_TRUST_PROXY_HOPS !== undefined && { trustProxyHops: env.API_TRUST_PROXY_HOPS }),
@@ -207,6 +212,7 @@ const app = await buildApp({
   adminReporting,
   adminCatalog,
   adminAccess,
+  orderOperations,
 })
 
 if (env.SENTRY_DSN) {
