@@ -56,6 +56,7 @@ import {
   registerAdminMessagingRoutes,
   type AdminMessagingDependencies,
 } from './modules/admin-messaging-routes.js'
+import { registerDeliveryRoutes, type DeliveryDependencies } from './modules/delivery-routes.js'
 import {
   registerOrderOperationsRoutes,
   type OrderOperationsDependencies,
@@ -80,6 +81,7 @@ export interface AppOptions {
   adminAccess?: Omit<AdminAccessDependencies, 'auth'>
   adminMessaging?: Omit<AdminMessagingDependencies, 'auth'>
   orderOperations?: Omit<OrderOperationsDependencies, 'auth'>
+  delivery?: Omit<DeliveryDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
   trustProxyHops?: number
@@ -207,6 +209,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.orderOperations) {
     registerOrderOperationsRoutes(app, { ...options.orderOperations, auth: options.auth })
+  }
+  if (options.auth && options.delivery) {
+    registerDeliveryRoutes(app, { ...options.delivery, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

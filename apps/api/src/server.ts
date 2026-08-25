@@ -31,6 +31,7 @@ import { createPrismaAdminMessagingService } from './modules/admin-messaging.js'
 import { createPrismaCustomerNotificationService } from './modules/customer-notifications.js'
 import { createPrismaOutboxPublisher } from './modules/outbox-publisher.js'
 import { createLimoSmsAdapter } from './providers/limosms.js'
+import { createPrismaDeliveryService } from './modules/delivery.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
@@ -223,6 +224,11 @@ const orderOperations = {
   service: createPrismaOrderOperationsService(prisma, { ledgerService: paymentLedgerService }),
 }
 
+// Dispatch and the courier app share one service. A courier holds no admin
+// grant at all — their authority is the assignment offered to them, which the
+// service checks against the row on every write.
+const delivery = { service: createPrismaDeliveryService(prisma) }
+
 const app = await buildApp({
   logger: true,
   ...(env.API_TRUST_PROXY_HOPS !== undefined && { trustProxyHops: env.API_TRUST_PROXY_HOPS }),
@@ -250,6 +256,7 @@ const app = await buildApp({
   adminAccess,
   adminMessaging,
   orderOperations,
+  delivery,
 })
 
 if (env.SENTRY_DSN) {

@@ -13,6 +13,7 @@ import {
 } from '@alo-noon/domain'
 
 import { holdsPermissionInTransaction } from './admin-auth.js'
+import { cancelDeliveryForOrder, openDeliveryForOrder } from './delivery.js'
 import type { PaymentLedgerService } from './payment-ledger.js'
 
 /**
@@ -202,6 +203,16 @@ export function createPrismaOrderOperationsService(
             occurredAt: now,
           },
         })
+        // Accepting an order *is* the commitment to deliver it, so the delivery
+        // is opened here rather than when a dispatcher first looks at the board.
+        // A board that only shows orders someone already thought about is a
+        // board that hides the ones nobody has.
+        if (step.to === OrderState.CONFIRMED) {
+          await openDeliveryForOrder(transaction, tenantId, order)
+        }
+        if (step.to === OrderState.CANCELLED) {
+          await cancelDeliveryForOrder(transaction, tenantId, order.id, now)
+        }
         await recordOrderChange(transaction, tenantId, actor, {
           action: `order.${to.toLowerCase()}`,
           entityId: order.id,
@@ -345,6 +356,8 @@ async function lockOrder(
   state: string
   paymentState: string
   productionState: string
+  bakeryBranchId: string
+  requestedDeliveryAt: Date | null
 }> {
   await transaction.$queryRaw`
     SELECT "id" FROM "Order"
@@ -362,6 +375,10 @@ async function lockOrder(
       state: true,
       paymentState: true,
       productionState: true,
+      // Only used when acceptance opens the delivery: which branch the courier
+      // collects from, and when the customer asked for it.
+      bakeryBranchId: true,
+      requestedDeliveryAt: true,
     },
   })
   if (!order) throw new OrderOperationsError('ORDER_NOT_FOUND', 404)

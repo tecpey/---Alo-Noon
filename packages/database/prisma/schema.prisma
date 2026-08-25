@@ -1777,6 +1777,11 @@ model Courier {
 
   @@unique([courierPartnerId, externalRef])
   @@index([courierPartnerId, status])
+  /// A courier signs in with the ordinary one-time code, and this number is the
+  /// only thing that says which courier the signed-in account is. See the
+  /// partial unique index in the migration: it holds only for couriers who can
+  /// still take work, so a courier who leaves and returns is a new record.
+  @@index([tenantId, mobileE164], map: "courier_tenant_mobile_idx")
 
   @@index([tenantId])
 

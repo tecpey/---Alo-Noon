@@ -65,6 +65,8 @@ export type DomainErrorCode =
   | 'INVALID_STOCK_QUANTITY'
   | 'OFFERING_STOCK_UNAVAILABLE'
   | 'MESSAGE_TEMPLATE_PURPOSE_UNKNOWN'
+  | 'INVALID_DELIVERY_TRANSITION'
+  | 'UNAUTHORIZED_DELIVERY_TRANSITION'
 
 export class DomainError extends Error {
   constructor(
