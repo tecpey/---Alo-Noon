@@ -57,6 +57,12 @@ export interface DeliveryTaskView {
   state: string
   attemptCount: number
   recipientName: string
+  /**
+   * The courier standing at the wrong gate has no other way to find the right
+   * one. It is the order's own snapshot, so a customer changing their profile
+   * number later cannot redirect a delivery already in flight.
+   */
+  recipientPhone: string
   address: string
   bakeryName: string
   totalAmount: string
@@ -147,6 +153,7 @@ const TASK_INCLUDE = Prisma.validator<Prisma.DeliveryTaskInclude>()({
           id: true,
           publicId: true,
           recipientNameSnapshot: true,
+          recipientPhoneSnapshot: true,
           deliveryAddressSnapshot: true,
           bakeryNameSnapshot: true,
           totalAmount: true,
@@ -704,6 +711,7 @@ function taskView(task: TaskRecord): DeliveryTaskView {
     state: task.state,
     attemptCount: task.attemptCount,
     recipientName: order.recipientNameSnapshot,
+    recipientPhone: order.recipientPhoneSnapshot,
     address: order.deliveryAddressSnapshot,
     bakeryName: order.bakeryNameSnapshot,
     totalAmount: order.totalAmount.toString(),

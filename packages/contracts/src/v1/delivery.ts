@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { uuidSchema } from './common'
+import { responseMetaSchema, uuidSchema } from './common'
 
 /**
  * Dispatch and courier transport.
@@ -74,6 +74,7 @@ export const deliveryTaskSchema = z.object({
   ]),
   attemptCount: z.number().int().nonnegative(),
   recipientName: z.string(),
+  recipientPhone: z.string(),
   address: z.string(),
   bakeryName: z.string(),
   totalAmount: z.string(),
@@ -99,6 +100,18 @@ export const courierSummarySchema = z.object({
 
 export type CreateCourierCommand = z.infer<typeof createCourierCommandSchema>
 export type SetCourierStatusCommand = z.infer<typeof setCourierStatusCommandSchema>
+export const deliveryTaskEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: deliveryTaskSchema,
+  meta: responseMetaSchema,
+})
+
+export const deliveryTaskListEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.array(deliveryTaskSchema),
+  meta: responseMetaSchema,
+})
+
 export type DeliveryOfferCommand = z.infer<typeof deliveryOfferCommandSchema>
 export type DeliveryReleaseCommand = z.infer<typeof deliveryReleaseCommandSchema>
 export type CourierResponseCommand = z.infer<typeof courierResponseCommandSchema>

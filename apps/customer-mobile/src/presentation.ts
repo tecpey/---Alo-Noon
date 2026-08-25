@@ -1,33 +1,11 @@
 import type { ProductSummary } from '@alo-noon/contracts'
+import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
 
-const persianDigits = '۰۱۲۳۴۵۶۷۸۹'
-const arabicDigits = '٠١٢٣٤٥٦٧٨٩'
-
-function normalizeDigits(value: string): string {
-  return [...value]
-    .map((character) => {
-      const persianIndex = persianDigits.indexOf(character)
-      if (persianIndex >= 0) return String(persianIndex)
-      const arabicIndex = arabicDigits.indexOf(character)
-      return arabicIndex >= 0 ? String(arabicIndex) : character
-    })
-    .join('')
-}
-
-export function normalizeIranianMobile(value: string): string | null {
-  const ascii = normalizeDigits(value).replace(/[\s()-]/g, '')
-
-  if (/^09\d{9}$/.test(ascii)) return `+98${ascii.slice(1)}`
-  if (/^9\d{9}$/.test(ascii)) return `+98${ascii}`
-  if (/^\+989\d{9}$/.test(ascii)) return ascii
-  if (/^00989\d{9}$/.test(ascii)) return `+${ascii.slice(2)}`
-  return null
-}
-
-export function normalizeOtpCode(value: string): string | null {
-  const ascii = normalizeDigits(value).replace(/\s/g, '')
-  return /^\d{6}$/.test(ascii) ? ascii : null
-}
+// The keyboard-facing normalisers live in the domain package because the
+// courier app takes the same two inputs from the same keyboards. Re-exported
+// under the names this app already uses rather than renamed at every call site.
+export const normalizeIranianMobile = parseIranianMobile
+export const normalizeOtpCode = parseOtpCode
 
 export function formatRials(amount: string): string {
   if (!/^\d+$/.test(amount)) return amount
