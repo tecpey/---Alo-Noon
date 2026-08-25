@@ -42,6 +42,22 @@ export const courierReportCommandSchema = z
   })
   .strict()
 
+export const courierStatusSchema = z.enum(['AVAILABLE', 'UNAVAILABLE', 'SUSPENDED', 'OFFBOARDED'])
+
+export const createCourierCommandSchema = z
+  .object({
+    displayName: z.string().min(1).max(120),
+    /** Also how a courier signs in: the number is the link to their account. */
+    mobileE164: z.string().regex(/^\+989\d{9}$/),
+  })
+  .strict()
+
+export const setCourierStatusCommandSchema = z
+  .object({
+    status: courierStatusSchema,
+  })
+  .strict()
+
 export const deliveryTaskSchema = z.object({
   taskId: uuidSchema,
   orderId: uuidSchema,
@@ -81,6 +97,8 @@ export const courierSummarySchema = z.object({
   activeTasks: z.number().int().nonnegative(),
 })
 
+export type CreateCourierCommand = z.infer<typeof createCourierCommandSchema>
+export type SetCourierStatusCommand = z.infer<typeof setCourierStatusCommandSchema>
 export type DeliveryOfferCommand = z.infer<typeof deliveryOfferCommandSchema>
 export type DeliveryReleaseCommand = z.infer<typeof deliveryReleaseCommandSchema>
 export type CourierResponseCommand = z.infer<typeof courierResponseCommandSchema>

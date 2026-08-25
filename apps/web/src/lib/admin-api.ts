@@ -308,6 +308,41 @@ export interface MessageTemplate {
   updatedById: string | null
 }
 
+// ---------------------------------------------------------------------------
+// Deliveries
+// ---------------------------------------------------------------------------
+
+export interface DeliveryTask {
+  taskId: string
+  orderId: string
+  orderPublicId: string
+  state: string
+  attemptCount: number
+  recipientName: string
+  address: string
+  bakeryName: string
+  totalAmount: string
+  deliverBefore: string | null
+  courier: { courierId: string; displayName: string; assignmentId: string; state: string } | null
+  updatedAt: string
+}
+
+export interface CourierSummary {
+  courierId: string
+  displayName: string
+  mobileE164: string
+  status: string
+  activeTasks: number
+}
+
+export async function listDeliveries(): Promise<ApiResult<DeliveryTask[]>> {
+  return request<DeliveryTask[]>('/api/v1/admin/deliveries', { method: 'GET' })
+}
+
+export async function listCouriers(): Promise<ApiResult<CourierSummary[]>> {
+  return request<CourierSummary[]>('/api/v1/admin/couriers', { method: 'GET' })
+}
+
 export async function listMessageTemplates(): Promise<ApiResult<MessageTemplate[]>> {
   const result = await request<{ templates: MessageTemplate[] }>(
     '/api/v1/admin/messaging/templates/SMS',

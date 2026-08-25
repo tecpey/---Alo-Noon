@@ -7,6 +7,7 @@ import {
   DeliveryTaskState,
   courierCanBeOffered,
   deliveryTaskIsTerminal,
+  normalizeIranianMobile,
   orderDeliveryStateFor,
   transitionDeliveryAssignment,
   transitionDeliveryTask,
@@ -72,6 +73,17 @@ export interface CourierView {
   activeTasks: number
 }
 
+/**
+ * The statuses an operator may set from the panel.
+ *
+ * ONBOARDING is absent because it is where a courier starts and there is nothing
+ * to go back to; OFFBOARDED is the way out, and it is deliberately not reversible
+ * from the panel — the partial unique index frees the number for a fresh record,
+ * so someone returning is hired again rather than resurrected.
+ */
+export const COURIER_STATUSES = ['AVAILABLE', 'UNAVAILABLE', 'SUSPENDED', 'OFFBOARDED'] as const
+export type CourierStatus = (typeof COURIER_STATUSES)[number]
+
 /** What a courier may assert about a task they hold. */
 export const COURIER_REPORTS = ['PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'] as const
 export type CourierReport = (typeof COURIER_REPORTS)[number]
@@ -93,6 +105,21 @@ export interface DeliveryService {
     now: Date,
     correlationId: string,
   ): Promise<DeliveryTaskView>
+
+  createCourier(
+    tenantId: string,
+    actor: DispatchActor,
+    command: { displayName: string; mobileE164: string },
+    now: Date,
+    correlationId: string,
+  ): Promise<CourierView>
+  setCourierStatus(
+    tenantId: string,
+    actor: DispatchActor,
+    command: { courierId: string; status: CourierStatus },
+    now: Date,
+    correlationId: string,
+  ): Promise<CourierView>
 
   findCourierForAccount(tenantId: string, accountId: string): Promise<CourierActor | null>
   listCourierTasks(tenantId: string, courier: CourierActor): Promise<DeliveryTaskView[]>
@@ -172,6 +199,96 @@ export function createPrismaDeliveryService(prisma: PrismaClient): DeliveryServi
         // the first name in the list.
         activeTasks: courier._count.assignments,
       }))
+    },
+
+    async createCourier(tenantId, actor, command, now, correlationId) {
+      const mobileE164 = validated(() => normalizeIranianMobile(command.mobileE164))
+      const displayName = command.displayName.trim()
+      if (!displayName || displayName.length > 120) {
+        throw new DeliveryError('COURIER_NAME_INVALID', 422)
+      }
+
+      return dispatchTransaction(prisma, tenantId, actor, now, async (transaction) => {
+        const clash = await transaction.courier.findFirst({
+          where: { tenantId, mobileE164, status: { not: 'OFFBOARDED' } },
+          select: { id: true },
+        })
+        // Refused here rather than left to the index so the operator gets a
+        // sentence. The index still stands behind it.
+        if (clash) throw new DeliveryError('COURIER_ALREADY_EXISTS', 409)
+
+        const partner = await defaultPartner(transaction, tenantId)
+        const courier = await transaction.courier.create({
+          data: {
+            tenantId,
+            courierPartnerId: partner.id,
+            mobileE164,
+            displayName,
+            // Not available until someone says so. A courier who can be handed
+            // work the instant their name is typed is a courier handed work
+            // before anyone checked they exist.
+            status: 'ONBOARDING',
+          },
+        })
+        await recordDeliveryChange(transaction, tenantId, 'STAFF', actor.accountId, {
+          action: 'courier.created',
+          entityId: courier.id,
+          summary: `Courier ${displayName} added`,
+          payload: { courierId: courier.id },
+          correlationId,
+          now,
+          entityType: 'courier',
+        })
+        return {
+          courierId: courier.id,
+          displayName: courier.displayName,
+          mobileE164: courier.mobileE164,
+          status: courier.status,
+          activeTasks: 0,
+        }
+      })
+    },
+
+    async setCourierStatus(tenantId, actor, command, now, correlationId) {
+      return dispatchTransaction(prisma, tenantId, actor, now, async (transaction) => {
+        const courier = await transaction.courier.findFirst({
+          where: { id: command.courierId, tenantId },
+          select: { id: true, displayName: true, mobileE164: true, status: true },
+        })
+        if (!courier) throw new DeliveryError('COURIER_NOT_FOUND', 404)
+        if (courier.status === 'OFFBOARDED') throw new DeliveryError('COURIER_OFFBOARDED', 409)
+
+        const held = await transaction.deliveryAssignment.count({
+          where: { courierId: courier.id, state: 'ACCEPTED' },
+        })
+        // Taking someone out of rotation while they are holding bread would
+        // leave those orders with nobody responsible and no way to report on
+        // them. Release the work first.
+        if (held > 0 && command.status !== 'AVAILABLE') {
+          throw new DeliveryError('COURIER_STILL_HOLDING_WORK', 409)
+        }
+
+        const updated = await transaction.courier.update({
+          where: { id: courier.id },
+          data: { status: command.status },
+        })
+        await recordDeliveryChange(transaction, tenantId, 'STAFF', actor.accountId, {
+          action: 'courier.status_changed',
+          entityId: courier.id,
+          summary: `Courier ${courier.displayName} moved to ${command.status}`,
+          payload: { fromStatus: courier.status, toStatus: command.status },
+          correlationId,
+          now,
+          entityType: 'courier',
+        })
+        return {
+          courierId: updated.id,
+          displayName: updated.displayName,
+          mobileE164: updated.mobileE164,
+          status: updated.status,
+          activeTasks: held,
+        }
+      })
     },
 
     async offer(tenantId, actor, command, now, correlationId) {
@@ -511,6 +628,36 @@ export async function cancelDeliveryForOrder(
   await transaction.deliveryTask.update({ where: { id: task.id }, data: { state: 'CANCELLED' } })
 }
 
+/**
+ * The tenant's own couriers, as a partner record.
+ *
+ * `Courier` requires one, and a bakery running its own riders has no third party
+ * to name. Making an operator invent a partner before they can add a courier is
+ * paperwork for a foreign key, so one in-house partner is created on demand and
+ * never shown in the panel. A tenant that later contracts a real courier company
+ * gets a second partner; nothing here has to change for that.
+ */
+async function defaultPartner(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+): Promise<{ id: string }> {
+  const existing = await transaction.courierPartner.findFirst({
+    where: { tenantId },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (existing) return existing
+  return transaction.courierPartner.create({
+    data: {
+      tenantId,
+      code: `INHOUSE-${tenantId.slice(0, 8).toUpperCase()}`,
+      displayName: 'پیک‌های خودی',
+      isActive: true,
+    },
+    select: { id: true },
+  })
+}
+
 async function cancelOpenAssignments(
   transaction: Prisma.TransactionClient,
   taskId: string,
@@ -580,6 +727,8 @@ interface DeliveryChange {
   payload: Prisma.InputJsonObject
   correlationId: string
   now: Date
+  /** Defaults to the delivery task; courier changes name themselves. */
+  entityType?: 'delivery_task' | 'courier'
 }
 
 async function recordDeliveryChange(
@@ -597,7 +746,7 @@ async function recordDeliveryChange(
       // actor. Recording nothing would leave "who said it arrived" unanswered.
       actorId: actorType === 'STAFF' ? actorId : null,
       action: change.action,
-      entityType: 'delivery_task',
+      entityType: change.entityType ?? 'delivery_task',
       entityId: change.entityId,
       summary: change.summary,
       metadata: { ...change.payload, ...(actorType === 'COURIER' && { courierId: actorId }) },
@@ -610,7 +759,7 @@ async function recordDeliveryChange(
       tenantId,
       eventId: randomUUID(),
       name: change.action,
-      aggregateType: 'delivery_task',
+      aggregateType: change.entityType ?? 'delivery_task',
       aggregateId: change.entityId,
       actorType,
       ...(actorType === 'STAFF' && { actorId }),
@@ -629,6 +778,9 @@ function validated<T>(run: () => T): T {
     return run()
   } catch (error) {
     if (error instanceof DomainError) {
+      if (error.code === 'INVALID_IRANIAN_MOBILE') {
+        throw new DeliveryError('COURIER_MOBILE_INVALID', 422)
+      }
       throw new DeliveryError(
         error.code === 'UNAUTHORIZED_DELIVERY_TRANSITION'
           ? 'DELIVERY_STEP_NOT_PERMITTED'

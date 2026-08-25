@@ -4,9 +4,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
 import {
   courierReportCommandSchema,
+  createCourierCommandSchema,
   deliveryOfferCommandSchema,
   deliveryReleaseCommandSchema,
   courierResponseCommandSchema,
+  setCourierStatusCommandSchema,
 } from '@alo-noon/contracts'
 
 import {
@@ -78,6 +80,52 @@ export function registerDeliveryRoutes(
       return deliveryFailure(request, reply, error)
     }
   })
+
+  app.post('/api/v1/admin/couriers', DISPATCH_LIMIT, async (request, reply) => {
+    const actor = await authenticatedStaff(request, reply, dependencies, DISPATCH_PERMISSION)
+    if (!actor) return reply
+    const parsed = createCourierCommandSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send(errorEnvelope('INVALID_COURIER', 'The courier is invalid.'))
+    }
+    try {
+      const courier = await dependencies.service.createCourier(
+        actor.tenantId,
+        { accountId: actor.accountId },
+        parsed.data,
+        currentTime(),
+        randomUUID(),
+      )
+      return reply.code(201).send({ success: true, data: courier, meta: adminResponseMeta() })
+    } catch (error) {
+      return deliveryFailure(request, reply, error)
+    }
+  })
+
+  app.patch<{ Params: { courierId: string } }>(
+    '/api/v1/admin/couriers/:courierId',
+    DISPATCH_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(request, reply, dependencies, DISPATCH_PERMISSION)
+      if (!actor) return reply
+      const parsed = setCourierStatusCommandSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply.code(400).send(errorEnvelope('INVALID_COURIER', 'The courier is invalid.'))
+      }
+      try {
+        const courier = await dependencies.service.setCourierStatus(
+          actor.tenantId,
+          { accountId: actor.accountId },
+          { courierId: request.params.courierId, status: parsed.data.status },
+          currentTime(),
+          randomUUID(),
+        )
+        return reply.send({ success: true, data: courier, meta: adminResponseMeta() })
+      } catch (error) {
+        return deliveryFailure(request, reply, error)
+      }
+    },
+  )
 
   app.post<{ Params: { taskId: string } }>(
     '/api/v1/admin/deliveries/:taskId/offer',
@@ -242,6 +290,12 @@ const DELIVERY_MESSAGES: Readonly<Record<string, string>> = {
   DISPATCH_FORBIDDEN: 'This account may not dispatch deliveries.',
   DELIVERY_NOT_FOUND: 'No such delivery.',
   COURIER_NOT_FOUND: 'No such courier.',
+  COURIER_ALREADY_EXISTS: 'A courier with that number is already on the roster.',
+  COURIER_MOBILE_INVALID: 'The mobile number must be in +989XXXXXXXXX form.',
+  COURIER_NAME_INVALID: 'A courier needs a name.',
+  COURIER_OFFBOARDED: 'That courier has left. Add them again to bring them back.',
+  COURIER_STILL_HOLDING_WORK:
+    'That courier is still holding a delivery. Release it before taking them out of rotation.',
   COURIER_UNAVAILABLE: 'That courier is not available for work right now.',
   OFFER_NOT_OPEN: 'That offer is no longer open.',
   DELIVERY_NOT_YOURS: 'This delivery is not assigned to you.',

@@ -309,6 +309,132 @@ databaseDescribe('deliveries over PostgreSQL', () => {
     expect(task.state).toBe('CANCELLED')
   })
 
+  it('adds a courier who cannot be handed work until someone says so', async () => {
+    const mobile = uniqueMobile()
+    const created = await service.createCourier(
+      fixture.tenantId,
+      { accountId: fixture.operatorId },
+      { displayName: 'پیک تازه', mobileE164: mobile },
+      now,
+      randomUUID(),
+    )
+    // A courier who can take an order the instant their name is typed is one
+    // handed work before anyone checked they exist.
+    expect(created).toMatchObject({ status: 'ONBOARDING', activeTasks: 0 })
+
+    const task = await prisma.deliveryTask.findFirstOrThrow({
+      where: { tenantId: fixture.tenantId, state: 'UNASSIGNED' },
+    })
+    await expect(
+      service.offer(
+        fixture.tenantId,
+        { accountId: fixture.operatorId },
+        { taskId: task.id, courierId: created.courierId },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'COURIER_UNAVAILABLE', status: 409 })
+
+    const activated = await service.setCourierStatus(
+      fixture.tenantId,
+      { accountId: fixture.operatorId },
+      { courierId: created.courierId, status: 'AVAILABLE' },
+      now,
+      randomUUID(),
+    )
+    expect(activated.status).toBe('AVAILABLE')
+  })
+
+  it('refuses a second courier on a number already on the roster', async () => {
+    const mobile = uniqueMobile()
+    await service.createCourier(
+      fixture.tenantId,
+      { accountId: fixture.operatorId },
+      { displayName: 'یکی', mobileE164: mobile },
+      now,
+      randomUUID(),
+    )
+    // The number is how a courier signs in, so two records sharing one would
+    // mean either a courier who cannot see their work or one who sees another's.
+    await expect(
+      service.createCourier(
+        fixture.tenantId,
+        { accountId: fixture.operatorId },
+        { displayName: 'دیگری', mobileE164: mobile },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'COURIER_ALREADY_EXISTS', status: 409 })
+  })
+
+  it('refuses a number nobody could sign in with', async () => {
+    await expect(
+      service.createCourier(
+        fixture.tenantId,
+        { accountId: fixture.operatorId },
+        { displayName: 'شماره غلط', mobileE164: '09121234567' },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'COURIER_MOBILE_INVALID', status: 422 })
+  })
+
+  it('will not take a courier out of rotation while they are holding bread', async () => {
+    const fourth = await seedOrder(fixture, `fourth-${suffix}`)
+    await orders.accept(
+      fixture.tenantId,
+      { accountId: fixture.operatorId },
+      { orderId: fourth, reason: 'پذیرش چهارم' },
+      now,
+      randomUUID(),
+    )
+    const task = (await service.listTasks(fixture.tenantId, true)).find(
+      (entry) => entry.orderId === fourth,
+    )!
+    await service.offer(
+      fixture.tenantId,
+      { accountId: fixture.operatorId },
+      { taskId: task.taskId, courierId: fixture.otherCourierId },
+      now,
+      randomUUID(),
+    )
+    await service.respond(
+      fixture.tenantId,
+      { courierId: fixture.otherCourierId },
+      { taskId: task.taskId, accept: true },
+      now,
+      randomUUID(),
+    )
+
+    // Those orders would be left with nobody responsible and no way to report
+    // on them. Release the work first.
+    await expect(
+      service.setCourierStatus(
+        fixture.tenantId,
+        { accountId: fixture.operatorId },
+        { courierId: fixture.otherCourierId, status: 'UNAVAILABLE' },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'COURIER_STILL_HOLDING_WORK', status: 409 })
+
+    await service.release(
+      fixture.tenantId,
+      { accountId: fixture.operatorId },
+      { taskId: task.taskId, reason: 'پیک رفت' },
+      now,
+      randomUUID(),
+    )
+    const rested = await service.setCourierStatus(
+      fixture.tenantId,
+      { accountId: fixture.operatorId },
+      { courierId: fixture.otherCourierId, status: 'UNAVAILABLE' },
+      now,
+      randomUUID(),
+    )
+    expect(rested.status).toBe('UNAVAILABLE')
+  })
+
   it('links a signed-in account to the courier it belongs to', async () => {
     const courier = await service.findCourierForAccount(fixture.tenantId, fixture.courierAccountId)
     expect(courier).toEqual({ courierId: fixture.courierId })

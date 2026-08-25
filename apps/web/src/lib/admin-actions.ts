@@ -667,3 +667,59 @@ export async function saveMessageTemplateAction(
   revalidatePath('/admin/messaging')
   return success(`ذخیره شد. این پیام ${result.data.segments} پیامک حساب می‌شود.`)
 }
+
+export async function offerDeliveryAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const taskId = field(form, 'taskId')
+  const result = await post(`/api/v1/admin/deliveries/${taskId}/offer`, {
+    courierId: field(form, 'courierId'),
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'اعزام انجام نشد.'))
+  revalidatePath('/admin/deliveries')
+  return success('سفارش به پیک پیشنهاد شد. تا وقتی نپذیرد، به مشتری چیزی گفته نمی‌شود.')
+}
+
+export async function releaseDeliveryAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const taskId = field(form, 'taskId')
+  const result = await post(`/api/v1/admin/deliveries/${taskId}/release`, {
+    ...(field(form, 'reason') && { reason: field(form, 'reason') }),
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'بازگرداندن به صف انجام نشد.'))
+  revalidatePath('/admin/deliveries')
+  return success('سفارش به صف اعزام برگشت.')
+}
+
+export async function createCourierAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const result = await post('/api/v1/admin/couriers', {
+    displayName: field(form, 'displayName'),
+    mobileE164: field(form, 'mobileE164'),
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت پیک انجام نشد.'))
+  revalidatePath('/admin/deliveries')
+  // Deliberately not available on creation: a courier who can be handed work the
+  // instant their name is typed is one handed work before anyone checked.
+  return success('پیک ثبت شد. برای اینکه سفارش بگیرد، وضعیتش را «فعال» کنید.')
+}
+
+export async function setCourierStatusAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const courierId = field(form, 'courierId')
+  const result = await patch(`/api/v1/admin/couriers/${courierId}`, {
+    status: field(form, 'status'),
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'تغییر وضعیت پیک انجام نشد.'))
+  revalidatePath('/admin/deliveries')
+  return success('وضعیت پیک ثبت شد.')
+}
