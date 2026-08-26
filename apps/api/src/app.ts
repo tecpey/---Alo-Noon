@@ -62,6 +62,10 @@ import {
 } from './modules/admin-messaging-routes.js'
 import { registerDeliveryRoutes, type DeliveryDependencies } from './modules/delivery-routes.js'
 import {
+  registerDeliveryTripRoutes,
+  type DeliveryTripDependencies,
+} from './modules/delivery-trip-routes.js'
+import {
   registerOrderOperationsRoutes,
   type OrderOperationsDependencies,
 } from './modules/order-operations-routes.js'
@@ -87,6 +91,7 @@ export interface AppOptions {
   adminMessaging?: Omit<AdminMessagingDependencies, 'auth'>
   orderOperations?: Omit<OrderOperationsDependencies, 'auth'>
   delivery?: Omit<DeliveryDependencies, 'auth'>
+  deliveryTrips?: Omit<DeliveryTripDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
   trustProxyHops?: number
@@ -220,6 +225,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.delivery) {
     registerDeliveryRoutes(app, { ...options.delivery, auth: options.auth })
+  }
+  if (options.auth && options.deliveryTrips) {
+    registerDeliveryTripRoutes(app, { ...options.deliveryTrips, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

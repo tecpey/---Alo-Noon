@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { responseMetaSchema, uuidSchema } from './common'
+import { isoDateTimeSchema, responseMetaSchema, uuidSchema } from './common'
 
 /**
  * Dispatch and courier transport.
@@ -118,3 +118,82 @@ export type CourierResponseCommand = z.infer<typeof courierResponseCommandSchema
 export type CourierReportCommand = z.infer<typeof courierReportCommandSchema>
 export type DeliveryTaskView = z.infer<typeof deliveryTaskSchema>
 export type CourierSummary = z.infer<typeof courierSummarySchema>
+
+/**
+ * Batching several orders into one courier run.
+ *
+ * Three commands rather than one, because batching decides that a customer will
+ * wait longer than they otherwise would. That decision belongs to a person who
+ * can see what it costs and what it saves — propose, then commit, then offer.
+ */
+export const tripProposeCommandSchema = z
+  .object({
+    /**
+     * The delivery the run is built around. It is always the run's first
+     * commitment: batching helps an order that already needs delivering, and
+     * never holds one back while a companion is looked for.
+     */
+    anchorTaskId: uuidSchema,
+  })
+  .strict()
+
+export const tripCreateCommandSchema = z
+  .object({
+    /**
+     * An array rather than a set: the order given is the order that will be
+     * ridden, and a dispatcher who sequenced it gets the sequence they chose.
+     */
+    taskIds: z.array(uuidSchema).min(1).max(10),
+  })
+  .strict()
+
+export const tripDispatchCommandSchema = z
+  .object({
+    courierId: uuidSchema,
+  })
+  .strict()
+
+export const tripStopSchema = z.object({
+  taskId: uuidSchema,
+  orderId: uuidSchema,
+  orderCode: z.string().min(1).max(32),
+  sequence: z.number().int().min(1),
+  /** Riding distance from the previous stop, or from the branch for the first. */
+  legMetres: z.number().int().min(0),
+  plannedArrivalAt: isoDateTimeSchema,
+  recipientName: z.string(),
+  address: z.string(),
+})
+
+export const tripSchema = z.object({
+  /** Empty on a proposal, which has not been written down. */
+  tripId: z.string(),
+  branchId: uuidSchema,
+  state: z.enum(['PLANNED', 'DISPATCHED', 'COMPLETED', 'CANCELLED']),
+  plannedDepartureAt: isoDateTimeSchema,
+  plannedMetres: z.number().int().min(0),
+  /**
+   * What this run saves against delivering each drop on its own, in metres.
+   * Zero for a single-drop run, which is the honest answer rather than a
+   * flattering one.
+   */
+  savedMetres: z.number().int().min(0),
+  stops: z.array(tripStopSchema),
+})
+
+export const tripEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: tripSchema,
+  meta: responseMetaSchema,
+})
+
+export const tripListEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.array(tripSchema),
+  meta: responseMetaSchema,
+})
+
+export type TripProposeCommand = z.infer<typeof tripProposeCommandSchema>
+export type TripCreateCommand = z.infer<typeof tripCreateCommandSchema>
+export type TripDispatchCommand = z.infer<typeof tripDispatchCommandSchema>
+export type TripContract = z.infer<typeof tripSchema>

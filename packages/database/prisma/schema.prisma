@@ -485,6 +485,8 @@ model Tenant {
   customerNotifications CustomerNotification[]
   routingProviderConfigurations RoutingProviderConfiguration[]
   routeEstimates RouteEstimate[]
+  deliveryTrips DeliveryTrip[]
+  deliveryTripStops DeliveryTripStop[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -949,6 +951,7 @@ model BakeryBranch {
   fulfillments       Fulfillment[]
   carts              Cart[]
   routeEstimates     RouteEstimate[]
+  deliveryTrips      DeliveryTrip[]
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
 
@@ -1830,6 +1833,7 @@ model DeliveryTask {
   attemptCount      Int                   @default(0)
   failureReasonCode String?               @db.VarChar(64)
   assignments       DeliveryAssignment[]
+  tripStop          DeliveryTripStop?
   incidents         OperationalIncident[]
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
@@ -2182,4 +2186,69 @@ model RouteEstimate {
   @@unique([tenantId, bakeryBranchId, destinationLatitude, destinationLongitude, profile, avoidTrafficZone, avoidOddEvenZone, providerCode], map: "RouteEstimate_lookup_key")
   @@index([tenantId, computedAt], map: "RouteEstimate_tenant_computed_idx")
   @@index([bakeryBranchId, tenantId], map: "g3b_RouteEstimate_bakeryBranchId_tenant_idx")
+}
+
+
+enum DeliveryTripState {
+  PLANNED
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+/// Several orders, one courier, one ride.
+///
+/// The ride out to a neighbourhood is paid once per trip rather than once per
+/// loaf, which is the largest cost lever left in delivery. The risk it
+/// introduces is that on a shared run the last customer waits for everyone
+/// ahead of them — which is why the planner refuses far more batches than it
+/// builds, and why the stops become immutable the moment a courier is offered
+/// the run.
+model DeliveryTrip {
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @db.Uuid
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// One pickup per run: a rider collecting from two bakeries is two rides with
+  /// the loaves going cold in between.
+  bakeryBranchId     String             @db.Uuid
+  bakeryBranch       BakeryBranch       @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  state              DeliveryTripState  @default(PLANNED)
+  plannedDepartureAt DateTime
+  plannedMetres      Int
+  /// What this run saves against delivering each drop separately. Kept rather
+  /// than recomputed, because a plan that has since changed would answer a
+  /// different question.
+  savedMetres        Int                @default(0)
+  dispatchedAt       DateTime?
+  completedAt        DateTime?
+  correlationId      String             @db.Uuid
+  version            Int                @default(1)
+  stops              DeliveryTripStop[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([id, tenantId], map: "g3b_DeliveryTrip_id_tenant_key")
+  @@index([tenantId, state, createdAt], map: "DeliveryTrip_tenant_state_idx")
+  @@index([bakeryBranchId, tenantId], map: "g3b_DeliveryTrip_bakeryBranchId_tenant_idx")
+}
+
+/// One delivery's place in a run. A loaf rides once, and two drops cannot both
+/// be third.
+model DeliveryTripStop {
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @db.Uuid
+  tenant           Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  deliveryTripId   String       @db.Uuid
+  deliveryTrip     DeliveryTrip @relation(fields: [deliveryTripId], references: [id], onDelete: Restrict)
+  deliveryTaskId   String       @unique @db.Uuid
+  deliveryTask     DeliveryTask @relation(fields: [deliveryTaskId], references: [id], onDelete: Restrict)
+  sequence         Int
+  legMetres        Int
+  plannedArrivalAt DateTime
+  createdAt        DateTime     @default(now())
+
+  @@unique([tenantId, deliveryTaskId], map: "DeliveryTripStop_task_key")
+  @@unique([deliveryTripId, sequence], map: "DeliveryTripStop_sequence_key")
+  @@index([deliveryTripId, tenantId], map: "g3b_DeliveryTripStop_deliveryTripId_tenant_idx")
+  @@index([deliveryTaskId, tenantId], map: "g3b_DeliveryTripStop_deliveryTaskId_tenant_idx")
 }

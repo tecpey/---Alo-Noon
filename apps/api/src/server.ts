@@ -38,6 +38,7 @@ import {
 } from './modules/routing.js'
 import { createLimoSmsAdapter } from './providers/limosms.js'
 import { createPrismaDeliveryService } from './modules/delivery.js'
+import { createPrismaDeliveryTripService } from './modules/delivery-trips.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
@@ -268,6 +269,13 @@ const orderOperations = {
 // grant at all — their authority is the assignment offered to them, which the
 // service checks against the row on every write.
 const delivery = { service: createPrismaDeliveryService(prisma) }
+// The planner uses road distances where a routing engine is configured and the
+// straight line where one is not. That is not cosmetic: two doors fifty metres
+// apart with a river between them are a good batch on a map and a bad one in
+// life.
+const deliveryTrips = {
+  service: createPrismaDeliveryTripService(prisma, { routingService }),
+}
 
 const app = await buildApp({
   logger: true,
@@ -298,6 +306,7 @@ const app = await buildApp({
   adminMessaging,
   orderOperations,
   delivery,
+  deliveryTrips,
 })
 
 if (env.SENTRY_DSN) {

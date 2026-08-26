@@ -33,6 +33,7 @@ const migrationUrls = [
     import.meta.url,
   ),
   new URL('../prisma/migrations/20260826150000_routing_estimates/migration.sql', import.meta.url),
+  new URL('../prisma/migrations/20260826190000_delivery_trips/migration.sql', import.meta.url),
 ]
 
 type TenantRelation = {
@@ -123,7 +124,7 @@ describe('tenant relational integrity G3B', () => {
   const registeredRelations = registeredRelationsFromMigration(sql)
 
   it('covers every implemented tenant-owned relation exactly once', () => {
-    expect(schemaRelations).toHaveLength(72)
+    expect(schemaRelations).toHaveLength(75)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
       new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,
