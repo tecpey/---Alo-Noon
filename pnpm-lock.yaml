@@ -67,6 +67,9 @@ importers:
       fastify:
         specifier: ^5.10.0
         version: 5.10.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.1
     devDependencies:
       '@alo-noon/eslint-config':
         specifier: workspace:*
@@ -80,9 +83,6 @@ importers:
       eslint:
         specifier: ^9.24.0
         version: 9.39.5(supports-color@8.1.1)
-      tsx:
-        specifier: ^4.19.2
-        version: 4.23.1
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

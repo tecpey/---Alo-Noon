@@ -316,6 +316,10 @@ databaseDescribe('authentication delivery foundation on PostgreSQL', () => {
 
   it('atomically permits only one concurrent verification and session', async () => {
     const host = `auth-${tenantId.slice(0, 8)}.alo-noon.test`
+    // Unique per run. An account is keyed on its number for the life of the
+    // database, so a fixed one makes the session count below count every session
+    // that number ever had rather than the one this test is about.
+    const mobile = uniqueMobile()
     const app = await buildApp({
       auth: {
         repository: createPrismaAuthRepository(prisma),
@@ -332,7 +336,7 @@ databaseDescribe('authentication delivery foundation on PostgreSQL', () => {
         method: 'POST',
         url: '/api/v1/auth/otp/request',
         headers: { host, 'idempotency-key': `otp-${randomUUID()}` },
-        payload: { mobileE164: '+989121234573' },
+        payload: { mobileE164: mobile },
       })
       expect(requested.statusCode).toBe(202)
       const challengeId = requested.json().data.challengeId as string
@@ -354,7 +358,7 @@ databaseDescribe('authentication delivery foundation on PostgreSQL', () => {
       await tenantTransaction(tenantId, async (transaction) => {
         expect(
           await transaction.authSession.count({
-            where: { account: { is: { mobileE164: '+989121234573' } } },
+            where: { account: { is: { mobileE164: mobile } } },
           }),
         ).toBe(1)
       })
@@ -431,7 +435,10 @@ databaseDescribe('authentication delivery foundation on PostgreSQL', () => {
       },
     })
     try {
-      const mobile = '+989121234578'
+      // Unique per run. An account is keyed on its number for the life of the
+      // database, so a fixed one makes this count every session that number ever
+      // had rather than the one this test is about.
+      const mobile = uniqueMobile()
       const requested = await app.inject({
         method: 'POST',
         url: '/api/v1/auth/otp/request',
@@ -554,6 +561,11 @@ function deliveryService(hooks: { beforeFinalizationCommit?: () => Promise<void>
     generateOtp: () => '123456',
     ...hooks,
   })
+}
+
+/** A number no other run has used, so per-account counts mean what they say. */
+function uniqueMobile(): string {
+  return `+9891${randomUUID().replace(/\D/g, '').padEnd(8, '7').slice(0, 8)}`
 }
 
 function deliveryCommand(mobileE164: string, idempotencyKey: string, at: Date) {

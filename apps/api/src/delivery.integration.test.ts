@@ -218,8 +218,15 @@ databaseDescribe('deliveries over PostgreSQL', () => {
     // A delivery event is about an order without being keyed on one. Without the
     // id in its payload the notification path cannot find the customer, and the
     // "on its way" message reaches nobody.
+    // Keyed on this run's own delivery. Asking for "any out-for-delivery event"
+    // finds an earlier run's on a database that has been used twice, and then
+    // passes or fails for reasons that have nothing to do with this test.
     const event = await prisma.domainEventOutbox.findFirst({
-      where: { aggregateType: 'delivery_task', name: 'delivery.out_for_delivery' },
+      where: {
+        aggregateType: 'delivery_task',
+        aggregateId: taskId,
+        name: 'delivery.out_for_delivery',
+      },
     })
     expect(event?.payload).toMatchObject({ orderId: fixture.orderId })
   })
