@@ -10,7 +10,7 @@
  * per-provider. This stays in the application layer rather than the domain SPI
  * because it is transport shape, not a payment invariant.
  */
-export const CALLBACK_PROVIDER_CODES = ['NEXTPAY', 'SHEPA', 'IDPAY', 'ZARINPAL'] as const
+export const CALLBACK_PROVIDER_CODES = ['NEXTPAY', 'SHEPA', 'IDPAY', 'ZARINPAL', 'ZIBAL'] as const
 export type CallbackProviderCode = (typeof CALLBACK_PROVIDER_CODES)[number]
 
 export function isCallbackProviderCode(value: string): value is CallbackProviderCode {
@@ -19,15 +19,21 @@ export function isCallbackProviderCode(value: string): value is CallbackProvider
 
 // Field each provider uses for its own transaction reference, verified against
 // the same sources the adapters were built from (nextpay-ir official repo,
-// parsisolution/gateway Shepa and IDPay drivers, shetabit/multipay Zarinpal
-// driver). Zarinpal capitalises its parameter — `Authority`, alongside a
-// `Status` of OK or NOK that is deliberately ignored here, because a redirect
-// the customer's browser carried is never allowed to conclude anything.
+// parsisolution/gateway Shepa, IDPay and Zibal drivers, shetabit/multipay
+// Zarinpal driver). Five gateways, five different names for the same thing, and
+// one of them capitalised — Zarinpal's `Authority`.
+//
+// Each redirect also carries the gateway's own verdict alongside the reference:
+// Zarinpal a `Status` of OK or NOK, Zibal a `success` of 1 or 0. Both are
+// deliberately ignored. A verdict that travelled through the customer's browser
+// is a claim, not evidence, and the only thing taken from this request is which
+// transaction to go and ask about.
 const EXTERNAL_EVENT_FIELD: Readonly<Record<CallbackProviderCode, string>> = Object.freeze({
   NEXTPAY: 'trans_id',
   SHEPA: 'token',
   IDPAY: 'id',
   ZARINPAL: 'Authority',
+  ZIBAL: 'trackId',
 })
 
 /**

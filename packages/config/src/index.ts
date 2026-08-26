@@ -53,6 +53,12 @@ export const envSchema = z
      */
     PAYMENT_ZARINPAL_ENDPOINT: z.string().url().optional(),
     /**
+     * The same override for Zibal, which publishes no separate sandbox host —
+     * one set of endpoints serves both environments, so a stand-in is the only
+     * way to exercise its money path without a live merchant.
+     */
+    PAYMENT_ZIBAL_ENDPOINT: z.string().url().optional(),
+    /**
      * Where the LimooSMS adapter posts.
      *
      * Absent it uses the gateway's real endpoint, which is what production

@@ -46,6 +46,7 @@ import { createIdPayAdapter } from './providers/idpay.js'
 import { createNextPayAdapter } from './providers/nextpay.js'
 import { createShepaAdapter } from './providers/shepa.js'
 import { createZarinpalAdapter } from './providers/zarinpal.js'
+import { createZibalAdapter } from './providers/zibal.js'
 
 const env = getEnv()
 
@@ -139,6 +140,12 @@ const paymentProviderAdapterRegistry = createPaymentProviderAdapterRegistry(
           callbackUrl: callbackUrlFor('ZARINPAL')!,
           ...(env.PAYMENT_ZARINPAL_ENDPOINT !== undefined && {
             endpointOrigin: env.PAYMENT_ZARINPAL_ENDPOINT,
+          }),
+        }),
+        createZibalAdapter({
+          callbackUrl: callbackUrlFor('ZIBAL')!,
+          ...(env.PAYMENT_ZIBAL_ENDPOINT !== undefined && {
+            endpointOrigin: env.PAYMENT_ZIBAL_ENDPOINT,
           }),
         }),
       ]

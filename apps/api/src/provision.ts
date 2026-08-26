@@ -25,6 +25,7 @@ import { createIdPayAdapter } from './providers/idpay.js'
 import { createNextPayAdapter } from './providers/nextpay.js'
 import { createShepaAdapter } from './providers/shepa.js'
 import { createZarinpalAdapter } from './providers/zarinpal.js'
+import { createZibalAdapter } from './providers/zibal.js'
 import {
   createPrismaAuthDeliveryProviderService,
   AuthDeliveryProviderError,
@@ -266,6 +267,7 @@ async function main(): Promise<void> {
           createShepaAdapter({ callbackUrl: callbackUrlFor('SHEPA') }),
           createIdPayAdapter({ callbackUrl: callbackUrlFor('IDPAY') }),
           createZarinpalAdapter({ callbackUrl: callbackUrlFor('ZARINPAL') }),
+          createZibalAdapter({ callbackUrl: callbackUrlFor('ZIBAL') }),
         ]),
       })
       const providerCode = required(flags, 'provider').toUpperCase()

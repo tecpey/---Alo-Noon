@@ -10,6 +10,7 @@ import { createIdPayAdapter } from './idpay'
 import { createNextPayAdapter } from './nextpay'
 import { createShepaAdapter } from './shepa'
 import { createZarinpalAdapter } from './zarinpal'
+import { createZibalAdapter } from './zibal'
 
 /**
  * Covers the settlement half of each gateway adapter: the server-to-server call
@@ -67,9 +68,11 @@ function stubGateway(status: number, body: unknown) {
 const idpay = createIdPayAdapter({ callbackUrl: 'https://alonoon.ir/cb/idpay' })
 const nextpay = createNextPayAdapter({ callbackUrl: 'https://alonoon.ir/cb/nextpay' })
 const shepa = createShepaAdapter({ callbackUrl: 'https://alonoon.ir/cb/shepa' })
-// Zarinpal's own settlement behaviour is covered in zarinpal.test.ts; it appears
-// here so the capability check below stays a check on *every* gateway.
+// Zarinpal's and Zibal's own settlement behaviour is covered in their own test
+// files; they appear here so the capability check below stays a check on *every*
+// gateway.
 const zarinpal = createZarinpalAdapter({ callbackUrl: 'https://alonoon.ir/cb/zarinpal' })
+const zibal = createZibalAdapter({ callbackUrl: 'https://alonoon.ir/cb/zibal' })
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -82,6 +85,7 @@ describe('every gateway declares it can verify a callback', () => {
     ['NEXTPAY', nextpay],
     ['SHEPA', shepa],
     ['ZARINPAL', zarinpal],
+    ['ZIBAL', zibal],
   ])('%s', (_code, adapter) => {
     // The callback intake route only accepts a configuration carrying this
     // capability, so an adapter without it can never settle anything.
