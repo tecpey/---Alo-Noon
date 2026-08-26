@@ -42,6 +42,16 @@ export const envSchema = z
     // credentials. Kept apart from the encrypted values themselves so leaking the
     // configuration does not leak the gateway secret.
     PAYMENT_SECRET_ENCRYPTION_KEY: z.string().optional(),
+    /**
+     * Where the LimooSMS adapter posts.
+     *
+     * Absent it uses the gateway's real endpoint, which is what production
+     * wants. It exists because there is otherwise no way to prove a deployment
+     * can sign anyone in without texting a real person and spending the
+     * tenant's credit — a smoke test that has to be run against live customers
+     * is one nobody runs.
+     */
+    AUTH_SMS_LIMOSMS_ENDPOINT: z.string().url().optional(),
     // Observability
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),

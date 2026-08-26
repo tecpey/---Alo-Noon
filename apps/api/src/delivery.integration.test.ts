@@ -196,6 +196,34 @@ databaseDescribe('deliveries over PostgreSQL', () => {
     expect(assignment.state).toBe('COMPLETED')
   })
 
+  it('closes the order when the delivery closes it', async () => {
+    // Until this existed an order sat at CONFIRMED forever while its delivery
+    // read DELIVERED: nobody closed it, every report counting completed orders
+    // undercounted, and the customer was never told it arrived.
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: fixture.orderId } })
+    expect(order.state).toBe('COMPLETED')
+
+    // Through IN_FULFILLMENT on pickup, not straight to the end, so the order's
+    // own history reads the way it actually happened.
+    const walked = await prisma.orderStateTransition.findMany({
+      where: { orderId: fixture.orderId },
+      orderBy: { occurredAt: 'asc' },
+      select: { toState: true, actorType: true },
+    })
+    expect(walked.map((entry) => entry.toState)).toContain('IN_FULFILLMENT')
+    expect(walked.filter((entry) => entry.actorType === 'SYSTEM').length).toBeGreaterThan(0)
+  })
+
+  it('names the order on a delivery event so a customer can be told about it', async () => {
+    // A delivery event is about an order without being keyed on one. Without the
+    // id in its payload the notification path cannot find the customer, and the
+    // "on its way" message reaches nobody.
+    const event = await prisma.domainEventOutbox.findFirst({
+      where: { aggregateType: 'delivery_task', name: 'delivery.out_for_delivery' },
+    })
+    expect(event?.payload).toMatchObject({ orderId: fixture.orderId })
+  })
+
   it('records who said it arrived', async () => {
     const audit = await prisma.auditEvent.findFirst({
       where: { entityId: taskId, action: 'delivery.delivered' },

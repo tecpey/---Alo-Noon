@@ -5,6 +5,8 @@ import {
   ADMIN_PERMISSIONS,
   DomainError,
   DeliveryTaskState,
+  OrderState,
+  transitionOrder,
   courierCanBeOffered,
   deliveryTaskIsTerminal,
   normalizeIranianMobile,
@@ -330,12 +332,12 @@ export function createPrismaDeliveryService(prisma: PrismaClient): DeliveryServi
             offeredAt: now,
           },
         })
-        const updated = await applyTaskState(transaction, task, step.to, now, {})
+        const updated = await applyTaskState(transaction, task, step.to, now, correlationId, {})
         await recordDeliveryChange(transaction, tenantId, 'STAFF', actor.accountId, {
           action: 'delivery.offered',
           entityId: task.id,
           summary: `Delivery for order ${task.fulfillment.order.publicId} offered to ${courier.displayName}`,
-          payload: { courierId: courier.id, toState: step.to },
+          payload: { orderId: task.fulfillment.orderId, courierId: courier.id, toState: step.to },
           correlationId,
           now,
         })
@@ -354,12 +356,16 @@ export function createPrismaDeliveryService(prisma: PrismaClient): DeliveryServi
           }),
         )
         await cancelOpenAssignments(transaction, task.id, now)
-        const updated = await applyTaskState(transaction, task, step.to, now, {})
+        const updated = await applyTaskState(transaction, task, step.to, now, correlationId, {})
         await recordDeliveryChange(transaction, tenantId, 'STAFF', actor.accountId, {
           action: 'delivery.released',
           entityId: task.id,
           summary: `Delivery for order ${task.fulfillment.order.publicId} returned to the pool`,
-          payload: { fromState: step.from, reason: command.reason ?? null },
+          payload: {
+            orderId: task.fulfillment.orderId,
+            fromState: step.from,
+            reason: command.reason ?? null,
+          },
           correlationId,
           now,
         })
@@ -440,12 +446,12 @@ export function createPrismaDeliveryService(prisma: PrismaClient): DeliveryServi
           where: { id: assignment.id },
           data: { state: answer, respondedAt: now, ...(command.accept ? {} : { endedAt: now }) },
         })
-        const updated = await applyTaskState(transaction, task, step.to, now, {})
+        const updated = await applyTaskState(transaction, task, step.to, now, correlationId, {})
         await recordDeliveryChange(transaction, tenantId, 'COURIER', courier.courierId, {
           action: command.accept ? 'delivery.accepted' : 'delivery.declined',
           entityId: task.id,
           summary: `Courier ${command.accept ? 'accepted' : 'declined'} order ${task.fulfillment.order.publicId}`,
-          payload: { toState: step.to },
+          payload: { orderId: task.fulfillment.orderId, toState: step.to },
           correlationId,
           now,
         })
@@ -489,12 +495,12 @@ export function createPrismaDeliveryService(prisma: PrismaClient): DeliveryServi
           })
         }
 
-        const updated = await applyTaskState(transaction, task, step.to, now, {
+        const updated = await applyTaskState(transaction, task, step.to, now, correlationId, {
           ...(command.to === 'FAILED' &&
             command.reasonCode && {
               failureReasonCode: command.reasonCode,
-              // Counted here rather than when the task returns to the pool, so a
-              // dispatcher can see a third attempt coming before they make it.
+              // Counted here rather than when the task returns to the pool, so
+              // a dispatcher can see a third attempt coming before they make it.
               attemptCount: task.attemptCount + 1,
             }),
         })
@@ -502,7 +508,11 @@ export function createPrismaDeliveryService(prisma: PrismaClient): DeliveryServi
           action: `delivery.${step.to.toLowerCase()}`,
           entityId: task.id,
           summary: `Order ${task.fulfillment.order.publicId} delivery moved to ${step.to}`,
-          payload: { toState: step.to, reasonCode: command.reasonCode ?? null },
+          payload: {
+            orderId: task.fulfillment.orderId,
+            toState: step.to,
+            reasonCode: command.reasonCode ?? null,
+          },
           correlationId,
           now,
         })
@@ -524,6 +534,7 @@ async function applyTaskState(
   task: TaskRecord,
   to: DeliveryTaskState,
   now: Date,
+  correlationId: string,
   extra: Prisma.DeliveryTaskUpdateInput,
 ): Promise<DeliveryTaskView> {
   const updated = await transaction.deliveryTask.update({
@@ -558,7 +569,115 @@ async function applyTaskState(
     })
   }
 
+  await advanceOrderWithDelivery(transaction, task, to, now, correlationId)
   return taskView(updated)
+}
+
+/**
+ * Moves the order itself when the delivery moves.
+ *
+ * Without this an order sits at CONFIRMED forever while its delivery reads
+ * DELIVERED: nobody closes it, every report that counts completed orders
+ * undercounts, and the customer is never told it arrived. The order graph was
+ * built for exactly these steps — CONFIRMED to IN_FULFILLMENT to COMPLETED, and
+ * DELIVERY_FAILED for the other outcome, all reachable by SYSTEM — and until
+ * now nothing drove them.
+ *
+ * The actor is SYSTEM rather than COURIER because this is a consequence of what
+ * the courier reported, not a second thing they did. Silent when the step does
+ * not apply: an operator who already advanced the order by hand should not have
+ * their delivery refused for it.
+ */
+async function advanceOrderWithDelivery(
+  transaction: Prisma.TransactionClient,
+  task: TaskRecord,
+  to: DeliveryTaskState,
+  now: Date,
+  correlationId: string,
+): Promise<void> {
+  const target =
+    to === DeliveryTaskState.PICKED_UP
+      ? OrderState.IN_FULFILLMENT
+      : to === DeliveryTaskState.DELIVERED
+        ? OrderState.COMPLETED
+        : to === DeliveryTaskState.FAILED
+          ? OrderState.DELIVERY_FAILED
+          : null
+  if (!target) return
+
+  // ownership-established: the order was reached through its own delivery task,
+  // which was resolved and locked under this tenant. No caller-supplied order id
+  // exists anywhere on this path.
+  const order = await transaction.order.findFirst({
+    where: { id: task.fulfillment.orderId, tenantId: task.tenantId },
+    select: { id: true, publicId: true, state: true },
+  })
+  if (!order) return
+
+  let step
+  try {
+    step = transitionOrder({
+      orderId: order.id as never,
+      from: order.state as OrderState,
+      to: target,
+      actor: TransitionActor.SYSTEM,
+      occurredAt: now,
+      idempotencyKey: `${order.id}:${target}`,
+      correlationId: correlationId as never,
+    })
+  } catch {
+    // Already there, or somewhere the order cannot leave. Either way the
+    // delivery's own record is the thing that matters and it already stands.
+    return
+  }
+
+  // ownership-established: the order was reached through its own delivery task,
+  // which was resolved under this tenant. No caller-supplied order id exists on
+  // this path.
+  await transaction.order.update({
+    where: { id: order.id },
+    data: { state: step.to, updatedAt: now },
+  })
+  await transaction.orderStateTransition.create({
+    data: {
+      tenantId: task.tenantId,
+      orderId: order.id,
+      fromState: step.from,
+      toState: step.to,
+      actorType: 'SYSTEM',
+      notes: `Delivery reported ${to}`,
+      idempotencyKey: `${order.id}:${target}`,
+      correlationId,
+      occurredAt: now,
+    },
+  })
+  await transaction.auditEvent.create({
+    data: {
+      tenantId: task.tenantId,
+      actorType: 'SYSTEM',
+      action: `order.${target.toLowerCase()}`,
+      entityType: 'order',
+      entityId: order.id,
+      summary: `Order ${order.publicId} moved to ${target} because the delivery was ${to}`,
+      metadata: { fromState: step.from, toState: step.to, deliveryState: to },
+      correlationId,
+      occurredAt: now,
+    },
+  })
+  await transaction.domainEventOutbox.create({
+    data: {
+      tenantId: task.tenantId,
+      eventId: randomUUID(),
+      name: `order.${target.toLowerCase()}`,
+      aggregateType: 'order',
+      aggregateId: order.id,
+      actorType: 'SYSTEM',
+      correlationId,
+      consentBasis: 'TRANSACTIONAL',
+      payload: { fromState: step.from, toState: step.to, deliveryState: to },
+      occurredAt: now,
+    },
+  })
 }
 
 /**

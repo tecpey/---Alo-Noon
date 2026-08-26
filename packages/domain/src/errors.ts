@@ -67,6 +67,7 @@ export type DomainErrorCode =
   | 'MESSAGE_TEMPLATE_PURPOSE_UNKNOWN'
   | 'INVALID_DELIVERY_TRANSITION'
   | 'UNAUTHORIZED_DELIVERY_TRANSITION'
+  | 'INVALID_ORDER_CODE_SOURCE'
 
 export class DomainError extends Error {
   constructor(

@@ -60,11 +60,19 @@ export function createPrismaCustomerNotificationService(
 
   return {
     async notify(tenantId, event, now) {
-      if (event.aggregateType !== 'order') return 'NOT_APPLICABLE'
       const purpose = notificationPurposeForEvent(event.name, event.payload)
       if (!purpose) return 'NOT_APPLICABLE'
+      // A delivery event is about an order without being keyed on one, so it
+      // names the order in its payload. Anything else is not ours.
+      const orderId =
+        event.aggregateType === 'order'
+          ? event.aggregateId
+          : typeof event.payload['orderId'] === 'string'
+            ? event.payload['orderId']
+            : null
+      if (!orderId) return 'NOT_APPLICABLE'
 
-      const order = await readOrder(prisma, tenantId, event.aggregateId)
+      const order = await readOrder(prisma, tenantId, orderId)
       if (!order) return 'NOT_APPLICABLE'
 
       const template = await options.messagingService.resolve(tenantId, 'SMS', purpose)

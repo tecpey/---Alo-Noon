@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 
 import type { FastifyInstance } from 'fastify'
 
@@ -13,6 +13,7 @@ import {
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   authorizeQuoteToOrder,
+  generateOrderCode,
   transitionOrder,
   type CorrelationId,
   type OrderId,
@@ -300,6 +301,13 @@ export function createPrismaOrderRepository(
           const order = await transaction.order.create({
             data: {
               tenantId,
+              // The code a customer reads back down the phone. Generated here
+              // rather than left to the schema's cuid default, which produced
+              // twenty-five characters nobody could read and which pushed every
+              // order notification into a second paid SMS. Generated inside the
+              // transaction so the unique index's own retry produces a fresh
+              // code rather than replaying the collided one.
+              publicId: generateOrderCode((length) => randomBytes(length)),
               quoteId: quote.id,
               idempotencyKey: input.idempotencyKey,
               customerId,

@@ -49,6 +49,10 @@ const ORDER_EVENT_PURPOSES: Readonly<Record<string, MessageTemplatePurpose>> = {
   'order.in_fulfillment': 'ORDER_READY',
   'order.completed': 'ORDER_COMPLETED',
   'order.cancelled': 'ORDER_CANCELLED',
+  // The courier setting off is the customer's cue that it is actually moving.
+  // It comes from the delivery rather than the order because the order has no
+  // state for "on its way" — that is what the delivery is for.
+  'delivery.out_for_delivery': 'ORDER_OUT_FOR_DELIVERY',
 }
 
 export function notificationPurposeForEvent(

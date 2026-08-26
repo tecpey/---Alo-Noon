@@ -77,7 +77,11 @@ const abusePepper = env.AUTH_ABUSE_PEPPER ?? randomBytes(32).toString('hex')
 // construction time, and the credential is resolved per send from the
 // configuration's own reference, so an unconfigured deployment simply never
 // selects it rather than failing to boot.
-const limoSmsAdapter = createLimoSmsAdapter()
+// The endpoint is overridable so a deployment can be smoke-tested against a
+// sandbox before it is pointed at the real gateway. Unset means the real one.
+const limoSmsAdapter = createLimoSmsAdapter(
+  env.AUTH_SMS_LIMOSMS_ENDPOINT ? { endpoint: env.AUTH_SMS_LIMOSMS_ENDPOINT } : {},
+)
 const authenticationDeliveryRegistry = createAuthenticationDeliveryRegistry([limoSmsAdapter])
 const authenticationDeliveryPolicy = createAuthenticationDeliveryPolicy({
   environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
