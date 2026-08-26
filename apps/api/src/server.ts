@@ -25,6 +25,7 @@ import {
   createPrismaAuthenticationDeliveryService,
 } from './modules/auth-delivery.js'
 import { createPrismaAdminReportingService } from './modules/admin-reporting.js'
+import { createPrismaAdminLogisticsService } from './modules/admin-logistics.js'
 import { createPrismaAdminFinancialReportingService } from './modules/admin-financial-reporting.js'
 import { createPrismaAdminCatalogService } from './modules/admin-catalog.js'
 import { createPrismaAdminAccessService } from './modules/admin-access.js'
@@ -291,6 +292,7 @@ const app = await buildApp({
   ...(paymentCallback && { paymentCallback }),
   adminProviders,
   adminReporting,
+  adminLogistics: { service: createPrismaAdminLogisticsService(prisma) },
   adminCatalog,
   adminAccess,
   adminMessaging,

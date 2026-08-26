@@ -45,6 +45,10 @@ import {
   type AdminReportingDependencies,
 } from './modules/admin-reporting.js'
 import {
+  registerAdminLogisticsRoutes,
+  type AdminLogisticsDependencies,
+} from './modules/admin-logistics.js'
+import {
   registerAdminCatalogRoutes,
   type AdminCatalogDependencies,
 } from './modules/admin-catalog-routes.js'
@@ -77,6 +81,7 @@ export interface AppOptions {
   paymentCheckout?: Omit<PaymentCheckoutDependencies, 'auth'>
   adminProviders?: Omit<AdminProviderDependencies, 'auth'>
   adminReporting?: Omit<AdminReportingDependencies, 'auth'>
+  adminLogistics?: Omit<AdminLogisticsDependencies, 'auth'>
   adminCatalog?: Omit<AdminCatalogDependencies, 'auth'>
   adminAccess?: Omit<AdminAccessDependencies, 'auth'>
   adminMessaging?: Omit<AdminMessagingDependencies, 'auth'>
@@ -197,6 +202,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.adminReporting) {
     registerAdminReportingRoutes(app, { ...options.adminReporting, auth: options.auth })
+  }
+  if (options.auth && options.adminLogistics) {
+    registerAdminLogisticsRoutes(app, { ...options.adminLogistics, auth: options.auth })
   }
   if (options.auth && options.adminCatalog) {
     registerAdminCatalogRoutes(app, { ...options.adminCatalog, auth: options.auth })
