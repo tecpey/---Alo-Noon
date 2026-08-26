@@ -45,6 +45,7 @@ import { createPrismaPaymentProviderService } from './modules/payment-provider.j
 import { createIdPayAdapter } from './providers/idpay.js'
 import { createNextPayAdapter } from './providers/nextpay.js'
 import { createShepaAdapter } from './providers/shepa.js'
+import { createZarinpalAdapter } from './providers/zarinpal.js'
 
 const env = getEnv()
 
@@ -134,6 +135,12 @@ const paymentProviderAdapterRegistry = createPaymentProviderAdapterRegistry(
         createNextPayAdapter({ callbackUrl: callbackUrlFor('NEXTPAY')! }),
         createShepaAdapter({ callbackUrl: callbackUrlFor('SHEPA')! }),
         createIdPayAdapter({ callbackUrl: callbackUrlFor('IDPAY')! }),
+        createZarinpalAdapter({
+          callbackUrl: callbackUrlFor('ZARINPAL')!,
+          ...(env.PAYMENT_ZARINPAL_ENDPOINT !== undefined && {
+            endpointOrigin: env.PAYMENT_ZARINPAL_ENDPOINT,
+          }),
+        }),
       ]
     : [],
 )

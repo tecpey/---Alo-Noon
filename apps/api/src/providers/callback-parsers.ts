@@ -1,5 +1,5 @@
 /**
- * The three integrated Iranian gateways return the customer to the callback URL
+ * The integrated Iranian gateways return the customer to the callback URL
  * through the customer's own browser, carrying result parameters. Those
  * parameters are attacker-controllable and must never be treated as proof of
  * payment — they are only used to identify *which* provider transaction the
@@ -10,7 +10,7 @@
  * per-provider. This stays in the application layer rather than the domain SPI
  * because it is transport shape, not a payment invariant.
  */
-export const CALLBACK_PROVIDER_CODES = ['NEXTPAY', 'SHEPA', 'IDPAY'] as const
+export const CALLBACK_PROVIDER_CODES = ['NEXTPAY', 'SHEPA', 'IDPAY', 'ZARINPAL'] as const
 export type CallbackProviderCode = (typeof CALLBACK_PROVIDER_CODES)[number]
 
 export function isCallbackProviderCode(value: string): value is CallbackProviderCode {
@@ -19,11 +19,15 @@ export function isCallbackProviderCode(value: string): value is CallbackProvider
 
 // Field each provider uses for its own transaction reference, verified against
 // the same sources the adapters were built from (nextpay-ir official repo,
-// parsisolution/gateway Shepa and IDPay drivers).
+// parsisolution/gateway Shepa and IDPay drivers, shetabit/multipay Zarinpal
+// driver). Zarinpal capitalises its parameter — `Authority`, alongside a
+// `Status` of OK or NOK that is deliberately ignored here, because a redirect
+// the customer's browser carried is never allowed to conclude anything.
 const EXTERNAL_EVENT_FIELD: Readonly<Record<CallbackProviderCode, string>> = Object.freeze({
   NEXTPAY: 'trans_id',
   SHEPA: 'token',
   IDPAY: 'id',
+  ZARINPAL: 'Authority',
 })
 
 /**

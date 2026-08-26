@@ -43,6 +43,16 @@ export const envSchema = z
     // configuration does not leak the gateway secret.
     PAYMENT_SECRET_ENCRYPTION_KEY: z.string().optional(),
     /**
+     * Origin the Zarinpal adapter talks to, keeping Zarinpal's own paths.
+     *
+     * Absent, a TEST configuration uses Zarinpal's real sandbox and a PRODUCTION
+     * one uses the live gateway, which is what both want. It exists for the same
+     * reason the SMS override below does: a deployment that cannot reach the
+     * sandbox from its own network still needs the money path exercised
+     * end to end before real money is at stake.
+     */
+    PAYMENT_ZARINPAL_ENDPOINT: z.string().url().optional(),
+    /**
      * Where the LimooSMS adapter posts.
      *
      * Absent it uses the gateway's real endpoint, which is what production
