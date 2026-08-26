@@ -197,3 +197,83 @@ export type TripProposeCommand = z.infer<typeof tripProposeCommandSchema>
 export type TripCreateCommand = z.infer<typeof tripCreateCommandSchema>
 export type TripDispatchCommand = z.infer<typeof tripDispatchCommandSchema>
 export type TripContract = z.infer<typeof tripSchema>
+
+/**
+ * Proposing which courier takes which waiting run.
+ *
+ * A proposal, not an order. The endpoint writes nothing and offers nothing: a
+ * dispatcher reads it, and then dispatches through the ordinary offer and trip
+ * routes. Assigning couriers behind an operator's back would put a rider on a
+ * run for a reason nobody chose, decided from a position estimate this system
+ * openly admits is a guess.
+ */
+export const assignmentProposeCommandSchema = z
+  .object({
+    /** Narrows the proposal to one branch's waiting work. */
+    branchId: uuidSchema.optional(),
+  })
+  .strict()
+
+/**
+ * How the courier's position was arrived at.
+ *
+ * There is no location feed. LAST_DELIVERY means "where they were when they
+ * last finished", which is where they are until they move; UNKNOWN means they
+ * have finished nothing and were costed as neither near nor far. A dispatcher
+ * overruling the plan is entitled to know which of those they are looking at.
+ */
+export const courierPositionSourceSchema = z.enum(['LAST_DELIVERY', 'UNKNOWN'])
+
+export const assignmentPairSchema = z.object({
+  /** A planned trip, or a single delivery that is not on one. */
+  runId: uuidSchema,
+  runKind: z.enum(['TRIP', 'DELIVERY']),
+  branchId: uuidSchema,
+  /** How many drops the run carries. One, unless it is a batched trip. */
+  dropCount: z.number().int().min(1),
+  waitingSinceAt: isoDateTimeSchema,
+  courierId: uuidSchema,
+  courierName: z.string(),
+  positionSource: courierPositionSourceSchema,
+  /** Estimated riding distance from the courier to the pickup, in metres. */
+  approachMetres: z.number().int().min(0),
+  /** How long this courier has been free, capped where the credit stops. */
+  idleMinutes: z.number().int().min(0),
+})
+
+export const assignmentProposalSchema = z.object({
+  proposedAt: isoDateTimeSchema,
+  pairs: z.array(assignmentPairSchema),
+  /** Runs with no courier left to take them, oldest first. */
+  unassigned: z.array(
+    z.object({
+      runId: uuidSchema,
+      runKind: z.enum(['TRIP', 'DELIVERY']),
+      branchId: uuidSchema,
+      dropCount: z.number().int().min(1),
+      waitingSinceAt: isoDateTimeSchema,
+    }),
+  ),
+  /** Couriers free but not needed, because there was less work than riders. */
+  idleCourierCount: z.number().int().min(0),
+  /** Approach riding this plan asks for. */
+  totalApproachMetres: z.number().int().min(0),
+  /**
+   * Approach riding that assigning one run at a time would have asked for.
+   *
+   * Published beside the plan's own figure rather than as a saving, because the
+   * two are sometimes equal — and a feature that reported only its wins would be
+   * impossible to judge.
+   */
+  greedyApproachMetres: z.number().int().min(0),
+})
+
+export const assignmentProposalEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: assignmentProposalSchema,
+  meta: responseMetaSchema,
+})
+
+export type AssignmentProposeCommand = z.infer<typeof assignmentProposeCommandSchema>
+export type AssignmentProposalContract = z.infer<typeof assignmentProposalSchema>
+export type CourierPositionSource = z.infer<typeof courierPositionSourceSchema>

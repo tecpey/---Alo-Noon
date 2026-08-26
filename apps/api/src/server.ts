@@ -38,6 +38,7 @@ import {
 } from './modules/routing.js'
 import { createLimoSmsAdapter } from './providers/limosms.js'
 import { createPrismaDeliveryService } from './modules/delivery.js'
+import { createPrismaCourierAssignmentService } from './modules/courier-assignment.js'
 import { createPrismaDeliveryTripService } from './modules/delivery-trips.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
@@ -276,6 +277,12 @@ const delivery = { service: createPrismaDeliveryService(prisma) }
 const deliveryTrips = {
   service: createPrismaDeliveryTripService(prisma, { routingService }),
 }
+// Proposes pairings only. Nothing here offers work to a courier: the position
+// it reasons from is where a rider last delivered, not where they are, and a
+// guess that good is worth showing a dispatcher and not worth acting on alone.
+const courierAssignments = {
+  service: createPrismaCourierAssignmentService(prisma),
+}
 
 const app = await buildApp({
   logger: true,
@@ -307,6 +314,7 @@ const app = await buildApp({
   orderOperations,
   delivery,
   deliveryTrips,
+  courierAssignments,
 })
 
 if (env.SENTRY_DSN) {
