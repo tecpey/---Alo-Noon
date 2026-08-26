@@ -81,6 +81,9 @@ const COMMANDS = [
   'configure-sms-provider',
   'list-sms-providers',
   'set-sms-provider-health',
+  'configure-routing-provider',
+  'list-routing-providers',
+  'set-routing-provider-health',
 ] as const
 
 /**
@@ -381,6 +384,96 @@ async function main(): Promise<void> {
             `health=${configuration.healthStatus}\n`,
         )
       }
+      return
+    }
+
+    // Routing has no service of its own: unlike a payment gateway or an SMS
+    // sender, a routing configuration governs no state machine and writes no
+    // audit-paired records — it names an engine and says whether to trust it.
+    // The guard trigger enforces the parts that matter.
+    if (command === 'configure-routing-provider') {
+      const reference = required(flags, 'credential-reference')
+      if (!/^env:\/\/ROUTING_[A-Z0-9_]{1,120}$/.test(reference)) {
+        throw new Error(
+          'A routing credential reference must look like env://ROUTING_<NAME>. ' +
+            'The prefix is what stops a configuration from naming an unrelated ' +
+            'environment variable and handing its value to a routing adapter.',
+        )
+      }
+      const configuration = await prisma.$transaction(async (transaction) => {
+        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+        return transaction.routingProviderConfiguration.create({
+          data: {
+            tenantId,
+            providerCode: required(flags, 'provider').toUpperCase(),
+            adapterVersion: flags['adapter-version'] ?? '1.0.0',
+            adapterSpiVersion: 1,
+            environment: (flags['environment'] ?? 'TEST') as 'TEST' | 'PRODUCTION',
+            credentialReference: reference,
+            enabled: asBoolean(flags, 'enabled', true),
+            isDefault: asBoolean(flags, 'default', true),
+            ...(flags['priority'] && { priority: Number(flags['priority']) }),
+            updatedAt: now,
+          },
+        })
+      })
+      process.stdout.write(
+        `Routing provider configured\n  configurationId: ${configuration.id}\n` +
+          `  provider: ${configuration.providerCode}\n`,
+      )
+      process.stdout.write(
+        'Health starts UNKNOWN. Until it is HEALTHY, delivery distance falls back ' +
+          'to the scaled straight line — which is safe, but is not what you paid for.\n',
+      )
+      return
+    }
+
+    if (command === 'list-routing-providers') {
+      const configurations = await prisma.$transaction(async (transaction) => {
+        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+        return transaction.routingProviderConfiguration.findMany({
+          where: { tenantId },
+          orderBy: { createdAt: 'asc' },
+        })
+      })
+      if (configurations.length === 0) {
+        process.stdout.write(
+          'No routing provider is configured. Delivery distance is the scaled straight line.\n',
+        )
+        return
+      }
+      for (const configuration of configurations) {
+        process.stdout.write(
+          `${configuration.id}  ${configuration.providerCode}  ${configuration.environment}  ` +
+            `enabled=${configuration.enabled}  default=${configuration.isDefault}  ` +
+            `health=${configuration.healthStatus}\n`,
+        )
+      }
+      return
+    }
+
+    if (command === 'set-routing-provider-health') {
+      const configuration = await prisma.$transaction(async (transaction) => {
+        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+        const existing = await transaction.routingProviderConfiguration.findFirstOrThrow({
+          where: { id: required(flags, 'configuration'), tenantId },
+        })
+        return transaction.routingProviderConfiguration.update({
+          where: { id: existing.id },
+          data: {
+            healthStatus: required(flags, 'health').toUpperCase() as
+              'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY',
+            // The guard refuses an update that does not advance this, which is
+            // what stops two concurrent operators from silently overwriting
+            // each other's decision about whether an engine is trustworthy.
+            governanceVersion: existing.governanceVersion + 1,
+            updatedAt: now,
+          },
+        })
+      })
+      process.stdout.write(
+        `Routing provider health is now ${configuration.healthStatus} for ${configuration.providerCode}\n`,
+      )
       return
     }
 

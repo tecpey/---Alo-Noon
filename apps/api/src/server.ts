@@ -8,6 +8,7 @@ import {
   createAuthenticationDeliveryPolicy,
   createAuthenticationDeliveryRegistry,
   createPaymentProviderAdapterRegistry,
+  createRoutingProviderRegistry,
   createProviderExecutionPolicy,
 } from '@alo-noon/domain'
 
@@ -30,6 +31,10 @@ import { createPrismaAdminAccessService } from './modules/admin-access.js'
 import { createPrismaAdminMessagingService } from './modules/admin-messaging.js'
 import { createPrismaCustomerNotificationService } from './modules/customer-notifications.js'
 import { createPrismaOutboxPublisher } from './modules/outbox-publisher.js'
+import {
+  createEnvironmentRoutingCredentialResolver,
+  createPrismaRoutingService,
+} from './modules/routing.js'
 import { createLimoSmsAdapter } from './providers/limosms.js'
 import { createPrismaDeliveryService } from './modules/delivery.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
@@ -47,6 +52,7 @@ import { createNextPayAdapter } from './providers/nextpay.js'
 import { createShepaAdapter } from './providers/shepa.js'
 import { createZarinpalAdapter } from './providers/zarinpal.js'
 import { createZibalAdapter } from './providers/zibal.js'
+import { createNeshanAdapter } from './providers/neshan.js'
 
 const env = getEnv()
 
@@ -151,6 +157,21 @@ const paymentProviderAdapterRegistry = createPaymentProviderAdapterRegistry(
       ]
     : [],
 )
+// Routing is optional in a way payments are not: a tenant with no routing engine
+// still sells bread, priced on the scaled straight line. So the registry is
+// always built and the service always exists — what varies is whether any
+// tenant has a configuration pointing at it.
+const routingProviderRegistry = createRoutingProviderRegistry([
+  createNeshanAdapter(
+    env.ROUTING_NESHAN_ENDPOINT ? { endpointOrigin: env.ROUTING_NESHAN_ENDPOINT } : {},
+  ),
+])
+const routingService = createPrismaRoutingService(prisma, {
+  registry: routingProviderRegistry,
+  credentialResolver: createEnvironmentRoutingCredentialResolver(process.env),
+  environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
+})
+
 const paymentExecutionPolicy = createProviderExecutionPolicy({
   environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
   maxPersistenceAttempts: 3,
@@ -262,7 +283,7 @@ const app = await buildApp({
   serviceabilityRepository: createPrismaServiceabilityRepository(prisma),
   corsOrigins: parseCorsOrigins(env.CORS_ORIGINS),
   auth,
-  commerceRepository: createPrismaCommerceRepository(prisma),
+  commerceRepository: createPrismaCommerceRepository(prisma, { routingService }),
   addressRepository: createPrismaAddressRepository(prisma),
   orderRepository: createPrismaOrderRepository(prisma),
   paymentExecutionService,

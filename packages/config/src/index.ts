@@ -68,6 +68,15 @@ export const envSchema = z
      * is one nobody runs.
      */
     AUTH_SMS_LIMOSMS_ENDPOINT: z.string().url().optional(),
+    /**
+     * Where the Neshan routing adapter asks, keeping Neshan's own paths.
+     *
+     * Absent it uses the real service, which is what production wants. Routing
+     * has a fallback that keeps orders flowing when it is unreachable, so unlike
+     * the payment and SMS overrides this one exists for development rather than
+     * for proving a deployment works.
+     */
+    ROUTING_NESHAN_ENDPOINT: z.string().url().optional(),
     // Observability
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),

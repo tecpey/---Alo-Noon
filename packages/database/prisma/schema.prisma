@@ -483,6 +483,8 @@ model Tenant {
   authAbuseEvents AuthAbuseEvent[]
   messageTemplates MessageTemplate[]
   customerNotifications CustomerNotification[]
+  routingProviderConfigurations RoutingProviderConfiguration[]
+  routeEstimates RouteEstimate[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -946,6 +948,7 @@ model BakeryBranch {
   orders             Order[]
   fulfillments       Fulfillment[]
   carts              Cart[]
+  routeEstimates     RouteEstimate[]
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
 
@@ -1205,6 +1208,12 @@ model Quote {
   deliveryServiceAreaIdSnapshot String? @db.Uuid
   deliveryOperationalZoneIdSnapshot String? @db.Uuid
   deliveryDistanceMeters Int?
+  /// Whether the distance above was measured on the road network or inferred
+  /// from the straight line. Null on quotes written before routing existed.
+  deliveryDistanceSource RouteDistanceSource?
+  /// Why the distance is an estimate. Set only when the source is ESTIMATED,
+  /// so its presence alone answers "what went wrong when this was priced?".
+  deliveryDistanceReasonCode String? @db.VarChar(64)
   bakeryNameSnapshot String?
   bakeryPickupSnapshot String?
   recipientNameSnapshot String?
@@ -2091,4 +2100,86 @@ model CustomerNotification {
   @@unique([tenantId, orderId, purpose], map: "customer_notification_identity_key")
   @@index([tenantId, state, createdAt], map: "customer_notification_state_idx")
   @@index([orderId, tenantId], map: "g3b_CustomerNotification_orderId_tenant_idx")
+}
+
+
+enum RouteDistanceSource {
+  ROUTED
+  ESTIMATED
+}
+
+enum RoutingEnvironment {
+  TEST
+  PRODUCTION
+}
+
+enum RoutingProviderHealthStatus {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+}
+
+enum RoutingProfile {
+  MOTORCYCLE
+  CAR
+}
+
+/// Which engine measures the road for this tenant.
+///
+/// Shaped like the SMS gateway configuration because an operator already knows
+/// that form. `env://` is allowed here where payment credentials forbid it: a
+/// routing key buys distances, not money, and the worst a leaked one does is
+/// spend the tenant's routing quota.
+model RoutingProviderConfiguration {
+  id                  String                      @id @default(uuid()) @db.Uuid
+  tenantId            String                      @db.Uuid
+  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  providerCode        String                      @db.VarChar(32)
+  adapterVersion      String                      @db.VarChar(64)
+  adapterSpiVersion   Int                         @default(1)
+  environment         RoutingEnvironment
+  credentialReference String                      @db.VarChar(255)
+  enabled             Boolean                     @default(false)
+  isDefault           Boolean                     @default(false)
+  priority            Int                         @default(100)
+  healthStatus        RoutingProviderHealthStatus @default(UNKNOWN)
+  governanceVersion   Int                         @default(1)
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+
+  @@unique([tenantId, providerCode, environment, adapterVersion, adapterSpiVersion], map: "RoutingProvider_tenant_code_environment_version_key")
+  @@index([tenantId, environment, enabled, isDefault], map: "RoutingProvider_tenant_environment_enabled_idx")
+}
+
+/// What the engine said, kept so it is not asked twice.
+///
+/// Only routed distances live here. There is deliberately no row for a
+/// straight-line estimate: caching a fallback would freeze it in place long
+/// after routing recovered, turning a ten-minute outage into a fortnight of
+/// guessed fares that nothing would ever correct.
+model RouteEstimate {
+  id                   String         @id @default(uuid()) @db.Uuid
+  tenantId             String         @db.Uuid
+  tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bakeryBranchId       String         @db.Uuid
+  bakeryBranch         BakeryBranch   @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  /// Rounded to four places (about eleven metres) before storage, so a saved
+  /// address ordered from twice produces the same key rather than missing on
+  /// floating-point noise.
+  destinationLatitude  Decimal        @db.Decimal(9, 4)
+  destinationLongitude Decimal        @db.Decimal(9, 4)
+  profile              RoutingProfile
+  avoidTrafficZone     Boolean
+  avoidOddEvenZone     Boolean
+  /// Two engines disagree about the same road, so a cached distance belongs to
+  /// the engine that produced it.
+  providerCode         String         @db.VarChar(32)
+  distanceMetres       Int
+  durationSeconds      Int?
+  computedAt           DateTime       @default(now())
+
+  @@unique([tenantId, bakeryBranchId, destinationLatitude, destinationLongitude, profile, avoidTrafficZone, avoidOddEvenZone, providerCode], map: "RouteEstimate_lookup_key")
+  @@index([tenantId, computedAt], map: "RouteEstimate_tenant_computed_idx")
+  @@index([bakeryBranchId, tenantId], map: "g3b_RouteEstimate_bakeryBranchId_tenant_idx")
 }

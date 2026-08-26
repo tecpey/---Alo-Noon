@@ -24,9 +24,11 @@ import {
   calculateCartLine,
   calculateQuoteExpiry,
   selectDeliveryPricingRule,
+  type RouteDistance,
 } from '@alo-noon/domain'
 
 import { authenticateRequest, type AuthDependencies } from './auth.js'
+import type { RoutingService } from './routing.js'
 
 const cartInclude = {
   items: {
@@ -222,7 +224,82 @@ export function registerCommerceRoutes(
   })
 }
 
-export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRepository {
+/**
+ * How far it is, and where that came from.
+ *
+ * The routing service is optional: without one, quotes are priced exactly as
+ * they were before — on the straight line — and nothing else changes. That is
+ * what lets routing be adopted per deployment rather than being a prerequisite
+ * for selling bread.
+ */
+export interface PrismaCommerceOptions {
+  routingService?: RoutingService
+}
+
+export function createPrismaCommerceRepository(
+  prisma: PrismaClient,
+  options: PrismaCommerceOptions = {},
+): CommerceRepository {
+  /**
+   * Resolved before the quote's transaction opens, never inside it.
+   *
+   * Routing is a call to another company's server, and ADR-0010 keeps those out
+   * of database transactions for a reason that is sharper here than usual: this
+   * transaction is SERIALIZABLE and holds locks a checkout depends on. A routing
+   * engine having a slow afternoon would become a checkout having one.
+   *
+   * The context is read first without a transaction, so a replay or a missing
+   * cart costs no routing call at all.
+   */
+  async function resolveDistance(
+    tenantId: string,
+    customerId: string,
+    input: QuoteCreate,
+    now: Date,
+  ): Promise<{ branchId: string; addressId: string; distance: RouteDistance } | null> {
+    if (!options.routingService) return null
+    const context = await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+      const replay = await transaction.quote.findFirst({
+        where: { idempotencyKey: input.idempotencyKey, tenantId, customerId },
+        select: { id: true },
+      })
+      if (replay) return null
+      // ownership-established: both reads below are filtered by customerId, so a
+      // cart or address belonging to anyone else is simply not found.
+      const cart = await transaction.cart.findFirst({
+        where: { tenantId, customerId, state: 'ACTIVE' },
+        select: {
+          bakeryBranchId: true,
+          bakeryBranch: { select: { id: true, latitude: true, longitude: true } },
+        },
+      })
+      const address = await transaction.address.findFirst({
+        where: { id: input.deliveryAddressId, tenantId, customerId, archivedAt: null },
+        select: { id: true, latitude: true, longitude: true },
+      })
+      return cart?.bakeryBranch && address ? { branch: cart.bakeryBranch, address } : null
+    })
+    if (!context) return null
+
+    const distance = await options.routingService.distanceFor(
+      tenantId,
+      {
+        branchId: context.branch.id,
+        origin: {
+          latitude: Number(context.branch.latitude),
+          longitude: Number(context.branch.longitude),
+        },
+        destination: {
+          latitude: Number(context.address.latitude),
+          longitude: Number(context.address.longitude),
+        },
+      },
+      now,
+    )
+    return { branchId: context.branch.id, addressId: context.address.id, distance }
+  }
+
   return {
     async getCart(tenantId, customerId) {
       return serializable(prisma, tenantId, async (transaction) => {
@@ -363,6 +440,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
     },
 
     async createQuote(tenantId, customerId, input, now, correlationId) {
+      const routed = await resolveDistance(tenantId, customerId, input, now)
       return serializable(prisma, tenantId, async (transaction) => {
         const replay = await transaction.quote.findFirst({
           where: { idempotencyKey: input.idempotencyKey, tenantId, customerId },
@@ -459,10 +537,20 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
         await assertBranchCapacity(transaction, cart.items[0]!.bakeryProductOffering, now)
 
         const branch = cart.items[0]!.bakeryProductOffering.bakeryBranch
-        const distanceMeters = calculateDeliveryDistanceMeters(
-          { latitude: Number(branch.latitude), longitude: Number(branch.longitude) },
-          { latitude: Number(address.latitude), longitude: Number(address.longitude) },
-        )
+        // The distance was measured against the branch and address read a moment
+        // ago. If either moved under us — a cart switched branches between the
+        // two reads — that measurement is about a different journey, and using it
+        // would price this one on someone else's road.
+        const routeDistance =
+          routed && routed.branchId === branch.id && routed.addressId === address.id
+            ? routed.distance
+            : null
+        const distanceMeters =
+          routeDistance?.distanceMetres ??
+          calculateDeliveryDistanceMeters(
+            { latitude: Number(branch.latitude), longitude: Number(branch.longitude) },
+            { latitude: Number(address.latitude), longitude: Number(address.longitude) },
+          )
         const pricingRules = await transaction.deliveryPricingRule.findMany({
           where: {
             tenantId,
@@ -513,6 +601,13 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             deliveryServiceAreaIdSnapshot: address.serviceAreaId,
             deliveryOperationalZoneIdSnapshot: address.operationalZoneId,
             deliveryDistanceMeters: distanceMeters,
+            // Recorded so a disputed fare can be explained rather than defended.
+            ...(routeDistance && {
+              deliveryDistanceSource: routeDistance.source,
+              ...(routeDistance.reasonCode !== undefined && {
+                deliveryDistanceReasonCode: routeDistance.reasonCode,
+              }),
+            }),
             deliveryPricingRuleId: pricingRule.id,
             deliveryPricingRuleVersion: pricingRule.version,
             bakeryNameSnapshot: branch.bakery.displayNameFa,
