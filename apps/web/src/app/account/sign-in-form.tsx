@@ -16,7 +16,7 @@ import { requestShopOtpAction, verifyShopOtpAction } from '../../lib/shop-action
  * There is no password anywhere. Nothing to forget, nothing to leak, and one
  * fewer field on the first screen a customer ever sees.
  */
-export function SignInForm() {
+export function SignInForm({ next }: { next?: string }) {
   const [requestState, request, requesting] = useActionState(requestShopOtpAction, idleState)
   const [verifyState, verify, verifying] = useActionState(verifyShopOtpAction, idleState)
   const codeSent = requestState.status === 'ok'
@@ -45,6 +45,8 @@ export function SignInForm() {
       </form>
 
       <form action={verify} className={`signin__step${codeSent ? '' : ' is-waiting'}`}>
+        {/* Where to land after signing in. Validated server-side before use. */}
+        {next && <input type="hidden" name="next" value={next} />}
         <label htmlFor="code">کد تأیید</label>
         <input
           id="code"

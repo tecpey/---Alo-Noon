@@ -14,6 +14,7 @@ import { translateProviderError } from './admin-format'
 import { linesFromCart, mergePlan, type BasketLine } from './basket-lines'
 import { toPersianDigits } from './persian'
 import { CITY_COOKIE, ZONE_COOKIE } from './shop-cookies'
+import { safeNextPath } from './safe-next'
 import { normalizeMobile, normalizeOtpCode } from './shop-format'
 import { readCart, removeCartItem, revokeShopSession, setCartItem } from './shop-api'
 import { offeringContexts } from './storefront-data'
@@ -106,7 +107,10 @@ export async function verifyShopOtpAction(
     path: '/',
   })
   cookieStore.delete(CHALLENGE_COOKIE)
-  redirect('/account')
+  // Back to whatever sent them here — checkout, usually — rather than to a
+  // page they never asked for. The value is validated, not trusted: it arrives
+  // in a URL anyone can compose.
+  redirect(safeNextPath(field(form, 'next')))
 }
 
 export async function signOutShopAction(): Promise<void> {

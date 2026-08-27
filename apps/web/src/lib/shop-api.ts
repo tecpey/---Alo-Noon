@@ -5,6 +5,7 @@ import type {
   AddressSummary,
   CartSummary,
   OrderSummary,
+  PaymentExecutionSummary,
   PaymentSummary,
   ProductDetail,
   ProductSummary,
@@ -179,13 +180,24 @@ export async function listAddresses(): Promise<ApiResult<AddressSummary[]>> {
   return request<AddressSummary[]>('/api/v1/addresses', { method: 'GET' })
 }
 
+/**
+ * Saves a delivery address.
+ *
+ * The zone and service area are deliberately not part of the request: the API
+ * decides both from the coordinates, and letting a client assert them would let
+ * it claim delivery to somewhere no courier goes. `idempotencyKey` is required
+ * — a resubmitted form must return the address it already created rather than a
+ * second copy of the same house.
+ */
 export async function createAddress(input: {
+  cityId: string
   label: string
   recipientName: string
   recipientPhone: string
   addressLine: string
   latitude: number
   longitude: number
+  idempotencyKey: string
   postalCode?: string
   deliveryInstructions?: string
 }): Promise<ApiResult<AddressSummary>> {
@@ -229,19 +241,26 @@ export async function createPayment(input: {
   return request<PaymentSummary>('/api/v1/payments', { method: 'POST', body: input })
 }
 
-export interface PaymentHandoff {
-  paymentId: string
-  outcome: string
-  /** Where to send the customer's browser. Absent when the gateway refused. */
-  customerActionUrl?: string
-  providerCode?: string
-}
-
+/**
+ * Asks the gateway to open a payment and tell us where to send the customer.
+ *
+ * The answer is deliberately not a URL and nothing else. `state` says whether
+ * the customer must go somewhere, `customerAction` carries the opaque HTTPS
+ * address when they must, and `failure` explains a refusal in a code the shop
+ * can act on. A caller that only read a URL would treat "the gateway said no"
+ * as "the gateway is broken".
+ *
+ * `replayed` is true when this exact idempotency key has already been executed,
+ * which is the normal answer to a customer who pressed pay twice.
+ */
 export async function initializePayment(input: {
   paymentId: string
   idempotencyKey: string
-}): Promise<ApiResult<PaymentHandoff>> {
-  return request<PaymentHandoff>('/api/v1/payments/initialize', { method: 'POST', body: input })
+}): Promise<ApiResult<PaymentExecutionSummary>> {
+  return request<PaymentExecutionSummary>('/api/v1/payments/initialize', {
+    method: 'POST',
+    body: input,
+  })
 }
 
 export async function readPayment(paymentId: string): Promise<ApiResult<PaymentSummary>> {

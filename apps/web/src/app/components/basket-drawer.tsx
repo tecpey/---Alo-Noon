@@ -151,16 +151,20 @@ export function BasketDrawer() {
                 <strong>{formatToman(subtotal)}</strong>
               </div>
               {/*
-                Deliberately not a checkout button. Checkout needs a signed-in
-                customer and the server-side cart, and this basket is browser
-                state — a button that said "پرداخت" would be promising a
-                transaction nothing behind it can complete.
+                It says "ادامهٔ سفارش" rather than "پرداخت" because the fare is
+                not known yet: it is measured to an address the customer has not
+                chosen. Naming a payment before a total exists would be
+                promising a number this drawer cannot show.
+
+                Checkout sends a signed-out visitor through sign-in and back,
+                so this is one link for both cases rather than two buttons that
+                differ by a state the drawer would have to guess at.
               */}
               <p className="drawer__note">
                 <CheckIcon width={16} height={16} />
                 کرایه در مرحلهٔ بعد و بر اساس مسیر واقعی محاسبه می‌شود.
               </p>
-              <Link className="an-button drawer__cta" href="/account">
+              <Link className="an-button drawer__cta" href="/checkout">
                 ادامهٔ سفارش
                 <ChevronIcon width={18} height={18} />
               </Link>

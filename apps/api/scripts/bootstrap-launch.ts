@@ -165,6 +165,29 @@ const LAUNCH_CATALOG: readonly LaunchBread[] = [
   },
 ]
 
+/** The pilot city's timezone, and the clock every service date is read on. */
+const CITY_TIMEZONE = 'Asia/Tehran'
+
+/**
+ * The service date for a moment, in a city's own timezone.
+ *
+ * Deliberately the same rule as the API's `serviceDateAt`. A bootstrap that
+ * dates its capacity slots differently from the code that looks them up seeds a
+ * shop that cannot take orders, and does it only during the hours when the two
+ * calendars disagree — which is the hardest kind of bug to catch by hand.
+ */
+function serviceDateIn(moment: Date, timezone: string): Date {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(moment)
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((entry) => entry.type === type)?.value ?? ''
+  return new Date(`${part('year')}-${part('month')}-${part('day')}T00:00:00.000Z`)
+}
+
 async function tenantTransaction<T>(
   run: (t: Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]) => Promise<T>,
 ): Promise<T> {
@@ -372,21 +395,34 @@ async function main(): Promise<void> {
     const offeringId = offeringIds.get('sangak')
     if (!offeringId) throw new Error('The launch catalog seeded no sangak offering')
 
-    // Capacity for today, or the branch cannot take an order at all.
-    const serviceDate = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    )
-    await t.bakeryCapacitySlot.upsert({
-      where: { bakeryBranchId_serviceDate: { bakeryBranchId: branch.id, serviceDate } },
-      update: { maxOrders: 100, suspended: false },
-      create: {
-        tenantId: TENANT_ID,
-        bakeryBranchId: branch.id,
-        serviceDate,
-        maxOrders: 100,
-        suspended: false,
-      },
-    })
+    // Capacity, or the branch cannot take an order at all.
+    //
+    // The service date is computed in the city's own timezone, exactly as
+    // `serviceDateAt` does when an order is accepted. Using UTC here instead
+    // looked right and was wrong for three and a half hours of every day: from
+    // 20:30 UTC it is already tomorrow in Tehran, so the API looked for a slot
+    // this script had never created and every evening order failed with
+    // CAPACITY_UNAVAILABLE.
+    //
+    // A week is seeded rather than a single day, so a stack left running
+    // overnight does not stop taking orders at midnight.
+    for (let offset = 0; offset < 7; offset += 1) {
+      const serviceDate = serviceDateIn(
+        new Date(now.getTime() + offset * 86_400_000),
+        CITY_TIMEZONE,
+      )
+      await t.bakeryCapacitySlot.upsert({
+        where: { bakeryBranchId_serviceDate: { bakeryBranchId: branch.id, serviceDate } },
+        update: { maxOrders: 100, suspended: false },
+        create: {
+          tenantId: TENANT_ID,
+          bakeryBranchId: branch.id,
+          serviceDate,
+          maxOrders: 100,
+          suspended: false,
+        },
+      })
+    }
 
     // findFirst rather than upsert: the unique is over a nullable column, which
     // Prisma will not accept as a compound where key.

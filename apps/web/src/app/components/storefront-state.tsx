@@ -12,12 +12,8 @@ import {
 } from 'react'
 
 import { ALL_CATEGORIES, type ShelfProduct } from '../../lib/catalog-view'
-import {
-  BASKET_STORAGE_KEY,
-  linesFromCart,
-  parseStoredBasket,
-  serializeBasket,
-} from '../../lib/basket-lines'
+import { linesFromCart, serializeBasket } from '../../lib/basket-lines'
+import { readStoredBasket, writeStoredBasket } from '../../lib/basket-storage'
 import { mergeBasketAction, setBasketQuantityAction } from '../../lib/shop-actions'
 
 /**
@@ -115,7 +111,7 @@ export function StorefrontProvider({
     if (hydrated.current) return
     hydrated.current = true
 
-    const stored = parseStoredBasket(readStorage())
+    const stored = readStoredBasket()
     if (!signedIn) {
       if (stored.length > 0) {
         setLines(new Map(stored.map((line) => [line.offeringId, line.quantity])))
@@ -132,7 +128,7 @@ export function StorefrontProvider({
         setError(result.error)
         // The browser copy has done its job; leaving it would merge again on
         // the next visit and resurrect bread the customer has since removed.
-        writeStorage(null)
+        writeStoredBasket(null)
       })
       .finally(() => setSaving(false))
   }, [signedIn])
@@ -140,7 +136,7 @@ export function StorefrontProvider({
   /** Only the anonymous basket is persisted; a signed-in one lives on the server. */
   useEffect(() => {
     if (!hydrated.current || signedIn) return
-    writeStorage(serializeBasket(lines))
+    writeStoredBasket(serializeBasket(lines))
   }, [lines, signedIn])
 
   /**
@@ -246,31 +242,6 @@ export function StorefrontProvider({
   ])
 
   return <StorefrontContext.Provider value={value}>{children}</StorefrontContext.Provider>
-}
-
-/**
- * Local storage, which is allowed to not exist.
- *
- * Private windows, cleared site data and browsers set to block storage all
- * throw on access rather than returning nothing, and a shop that will not
- * render because it could not save a basket is a worse shop than one that
- * forgets it.
- */
-function readStorage(): string | null {
-  try {
-    return window.localStorage.getItem(BASKET_STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function writeStorage(value: string | null): void {
-  try {
-    if (value === null) window.localStorage.removeItem(BASKET_STORAGE_KEY)
-    else window.localStorage.setItem(BASKET_STORAGE_KEY, value)
-  } catch {
-    /* A basket that cannot be saved is still a basket for this visit. */
-  }
 }
 
 export function useStorefront(): StorefrontState {

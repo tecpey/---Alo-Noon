@@ -98,6 +98,19 @@ export async function loadStorefront(): Promise<StorefrontData> {
 }
 
 /**
+ * The city checkout is happening in, or nothing.
+ *
+ * An address belongs to a city, and the API decides which zone and service area
+ * a set of coordinates falls in against that city's own areas. Checkout cannot
+ * invent one: saving an address under the wrong city would produce a delivery
+ * fare measured against zones no courier there works.
+ */
+export async function resolveCheckoutCity(): Promise<ActiveCitySummary | null> {
+  const choice = await resolveCity()
+  return choice.state === 'ready' ? choice.city : null
+}
+
+/**
  * Which branch context each offering on sale right now belongs to.
  *
  * Writing to the cart means naming a city and a zone that match the offering's

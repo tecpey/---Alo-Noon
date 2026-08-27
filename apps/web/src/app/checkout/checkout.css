@@ -1,0 +1,401 @@
+/*
+ * Checkout, and the page the gateway returns to.
+ *
+ * Two columns on a desktop: the questions on one side, the money on the other,
+ * with the summary sticky so the total never scrolls out of view while the
+ * customer is still deciding. On a phone they stack, and the summary goes last
+ * — a total above the address fields would be a total shown before it can be
+ * known.
+ *
+ * Logical properties throughout, like the rest of the shop.
+ */
+
+.checkout__head {
+  display: flex;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.checkout__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  padding: 1.5rem;
+  align-items: start;
+}
+
+.checkout__main h1 {
+  margin-block-end: 1.25rem;
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  font-weight: 800;
+  color: var(--ink-strong);
+}
+
+@media (max-width: 900px) {
+  .checkout__grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+    padding: 1rem;
+  }
+}
+
+.checkout__step {
+  margin-block-end: 1.75rem;
+  padding-block-end: 1.5rem;
+  border-block-end: 1px solid var(--line-subtle);
+}
+.checkout__step:last-child {
+  border-block-end: 0;
+}
+.checkout__step h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-block-end: 0.9rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+/* The step number, so the order of the questions is visible at a glance
+   rather than only implied by vertical position. */
+.checkout__num {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.checkout__hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-block-end: 0.9rem;
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+.checkout__hint svg {
+  flex: none;
+  color: var(--primary-600);
+}
+
+.checkout__error {
+  margin-block: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--primary-600) 10%, var(--surface-card));
+  border: 1px solid color-mix(in srgb, var(--primary-600) 35%, transparent);
+  color: var(--primary-700);
+  font-size: 0.87rem;
+  line-height: 1.7;
+}
+
+/* ------------------------------------------------------------- addresses */
+
+.address-list {
+  display: grid;
+  gap: 0.6rem;
+  list-style: none;
+  margin-block-end: 1rem;
+}
+
+.address {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-base) var(--easing-standard),
+    background var(--duration-base) var(--easing-standard);
+}
+.address:hover {
+  border-color: var(--primary-300);
+}
+/* The chosen address is marked by a border and a tint, never by colour alone —
+   the radio itself stays in the markup and visible for the same reason. */
+.address--on {
+  border-color: var(--primary-600);
+  background: color-mix(in srgb, var(--primary-600) 6%, var(--surface-card));
+}
+.address input {
+  margin-block-start: 0.25rem;
+  accent-color: var(--primary-600);
+}
+.address__glyph {
+  color: var(--primary-600);
+}
+.address__body {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.address__label {
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+.address__line {
+  color: var(--ink-base);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.address__who {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+
+.address-form {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px dashed var(--line-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+}
+.address-form__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.9rem;
+}
+@media (max-width: 640px) {
+  .address-form__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.address-form__locate {
+  display: grid;
+  gap: 0.45rem;
+}
+.address-form__fix {
+  color: var(--success);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.address-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+.field label {
+  color: var(--ink-muted);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+.field input,
+.field textarea {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--ink-base);
+  font: inherit;
+  resize: vertical;
+}
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--primary-600);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-600) 20%, transparent);
+}
+
+/* --------------------------------------------------------------- summary */
+
+.checkout__summary {
+  position: sticky;
+  inset-block-start: 5rem;
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.1rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-xl);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
+}
+@media (max-width: 900px) {
+  .checkout__summary {
+    position: static;
+  }
+}
+.checkout__summary h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+
+.summary__lines {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  padding-block-end: 0.9rem;
+  border-block-end: 1px solid var(--line-subtle);
+}
+.summary__lines li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+.summary__times {
+  color: var(--ink-muted);
+}
+
+.summary__totals {
+  display: grid;
+  gap: 0.45rem;
+}
+.summary__totals div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+.summary__totals dd {
+  color: var(--ink-base);
+  font-weight: 600;
+}
+.summary__grand {
+  padding-block-start: 0.6rem;
+  border-block-start: 1px solid var(--line-subtle);
+}
+.summary__grand dt {
+  color: var(--ink-strong) !important;
+  font-weight: 700;
+}
+.summary__grand dd {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--ink-strong);
+}
+
+.checkout__pay {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+.checkout__pay:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.checkout__trust {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+.checkout__trust svg {
+  flex: none;
+  margin-block-start: 0.15rem;
+  color: var(--primary-600);
+}
+
+/* ------------------------------------------------------- payment result */
+
+.result {
+  display: grid;
+  place-items: center;
+  padding: 2.5rem 1.5rem 3.5rem;
+}
+
+.result__card {
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  max-width: 34rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-xl);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-md);
+}
+.result__card h1 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--ink-strong);
+}
+.result__lead {
+  max-width: 42ch;
+  color: var(--ink-muted);
+  line-height: 1.8;
+}
+
+/*
+ * The three outcomes are marked by their own colour and their own glyph, never
+ * by colour alone. "Still confirming" is deliberately not green: a customer who
+ * reads a provisional state as a completed payment is a customer who walks away
+ * from an order that never went through.
+ */
+.result__glyph {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-full);
+}
+.result__card--good .result__glyph {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+.result__card--wait .result__glyph {
+  background: color-mix(in srgb, var(--primary-600) 12%, transparent);
+  color: var(--primary-600);
+}
+.result__card--bad .result__glyph {
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+}
+.result__card--good {
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+}
+
+.result__facts {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 24rem;
+  padding-block: 0.9rem;
+  border-block: 1px solid var(--line-subtle);
+}
+.result__facts div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+.result__facts dt {
+  color: var(--ink-muted);
+}
+.result__facts dd {
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+
+.result__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}

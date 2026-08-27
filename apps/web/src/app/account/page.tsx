@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 import '../storefront.css'
 import './account.css'
@@ -9,6 +10,7 @@ import { CourierIcon, ReceiptIcon, ShieldIcon, UserIcon } from '../components/ic
 import { SignInForm } from './sign-in-form'
 import { signOutShopAction } from '../../lib/shop-actions'
 import { currentSession } from '../../lib/shop-api'
+import { safeNextPath } from '../../lib/safe-next'
 
 export const metadata: Metadata = {
   title: 'حساب کاربری | الو نون',
@@ -23,8 +25,18 @@ export const metadata: Metadata = {
  * form that will not help them, and one who is not can reach an account page
  * with nothing in it.
  */
-export default async function AccountPage() {
-  const session = await currentSession()
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const [session, params] = await Promise.all([currentSession(), searchParams])
+  const raw = params['next']
+  const next = safeNextPath(typeof raw === 'string' ? raw : null, '')
+
+  // Already signed in and on the way somewhere: go, rather than showing an
+  // account page they did not ask for and would have to click through.
+  if (session && next) redirect(next)
 
   return (
     <div className="app-frame account">
@@ -34,19 +46,19 @@ export default async function AccountPage() {
         </Link>
       </header>
 
-      <main className="account__body">{session ? <SignedIn /> : <SignedOut />}</main>
+      <main className="account__body">{session ? <SignedIn /> : <SignedOut next={next} />}</main>
     </div>
   )
 }
 
-function SignedOut() {
+function SignedOut({ next }: { next: string }) {
   return (
     <>
       <h1>ورود به حساب</h1>
       <p className="account__lead">
         ورود با شمارهٔ موبایل و کد یک‌بارمصرف انجام می‌شود؛ رمز عبوری وجود ندارد که فراموش شود.
       </p>
-      <SignInForm />
+      <SignInForm {...(next && { next })} />
       <ul className="account__points">
         <li>
           <span className="trust__glyph">
