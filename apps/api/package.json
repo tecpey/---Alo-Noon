@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage",
+    "sms-sandbox": "tsx scripts/sms-sandbox.ts"
   },
   "dependencies": {
     "@alo-noon/config": "workspace:*",

@@ -5,7 +5,10 @@ import '../storefront.css'
 import './account.css'
 
 import { BrandMark } from '../components/brand-mark'
-import { CourierIcon, ReceiptIcon, ShieldIcon } from '../components/icons'
+import { CourierIcon, ReceiptIcon, ShieldIcon, UserIcon } from '../components/icons'
+import { SignInForm } from './sign-in-form'
+import { signOutShopAction } from '../../lib/shop-actions'
+import { currentSession } from '../../lib/shop-api'
 
 export const metadata: Metadata = {
   title: 'حساب کاربری | الو نون',
@@ -13,19 +16,16 @@ export const metadata: Metadata = {
 }
 
 /**
- * The account entry.
+ * One route, two states.
  *
- * It exists because the header links here, and a header whose links 404 is not
- * a header anybody should ship. What it deliberately does not contain is a
- * sign-in form: customer sign-in is a one-time code, the endpoints for it are
- * real and the mobile app already uses them, and this page is not wired to
- * them yet. A phone field that accepted a number and did nothing would be worse
- * than this page — it would waste a customer's time and then lose their trust
- * for every other control on the site.
- *
- * So it says what is true, and points at the two places that work.
+ * Signed out it is the sign-in screen; signed in it is the account. A separate
+ * `/sign-in` route would mean a customer who is already signed in can reach a
+ * form that will not help them, and one who is not can reach an account page
+ * with nothing in it.
  */
-export default function AccountPage() {
+export default async function AccountPage() {
+  const session = await currentSession()
+
   return (
     <div className="app-frame account">
       <header className="account__head">
@@ -34,51 +34,89 @@ export default function AccountPage() {
         </Link>
       </header>
 
-      <main className="account__body">
-        <h1>ورود به حساب</h1>
-        <p className="account__lead">
-          ورود با شمارهٔ موبایل و کد یک‌بارمصرف انجام می‌شود؛ رمز عبوری وجود ندارد که فراموش شود.
-        </p>
-
-        <ul className="account__points">
-          <li>
-            <span className="trust__glyph">
-              <ShieldIcon duotone width={22} height={22} />
-            </span>
-            <div>
-              <p className="trust__title">کد یک‌بارمصرف، بدون رمز</p>
-              <p className="trust__body">
-                کد فقط برای مدت کوتاهی معتبر است و تعداد تلاش‌ها محدود می‌شود.
-              </p>
-            </div>
-          </li>
-          <li>
-            <span className="trust__glyph">
-              <ReceiptIcon duotone width={22} height={22} />
-            </span>
-            <div>
-              <p className="trust__title">پیگیری سفارش تا لحظهٔ تحویل</p>
-              <p className="trust__body">وضعیت هر سفارش و سوابق پرداخت در حساب شما می‌ماند.</p>
-            </div>
-          </li>
-          <li>
-            <span className="trust__glyph">
-              <CourierIcon duotone width={22} height={22} />
-            </span>
-            <div>
-              <p className="trust__title">ثبت سفارش، فعلاً در اپلیکیشن</p>
-              <p className="trust__body">
-                مسیر کامل سفارش و پرداخت امروز در اپلیکیشن الو نون کار می‌کند؛ همین مسیر در حال
-                افزوده‌شدن به وب است.
-              </p>
-            </div>
-          </li>
-        </ul>
-
-        <Link className="an-button" href="/">
-          بازگشت به فروشگاه
-        </Link>
-      </main>
+      <main className="account__body">{session ? <SignedIn /> : <SignedOut />}</main>
     </div>
+  )
+}
+
+function SignedOut() {
+  return (
+    <>
+      <h1>ورود به حساب</h1>
+      <p className="account__lead">
+        ورود با شمارهٔ موبایل و کد یک‌بارمصرف انجام می‌شود؛ رمز عبوری وجود ندارد که فراموش شود.
+      </p>
+      <SignInForm />
+      <ul className="account__points">
+        <li>
+          <span className="trust__glyph">
+            <ShieldIcon duotone width={22} height={22} />
+          </span>
+          <div>
+            <p className="trust__title">کد یک‌بارمصرف، بدون رمز</p>
+            <p className="trust__body">کد فقط چند دقیقه معتبر است و تعداد تلاش‌ها محدود می‌شود.</p>
+          </div>
+        </li>
+        <li>
+          <span className="trust__glyph">
+            <ReceiptIcon duotone width={22} height={22} />
+          </span>
+          <div>
+            <p className="trust__title">پیگیری سفارش تا لحظهٔ تحویل</p>
+            <p className="trust__body">وضعیت هر سفارش و سوابق پرداخت در حساب شما می‌ماند.</p>
+          </div>
+        </li>
+        <li>
+          <span className="trust__glyph">
+            <CourierIcon duotone width={22} height={22} />
+          </span>
+          <div>
+            <p className="trust__title">نشانی‌هایتان ذخیره می‌شود</p>
+            <p className="trust__body">
+              سفارش بعدی بدون واردکردن دوبارهٔ نشانی و شمارهٔ گیرنده ثبت می‌شود.
+            </p>
+          </div>
+        </li>
+      </ul>
+    </>
+  )
+}
+
+/**
+ * The signed-in account.
+ *
+ * It does not show the customer's phone number, because the session the API
+ * issues does not contain one — it carries an account id, a customer id and the
+ * grants, and nothing else. Printing a number here would mean either fetching
+ * something this page has no other reason to fetch, or making one up.
+ */
+function SignedIn() {
+  return (
+    <>
+      <div className="account__identity">
+        <span className="trust__glyph">
+          <UserIcon duotone width={22} height={22} />
+        </span>
+        <div>
+          <h1>حساب شما</h1>
+          <p className="account__lead">با همان شماره‌ای که کد تأیید را گرفتید وارد شده‌اید.</p>
+        </div>
+      </div>
+
+      <div className="account__actions">
+        <Link className="an-button" href="/orders">
+          سفارش‌های من
+        </Link>
+        <Link className="an-button an-button--quiet" href="/">
+          ادامهٔ خرید
+        </Link>
+      </div>
+
+      <form action={signOutShopAction} className="account__signout">
+        <button type="submit" className="an-button an-button--quiet">
+          خروج از حساب
+        </button>
+      </form>
+    </>
   )
 }

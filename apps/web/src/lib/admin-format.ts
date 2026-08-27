@@ -1,3 +1,5 @@
+export { sessionTokenFromSetCookie } from './api-envelope'
+
 /**
  * Pure helpers behind the admin panel's Server Actions.
  *
@@ -111,29 +113,4 @@ export function derivedIdempotencyKey(...parts: readonly string[]): string {
     .replace(/[^A-Za-z0-9._:-]/g, '-')
     .slice(0, 128)
     .padEnd(16, '0')
-}
-
-/**
- * Picks the session token out of the API's Set-Cookie headers.
- *
- * The API issues a session only as a cookie — the response body never carries
- * the token — so signing in means reading it here and re-setting it on this
- * origin. Only the session cookie is relayed: any other cookie the API sets is
- * left alone rather than blindly copied onto the panel's domain.
- */
-export function sessionTokenFromSetCookie(
-  setCookies: readonly string[],
-  cookieName: string,
-): string | null {
-  for (const entry of setCookies) {
-    const [pair] = entry.split(';')
-    if (!pair) continue
-    const separator = pair.indexOf('=')
-    if (separator < 0) continue
-    if (pair.slice(0, separator).trim() !== cookieName) continue
-    const value = pair.slice(separator + 1).trim()
-    // A clearing cookie (`name=; Max-Age=0`) is not a session.
-    if (value) return value
-  }
-  return null
 }

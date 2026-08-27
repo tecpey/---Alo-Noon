@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@alo-noon/config": "workspace:*",
+    "@alo-noon/contracts": "workspace:*",
     "@alo-noon/design-tokens": "workspace:*",
     "next": "16.2.11",
     "react": "19.2.8",

@@ -1,116 +1,32 @@
 import 'server-only'
 
-import { cookies, headers } from 'next/headers'
+import {
+  apiBaseUrl,
+  isUnauthenticated,
+  isUuid,
+  request,
+  requestWithPagination,
+  upstreamHeaders,
+  type ApiFailure,
+  type ApiResult,
+  type Money,
+  type PaginationMeta,
+} from './api-core'
 
 /**
- * Server-side client for the admin API.
+ * The admin panel's view of the API.
  *
- * Every call runs on the Next.js server, never in the browser. The operator's
- * session stays an HttpOnly cookie that client JavaScript cannot read, and no
- * provider credential reference is ever handed to the browser beyond what the
- * API itself publishes.
- *
- * Tenant resolution is the subtle part. The API decides which tenant a request
- * belongs to from the host it arrives on, and Node's fetch refuses to let a
- * caller set `Host` — undici derives it from the URL and drops any override. So
- * the host the API sees is the host in `ADMIN_API_BASE_URL`, and that value must
- * name the tenant, not an internal upstream address.
- *
- * `X-Forwarded-Host` carries the browser's host as well. A deployment that has
- * already declared its proxy hops (`API_TRUST_PROXY_HOPS`) will prefer it, which
- * lets one panel serve several tenant hosts; a deployment that has not will fall
- * back to the base URL's host, which is why that must be right on its own.
- *
- * Beyond those, only `Cookie` is forwarded, restricted to the session cookie, so
- * the API authenticates the operator exactly as it would a direct request.
+ * The transport itself — base URL, tenant host forwarding, session cookie,
+ * timeouts, envelope unwrapping — lives in `api-core`, shared with the
+ * storefront. Only the endpoints and their shapes are here. Two copies of that
+ * transport is two places to get the `X-Forwarded-Host` subtlety wrong, and one
+ * of them would be got wrong.
  */
-const SESSION_COOKIE = 'alo_session'
-const REQUEST_TIMEOUT_MS = 10_000
+export { isUnauthenticated, upstreamHeaders }
+export type { ApiFailure, ApiResult, Money, PaginationMeta }
 
-export interface ApiFailure {
-  code: string
-  message: string
-}
-
-export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiFailure }
-
-export function adminApiBaseUrl(): string {
-  return process.env['ADMIN_API_BASE_URL'] ?? 'http://localhost:3001'
-}
-
-export async function upstreamHeaders(): Promise<Record<string, string>> {
-  const [cookieStore, headerStore] = await Promise.all([cookies(), headers()])
-  const session = cookieStore.get(SESSION_COOKIE)
-  const browserHost = headerStore.get('x-forwarded-host') ?? headerStore.get('host')
-  return {
-    accept: 'application/json',
-    ...(browserHost && { 'x-forwarded-host': browserHost }),
-    ...(session && { cookie: `${SESSION_COOKIE}=${session.value}` }),
-  }
-}
-
-/** Same as `request`, but surfaces the pagination block the list routes attach. */
-async function requestWithPagination<T>(
-  path: string,
-): Promise<ApiResult<T> & { pagination?: PaginationMeta }> {
-  const { result, meta } = await requestRaw<T>(path, { method: 'GET' })
-  const pagination = (meta as { pagination?: PaginationMeta } | undefined)?.pagination
-  return pagination ? { ...result, pagination } : result
-}
-
-async function request<T>(path: string, init: RequestInit_): Promise<ApiResult<T>> {
-  return (await requestRaw<T>(path, init)).result
-}
-
-interface RequestInit_ {
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-  body?: unknown
-}
-
-async function requestRaw<T>(
-  path: string,
-  init: RequestInit_,
-): Promise<{ result: ApiResult<T>; meta?: unknown }> {
-  let response: Response
-  try {
-    response = await fetch(new URL(path, adminApiBaseUrl()), {
-      method: init.method,
-      headers: {
-        ...(await upstreamHeaders()),
-        ...(init.body !== undefined && { 'content-type': 'application/json' }),
-      },
-      ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
-      // Provider state is governance data; a stale read here would show an
-      // operator a gateway as live after they took it out of rotation.
-      cache: 'no-store',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
-  } catch {
-    return {
-      result: {
-        ok: false,
-        error: { code: 'API_UNREACHABLE', message: 'ارتباط با سرویس برقرار نشد.' },
-      },
-    }
-  }
-
-  let payload: unknown
-  try {
-    payload = await response.json()
-  } catch {
-    payload = null
-  }
-
-  if (!response.ok) {
-    const error =
-      payload && typeof payload === 'object' && 'error' in payload
-        ? (payload.error as ApiFailure)
-        : { code: `HTTP_${response.status}`, message: 'درخواست ناموفق بود.' }
-    return { result: { ok: false, error } }
-  }
-  const envelope = payload as { data: T; meta?: unknown }
-  return { result: { ok: true, data: envelope.data }, meta: envelope.meta }
-}
+/** Kept under its old name: pages and server actions import it from here. */
+export const adminApiBaseUrl = apiBaseUrl
 
 export interface PaymentConfigurationSummary {
   id: string
@@ -139,16 +55,6 @@ export interface SmsConfigurationSummary {
   priority: number
   healthStatus: 'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY'
   createdAt: string
-}
-
-/**
- * True when the API refused the request for lack of a session, as opposed to
- * lack of permission. Only the first sends the operator back to sign in — a
- * signed-in account without the governance grant needs to be told that, not
- * bounced through a login it will complete successfully and land right back.
- */
-export function isUnauthenticated(error: ApiFailure): boolean {
-  return error.code === 'SESSION_UNAUTHORIZED'
 }
 
 export async function listPaymentConfigurations(): Promise<
@@ -189,11 +95,6 @@ export interface SalesReport {
     revenue: Money
   }>
   conversion: { carts: number; quotes: number; orders: number; quoteToOrderRate: number | null }
-}
-
-export interface Money {
-  amount: string
-  currency: 'IRR'
 }
 
 export interface AdminOrderSummary {
@@ -238,15 +139,6 @@ export interface AdminOrderDetail extends AdminOrderSummary {
   updatedAt: string
 }
 
-export interface PaginationMeta {
-  page: number
-  pageSize: number
-  totalItems: number
-  totalPages: number
-  hasNextPage: boolean
-  hasPreviousPage: boolean
-}
-
 export async function readSalesReport(from: string, to: string): Promise<ApiResult<SalesReport>> {
   const query = new URLSearchParams({ from, to })
   return request<SalesReport>(`/api/v1/admin/reports/sales?${query.toString()}`, { method: 'GET' })
@@ -262,7 +154,7 @@ export async function listOrders(
 export async function readOrder(orderId: string): Promise<ApiResult<AdminOrderDetail>> {
   // The id is interpolated into a path segment, so anything that could change
   // the path's shape is refused before the request rather than sent upstream.
-  if (!/^[0-9a-fA-F-]{36}$/.test(orderId)) {
+  if (!isUuid(orderId)) {
     return { ok: false, error: { code: 'ORDER_NOT_FOUND', message: 'شناسهٔ سفارش معتبر نیست.' } }
   }
   return request<AdminOrderDetail>(`/api/v1/admin/orders/${orderId}`, { method: 'GET' })

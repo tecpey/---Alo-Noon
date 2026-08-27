@@ -33,3 +33,87 @@
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-lg);
 }
+
+/* ------------------------------------------------------------------ sign-in */
+
+.signin {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1.75rem;
+}
+.signin__step {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1.25rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  transition: opacity var(--duration-base) var(--easing-standard);
+}
+/* Dimmed, not hidden: a customer needs to see that a second step is coming, or
+   the first one looks like the whole thing and the code arriving is a surprise. */
+.signin__step.is-waiting {
+  opacity: 0.55;
+}
+.signin__step label {
+  color: var(--ink-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.signin__step input {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--ink-strong);
+  font: inherit;
+  font-size: 1.05rem;
+  /* Numbers read left to right even inside a right-to-left page. */
+  direction: ltr;
+  text-align: center;
+}
+.signin__step input:focus-visible {
+  outline: 2px solid var(--line-strong);
+  outline-offset: 1px;
+}
+.signin__code {
+  letter-spacing: 0.5em;
+  font-weight: 800;
+}
+.signin__note {
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+.signin__note--ok {
+  color: var(--success);
+}
+.signin__note--error {
+  color: var(--error);
+}
+.signin__reassure {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+.signin__reassure svg {
+  flex: none;
+  color: var(--success);
+}
+
+.account__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+.account__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-block: 1.75rem 1rem;
+}
+.account__signout {
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--line-subtle);
+}
