@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { brand, colors, cssVariables, gradients, ink, surface } from './index'
+import { brand, colors, cssVariables, gradients, ink, mix, surface, tint } from './index'
 
 /**
  * The tokens are data, so most of them are not worth a test. What is worth one
@@ -66,5 +66,28 @@ describe('the bridge to CSS', () => {
     expect(css.startsWith(':root {')).toBe(true)
     expect(css.trimEnd().endsWith('}')).toBe(true)
     expect(css.match(/:root/g)).toHaveLength(1)
+  })
+})
+
+describe('state tints', () => {
+  it('mixes rather than picks, so a retuned state carries its background', () => {
+    expect(mix('#FFFFFF', '#000000', 0.5)).toBe('#808080')
+    expect(mix('#FFFFFF', '#000000', 0)).toBe('#FFFFFF')
+    expect(mix('#FFFFFF', '#000000', 1)).toBe('#000000')
+  })
+
+  it('clamps a weight outside the range instead of producing a broken colour', () => {
+    expect(mix('#FFFFFF', '#000000', 5)).toBe('#000000')
+    expect(mix('#FFFFFF', '#000000', -2)).toBe('#FFFFFF')
+  })
+
+  it('keeps every tint readable against its own background', () => {
+    // Not a full contrast implementation — just the failure that matters: a
+    // tint whose text is no darker than the surface it sits on.
+    const luminance = (hex: string) =>
+      [1, 3, 5].reduce((sum, at) => sum + parseInt(hex.slice(at, at + 2), 16), 0)
+    for (const values of Object.values(tint)) {
+      expect(luminance(values.ink)).toBeLessThan(luminance(values.surface) - 200)
+    }
   })
 })

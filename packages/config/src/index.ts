@@ -167,9 +167,12 @@ export function parseCorsOrigins(value: string): string[] {
 // App metadata
 export const appMeta = {
   name: 'Alo Noon',
-  nameFa: 'آلو نون',
+  // Spelled as the wordmark spells it. The logo is the authority on the
+  // brand's own name, and a product whose panel and whose sign disagree about
+  // that has two names.
+  nameFa: 'الو نون',
   tagline: 'Fresh bread, delivered',
-  taglineFa: 'نان تازه، درب منزل',
+  taglineFa: 'نان تازه، زندگی گرم',
   version: process.env['npm_package_version'] ?? '0.0.1',
   apiVersion: 'v1',
   locale: 'fa-IR',

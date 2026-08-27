@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { BrandMark } from '../components/brand-mark'
 import { signOutAction } from '../../lib/admin-actions'
 
 const SECTIONS = [
@@ -32,7 +33,12 @@ export function AdminNav({
   return (
     <header className="admin-header">
       <div>
-        <h1>{title}</h1>
+        {/* The mark, not the lockup: at this size the wordmark would be a
+            wordmark nobody can read, and the panel is not a shopfront. */}
+        <div className="admin-title">
+          <BrandMark variant="mark" size={30} />
+          <h1>{title}</h1>
+        </div>
         {subtitle && <p className="muted">{subtitle}</p>}
         <nav className="admin-nav">
           {SECTIONS.map((section) => (

@@ -3,17 +3,31 @@
  * used a handful of times before launch and during incidents, so legibility of
  * state beats visual polish. Persian-first, RTL, with LTR islands for the
  * identifiers and references that are always Latin.
+ *
+ * Dense is not the same as unbranded. The names below are the panel's own, but
+ * every value behind them now comes from the shared tokens, so an operator
+ * moving between the storefront and this tool is looking at one product rather
+ * than two — and a colour retuned on the brand reaches here without anybody
+ * remembering to come and edit it.
  */
 .admin-shell {
-  --surface: #ffffff;
-  --ground: #fffaf5;
-  --ink: #431407;
-  --ink-muted: #7c2d12;
-  --line: #fed7aa;
-  --accent: #c2410c;
-  --ok: #16a34a;
-  --warn: #ca8a04;
-  --bad: #dc2626;
+  --surface: var(--surface-card);
+  --ground: var(--surface-base);
+  --ink: var(--ink-strong);
+  --ink-muted: var(--ink-muted);
+  --line: var(--line-subtle);
+  --accent: var(--primary-600);
+  --ok: var(--success);
+  --warn: var(--warning);
+  --bad: var(--error);
+  /* Tints for state, mixed from the semantic colours rather than picked, so a
+     retuned green cannot leave its own background behind. */
+  --ok-tint: color-mix(in srgb, var(--success) 10%, var(--surface-card));
+  --ok-line: color-mix(in srgb, var(--success) 32%, var(--surface-card));
+  --warn-tint: color-mix(in srgb, var(--warning) 12%, var(--surface-card));
+  --warn-line: color-mix(in srgb, var(--warning) 34%, var(--surface-card));
+  --bad-tint: color-mix(in srgb, var(--error) 9%, var(--surface-card));
+  --bad-line: color-mix(in srgb, var(--error) 30%, var(--surface-card));
 
   min-height: 100vh;
   background: var(--ground);
@@ -63,6 +77,17 @@
   overflow-wrap: anywhere;
 }
 
+/* The mark sits on the title's line so the panel reads as the same product as
+   the shop, without spending a whole header band on saying so. */
+.admin-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.admin-title img {
+  flex: none;
+}
+
 .admin h1,
 .admin-login h1 {
   font-size: 1.6rem;
@@ -95,8 +120,8 @@
   line-height: 2;
 }
 .error-box {
-  border-color: #fecaca;
-  background: #fef2f2;
+  border-color: var(--bad-line);
+  background: var(--bad-tint);
   color: var(--bad);
 }
 
@@ -139,26 +164,26 @@
   border-radius: 999px;
   padding: 0.15rem 0.6rem;
   font-size: 0.78rem;
-  background: #fff7ed;
+  background: var(--surface-sunken);
 }
 .badge.on {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  border-color: var(--ok-line);
+  background: var(--ok-tint);
   color: var(--ok);
 }
 .badge.health-healthy {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  border-color: var(--ok-line);
+  background: var(--ok-tint);
   color: var(--ok);
 }
 .badge.health-degraded {
-  border-color: #fde68a;
-  background: #fefce8;
+  border-color: var(--warn-line);
+  background: var(--warn-tint);
   color: var(--warn);
 }
 .badge.health-unhealthy {
-  border-color: #fecaca;
-  background: #fef2f2;
+  border-color: var(--bad-line);
+  background: var(--bad-tint);
   color: var(--bad);
 }
 
@@ -207,7 +232,7 @@
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: 0.5rem;
-  background: #fffdfb;
+  background: var(--surface-card);
   color: inherit;
 }
 .field input:focus-visible,
@@ -378,7 +403,7 @@ td a {
 .bar-track {
   block-size: 0.7rem;
   border-radius: 999px;
-  background: #ffedd5;
+  background: var(--primary-100);
   overflow: hidden;
 }
 .bar-fill {
@@ -454,7 +479,7 @@ td a {
   border-radius: 999px;
   padding: 0.15rem 0.65rem;
   font-size: 0.78rem;
-  background: var(--surface-muted, #fafafa);
+  background: var(--surface-sunken);
 }
 .chips code {
   direction: ltr;
@@ -467,7 +492,7 @@ td a {
   margin: 0 0 0.9rem;
   padding: 0.7rem 0.9rem;
   font-size: 0.9rem;
-  background: var(--surface-muted, #fafafa);
+  background: var(--surface-sunken);
 }
 
 .field textarea {

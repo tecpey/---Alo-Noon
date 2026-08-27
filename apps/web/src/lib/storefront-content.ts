@@ -1,3 +1,5 @@
+import { appMeta } from '@alo-noon/config'
+
 /**
  * What the storefront shows before a customer has told it anything.
  *
@@ -124,8 +126,8 @@ export const heroCopy = {
 } as const
 
 export const brandCopy = {
-  nameFa: 'الو نون',
-  taglineFa: 'نان تازه، زندگی گرم',
+  nameFa: appMeta.nameFa,
+  taglineFa: appMeta.taglineFa,
   searchPlaceholderFa: 'جست‌وجو در نان‌ها و محصولات...',
   accountFa: 'حساب کاربری',
   basketFa: 'سبد خرید',

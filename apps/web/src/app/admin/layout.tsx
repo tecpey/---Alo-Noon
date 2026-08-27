@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import './admin.css'
 
 export const metadata: Metadata = {
-  title: 'پنل مدیریت آلو نون',
+  title: 'پنل مدیریت الو نون',
   description: 'پیکربندی درگاه پرداخت و سرویس پیامک',
   // Nothing under /admin belongs in a search index or a shared link preview.
   robots: { index: false, follow: false },

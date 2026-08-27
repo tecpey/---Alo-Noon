@@ -159,6 +159,47 @@ export const gradients = {
   heroVeilVertical: `linear-gradient(180deg, rgba(245,235,223,0) 30%, rgba(245,235,223,0.86) 72%, ${colors.paper} 100%)`,
 } as const
 
+/**
+ * Blends two hex colours.
+ *
+ * CSS can do this itself with `color-mix`, but React Native cannot, and a
+ * state tint computed one way on the web and hand-picked another way on a phone
+ * is two greens that drift apart the first time either is retuned. So it is
+ * computed once, here, for all three surfaces.
+ */
+export function mix(from: string, to: string, weight: number): string {
+  const clamped = Math.min(1, Math.max(0, weight))
+  const channel = (hex: string, at: number) => parseInt(hex.slice(at, at + 2), 16)
+  const blend = (at: number) =>
+    Math.round(channel(from, at) * (1 - clamped) + channel(to, at) * clamped)
+      .toString(16)
+      .padStart(2, '0')
+  return `#${blend(1)}${blend(3)}${blend(5)}`.toUpperCase()
+}
+
+/**
+ * Backgrounds, borders and text for the four states, each mixed into the card
+ * surface rather than picked.
+ *
+ * Picked tints are how a palette ends up with a warm green foreground on a cold
+ * green background: the two were chosen months apart. Mixed ones cannot drift —
+ * retune `success` and its background follows.
+ */
+function stateTint(base: string) {
+  return {
+    surface: mix(colors.cream, base, 0.1),
+    border: mix(colors.cream, base, 0.32),
+    ink: mix(base, colors.neutral[950], 0.35),
+  } as const
+}
+
+export const tint = {
+  success: stateTint(colors.success),
+  warning: stateTint(colors.warning),
+  error: stateTint(colors.error),
+  info: stateTint(colors.info),
+} as const
+
 export const spacing = {
   0: '0',
   0.5: '0.125rem',
@@ -320,6 +361,9 @@ export function cssVariables(): string {
   for (const [name, value] of Object.entries(ink)) push(`ink-${name}`, value)
   for (const [name, value] of Object.entries(line)) push(`line-${name}`, value)
   for (const [name, value] of Object.entries(gradients)) push(`gradient-${name}`, value)
+  for (const [state, values] of Object.entries(tint)) {
+    for (const [part, value] of Object.entries(values)) push(`tint-${state}-${part}`, value)
+  }
   for (const [name, value] of Object.entries(borderRadius)) push(`radius-${name}`, value)
   for (const [name, value] of Object.entries(shadows)) push(`shadow-${name}`, value)
   for (const [name, value] of Object.entries(motion.duration)) push(`duration-${name}`, value)
@@ -340,6 +384,7 @@ export const config = {
   ink,
   line,
   gradients,
+  tint,
   spacing,
   typography,
   borderRadius,

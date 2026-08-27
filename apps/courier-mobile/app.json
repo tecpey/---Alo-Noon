@@ -1,12 +1,30 @@
 {
   "expo": {
-    "name": "آلو نون پیک",
+    "name": "الو نون | پیک",
     "slug": "alo-noon-courier",
     "version": "0.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "ios": { "supportsTablet": false, "bundleIdentifier": "ir.alonoon.courier" },
-    "android": { "package": "ir.alonoon.courier" },
-    "web": { "bundler": "metro" }
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ir.alonoon.courier"
+    },
+    "android": {
+      "package": "ir.alonoon.courier",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ED8732"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#F5EBDF",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#261F17"
+    }
   }
 }

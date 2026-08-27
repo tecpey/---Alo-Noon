@@ -3,6 +3,7 @@ import * as Location from 'expo-location'
 import { StatusBar } from 'expo-status-bar'
 import {
   ActivityIndicator,
+  Image,
   Linking,
   Pressable,
   SafeAreaView,
@@ -24,8 +25,9 @@ import type {
   QuoteSummary,
   SessionContext,
 } from '@alo-noon/contracts'
-import { colors } from '@alo-noon/design-tokens'
+import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
 
+import brandMark from './assets/logo-mark.png'
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
 import { customerCopy } from './src/copy'
 import {
@@ -668,13 +670,29 @@ export default function App() {
   )
 }
 
+/**
+ * The app's frame.
+ *
+ * The lockup at the top is the real mark beside the real wordmark, the same two
+ * things the shopfront and the panel show — a phone app that spells the brand
+ * out in the system font is a phone app that belongs to a different company.
+ */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.brandLockup}>
-          <Text style={styles.brand}>الو نون</Text>
-          <Text style={styles.brandCaption}>انتخاب روشن برای نان روزانه</Text>
+        <View style={styles.brandBar}>
+          <View style={styles.brandLockup}>
+            <Text style={styles.brand}>{customerCopy.brandName}</Text>
+            <Text style={styles.brandCaption}>{customerCopy.brandTagline}</Text>
+          </View>
+          <Image
+            source={brandMark}
+            style={styles.brandMark}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+            alt=""
+          />
         </View>
         {children}
       </ScrollView>
@@ -1123,7 +1141,7 @@ function errorMessage(error: unknown): string {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.primary[50] },
+  screen: { flex: 1, backgroundColor: surface.base },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -1131,21 +1149,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 32,
   },
+  brandBar: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 10,
+  },
   brandLockup: { alignItems: 'flex-end', gap: 2 },
+  brandMark: { width: 34, height: 46 },
   brand: {
-    color: colors.primary[800],
+    color: ink.strong,
     fontSize: 22,
     fontWeight: '800',
     textAlign: 'right',
   },
-  brandCaption: { color: colors.neutral[600], fontSize: 13, textAlign: 'right' },
+  brandCaption: { color: ink.muted, fontSize: 13, textAlign: 'right' },
   card: {
     gap: 16,
     padding: 24,
     borderWidth: 1,
-    borderColor: colors.primary[100],
+    borderColor: line.subtle,
     borderRadius: 28,
-    backgroundColor: colors.neutral[50],
+    backgroundColor: surface.card,
   },
   catalogPanel: { gap: 16 },
   title: {
@@ -1166,10 +1191,10 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: colors.neutral[300],
+    borderColor: line.base,
     borderRadius: 16,
-    backgroundColor: colors.neutral[50],
-    color: colors.neutral[900],
+    backgroundColor: surface.sunken,
+    color: ink.strong,
     fontSize: 18,
     writingDirection: 'ltr',
   },
@@ -1180,10 +1205,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     borderRadius: 16,
-    backgroundColor: colors.primary[700],
+    backgroundColor: colors.primary[600],
   },
   buttonDisabled: { opacity: 0.55 },
-  primaryButtonText: { color: colors.neutral[50], fontSize: 16, fontWeight: '800' },
+  primaryButtonText: { color: ink.onAction, fontSize: 16, fontWeight: '800' },
   secondaryButton: {
     minHeight: 46,
     alignItems: 'center',
@@ -1193,15 +1218,15 @@ const styles = StyleSheet.create({
     borderColor: colors.primary[200],
     borderRadius: 14,
   },
-  secondaryButtonText: { color: colors.primary[800], fontSize: 15, fontWeight: '700' },
+  secondaryButtonText: { color: ink.action, fontSize: 15, fontWeight: '700' },
   message: {
     padding: 14,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: tint.error.border,
     borderRadius: 14,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: tint.error.surface,
   },
-  messageText: { color: '#991B1B', lineHeight: 24, textAlign: 'right' },
+  messageText: { color: tint.error.ink, lineHeight: 24, textAlign: 'right' },
   loadingText: { color: colors.neutral[700], textAlign: 'center' },
   cityList: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
   cityChip: {
@@ -1227,10 +1252,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: '#DCFCE7',
+    backgroundColor: tint.success.surface,
   },
-  sessionBadgeText: { color: '#166534', fontSize: 12, fontWeight: '800' },
-  logoutText: { color: colors.primary[800], fontWeight: '700' },
+  sessionBadgeText: { color: tint.success.ink, fontSize: 12, fontWeight: '800' },
+  logoutText: { color: ink.action, fontWeight: '700' },
   emptyText: {
     padding: 18,
     borderRadius: 16,
@@ -1244,9 +1269,9 @@ const styles = StyleSheet.create({
     gap: 14,
     padding: 18,
     borderWidth: 1,
-    borderColor: colors.neutral[200],
+    borderColor: line.subtle,
     borderRadius: 20,
-    backgroundColor: colors.neutral[50],
+    backgroundColor: surface.card,
   },
   productTopRow: { gap: 12 },
   productName: {
@@ -1263,9 +1288,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral[100],
   },
   promiseText: { color: colors.neutral[700], fontSize: 12, fontWeight: '700' },
-  freshBadge: { backgroundColor: '#ECFCCB' },
-  freshText: { color: '#3F6212' },
-  price: { color: colors.primary[800], fontSize: 16, fontWeight: '800', textAlign: 'right' },
+  freshBadge: { backgroundColor: tint.success.surface },
+  freshText: { color: tint.success.ink },
+  price: { color: ink.action, fontSize: 16, fontWeight: '800', textAlign: 'right' },
   cartCard: {
     gap: 14,
     padding: 20,
@@ -1309,7 +1334,7 @@ const styles = StyleSheet.create({
   quoteTitle: { color: colors.success, fontWeight: '800', textAlign: 'right' },
   quoteMeta: { color: colors.neutral[600], textAlign: 'right' },
   quoteTotal: {
-    color: colors.primary[800],
+    color: ink.action,
     fontSize: 22,
     fontWeight: '900',
     textAlign: 'right',
@@ -1328,8 +1353,8 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#86EFAC',
+    borderColor: tint.success.border,
     borderRadius: 16,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: tint.success.surface,
   },
 })

@@ -15,7 +15,7 @@ import {
 
 import type { DeliveryTaskView } from '@alo-noon/contracts'
 import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
-import { colors } from '@alo-noon/design-tokens'
+import { colors, ink, surface } from '@alo-noon/design-tokens'
 
 import { createCourierApiClient, CourierApiError, type CourierReport } from './src/api'
 import { courierCopy } from './src/copy'
@@ -505,11 +505,11 @@ function errorMessage(error: unknown): string {
 // Large touch targets throughout: this is used one-handed, outdoors, often in
 // a hurry. Nothing important is smaller than a thumb.
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.neutral[800] },
+  screen: { flex: 1, backgroundColor: surface.inverse },
   centered: {
     flex: 1,
     justifyContent: 'center',
-    backgroundColor: colors.neutral[800],
+    backgroundColor: surface.inverse,
     padding: 20,
   },
   header: {
@@ -519,14 +519,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  headerTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '700' },
-  headerAction: { color: colors.primary[300], fontSize: 16, fontWeight: '700' },
+  headerTitle: { color: ink.onAction, fontSize: 22, fontWeight: '700' },
+  headerAction: { color: colors.primary[400], fontSize: 16, fontWeight: '700' },
   list: { padding: 16, gap: 14, paddingBottom: 40 },
   card: {
     gap: 10,
     padding: 20,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: surface.card,
   },
   cardHead: {
     flexDirection: 'row-reverse',
@@ -576,7 +576,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[600],
     paddingHorizontal: 20,
   },
-  primaryButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
+  primaryButtonText: { color: ink.onAction, fontSize: 18, fontWeight: '700' },
   secondaryButton: {
     minHeight: 48,
     justifyContent: 'center',
@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
   buttonBusy: { opacity: 0.6 },
   error: { color: colors.error, fontSize: 15, textAlign: 'right', lineHeight: 26 },
   errorBanner: {
-    color: '#FFFFFF',
+    color: ink.onAction,
     backgroundColor: colors.error,
     marginHorizontal: 16,
     padding: 14,

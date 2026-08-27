@@ -1,4 +1,12 @@
 export const customerCopy = {
+  /**
+   * The brand's name and line, spelled as the wordmark spells them.
+   *
+   * Kept here rather than imported from @alo-noon/config: that package pulls
+   * Zod and process.env with it, neither of which belongs in a phone bundle.
+   */
+  brandName: 'الو نون',
+  brandTagline: 'نان تازه، زندگی گرم',
   title: 'نان مناسب امروز، نزدیک شما',
   subtitle: 'محدوده ارسال را بررسی کنید و محصولات واقعی نانوایی‌های فعال را ببینید.',
   phoneTitle: 'ورود با شماره موبایل',
