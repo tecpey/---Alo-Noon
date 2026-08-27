@@ -22,6 +22,149 @@ const OPERATOR_MOBILE = '+989120000001'
 const COURIER_MOBILE = '+989120000002'
 const CUSTOMER_MOBILE = '+989120000003'
 
+/**
+ * The categories a customer sees as chips on the storefront.
+ *
+ * They are rows rather than a hard-coded list in the web app, because the shop
+ * has to be able to add "شیرینی" without a deploy. The codes are what the
+ * catalog API returns; the Persian names are what a customer reads.
+ */
+const LAUNCH_CATEGORIES = [
+  { code: 'SPECIAL', nameFa: 'پخت ویژه' },
+  { code: 'BARBARI', nameFa: 'بربری' },
+  { code: 'SANGAK', nameFa: 'سنگک' },
+  { code: 'LAVASH', nameFa: 'لواش' },
+  { code: 'TAFTOON', nameFa: 'تافتون' },
+  { code: 'SWEET', nameFa: 'شیرینی و کماج' },
+] as const
+
+interface LaunchBread {
+  readonly slug: string
+  readonly sku: string
+  readonly nameFa: string
+  readonly variantNameFa: string
+  readonly descriptionFa: string
+  readonly categoryCode: (typeof LAUNCH_CATEGORIES)[number]['code']
+  /** FRESH is baked on the order; PACKAGED is already sealed on the shelf. */
+  readonly kind: 'FRESH' | 'PACKAGED'
+  /** Rial, as the ledger holds it. Toman is a display shift, never a division. */
+  readonly priceRial: bigint
+  readonly prepareMinutes: number
+  readonly dailyCapacity: number
+  readonly ingredients: readonly string[]
+  readonly allergens: readonly string[]
+}
+
+/**
+ * The bread this shop actually opens with.
+ *
+ * The slugs, names and prices are the ones on the storefront, so the page and
+ * the database cannot disagree about what is for sale or what it costs. Gluten
+ * is declared on every wheat bread: an allergen list that is empty because
+ * nobody filled it in reads exactly like an allergen list that is empty because
+ * there are none.
+ */
+const LAUNCH_CATALOG: readonly LaunchBread[] = [
+  {
+    slug: 'komaj-gerdooyi',
+    sku: 'KOMAJ-GERDOOYI',
+    nameFa: 'کماج گردویی',
+    variantNameFa: 'کماج گردویی، یک عدد',
+    descriptionFa: 'کماج نرم با مغز گردو و روکش کنجد، تازه از تنور.',
+    categoryCode: 'SWEET',
+    kind: 'FRESH',
+    priceRial: 280_000n,
+    prepareMinutes: 40,
+    dailyCapacity: 30,
+    ingredients: ['آرد گندم', 'گردو', 'کنجد', 'شکر', 'مخمر', 'نمک'],
+    allergens: ['گلوتن', 'مغز گردو', 'کنجد'],
+  },
+  {
+    slug: 'sangak-konjedi',
+    sku: 'SANGAK-KONJEDI',
+    nameFa: 'نان سنگک کنجدی',
+    variantNameFa: 'سنگک کنجدی، یک نان',
+    descriptionFa: 'سنگک سنتی روی سنگ داغ، با کنجد فراوان.',
+    categoryCode: 'SANGAK',
+    kind: 'FRESH',
+    priceRial: 95_000n,
+    prepareMinutes: 30,
+    dailyCapacity: 80,
+    ingredients: ['آرد کامل گندم', 'کنجد', 'خمیرترش', 'نمک'],
+    allergens: ['گلوتن', 'کنجد'],
+  },
+  {
+    slug: 'barbari-konjedi',
+    sku: 'BARBARI-KONJEDI',
+    nameFa: 'نان بربری کنجدی',
+    variantNameFa: 'بربری کنجدی، یک نان',
+    descriptionFa: 'بربری تازه با رویهٔ کنجدی و مغز نرم.',
+    categoryCode: 'BARBARI',
+    kind: 'FRESH',
+    priceRial: 70_000n,
+    prepareMinutes: 30,
+    dailyCapacity: 80,
+    ingredients: ['آرد گندم', 'کنجد', 'مخمر', 'نمک'],
+    allergens: ['گلوتن', 'کنجد'],
+  },
+  {
+    slug: 'lavash',
+    sku: 'LAVASH-PACKAGED',
+    nameFa: 'لواش',
+    variantNameFa: 'لواش بسته‌بندی‌شده',
+    descriptionFa: 'لواش نازک در بسته‌بندی بهداشتی.',
+    categoryCode: 'LAVASH',
+    kind: 'PACKAGED',
+    priceRial: 50_000n,
+    prepareMinutes: 10,
+    dailyCapacity: 200,
+    ingredients: ['آرد گندم', 'مخمر', 'نمک'],
+    allergens: ['گلوتن'],
+  },
+  {
+    slug: 'taftoon',
+    sku: 'TAFTOON-PACKAGED',
+    nameFa: 'نان تافتون',
+    variantNameFa: 'تافتون بسته‌بندی‌شده',
+    descriptionFa: 'تافتون نرم در بسته‌بندی بهداشتی.',
+    categoryCode: 'TAFTOON',
+    kind: 'PACKAGED',
+    priceRial: 60_000n,
+    prepareMinutes: 10,
+    dailyCapacity: 200,
+    ingredients: ['آرد گندم', 'مخمر', 'نمک'],
+    allergens: ['گلوتن'],
+  },
+  {
+    slug: 'sangak',
+    sku: 'SANGAK-PLAIN',
+    nameFa: 'نان سنگک',
+    variantNameFa: 'سنگک بسته‌بندی‌شده',
+    descriptionFa: 'سنگک ساده در بسته‌بندی بهداشتی.',
+    categoryCode: 'SANGAK',
+    kind: 'PACKAGED',
+    priceRial: 65_000n,
+    prepareMinutes: 10,
+    dailyCapacity: 150,
+    ingredients: ['آرد کامل گندم', 'خمیرترش', 'نمک'],
+    allergens: ['گلوتن'],
+  },
+  {
+    slug: 'barbari',
+    sku: 'BARBARI-PACKAGED',
+    nameFa: 'نان بربری',
+    variantNameFa: 'بربری بسته‌بندی‌شده',
+    descriptionFa: 'بربری ساده در بسته‌بندی بهداشتی.',
+    categoryCode: 'BARBARI',
+    kind: 'PACKAGED',
+    priceRial: 60_000n,
+    prepareMinutes: 10,
+    dailyCapacity: 150,
+    ingredients: ['آرد گندم', 'مخمر', 'نمک'],
+    allergens: ['گلوتن'],
+  },
+]
+
 async function tenantTransaction<T>(
   run: (t: Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]) => Promise<T>,
 ): Promise<T> {
@@ -116,63 +259,118 @@ async function main(): Promise<void> {
         qualityStatus: 'APPROVED',
       },
     })
-    const category = await t.productCategory.upsert({
-      where: { code: 'SIGNATURE_BREAD' },
-      update: {},
-      create: { tenantId: TENANT_ID, code: 'SIGNATURE_BREAD', nameFa: 'نان امضادار' },
-    })
-    const product = await t.product.upsert({
-      where: { slug: 'sangak' },
-      update: { lifecycle: 'ACTIVE' },
-      create: {
-        tenantId: TENANT_ID,
-        categoryId: category.id,
-        slug: 'sangak',
-        nameFa: 'نان سنگک',
-        descriptionFa: 'سنگک تازه از تنور',
-        lifecycle: 'ACTIVE',
-      },
-    })
-    const variant = await t.productVariant.upsert({
-      where: { sku: 'SANGAK-PLAIN' },
-      update: { lifecycle: 'ACTIVE' },
-      create: {
-        tenantId: TENANT_ID,
-        productId: product.id,
-        sku: 'SANGAK-PLAIN',
-        nameFa: 'سنگک ساده',
-        fulfillmentClass: 'SIGNATURE_FRESH',
-        freshnessClaim: 'FRESHLY_PRODUCED',
-        productionMode: 'MADE_TO_ORDER',
-        fulfillmentControl: 'CONTROLLED_PICKUP',
-        productionWindowMinutes: 30,
-        pickupWithinMinutes: 15,
-        freshnessWindowMinutes: 90,
-        ingredients: [],
-        allergens: [],
-        dietaryAttributes: [],
-        lifecycle: 'ACTIVE',
-      },
-    })
-    const offering = await t.bakeryProductOffering.upsert({
-      where: {
-        bakeryBranchId_productVariantId: {
+    const categoryIds = new Map<string, string>()
+    for (const definition of LAUNCH_CATEGORIES) {
+      const category = await t.productCategory.upsert({
+        where: { code: definition.code },
+        update: { nameFa: definition.nameFa },
+        create: { tenantId: TENANT_ID, ...definition },
+      })
+      categoryIds.set(definition.code, category.id)
+    }
+
+    const offeringIds = new Map<string, string>()
+    for (const bread of LAUNCH_CATALOG) {
+      const categoryId = categoryIds.get(bread.categoryCode)
+      if (!categoryId) throw new Error(`Unknown category ${bread.categoryCode} for ${bread.slug}`)
+
+      // Every mutable field is repeated in `update`, so re-running this against
+      // a database seeded by an older version of the script corrects the rows
+      // rather than leaving whatever it found. A bootstrap that only fixes an
+      // empty database is a bootstrap you cannot trust twice.
+      const product = await t.product.upsert({
+        where: { slug: bread.slug },
+        update: {
+          categoryId,
+          nameFa: bread.nameFa,
+          descriptionFa: bread.descriptionFa,
+          lifecycle: 'ACTIVE',
+        },
+        create: {
+          tenantId: TENANT_ID,
+          categoryId,
+          slug: bread.slug,
+          nameFa: bread.nameFa,
+          descriptionFa: bread.descriptionFa,
+          lifecycle: 'ACTIVE',
+        },
+      })
+
+      const fresh = bread.kind === 'FRESH'
+      // The two shapes are kept apart rather than merged behind ternaries
+      // because `validateProductClassification` treats them as two different
+      // things: a signature bread carries freshness windows and no packaging, a
+      // packaged one carries a shelf life and may not claim to be fresh. A row
+      // that mixes them is rejected by the domain, not by the database.
+      const variantShape = fresh
+        ? {
+            nameFa: bread.variantNameFa,
+            fulfillmentClass: 'SIGNATURE_FRESH' as const,
+            freshnessClaim: 'FRESHLY_PRODUCED' as const,
+            productionMode: 'MADE_TO_ORDER' as const,
+            fulfillmentControl: 'CONTROLLED_PICKUP' as const,
+            packagingType: null,
+            shelfLifeMinutes: null,
+            productionWindowMinutes: bread.prepareMinutes,
+            pickupWithinMinutes: 15,
+            freshnessWindowMinutes: 90,
+            ingredients: [...bread.ingredients],
+            allergens: [...bread.allergens],
+            dietaryAttributes: [],
+            lifecycle: 'ACTIVE' as const,
+          }
+        : {
+            nameFa: bread.variantNameFa,
+            fulfillmentClass: 'PACKAGED_TRADITIONAL' as const,
+            freshnessClaim: 'PACKAGED' as const,
+            // Already on the shelf: the branch picks it, it does not bake it.
+            productionMode: 'READY_STOCK' as const,
+            fulfillmentControl: 'PLATFORM_STOCK' as const,
+            packagingType: 'ALO_NOON_SEALED' as const,
+            shelfLifeMinutes: 1_440,
+            productionWindowMinutes: null,
+            pickupWithinMinutes: null,
+            freshnessWindowMinutes: null,
+            ingredients: [...bread.ingredients],
+            allergens: [...bread.allergens],
+            dietaryAttributes: [],
+            lifecycle: 'ACTIVE' as const,
+          }
+      const variant = await t.productVariant.upsert({
+        where: { sku: bread.sku },
+        update: variantShape,
+        create: { tenantId: TENANT_ID, productId: product.id, sku: bread.sku, ...variantShape },
+      })
+
+      const offering = await t.bakeryProductOffering.upsert({
+        where: {
+          bakeryBranchId_productVariantId: {
+            bakeryBranchId: branch.id,
+            productVariantId: variant.id,
+          },
+        },
+        update: {
+          priceAmount: bread.priceRial,
+          availability: 'AVAILABLE',
+          dailyCapacity: bread.dailyCapacity,
+          preparationMinutes: bread.prepareMinutes,
+        },
+        create: {
+          tenantId: TENANT_ID,
           bakeryBranchId: branch.id,
           productVariantId: variant.id,
+          priceAmount: bread.priceRial,
+          priceCurrency: 'IRR',
+          availability: 'AVAILABLE',
+          dailyCapacity: bread.dailyCapacity,
+          preparationMinutes: bread.prepareMinutes,
         },
-      },
-      update: { availability: 'AVAILABLE', dailyCapacity: 50 },
-      create: {
-        tenantId: TENANT_ID,
-        bakeryBranchId: branch.id,
-        productVariantId: variant.id,
-        priceAmount: 250_000n,
-        priceCurrency: 'IRR',
-        availability: 'AVAILABLE',
-        dailyCapacity: 50,
-        preparationMinutes: 30,
-      },
-    })
+      })
+      offeringIds.set(bread.slug, offering.id)
+    }
+
+    const offeringId = offeringIds.get('sangak')
+    if (!offeringId) throw new Error('The launch catalog seeded no sangak offering')
 
     // Capacity for today, or the branch cannot take an order at all.
     const serviceDate = new Date(
@@ -216,7 +414,8 @@ async function main(): Promise<void> {
       zoneId: zone.id,
       areaId: area.id,
       branchId: branch.id,
-      offeringId: offering.id,
+      offeringId,
+      offerings: Object.fromEntries(offeringIds),
     }
   })
 

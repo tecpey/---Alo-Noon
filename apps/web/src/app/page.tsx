@@ -4,11 +4,13 @@ import './storefront.css'
 
 import { ArchTexture } from './components/brand-art'
 import { BasketDrawer } from './components/basket-drawer'
+import { CitySwitch } from './components/city-switch'
 import { Shelf } from './components/shelf'
 import { StorefrontProvider } from './components/storefront-state'
 import { BrandMark } from './components/brand-mark'
 import { CategoryRail } from './components/category-rail'
 import { Reveal } from './components/reveal'
+import { RetryButton } from './components/retry-button'
 import { SiteHeader } from './components/site-header'
 import {
   BagIcon,
@@ -23,32 +25,19 @@ import {
   WheatIcon,
 } from './components/icons'
 import { toPersianDigits } from '../lib/persian'
+import { loadStorefront, type StorefrontData } from '../lib/storefront-data'
 import {
-  everydayBreads,
+  foundationStatus,
   heroCopy,
   orderConditions,
   orderSteps,
-  specialBakes,
   trustClaims,
   type OrderCondition,
 } from '../lib/storefront-content'
 
-/**
- * The storefront.
- *
- * The page answers, in order: whose shop this is, what it promises, on what
- * terms it can reach you, why you should believe it, what you can buy today,
- * and how the whole thing works. Nothing else — a bread shop's home page
- * competing for attention with itself is a bread shop whose customers scroll
- * instead of ordering.
- *
- * Depth is used as a language rather than as decoration. There are exactly
- * three planes: the photograph at the back, the paper the shop is printed on,
- * and glass for the two things that float above both — the pinned top bar and
- * the delivery panel lying on the hero. A card sitting flat on paper gets no
- * glass, because there is nothing behind it to see through.
- */
-export const foundationStatus = 'زیرساخت سفارش نان آماده است'
+// Prices, availability and which bakeries are open all change during a day, and
+// none of them may be served from a cache built at deploy time.
+export const dynamic = 'force-dynamic'
 
 const CONDITION_ICONS = {
   pin: PinIcon,
@@ -63,7 +52,7 @@ const TRUST_ICONS = {
   courier: CourierIcon,
 } as const
 
-function ConditionField({ condition }: { condition: OrderCondition }) {
+function ConditionField({ condition, value }: { condition: OrderCondition; value: string }) {
   const Glyph = CONDITION_ICONS[condition.icon]
   return (
     <button type="button" className="condition">
@@ -72,16 +61,42 @@ function ConditionField({ condition }: { condition: OrderCondition }) {
       </span>
       <span className="condition__text">
         <span className="condition__label">{condition.labelFa}</span>
-        <span className="condition__value">{condition.valueFa}</span>
+        <span className="condition__value">{value}</span>
       </span>
       <ChevronDownIcon className="condition__chevron" />
     </button>
   )
 }
 
-export default function HomePage() {
+/**
+ * The storefront.
+ *
+ * The page answers, in order: whose shop this is, what it promises, on what
+ * terms it can reach you, why you should believe it, what you can buy today,
+ * and how the whole thing works. Nothing else — a bread shop's home page
+ * competing for attention with itself is a bread shop whose customers scroll
+ * instead of ordering.
+ *
+ * The bread is real. It comes from the catalog API, scoped to the city this
+ * visitor is in, which is the same city the prices, the bakeries and the
+ * delivery fare are decided against. Everything below the shelves is copy,
+ * because it describes how the shop works rather than what is in it.
+ *
+ * Depth is used as a language rather than as decoration. There are exactly
+ * three planes: the photograph at the back, the paper the shop is printed on,
+ * and glass for the two things that float above both — the pinned top bar and
+ * the delivery panel lying on the hero. A card sitting flat on paper gets no
+ * glass, because there is nothing behind it to see through.
+ */
+export default async function HomePage() {
+  const storefront = await loadStorefront()
+  const products =
+    storefront.state === 'ready'
+      ? storefront.catalog.shelves.flatMap((shelf) => shelf.products)
+      : []
+
   return (
-    <StorefrontProvider>
+    <StorefrontProvider products={products}>
       <div className="app-frame">
         <SiteHeader />
 
@@ -127,10 +142,21 @@ export default function HomePage() {
               together they decide which bakeries this customer even has. It is
               glass because it lies on the photograph: a solid panel here would
               punch a hole in the picture it is sitting on.
+
+              The city is the one field that is not a placeholder: it is the city
+              the shelves below were actually priced in.
             */}
             <div className="conditions" role="group" aria-label="شرایط تحویل">
               {orderConditions.map((condition) => (
-                <ConditionField key={condition.id} condition={condition} />
+                <ConditionField
+                  key={condition.id}
+                  condition={condition}
+                  value={
+                    condition.id === 'address' && storefront.state === 'ready'
+                      ? storefront.city.nameFa
+                      : condition.valueFa
+                  }
+                />
               ))}
             </div>
           </section>
@@ -154,10 +180,7 @@ export default function HomePage() {
             </ul>
           </Reveal>
 
-          <CategoryRail />
-
-          <Shelf section={specialBakes} ratio="wide" />
-          <Shelf section={everydayBreads} ratio="tall" />
+          <Catalog storefront={storefront} />
 
           <section className="steps" aria-labelledby="steps-title">
             <ArchTexture className="steps__texture" />
@@ -200,5 +223,66 @@ export default function HomePage() {
         <BasketDrawer />
       </div>
     </StorefrontProvider>
+  )
+}
+
+/**
+ * The shelves, or an honest account of why there are none.
+ *
+ * Each of the four states is a different thing to tell a customer, and
+ * collapsing them into one "چیزی برای نمایش نیست" would tell them nothing they
+ * could act on: choosing a city, waiting, and the shop not having opened in
+ * their town yet are three different next steps.
+ */
+function Catalog({ storefront }: { storefront: StorefrontData }) {
+  if (storefront.state === 'choose-city') {
+    return (
+      <section className="catalog-state" aria-labelledby="catalog-state-title">
+        <h2 id="catalog-state-title">شهرتان را انتخاب کنید</h2>
+        <p>نان‌ها، قیمت‌ها و زمان تحویل برای هر شهر جداگانه تعیین می‌شود.</p>
+        <CitySwitch cities={storefront.cities} />
+      </section>
+    )
+  }
+
+  if (storefront.state === 'closed') {
+    return (
+      <section className="catalog-state" aria-labelledby="catalog-state-title">
+        <h2 id="catalog-state-title">هنوز جایی را پوشش نمی‌دهیم</h2>
+        <p>به‌زودی از بابل شروع می‌کنیم. همین صفحه اولین جایی است که خبرش را می‌دهد.</p>
+      </section>
+    )
+  }
+
+  if (storefront.state === 'unavailable') {
+    return (
+      <section className="catalog-state catalog-state--fault" aria-labelledby="catalog-state-title">
+        <h2 id="catalog-state-title">فهرست نان‌ها در دسترس نیست</h2>
+        {/*
+          The API's own message, not a generic apology: it is the difference
+          between "کمی بعد دوباره تلاش کنید" and a customer refreshing forever.
+        */}
+        <p>{storefront.message}</p>
+        <RetryButton>تلاش دوباره</RetryButton>
+      </section>
+    )
+  }
+
+  if (storefront.catalog.total === 0) {
+    return (
+      <section className="catalog-state" aria-labelledby="catalog-state-title">
+        <h2 id="catalog-state-title">امروز نانی برای {storefront.city.nameFa} ثبت نشده</h2>
+        <p>نانوایی‌های این شهر هنوز عرضهٔ امروزشان را باز نکرده‌اند.</p>
+      </section>
+    )
+  }
+
+  return (
+    <>
+      <CategoryRail chips={storefront.catalog.chips} />
+      {storefront.catalog.shelves.map((shelf) => (
+        <Shelf key={shelf.id} shelf={shelf} />
+      ))}
+    </>
   )
 }

@@ -41,7 +41,10 @@ const product: ProductSummary = {
   offeringId: '77777777-7777-4777-8777-777777777777',
   variantId,
   sku: 'ALO-SIGNATURE-001',
+  slug: 'barbari-emzadar',
   nameFa: 'بربری امضادار',
+  categoryCode: 'BARBARI',
+  categoryNameFa: 'بربری',
   fulfillmentClass: 'SIGNATURE_FRESH',
   freshnessClaim: 'FRESHLY_PRODUCED',
   price: { amount: '250000', currency: 'IRR' },
@@ -171,7 +174,17 @@ describe('catalog discovery API', () => {
     expect(calls).toEqual([{ cityId, page: 1, pageSize: 10 }])
     expect(response.json()).toMatchObject({
       success: true,
-      data: [{ sku: 'ALO-SIGNATURE-001', price: { amount: '250000', currency: 'IRR' } }],
+      data: [
+        {
+          sku: 'ALO-SIGNATURE-001',
+          // The storefront addresses a bread by slug and groups it by category,
+          // so both have to survive the trip out of the repository.
+          slug: 'barbari-emzadar',
+          categoryCode: 'BARBARI',
+          categoryNameFa: 'بربری',
+          price: { amount: '250000', currency: 'IRR' },
+        },
+      ],
       meta: { pagination: { totalItems: 1, totalPages: 1 } },
     })
   })

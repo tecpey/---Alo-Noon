@@ -736,6 +736,53 @@
   transform: scale(1.045);
 }
 
+/*
+ * A bread the shop has no photograph of.
+ *
+ * It occupies exactly the frame the photograph would, so a shelf where only
+ * some products have pictures still lines up. Tinted rather than grey: a grey
+ * box in a warm page reads as a failed image, and the drawn loaf reads as a
+ * placeholder only if it looks deliberate.
+ */
+.product-card__placeholder {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 5;
+  background:
+    radial-gradient(120% 120% at 50% 0%, var(--primary-50), transparent 70%), var(--surface-sunken);
+  color: var(--primary-400);
+}
+.product-card--tall .product-card__placeholder {
+  aspect-ratio: 8 / 3;
+}
+.product-card__placeholder svg {
+  width: 46%;
+  max-width: 140px;
+  height: auto;
+}
+
+/*
+ * "تازه از تنور", on the bread that actually is.
+ *
+ * It reads off the product's fulfilment class rather than being a decoration
+ * the page chooses, so a badge can never contradict what the kitchen will do
+ * with the order.
+ */
+.product-card__badge {
+  position: absolute;
+  inset-block-start: 0.5rem;
+  inset-inline-start: 0.5rem;
+  z-index: 1;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow: var(--shadow-sm);
+}
+
 /* A single specular sweep across the photograph on hover — the one gloss on
    this page, and it exists to say the card is live, not to be admired. */
 .product-card__sheen {
@@ -1210,4 +1257,58 @@
 }
 .shelf__empty-text {
   font-size: 0.95rem;
+}
+
+/* ------------------------------------------------- when there are no shelves */
+
+/*
+ * The four reasons a customer can arrive at a shop with no bread on it: they
+ * have not said which city they are in, the shop is not open in any city yet,
+ * the catalog could not be loaded, and the bakeries have not opened today's
+ * offering.
+ *
+ * They share this block because they are the same shape — a heading, a sentence
+ * that says what to do next, and at most one control — and differ only in the
+ * words. What they must never share is the *wording*: "چیزی برای نمایش نیست"
+ * would be true of all four and useful in none.
+ */
+.catalog-state {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  margin: 1.5rem;
+  padding: 2.75rem 1.5rem;
+  text-align: center;
+  background: var(--surface-card);
+  border: 1px dashed var(--line-base);
+  border-radius: var(--radius-xl);
+}
+.catalog-state h2 {
+  font-size: 1.15rem;
+  color: var(--ink-strong);
+}
+.catalog-state p {
+  max-width: 46ch;
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+/* A fault is the shop's problem, not the customer's, so it is marked in the
+   action colour rather than dressed up as an ordinary empty state. */
+.catalog-state--fault {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--primary-600) 35%, var(--line-base));
+}
+
+.city-switch {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-block-start: 0.5rem;
+}
+.city-switch__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
 }

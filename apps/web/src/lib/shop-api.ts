@@ -8,6 +8,7 @@ import type {
   PaymentSummary,
   ProductSummary,
   QuoteSummary,
+  ServiceabilityResponse,
   SessionContext,
 } from '@alo-noon/contracts'
 
@@ -38,21 +39,25 @@ export async function listCities(): Promise<ApiResult<ActiveCitySummary[]>> {
   return request<ActiveCitySummary[]>('/api/v1/serviceability/cities', { method: 'GET' })
 }
 
-export interface ServiceabilityAnswer {
-  serviceable: boolean
-  cityId?: string
-  operationalZoneId?: string
-  serviceAreaId?: string
-  reasonCode?: string
-}
-
-export async function checkServiceability(
-  latitude: number,
-  longitude: number,
-): Promise<ApiResult<ServiceabilityAnswer>> {
-  return request<ServiceabilityAnswer>('/api/v1/serviceability/check', {
+/**
+ * Whether this shop delivers to a point.
+ *
+ * The city is part of the question, not part of the answer: the API decides
+ * against one city's zones, and an earlier version of this function left it out
+ * entirely, which the API rejected as an invalid request. The response says
+ * which zone and area matched, and `reason` says why not when it did not.
+ */
+export async function checkServiceability(input: {
+  cityId: string
+  latitude: number
+  longitude: number
+}): Promise<ApiResult<ServiceabilityResponse>> {
+  if (!isUuid(input.cityId)) {
+    return { ok: false, error: { code: 'CITY_NOT_FOUND', message: 'شهر انتخابی معتبر نیست.' } }
+  }
+  return request<ServiceabilityResponse>('/api/v1/serviceability/check', {
     method: 'POST',
-    body: { latitude, longitude },
+    body: input,
   })
 }
 

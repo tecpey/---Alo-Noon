@@ -23,7 +23,20 @@ export const productSummarySchema = z.object({
   offeringId: uuidSchema,
   variantId: uuidSchema,
   sku: z.string().min(3).max(64),
+  /**
+   * The product's public name in a URL.
+   *
+   * A storefront needs an address for a bread that survives a redeploy and can
+   * be sent to someone. The offering id cannot be it: the same bread carries a
+   * different offering id at every branch, so a shared link would silently mean
+   * a different bakery — or a bakery that cannot reach the person it was sent
+   * to. The slug is unique per tenant and belongs to the product itself.
+   */
+  slug: z.string().min(1).max(100),
   nameFa: z.string().min(1).max(200),
+  /** The category as the shop's own operator named it, for grouping and chips. */
+  categoryCode: z.string().min(1).max(64),
+  categoryNameFa: z.string().min(1).max(120),
   fulfillmentClass: productFulfillmentClassSchema,
   freshnessClaim: freshnessClaimSchema,
   price: moneySchema,

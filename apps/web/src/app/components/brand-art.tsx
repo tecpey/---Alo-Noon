@@ -82,6 +82,60 @@ export function SteamRibbon({ className }: { className?: string }) {
  * given them nothing, and a stock illustration there says nobody thought about
  * that moment.
  */
+/**
+ * A drawn loaf, for a bread the shop has no photograph of.
+ *
+ * The alternative is a broken image frame or a grey rectangle, and both read as
+ * a fault in the page rather than a gap in the shop's photography. This reads as
+ * a placeholder on purpose: it is unmistakably a drawing, so nobody takes it for
+ * a picture of what they are buying.
+ *
+ * It is decorative — the product's name is right beneath it in text — so it is
+ * hidden from assistive technology rather than given a description that would
+ * repeat the name.
+ */
+export function BreadPlaceholderArt({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 160 96"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      preserveAspectRatio="xMidYMid slice"
+    >
+      <path
+        d="M28 62c0-18 12-30 30-30h44c18 0 30 12 30 30 0 6-4 10-10 10H38c-6 0-10-4-10-10Z"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinejoin="round"
+        opacity="0.75"
+      />
+      <path
+        d="M52 44c6-5 12-5 18 0M78 44c6-5 12-5 18 0"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        opacity="0.45"
+      />
+      <path
+        d="M96 22c-4-2.8-4-5 0-7.8s4-5 0-7.8"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        opacity="0.4"
+      />
+      <path
+        d="M108 24c-4-2.8-4-5 0-7.8s4-5 0-7.8"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        opacity="0.25"
+      />
+    </svg>
+  )
+}
+
 export function EmptyBasketArt({ className }: { className?: string }) {
   return (
     <svg

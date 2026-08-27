@@ -4,11 +4,10 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
 
-import { EmptyBasketArt } from './brand-art'
+import { BreadPlaceholderArt, EmptyBasketArt } from './brand-art'
 import { CheckIcon, ChevronIcon, PlusIcon } from './icons'
 import { useStorefront } from './storefront-state'
 import { formatToman, sumRial, toPersianDigits } from '../../lib/persian'
-import { productsBySlug } from '../../lib/storefront-content'
 
 /**
  * The basket, as a sheet that rises over the shop rather than a page you leave.
@@ -27,7 +26,7 @@ import { productsBySlug } from '../../lib/storefront-content'
  * the control that opened it.
  */
 export function BasketDrawer() {
-  const { lines, add, remove, drawerOpen, closeDrawer } = useStorefront()
+  const { lines, catalog, add, remove, drawerOpen, closeDrawer } = useStorefront()
   const panel = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -49,8 +48,8 @@ export function BasketDrawer() {
     }
   }, [drawerOpen, closeDrawer])
 
-  const entries = [...lines.entries()].flatMap(([slug, quantity]) => {
-    const product = productsBySlug.get(slug)
+  const entries = [...lines.entries()].flatMap(([offeringId, quantity]) => {
+    const product = catalog.get(offeringId)
     return product ? [{ product, quantity }] : []
   })
   const subtotal = sumRial(
@@ -95,15 +94,19 @@ export function BasketDrawer() {
           <>
             <ul className="drawer__lines">
               {entries.map(({ product, quantity }) => (
-                <li key={product.slug} className="drawer-line">
+                <li key={product.offeringId} className="drawer-line">
                   <span className="drawer-line__thumb">
-                    <Image
-                      src={product.imageUrl}
-                      alt=""
-                      width={160}
-                      height={120}
-                      aria-hidden="true"
-                    />
+                    {product.imageUrl ? (
+                      <Image
+                        src={product.imageUrl}
+                        alt=""
+                        width={160}
+                        height={120}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <BreadPlaceholderArt />
+                    )}
                   </span>
                   <div className="drawer-line__body">
                     <p className="drawer-line__name">{product.nameFa}</p>
@@ -112,7 +115,7 @@ export function BasketDrawer() {
                   <div className="stepper">
                     <button
                       type="button"
-                      onClick={() => add(product.slug)}
+                      onClick={() => add(product.offeringId)}
                       aria-label={`یکی بیشتر از ${product.nameFa}`}
                     >
                       <PlusIcon width={16} height={16} />
@@ -120,7 +123,7 @@ export function BasketDrawer() {
                     <span aria-live="polite">{toPersianDigits(String(quantity))}</span>
                     <button
                       type="button"
-                      onClick={() => remove(product.slug)}
+                      onClick={() => remove(product.offeringId)}
                       aria-label={`یکی کمتر از ${product.nameFa}`}
                     >
                       <span aria-hidden="true">−</span>

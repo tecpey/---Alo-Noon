@@ -120,7 +120,10 @@ export function createPrismaCatalogRepository(prisma: PrismaClient): CatalogRepo
             where,
             include: {
               bakeryBranch: true,
-              productVariant: { include: { product: true } },
+              // The category comes along on the same query rather than in a
+              // second pass: the storefront groups by it, so fetching it later
+              // would mean one round trip per bread on the shelf.
+              productVariant: { include: { product: { include: { category: true } } } },
             },
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
             skip: (input.page - 1) * input.pageSize,
@@ -137,7 +140,10 @@ export function createPrismaCatalogRepository(prisma: PrismaClient): CatalogRepo
           offeringId: offering.id,
           variantId: offering.productVariant.id,
           sku: offering.productVariant.sku,
+          slug: offering.productVariant.product.slug,
           nameFa: offering.productVariant.product.nameFa,
+          categoryCode: offering.productVariant.product.category.code,
+          categoryNameFa: offering.productVariant.product.category.nameFa,
           fulfillmentClass: offering.productVariant.fulfillmentClass,
           freshnessClaim: offering.productVariant.freshnessClaim,
           price: {

@@ -3,9 +3,10 @@
 import Image from 'next/image'
 
 import { useStorefront } from './storefront-state'
+import { BreadPlaceholderArt } from './brand-art'
 import { CheckIcon, PlusIcon } from './icons'
 import { formatToman, toPersianDigits } from '../../lib/persian'
-import type { StorefrontProduct } from '../../lib/storefront-content'
+import type { ShelfProduct } from '../../lib/catalog-view'
 
 /**
  * One bread, and the shortest possible path to buying it.
@@ -30,28 +31,37 @@ export function ProductCard({
   product,
   ratio = 'wide',
 }: {
-  product: StorefrontProduct
+  product: ShelfProduct
   /** `wide` for the special bakes, `tall` for the packaged row. */
   ratio?: 'wide' | 'tall'
 }) {
   const { lines, add } = useStorefront()
-  const quantity = lines.get(product.slug) ?? 0
+  const quantity = lines.get(product.offeringId) ?? 0
 
   return (
     <article className={`product-card product-card--${ratio}`}>
       <div className="product-card__frame">
-        <Image
-          src={product.imageUrl}
-          alt={product.imageAlt}
-          width={624}
-          height={ratio === 'wide' ? 204 : 180}
-        />
+        {product.imageUrl ? (
+          /*
+            Deliberately empty alt text. The bread's name is a link directly
+            below this image, so describing the picture would make a screen
+            reader announce the same bread twice; and the catalog carries no
+            description of the photograph to say anything more useful with.
+          */
+          <Image src={product.imageUrl} alt="" width={624} height={ratio === 'wide' ? 204 : 180} />
+        ) : (
+          <span className="product-card__placeholder">
+            <BreadPlaceholderArt />
+          </span>
+        )}
         <span className="product-card__sheen" aria-hidden="true" />
+
+        {product.fresh && <span className="product-card__badge">تازه از تنور</span>}
 
         <button
           type="button"
           className={`product-card__add${quantity > 0 ? ' is-held' : ''}`}
-          onClick={() => add(product.slug)}
+          onClick={() => add(product.offeringId)}
           aria-label={`افزودن ${product.nameFa} به سبد خرید`}
         >
           {quantity > 0 ? (

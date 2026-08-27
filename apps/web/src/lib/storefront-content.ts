@@ -1,110 +1,14 @@
 import { appMeta } from '@alo-noon/config'
 
 /**
- * What the storefront shows before a customer has told it anything.
+ * The storefront's copy — everything on the page that is not bread.
  *
- * Deliberately typed as the shape the catalog API already returns rather than
- * as loose page copy: when the public catalog endpoint is wired to this page,
- * the change is a data source swap, not a rewrite of the markup. Until then
- * these are the launch products, priced in Rial like everything else in the
- * system so nothing here has its own idea of money.
- *
- * The photographs are the ones from the brand's own design board. They are
- * placeholders in the honest sense: correct products, correct crop, but shot
- * for a mock-up rather than for a shop. Real photography replaces the files in
- * `public/products/` without touching this file.
+ * The bread itself is gone from here. Products, prices and categories come from
+ * the catalog API, scoped to the customer's city, because a page that keeps its
+ * own list of what is for sale is a page that will eventually disagree with the
+ * shop about a price. What is left is the writing: the headline, the promises,
+ * and the description of how ordering works, none of which is data.
  */
-
-export interface StorefrontProduct {
-  readonly slug: string
-  readonly nameFa: string
-  /** Which chip on the rail shows this bread. Matches an id in `categories`. */
-  readonly categoryId: string
-  /** Rial, as a decimal string, exactly as the ledger holds it. */
-  readonly priceRial: string
-  readonly imageUrl: string
-  /** Alternative text; describes the bread, not the photograph. */
-  readonly imageAlt: string
-}
-
-export interface StorefrontSection {
-  readonly id: string
-  readonly titleFa: string
-  readonly noteFa: string
-  readonly products: readonly StorefrontProduct[]
-}
-
-export const specialBakes: StorefrontSection = {
-  id: 'special',
-  titleFa: 'پخت‌های ویژه',
-  noteFa: 'به صورت تازه و داغ',
-  products: [
-    {
-      slug: 'komaj-gerdooyi',
-      categoryId: 'sweet',
-      nameFa: 'کماج گردویی',
-      priceRial: '280000',
-      imageUrl: '/products/komaj-gerdooyi.jpg',
-      imageAlt: 'کماج گردویی با روکش کنجد',
-    },
-    {
-      slug: 'sangak-konjedi',
-      categoryId: 'special',
-      nameFa: 'نان سنگک کنجدی',
-      priceRial: '95000',
-      imageUrl: '/products/sangak-konjedi.jpg',
-      imageAlt: 'نان سنگک تازه با کنجد',
-    },
-    {
-      slug: 'barbari-konjedi',
-      categoryId: 'special',
-      nameFa: 'نان بربری کنجدی',
-      priceRial: '70000',
-      imageUrl: '/products/barbari-konjedi.jpg',
-      imageAlt: 'نان بربری کنجدی تازه از تنور',
-    },
-  ],
-}
-
-export const everydayBreads: StorefrontSection = {
-  id: 'everyday',
-  titleFa: 'نان روزمره بسته‌بندی‌شده',
-  noteFa: 'بسته‌بندی بهداشتی',
-  products: [
-    {
-      slug: 'lavash',
-      categoryId: 'lavash',
-      nameFa: 'لواش',
-      priceRial: '50000',
-      imageUrl: '/products/lavash-packaged.jpg',
-      imageAlt: 'نان لواش در بسته‌بندی بهداشتی',
-    },
-    {
-      slug: 'taftoon',
-      categoryId: 'taftoon',
-      nameFa: 'نان تافتون',
-      priceRial: '60000',
-      imageUrl: '/products/taftoon-packaged.jpg',
-      imageAlt: 'نان تافتون در بسته‌بندی بهداشتی',
-    },
-    {
-      slug: 'sangak',
-      categoryId: 'sangak',
-      nameFa: 'نان سنگک',
-      priceRial: '65000',
-      imageUrl: '/products/sangak-packaged.jpg',
-      imageAlt: 'نان سنگک در بسته‌بندی بهداشتی',
-    },
-    {
-      slug: 'barbari',
-      categoryId: 'barbari',
-      nameFa: 'نان بربری',
-      priceRial: '60000',
-      imageUrl: '/products/barbari-packaged.jpg',
-      imageAlt: 'نان بربری در بسته‌بندی بهداشتی',
-    },
-  ],
-}
 
 /**
  * The three things a bread order actually depends on, answered before anything
@@ -126,6 +30,9 @@ export const orderConditions: readonly OrderCondition[] = [
   { id: 'method', labelFa: 'نوع خرید', valueFa: 'تحویل درب منزل', icon: 'bag' },
   { id: 'window', labelFa: 'زمان تحویل', valueFa: 'امروز، ۱۸:۰۰ – ۱۹:۰۰', icon: 'clock' },
 ]
+
+/** What the footer says the platform is. */
+export const foundationStatus = 'زیرساخت سفارش نان آماده است'
 
 export const heroCopy = {
   /** Two lines, and they break where the artwork breaks them. */
@@ -186,28 +93,6 @@ export const trustClaims: readonly TrustClaim[] = [
 ]
 
 /**
- * The bread categories, as a customer would name them.
- *
- * "همه" is first and selected, because a shop that opens filtered is a shop
- * hiding most of itself. The rest match the shelves below, so a chip and a
- * section are never two different ideas of the same thing.
- */
-export interface Category {
-  readonly id: string
-  readonly labelFa: string
-}
-
-export const categories: readonly Category[] = [
-  { id: 'all', labelFa: 'همه' },
-  { id: 'special', labelFa: 'پخت ویژه' },
-  { id: 'barbari', labelFa: 'بربری' },
-  { id: 'sangak', labelFa: 'سنگک' },
-  { id: 'lavash', labelFa: 'لواش' },
-  { id: 'taftoon', labelFa: 'تافتون' },
-  { id: 'sweet', labelFa: 'شیرینی و کماج' },
-]
-
-/**
  * Three steps, because that is how many there are.
  *
  * Written as what the customer does rather than what the system does. "ثبت
@@ -237,8 +122,3 @@ export const orderSteps: readonly OrderStep[] = [
     bodyFa: 'وضعیت سفارش تا لحظهٔ تحویل قابل پیگیری است.',
   },
 ]
-
-/** Every bread on the page, by slug, for the basket to price its lines from. */
-export const productsBySlug: ReadonlyMap<string, StorefrontProduct> = new Map(
-  [...specialBakes.products, ...everydayBreads.products].map((product) => [product.slug, product]),
-)

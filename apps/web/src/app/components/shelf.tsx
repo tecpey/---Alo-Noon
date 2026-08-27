@@ -5,7 +5,7 @@ import { ProductCard } from './product-card'
 import { Reveal } from './reveal'
 import { SteamIcon } from './icons'
 import { useStorefront } from './storefront-state'
-import type { StorefrontSection } from '../../lib/storefront-content'
+import { ALL_CATEGORIES, type CatalogShelf } from '../../lib/catalog-view'
 
 /**
  * A shelf of bread, filtered by whichever chip is selected.
@@ -20,15 +20,15 @@ import type { StorefrontSection } from '../../lib/storefront-content'
  * is the one screen where the product has nothing to give, and a blank space
  * there says nobody thought about that moment.
  */
-export function Shelf({ section, ratio }: { section: StorefrontSection; ratio: 'wide' | 'tall' }) {
+export function Shelf({ shelf }: { shelf: CatalogShelf }) {
   const { category, selectCategory } = useStorefront()
   const products =
-    category === 'all'
-      ? section.products
-      : section.products.filter((product) => product.categoryId === category)
+    category === ALL_CATEGORIES
+      ? shelf.products
+      : shelf.products.filter((product) => product.categoryCode === category)
 
   return (
-    <section className="shelf" id={section.id} aria-labelledby={`${section.id}-title`}>
+    <section className="shelf" id={shelf.id} aria-labelledby={`${shelf.id}-title`}>
       <Reveal>
         <div className="an-section-head">
           <div className="an-section-head__title">
@@ -36,8 +36,8 @@ export function Shelf({ section, ratio }: { section: StorefrontSection; ratio: '
               <SteamIcon width={16} height={16} />
             </span>
             <div>
-              <h2 id={`${section.id}-title`}>{section.titleFa}</h2>
-              <p className="an-section-head__note">{section.noteFa}</p>
+              <h2 id={`${shelf.id}-title`}>{shelf.titleFa}</h2>
+              <p className="an-section-head__note">{shelf.noteFa}</p>
             </div>
           </div>
           <SteamRibbon className="shelf__ribbon" />
@@ -51,16 +51,16 @@ export function Shelf({ section, ratio }: { section: StorefrontSection; ratio: '
           <button
             type="button"
             className="an-button an-button--quiet"
-            onClick={() => selectCategory('all')}
+            onClick={() => selectCategory(ALL_CATEGORIES)}
           >
             نمایش همهٔ نان‌ها
           </button>
         </div>
       ) : (
-        <div className={`shelf__grid shelf__grid--${ratio}`}>
+        <div className={`shelf__grid shelf__grid--${shelf.ratio}`}>
           {products.map((product, index) => (
-            <Reveal key={product.slug} delay={index}>
-              <ProductCard product={product} ratio={ratio} />
+            <Reveal key={product.offeringId} delay={index}>
+              <ProductCard product={product} ratio={shelf.ratio} />
             </Reveal>
           ))}
         </div>

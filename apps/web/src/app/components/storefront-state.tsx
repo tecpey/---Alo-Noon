@@ -2,12 +2,18 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 
+import { ALL_CATEGORIES, type ShelfProduct } from '../../lib/catalog-view'
+
 /**
  * What the customer has picked, and what they are looking at.
  *
  * Both live here because both are answers to the same question — what should
  * this page be showing right now — and splitting them into two providers would
  * mean two trees re-rendering for one interaction.
+ *
+ * Lines are keyed by offering id, which is what the server-side cart keys on
+ * too. The same bread at two branches is two offerings at two prices, so a
+ * basket keyed by slug would be a basket that cannot say which bakery it means.
  *
  * The basket is honest about what it is: state in a React tree. It is not yet
  * the server-side cart, which already exists with versioned optimistic
@@ -21,15 +27,18 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  * reserved.
  */
 interface StorefrontState {
+  /** Offering id to quantity. */
   readonly lines: ReadonlyMap<string, number>
   readonly count: number
   /** Bumps on every add, so the badge can react even to a repeat of the same bread. */
   readonly pulse: number
-  add: (slug: string) => void
-  remove: (slug: string) => void
+  /** Every bread on the page, by offering id, so the basket can price its lines. */
+  readonly catalog: ReadonlyMap<string, ShelfProduct>
+  add: (offeringId: string) => void
+  remove: (offeringId: string) => void
   /** The selected category chip. `all` shows everything. */
   readonly category: string
-  selectCategory: (id: string) => void
+  selectCategory: (code: string) => void
   readonly drawerOpen: boolean
   openDrawer: () => void
   closeDrawer: () => void
@@ -37,33 +46,45 @@ interface StorefrontState {
 
 const StorefrontContext = createContext<StorefrontState | null>(null)
 
-export function StorefrontProvider({ children }: { children: ReactNode }) {
+export function StorefrontProvider({
+  products,
+  children,
+}: {
+  /** Everything on sale in this city, flattened across the shelves. */
+  products: readonly ShelfProduct[]
+  children: ReactNode
+}) {
   const [lines, setLines] = useState<ReadonlyMap<string, number>>(() => new Map())
   const [pulse, setPulse] = useState(0)
-  const [category, setCategory] = useState('all')
+  const [category, setCategory] = useState(ALL_CATEGORIES)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const add = useCallback((slug: string) => {
+  const add = useCallback((offeringId: string) => {
     setLines((current) => {
       const next = new Map(current)
-      next.set(slug, (next.get(slug) ?? 0) + 1)
+      next.set(offeringId, (next.get(offeringId) ?? 0) + 1)
       return next
     })
     setPulse((value) => value + 1)
   }, [])
 
-  const remove = useCallback((slug: string) => {
+  const remove = useCallback((offeringId: string) => {
     setLines((current) => {
       const next = new Map(current)
-      const quantity = (next.get(slug) ?? 0) - 1
-      if (quantity > 0) next.set(slug, quantity)
-      else next.delete(slug)
+      const quantity = (next.get(offeringId) ?? 0) - 1
+      if (quantity > 0) next.set(offeringId, quantity)
+      else next.delete(offeringId)
       return next
     })
   }, [])
 
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
+
+  const catalog = useMemo(
+    () => new Map(products.map((product) => [product.offeringId, product])),
+    [products],
+  )
 
   const value = useMemo<StorefrontState>(() => {
     let count = 0
@@ -72,6 +93,7 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
       lines,
       count,
       pulse,
+      catalog,
       add,
       remove,
       category,
@@ -80,7 +102,7 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
       openDrawer,
       closeDrawer,
     }
-  }, [lines, pulse, add, remove, category, drawerOpen, openDrawer, closeDrawer])
+  }, [lines, pulse, catalog, add, remove, category, drawerOpen, openDrawer, closeDrawer])
 
   return <StorefrontContext.Provider value={value}>{children}</StorefrontContext.Provider>
 }
