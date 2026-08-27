@@ -58,14 +58,33 @@
   min-inline-size: 0;
 }
 
+/*
+ * Pinned and glass, for one reason: these pages are long tables, and an
+ * operator who has scrolled to row eighty to find a problem should not have to
+ * scroll back to the top to act on it. Glass rather than a solid bar so the
+ * table underneath stays visible as it passes, which is how you keep your place
+ * in a list you are reading.
+ */
 .admin-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
   align-items: center;
   justify-content: space-between;
+  margin-inline: -1rem;
+  padding: 0.9rem 1rem;
   border-bottom: 1px solid var(--line);
-  padding-bottom: 1rem;
+  background: var(--glass-bar-fallback);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .admin-header {
+    background: var(--glass-bar-background);
+    -webkit-backdrop-filter: var(--glass-bar-backdropFilter);
+    backdrop-filter: var(--glass-bar-backdropFilter);
+  }
 }
 .admin-header > div {
   /* The title carries an order's public id, which is longer than a phone is
@@ -252,11 +271,26 @@ button {
   font-weight: 700;
   padding: 0.55rem 1.1rem;
   border: 1px solid var(--accent);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-md);
   background: var(--accent);
-  color: white;
+  /* Never pure white: it punches a hole in this palette, and the ink token is
+     the same off-white the storefront's buttons carry. */
+  color: var(--ink-onAction);
   cursor: pointer;
   align-self: flex-start;
+  box-shadow: var(--shadow-action);
+  transition:
+    background var(--duration-base) var(--easing-standard),
+    transform var(--duration-fast) var(--easing-standard);
+}
+button:hover:not(:disabled) {
+  background: var(--primary-700);
+  border-color: var(--primary-700);
+}
+/* The same give as the phone apps and the shop. An operator confirming a refund
+   should get the same acknowledgement everywhere in this product. */
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 button:disabled {
   opacity: 0.6;
@@ -264,6 +298,12 @@ button:disabled {
 }
 button.ghost {
   background: transparent;
+  color: var(--accent);
+  box-shadow: none;
+}
+button.ghost:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  border-color: var(--accent);
   color: var(--accent);
 }
 
@@ -280,13 +320,35 @@ button.ghost {
 }
 
 /* Navigation and reporting surfaces. */
+/* Pills rather than underlined links: nine sections in a row of underlines is
+   nine things that look the same, and the one you are on has to be findable at
+   a glance. */
 .admin-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: 0.3rem;
   margin-top: 0.6rem;
 }
-.admin-nav a,
+.admin-nav a {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+  text-decoration: none;
+  transition:
+    background var(--duration-base) var(--easing-standard),
+    color var(--duration-base) var(--easing-standard);
+}
+.admin-nav a:hover {
+  background: var(--surface-sunken);
+  color: var(--ink-strong);
+}
+.admin-nav a.current {
+  background: var(--primary-600);
+  color: var(--ink-onAction);
+  font-weight: 700;
+}
+
 .range-picker a,
 .pager a {
   color: var(--accent);
@@ -295,12 +357,10 @@ button.ghost {
   padding: 0.15rem 0;
   border-bottom: 2px solid transparent;
 }
-.admin-nav a.current,
 .range-picker a.current {
   border-bottom-color: var(--accent);
   font-weight: 700;
 }
-.admin-nav a:hover,
 .range-picker a:hover,
 .pager a:hover {
   text-decoration: underline;

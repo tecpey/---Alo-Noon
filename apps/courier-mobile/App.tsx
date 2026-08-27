@@ -3,7 +3,6 @@ import { StatusBar } from 'expo-status-bar'
 import {
   ActivityIndicator,
   Linking,
-  Pressable,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -16,6 +15,7 @@ import {
 import type { DeliveryTaskView } from '@alo-noon/contracts'
 import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
 import { colors, ink, surface } from '@alo-noon/design-tokens'
+import { CheckIcon, CourierIcon, PressScale } from '@alo-noon/mobile-ui'
 
 import { createCourierApiClient, CourierApiError, type CourierReport } from './src/api'
 import { courierCopy } from './src/copy'
@@ -44,7 +44,7 @@ import {
  */
 type Screen = 'boot' | 'phone' | 'otp' | 'deliveries' | 'not-a-courier'
 
-const apiBaseUrl = process.env['EXPO_PUBLIC_API_BASE_URL']
+const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL
 
 export default function App() {
   const api = useMemo(() => {
@@ -253,9 +253,9 @@ export default function App() {
             ورودتان انجام شد، ولی این شماره به‌عنوان پیک ثبت نشده است. از دفتر بخواهید شما را با
             همین شماره ثبت کند و بعد دوباره وارد شوید.
           </Text>
-          <Pressable style={styles.secondaryButton} onPress={() => void signOut()}>
+          <PressScale style={styles.secondaryButton} onPress={() => void signOut()}>
             <Text style={styles.secondaryButtonText}>خروج</Text>
-          </Pressable>
+          </PressScale>
         </View>
         <StatusBar style="light" />
       </SafeAreaView>
@@ -284,13 +284,13 @@ export default function App() {
                 textAlign="right"
                 editable={!busy}
               />
-              <Pressable
+              <PressScale
                 style={[styles.primaryButton, busy && styles.buttonBusy]}
                 onPress={() => void requestOtp()}
                 disabled={busy}
               >
                 <Text style={styles.primaryButtonText}>{busy ? 'در حال ارسال…' : 'دریافت کد'}</Text>
-              </Pressable>
+              </PressScale>
             </>
           ) : (
             <>
@@ -305,14 +305,14 @@ export default function App() {
                 textAlign="center"
                 editable={!busy}
               />
-              <Pressable
+              <PressScale
                 style={[styles.primaryButton, busy && styles.buttonBusy]}
                 onPress={() => void verifyOtp()}
                 disabled={busy}
               >
                 <Text style={styles.primaryButtonText}>{busy ? 'در حال بررسی…' : 'ورود'}</Text>
-              </Pressable>
-              <Pressable
+              </PressScale>
+              <PressScale
                 style={styles.secondaryButton}
                 onPress={() => {
                   setScreen('phone')
@@ -320,7 +320,7 @@ export default function App() {
                 }}
               >
                 <Text style={styles.secondaryButtonText}>تغییر شماره</Text>
-              </Pressable>
+              </PressScale>
             </>
           )}
 
@@ -335,9 +335,9 @@ export default function App() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>سفارش‌های شما</Text>
-        <Pressable onPress={() => void signOut()} hitSlop={12}>
+        <PressScale onPress={() => void signOut()} hitSlop={12}>
           <Text style={styles.headerAction}>خروج</Text>
-        </Pressable>
+        </PressScale>
       </View>
 
       {message && <Text style={styles.errorBanner}>{message}</Text>}
@@ -421,9 +421,9 @@ function DeliveryCard({
       </Text>
 
       {call && (
-        <Pressable style={styles.callButton} onPress={() => void Linking.openURL(call)}>
+        <PressScale style={styles.callButton} onPress={() => void Linking.openURL(call)}>
           <Text style={styles.callButtonText}>تماس با گیرنده</Text>
-        </Pressable>
+        </PressScale>
       )}
 
       {task.attemptCount > 0 && (
@@ -438,54 +438,63 @@ function DeliveryCard({
         <View style={styles.reasonBlock}>
           <Text style={styles.body}>چرا تحویل نشد؟</Text>
           {FAILURE_REASONS.map((reason) => (
-            <Pressable
+            <PressScale
               key={reason.code}
               style={[styles.reasonButton, busy && styles.buttonBusy]}
               onPress={() => onReport('FAILED', reason.code)}
               disabled={busy}
             >
               <Text style={styles.reasonButtonText}>{reason.label}</Text>
-            </Pressable>
+            </PressScale>
           ))}
-          <Pressable style={styles.secondaryButton} onPress={onCancelFailing} disabled={busy}>
+          <PressScale style={styles.secondaryButton} onPress={onCancelFailing} disabled={busy}>
             <Text style={styles.secondaryButtonText}>بی‌خیال</Text>
-          </Pressable>
+          </PressScale>
         </View>
       ) : (
         <>
           {step.isOffer && (
             <View style={styles.offerRow}>
-              <Pressable
+              <PressScale
                 style={[styles.primaryButton, styles.grow, busy && styles.buttonBusy]}
                 onPress={() => onAnswer(true)}
                 disabled={busy}
               >
-                <Text style={styles.primaryButtonText}>{busy ? '…' : 'قبول می‌کنم'}</Text>
-              </Pressable>
-              <Pressable
+                {/* A glyph as well as a word: a rider glancing at a lit screen
+                    in daylight tells these two apart by shape long before they
+                    read either of them. */}
+                <View style={styles.primaryButtonInner}>
+                  {!busy && <CourierIcon size={20} color={ink.onAction} />}
+                  <Text style={styles.primaryButtonText}>{busy ? '…' : 'قبول می‌کنم'}</Text>
+                </View>
+              </PressScale>
+              <PressScale
                 style={[styles.declineButton, busy && styles.buttonBusy]}
                 onPress={() => onAnswer(false)}
                 disabled={busy}
               >
                 <Text style={styles.declineButtonText}>نمی‌توانم</Text>
-              </Pressable>
+              </PressScale>
             </View>
           )}
 
           {primary && (
-            <Pressable
+            <PressScale
               style={[styles.primaryButton, busy && styles.buttonBusy]}
               onPress={() => onReport(primary.to)}
               disabled={busy}
             >
-              <Text style={styles.primaryButtonText}>{busy ? 'در حال ثبت…' : primary.label}</Text>
-            </Pressable>
+              <View style={styles.primaryButtonInner}>
+                {!busy && <CheckIcon size={20} color={ink.onAction} />}
+                <Text style={styles.primaryButtonText}>{busy ? 'در حال ثبت…' : primary.label}</Text>
+              </View>
+            </PressScale>
           )}
 
           {step.canFail && (
-            <Pressable style={styles.secondaryButton} onPress={onStartFailing} disabled={busy}>
+            <PressScale style={styles.secondaryButton} onPress={onStartFailing} disabled={busy}>
               <Text style={styles.secondaryButtonText}>تحویل نشد</Text>
-            </Pressable>
+            </PressScale>
           )}
         </>
       )}
@@ -576,6 +585,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[600],
     paddingHorizontal: 20,
   },
+  primaryButtonInner: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
   primaryButtonText: { color: ink.onAction, fontSize: 18, fontWeight: '700' },
   secondaryButton: {
     minHeight: 48,

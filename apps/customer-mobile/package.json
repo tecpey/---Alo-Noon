@@ -19,13 +19,16 @@
     "@alo-noon/contracts": "workspace:*",
     "@alo-noon/design-tokens": "workspace:*",
     "@alo-noon/domain": "workspace:*",
+    "@alo-noon/mobile-ui": "workspace:*",
     "@expo/metro-runtime": "57.0.7",
     "expo": "57.0.8",
+    "expo-blur": "^57.0.2",
     "expo-location": "57.0.6",
     "expo-status-bar": "57.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-native": "0.86.0",
+    "react-native-svg": "^15.15.5",
     "react-native-web": "0.21.2"
   },
   "devDependencies": {

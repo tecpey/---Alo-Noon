@@ -26,6 +26,7 @@ import type {
   SessionContext,
 } from '@alo-noon/contracts'
 import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
+import { GlassSurface, OvenIcon, PlusIcon, PressScale, SteamIcon } from '@alo-noon/mobile-ui'
 
 import brandMark from './assets/logo-mark.png'
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
@@ -40,7 +41,7 @@ import {
 
 type Screen = 'boot' | 'phone' | 'otp' | 'location' | 'catalog'
 
-const apiBaseUrl = process.env['EXPO_PUBLIC_API_BASE_URL']
+const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL
 
 export default function App() {
   const api = useMemo(() => {
@@ -562,9 +563,9 @@ export default function App() {
               <Text style={styles.fieldLabel}>شهر</Text>
               <View style={styles.cityList}>
                 {cities.map((city) => (
-                  <Pressable
+                  <PressScale
                     key={city.id}
-                    accessibilityRole="button"
+                    scaleTo={0.94}
                     accessibilityState={{ selected: selectedCityId === city.id }}
                     style={[styles.cityChip, selectedCityId === city.id && styles.cityChipSelected]}
                     onPress={() => setSelectedCityId(city.id)}
@@ -577,7 +578,7 @@ export default function App() {
                     >
                       {city.nameFa}
                     </Text>
-                  </Pressable>
+                  </PressScale>
                 ))}
               </View>
               <PrimaryButton
@@ -681,7 +682,13 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.brandBar}>
+        {/*
+          Glass, for the same reason the web's bar is: it floats over a screen
+          of bread photographs, and a solid bar there cuts the screen in half.
+          It is the only glass in this app — a blurred surface is a real GPU
+          cost on a phone, so it is spent where it earns its keep.
+        */}
+        <GlassSurface style={styles.brandBar}>
           <View style={styles.brandLockup}>
             <Text style={styles.brand}>{customerCopy.brandName}</Text>
             <Text style={styles.brandCaption}>{customerCopy.brandTagline}</Text>
@@ -693,7 +700,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             accessibilityIgnoresInvertColors
             alt=""
           />
-        </View>
+        </GlassSurface>
         {children}
       </ScrollView>
       <StatusBar style="dark" />
@@ -777,26 +784,31 @@ function PrimaryButton({
   busy,
   disabled = false,
   onPress,
+  icon,
 }: {
   label: string
   busy: boolean
   disabled?: boolean
   onPress: () => void
+  /** An optional glyph before the label, for the one or two buttons that earn one. */
+  icon?: React.ReactNode
 }) {
   return (
-    <Pressable
-      accessibilityRole="button"
+    <PressScale
       accessibilityState={{ busy, disabled: busy || disabled }}
       disabled={busy || disabled}
       style={[styles.primaryButton, (busy || disabled) && styles.buttonDisabled]}
       onPress={onPress}
     >
       {busy ? (
-        <ActivityIndicator color={colors.neutral[50]} />
+        <ActivityIndicator color={ink.onAction} />
       ) : (
-        <Text style={styles.primaryButtonText}>{label}</Text>
+        <View style={styles.primaryButtonInner}>
+          {icon}
+          <Text style={styles.primaryButtonText}>{label}</Text>
+        </View>
       )}
-    </Pressable>
+    </PressScale>
   )
 }
 
@@ -817,11 +829,21 @@ function ProductCard({
       <View style={styles.productTopRow}>
         <Text style={styles.productName}>{product.nameFa}</Text>
         <View style={[styles.promiseBadge, isFresh && styles.freshBadge]}>
+          {isFresh ? (
+            <OvenIcon size={14} color={tint.success.ink} />
+          ) : (
+            <SteamIcon size={14} color={ink.muted} />
+          )}
           <Text style={[styles.promiseText, isFresh && styles.freshText]}>{promise}</Text>
         </View>
       </View>
       <Text style={styles.price}>{formatRials(product.price.amount)}</Text>
-      <PrimaryButton label="افزودن به سبد" busy={busy} onPress={onAdd} />
+      <PrimaryButton
+        label="افزودن به سبد"
+        busy={busy}
+        onPress={onAdd}
+        icon={<PlusIcon size={18} color={ink.onAction} />}
+      />
     </View>
   )
 }
@@ -1154,6 +1176,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: line.subtle,
   },
   brandLockup: { alignItems: 'flex-end', gap: 2 },
   brandMark: { width: 34, height: 46 },
@@ -1208,6 +1235,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[600],
   },
   buttonDisabled: { opacity: 0.55 },
+  primaryButtonInner: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
   primaryButtonText: { color: ink.onAction, fontSize: 16, fontWeight: '800' },
   secondaryButton: {
     minHeight: 46,
@@ -1282,6 +1310,9 @@ const styles = StyleSheet.create({
   },
   promiseBadge: {
     alignSelf: 'flex-end',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
