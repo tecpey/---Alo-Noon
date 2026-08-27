@@ -1,0 +1,209 @@
+/*
+ * One bread's page.
+ *
+ * Two columns on a desktop and one on a phone, with the photograph first in
+ * both: it is what a customer came to look at, and on a narrow screen a picture
+ * pushed below an ingredient list is a picture nobody sees.
+ *
+ * Logical properties throughout, like the rest of the shop.
+ */
+
+.product-page {
+  padding: 1.25rem 1.5rem 3rem;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-block-end: 1.1rem;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+.crumbs a {
+  color: var(--ink-muted);
+}
+.crumbs a:hover {
+  color: var(--primary-600);
+}
+/* The chevron points the way reading runs, which in Persian is leftward. */
+.crumbs svg {
+  transform: scaleX(-1);
+  opacity: 0.55;
+}
+
+.product {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .product-page {
+    padding: 1rem 1rem 2.5rem;
+  }
+  .product {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+}
+
+.product__art {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--surface-sunken);
+  box-shadow: var(--shadow-md);
+}
+.product__art img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.product__placeholder {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  background:
+    radial-gradient(120% 120% at 50% 0%, var(--primary-50), transparent 70%), var(--surface-sunken);
+  color: var(--primary-400);
+}
+.product__placeholder svg {
+  width: 42%;
+  max-width: 200px;
+  height: auto;
+}
+.product__badge {
+  position: absolute;
+  inset-block-start: 0.75rem;
+  inset-inline-start: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+.product__body {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+}
+.product__category {
+  color: var(--primary-600);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.product__body h1 {
+  font-size: clamp(1.5rem, 3.4vw, 2.1rem);
+  font-weight: 800;
+  color: var(--ink-strong);
+  line-height: 1.35;
+}
+.product__lead {
+  color: var(--ink-muted);
+  line-height: 1.8;
+}
+.product__price {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--ink-strong);
+}
+
+.product__buy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.product__buy-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.product__buy-row .product__buy {
+  flex: 1;
+  min-width: 12rem;
+}
+/* The page's stepper is bigger than the drawer's: here it is the primary
+   control rather than an adjustment beside a line item. */
+.stepper--large {
+  font-size: 1.05rem;
+}
+.stepper--large button {
+  width: 2.6rem;
+  height: 2.6rem;
+}
+
+.product__facts {
+  display: grid;
+  list-style: none;
+  gap: 0.75rem;
+  margin-block-start: 0.5rem;
+  padding-block-start: 1.1rem;
+  border-block-start: 1px solid var(--line-subtle);
+}
+.product__facts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+.product__facts svg {
+  flex: none;
+  margin-block-start: 0.15rem;
+  color: var(--primary-600);
+}
+.product__fact-title {
+  font-weight: 700;
+  color: var(--ink-strong);
+  font-size: 0.95rem;
+}
+.product__fact-body {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
+.product__section {
+  padding-block-start: 1.1rem;
+  border-block-start: 1px solid var(--line-subtle);
+}
+.product__section h2 {
+  margin-block-end: 0.7rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  gap: 0.45rem;
+}
+.tag-list li {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-subtle);
+  color: var(--ink-base);
+  font-size: 0.85rem;
+}
+/*
+ * Allergens are not another tag row. Someone reading this list may be reading
+ * it because getting it wrong sends them to hospital, so it is marked in the
+ * action colour and carries weight — never colour alone, since that is exactly
+ * the distinction a colour-blind reader would miss.
+ */
+.tag-list--warning li {
+  background: color-mix(in srgb, var(--primary-600) 10%, var(--surface-card));
+  border-color: color-mix(in srgb, var(--primary-600) 40%, transparent);
+  color: var(--primary-700);
+  font-weight: 700;
+}

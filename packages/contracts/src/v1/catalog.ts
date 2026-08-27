@@ -80,6 +80,27 @@ export const catalogListQuerySchema = paginationParamsSchema
   })
 export type CatalogListQuery = z.infer<typeof catalogListQuerySchema>
 
+/**
+ * Reading one product.
+ *
+ * The city is still required. A product's price, its bakery and whether it can
+ * be had at all are properties of an offering, and offerings belong to
+ * branches in cities — so "this bread" is not answerable without knowing where
+ * the person asking is.
+ */
+export const catalogDetailQuerySchema = z.object({
+  cityId: uuidSchema,
+  operationalZoneId: uuidSchema.optional(),
+})
+export type CatalogDetailQuery = z.infer<typeof catalogDetailQuerySchema>
+
+export const productDetailEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: productDetailSchema,
+  meta: responseMetaSchema,
+})
+export type ProductDetailEnvelope = z.infer<typeof productDetailEnvelopeSchema>
+
 export const catalogPageSchema = z.object({
   success: z.literal(true),
   data: z.array(productSummarySchema),

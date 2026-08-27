@@ -6,6 +6,7 @@ import type {
   CartSummary,
   OrderSummary,
   PaymentSummary,
+  ProductDetail,
   ProductSummary,
   QuoteSummary,
   ServiceabilityResponse,
@@ -75,6 +76,31 @@ export async function listProducts(
     ...(options.operationalZoneId && { operationalZoneId: options.operationalZoneId }),
   })
   return requestWithPagination<ProductSummary[]>(`/api/v1/catalog/products?${query.toString()}`)
+}
+
+/**
+ * One bread, by the slug in its URL.
+ *
+ * The slug is put through `encodeURIComponent` rather than trusted: it arrives
+ * from the address bar, and a path segment is not a place to interpolate
+ * whatever a visitor typed.
+ */
+export async function readProduct(
+  slug: string,
+  cityId: string,
+  options: { operationalZoneId?: string } = {},
+): Promise<ApiResult<ProductDetail>> {
+  if (!isUuid(cityId)) {
+    return { ok: false, error: { code: 'CITY_NOT_FOUND', message: 'شهر انتخابی معتبر نیست.' } }
+  }
+  const query = new URLSearchParams({
+    cityId,
+    ...(options.operationalZoneId && { operationalZoneId: options.operationalZoneId }),
+  })
+  return request<ProductDetail>(
+    `/api/v1/catalog/products/${encodeURIComponent(slug)}?${query.toString()}`,
+    { method: 'GET' },
+  )
 }
 
 /* -------------------------------------------------------------- identity */

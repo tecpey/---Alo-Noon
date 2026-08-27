@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ActiveCitySummary, ProductSummary } from '@alo-noon/contracts'
+import type { ActiveCitySummary, ProductDetail, ProductSummary } from '@alo-noon/contracts'
 
 import { buildApp } from './app'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
 import {
   evaluateServiceability,
   geoJsonContainsPoint,
+  type CatalogDetailInput,
   type CatalogListInput,
   type CatalogRepository,
   type CityRepository,
@@ -50,6 +51,25 @@ const product: ProductSummary = {
   price: { amount: '250000', currency: 'IRR' },
   bakeryBranchId: branchId,
   lifecycle: 'ACTIVE',
+}
+
+const productDetail: ProductDetail = {
+  ...product,
+  descriptionFa: 'بربری تازه با رویهٔ کنجدی.',
+  ingredients: ['آرد گندم', 'کنجد', 'مخمر', 'نمک'],
+  allergens: ['گلوتن', 'کنجد'],
+  dietaryAttributes: [],
+  freshnessWindowMinutes: 90,
+}
+
+/**
+ * A repository method this test has asserted must not run.
+ *
+ * Failing loudly beats returning null: a route that reached for the wrong half
+ * of the repository would otherwise pass as a clean 404.
+ */
+const notCalled = (): never => {
+  throw new Error('This repository method should not have been called')
 }
 
 const square = {
@@ -161,6 +181,7 @@ describe('catalog discovery API', () => {
         calls.push(input)
         return { items: [product], totalItems: 1 }
       },
+      findProduct: notCalled,
     }
     const app = await buildApp({ auth: discoveryAuth, catalogRepository: repository })
     apps.push(app)
@@ -191,7 +212,10 @@ describe('catalog discovery API', () => {
 
   it('rejects an invalid city identifier before repository access', async () => {
     const listProducts = vi.fn<CatalogRepository['listProducts']>()
-    const app = await buildApp({ auth: discoveryAuth, catalogRepository: { listProducts } })
+    const app = await buildApp({
+      auth: discoveryAuth,
+      catalogRepository: { listProducts, findProduct: notCalled },
+    })
     apps.push(app)
 
     const response = await app.inject({
@@ -214,6 +238,7 @@ describe('catalog discovery API', () => {
         listProducts: async () => {
           throw new Error('postgresql://secret@database/internal')
         },
+        findProduct: notCalled,
       },
     })
     apps.push(app)
@@ -228,6 +253,165 @@ describe('catalog discovery API', () => {
     expect(response.json()).toMatchObject({
       error: { code: 'CATALOG_UNAVAILABLE' },
     })
+  })
+})
+
+describe('single product API', () => {
+  it('returns the full product for a slug on sale in this city', async () => {
+    const calls: CatalogDetailInput[] = []
+    const app = await buildApp({
+      auth: discoveryAuth,
+      catalogRepository: {
+        listProducts: notCalled,
+        findProduct: async (_tenantId, input) => {
+          calls.push(input)
+          return productDetail
+        },
+      },
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/catalog/products/barbari-emzadar?cityId=${cityId}`,
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(calls).toEqual([{ slug: 'barbari-emzadar', cityId }])
+    expect(response.json()).toMatchObject({
+      success: true,
+      data: {
+        slug: 'barbari-emzadar',
+        allergens: ['گلوتن', 'کنجد'],
+        price: { amount: '250000', currency: 'IRR' },
+      },
+    })
+  })
+
+  it('narrows to a zone when one is given', async () => {
+    const calls: CatalogDetailInput[] = []
+    const app = await buildApp({
+      auth: discoveryAuth,
+      catalogRepository: {
+        listProducts: notCalled,
+        findProduct: async (_tenantId, input) => {
+          calls.push(input)
+          return productDetail
+        },
+      },
+    })
+    apps.push(app)
+
+    await app.inject({
+      method: 'GET',
+      url: `/api/v1/catalog/products/barbari-emzadar?cityId=${cityId}&operationalZoneId=${zoneId}`,
+    })
+
+    expect(calls).toEqual([{ slug: 'barbari-emzadar', cityId, operationalZoneId: zoneId }])
+  })
+
+  /**
+   * A slug nobody sells here is a 404, not an empty success. The customer
+   * followed a link to a bread; "we do not have this" is the answer, whether
+   * because it was never ours or because this city's bakeries do not make it.
+   */
+  it('answers 404 for a slug that is not on sale here', async () => {
+    const app = await buildApp({
+      auth: discoveryAuth,
+      catalogRepository: { listProducts: notCalled, findProduct: async () => null },
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/catalog/products/nan-e-khiali?cityId=${cityId}`,
+    })
+
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({ error: { code: 'PRODUCT_NOT_FOUND' } })
+  })
+
+  it('rejects a missing city before reaching the repository', async () => {
+    const findProduct = vi.fn<CatalogRepository['findProduct']>()
+    const app = await buildApp({
+      auth: discoveryAuth,
+      catalogRepository: { listProducts: notCalled, findProduct },
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/catalog/products/barbari-emzadar',
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({ error: { code: 'INVALID_CATALOG_QUERY' } })
+    expect(findProduct).not.toHaveBeenCalled()
+  })
+
+  it('refuses to publish a product the public contract does not describe', async () => {
+    const app = await buildApp({
+      auth: discoveryAuth,
+      catalogRepository: {
+        listProducts: notCalled,
+        // A repository that grew an internal field must not leak it, and one
+        // that lost a required field must not serve half a product.
+        findProduct: async () =>
+          ({ ...productDetail, price: { amount: '', currency: 'IRR' } }) as ProductDetail,
+      },
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/catalog/products/barbari-emzadar?cityId=${cityId}`,
+    })
+
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toMatchObject({ error: { code: 'CATALOG_UNAVAILABLE' } })
+  })
+
+  it('does not leak internals when the read fails', async () => {
+    const app = await buildApp({
+      auth: discoveryAuth,
+      catalogRepository: {
+        listProducts: notCalled,
+        findProduct: async () => {
+          throw new Error('postgresql://secret@database/internal')
+        },
+      },
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/catalog/products/barbari-emzadar?cityId=${cityId}`,
+    })
+
+    expect(response.statusCode).toBe(503)
+    expect(response.body).not.toContain('postgresql')
+  })
+
+  it('fails closed when the host resolves to no tenant', async () => {
+    const findProduct = vi.fn<CatalogRepository['findProduct']>()
+    const app = await buildApp({
+      auth: {
+        ...discoveryAuth,
+        repository: { resolveTenantByHost: async () => null } as unknown as AuthRepository,
+      },
+      catalogRepository: { listProducts: notCalled, findProduct },
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/catalog/products/barbari-emzadar?cityId=${cityId}`,
+      headers: { host: 'unknown.example', 'x-tenant-id': tenantId },
+    })
+
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({ error: { code: 'TENANT_NOT_FOUND' } })
+    expect(findProduct).not.toHaveBeenCalled()
   })
 })
 

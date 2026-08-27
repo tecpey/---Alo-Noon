@@ -2,11 +2,14 @@ import type { FastifyInstance, FastifyReply } from 'fastify'
 
 import {
   activeCitySummarySchema,
+  catalogDetailQuerySchema,
   catalogListQuerySchema,
+  productDetailSchema,
   serviceabilityRequestSchema,
   type ActiveCitySummary,
   type ErrorEnvelope,
   type PaginatedResponse,
+  type ProductDetail,
   type ProductSummary,
   type ResponseMeta,
   type ServiceabilityRequest,
@@ -28,8 +31,16 @@ export interface CatalogPage {
   totalItems: number
 }
 
+export interface CatalogDetailInput {
+  slug: string
+  cityId: string
+  operationalZoneId?: string
+}
+
 export interface CatalogRepository {
   listProducts(tenantId: string, input: CatalogListInput): Promise<CatalogPage>
+  /** Null when the slug is unknown, or known but not on sale in this city. */
+  findProduct(tenantId: string, input: CatalogDetailInput): Promise<ProductDetail | null>
 }
 
 export interface CityRepository {
@@ -84,47 +95,136 @@ export function createPrismaCityRepository(prisma: PrismaClient): CityRepository
   }
 }
 
+/**
+ * What makes an offering something a customer may be shown.
+ *
+ * Written once and shared by the list and the single-product read, because the
+ * two must agree: a bread on the shelf whose own page says it does not exist is
+ * a worse bug than either query being wrong on its own, and the way that
+ * happens is two copies of this predicate drifting apart.
+ *
+ * Every clause is a way the shop can be closed for one loaf — the offering
+ * withdrawn, its window passed, the branch suspended or failing quality review,
+ * the partner's agreement ended, the city or zone switched off, or the product
+ * retired.
+ */
+function sellableOfferingWhere(
+  tenantId: string,
+  input: { cityId: string; operationalZoneId?: string },
+  now: Date,
+): Prisma.BakeryProductOfferingWhereInput {
+  return {
+    tenantId,
+    availability: 'AVAILABLE',
+    AND: [
+      { OR: [{ availableFrom: null }, { availableFrom: { lte: now } }] },
+      { OR: [{ availableUntil: null }, { availableUntil: { gte: now } }] },
+    ],
+    bakeryBranch: {
+      is: {
+        cityId: input.cityId,
+        ...(input.operationalZoneId && { operationalZoneId: input.operationalZoneId }),
+        operationalStatus: 'ACTIVE',
+        qualityStatus: 'APPROVED',
+        bakery: { is: { partnerStatus: 'ACTIVE' } },
+        city: { is: { isActive: true } },
+        operationalZone: { is: { isActive: true } },
+      },
+    },
+    productVariant: {
+      is: {
+        lifecycle: 'ACTIVE',
+        product: { is: { lifecycle: 'ACTIVE' } },
+      },
+    },
+  }
+}
+
+const OFFERING_INCLUDE = {
+  bakeryBranch: true,
+  // The category comes along on the same query rather than in a second pass:
+  // the storefront groups by it, so fetching it later would mean one round trip
+  // per bread on the shelf.
+  productVariant: { include: { product: { include: { category: true } } } },
+} as const
+
+type OfferingRow = Prisma.BakeryProductOfferingGetPayload<{ include: typeof OFFERING_INCLUDE }>
+
+function toProductSummary(offering: OfferingRow): ProductSummary {
+  return {
+    id: offering.productVariant.product.id,
+    offeringId: offering.id,
+    variantId: offering.productVariant.id,
+    sku: offering.productVariant.sku,
+    slug: offering.productVariant.product.slug,
+    nameFa: offering.productVariant.product.nameFa,
+    categoryCode: offering.productVariant.product.category.code,
+    categoryNameFa: offering.productVariant.product.category.nameFa,
+    fulfillmentClass: offering.productVariant.fulfillmentClass,
+    freshnessClaim: offering.productVariant.freshnessClaim,
+    price: {
+      amount: offering.priceAmount.toString(),
+      currency: offering.priceCurrency,
+    },
+    bakeryBranchId: offering.bakeryBranchId,
+    ...(offering.productVariant.product.mediaRef && {
+      mediaRef: offering.productVariant.product.mediaRef,
+    }),
+    lifecycle: offering.productVariant.lifecycle,
+  }
+}
+
 export function createPrismaCatalogRepository(prisma: PrismaClient): CatalogRepository {
   return {
-    async listProducts(tenantId, input) {
-      const now = new Date()
-      const where: Prisma.BakeryProductOfferingWhereInput = {
-        tenantId,
-        availability: 'AVAILABLE',
-        AND: [
-          { OR: [{ availableFrom: null }, { availableFrom: { lte: now } }] },
-          { OR: [{ availableUntil: null }, { availableUntil: { gte: now } }] },
-        ],
-        bakeryBranch: {
-          is: {
-            cityId: input.cityId,
-            ...(input.operationalZoneId && { operationalZoneId: input.operationalZoneId }),
-            operationalStatus: 'ACTIVE',
-            qualityStatus: 'APPROVED',
-            bakery: { is: { partnerStatus: 'ACTIVE' } },
-            city: { is: { isActive: true } },
-            operationalZone: { is: { isActive: true } },
+    async findProduct(tenantId, input) {
+      const offering = await withTenant(prisma, tenantId, (transaction) =>
+        transaction.bakeryProductOffering.findFirst({
+          where: {
+            ...sellableOfferingWhere(tenantId, input, new Date()),
+            productVariant: {
+              is: {
+                lifecycle: 'ACTIVE',
+                product: { is: { lifecycle: 'ACTIVE', slug: input.slug } },
+              },
+            },
           },
-        },
-        productVariant: {
-          is: {
-            lifecycle: 'ACTIVE',
-            product: { is: { lifecycle: 'ACTIVE' } },
-          },
-        },
+          include: OFFERING_INCLUDE,
+          // The same bread may be offered by several branches in one city. The
+          // oldest wins, which is the same order the shelf uses, so opening a
+          // card shows the price that card quoted.
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
+      )
+      if (!offering) return null
+
+      const variant = offering.productVariant
+      return {
+        ...toProductSummary(offering),
+        ...(variant.product.descriptionFa && { descriptionFa: variant.product.descriptionFa }),
+        ingredients: variant.ingredients,
+        allergens: variant.allergens,
+        dietaryAttributes: variant.dietaryAttributes,
+        ...(variant.packagingType &&
+          variant.shelfLifeMinutes && {
+            packaging: {
+              type: variant.packagingType,
+              shelfLifeMinutes: variant.shelfLifeMinutes,
+            },
+          }),
+        ...(variant.freshnessWindowMinutes && {
+          freshnessWindowMinutes: variant.freshnessWindowMinutes,
+        }),
       }
+    },
+
+    async listProducts(tenantId, input) {
+      const where = sellableOfferingWhere(tenantId, input, new Date())
 
       const [offerings, totalItems] = await withTenant(prisma, tenantId, async (transaction) =>
         Promise.all([
           transaction.bakeryProductOffering.findMany({
             where,
-            include: {
-              bakeryBranch: true,
-              // The category comes along on the same query rather than in a
-              // second pass: the storefront groups by it, so fetching it later
-              // would mean one round trip per bread on the shelf.
-              productVariant: { include: { product: { include: { category: true } } } },
-            },
+            include: OFFERING_INCLUDE,
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
             skip: (input.page - 1) * input.pageSize,
             take: input.pageSize,
@@ -133,30 +233,7 @@ export function createPrismaCatalogRepository(prisma: PrismaClient): CatalogRepo
         ]),
       )
 
-      return {
-        totalItems,
-        items: offerings.map((offering) => ({
-          id: offering.productVariant.product.id,
-          offeringId: offering.id,
-          variantId: offering.productVariant.id,
-          sku: offering.productVariant.sku,
-          slug: offering.productVariant.product.slug,
-          nameFa: offering.productVariant.product.nameFa,
-          categoryCode: offering.productVariant.product.category.code,
-          categoryNameFa: offering.productVariant.product.category.nameFa,
-          fulfillmentClass: offering.productVariant.fulfillmentClass,
-          freshnessClaim: offering.productVariant.freshnessClaim,
-          price: {
-            amount: offering.priceAmount.toString(),
-            currency: offering.priceCurrency,
-          },
-          bakeryBranchId: offering.bakeryBranchId,
-          ...(offering.productVariant.product.mediaRef && {
-            mediaRef: offering.productVariant.product.mediaRef,
-          }),
-          lifecycle: offering.productVariant.lifecycle,
-        })),
-      }
+      return { totalItems, items: offerings.map(toProductSummary) }
     },
   }
 }
@@ -277,6 +354,64 @@ export function registerDiscoveryRoutes(
         .send(errorEnvelope('CATALOG_UNAVAILABLE', 'Catalog is temporarily unavailable.'))
     }
   })
+
+  /**
+   * One product, by its public slug.
+   *
+   * Registered after the list route and with a distinct path shape, so
+   * `/catalog/products` and `/catalog/products/sangak` cannot be confused.
+   *
+   * A slug that exists but is not on sale in this city answers 404 rather than
+   * an empty 200: the customer followed a link to a bread, and "we do not have
+   * this" is the answer, whether the reason is that it was never ours or that
+   * this city's bakeries do not make it.
+   */
+  app.get<{ Params: { slug: string } }>(
+    '/api/v1/catalog/products/:slug',
+    async (request, reply) => {
+      const parsed = catalogDetailQuerySchema.safeParse(request.query)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(
+            errorEnvelope(
+              'INVALID_CATALOG_QUERY',
+              'Catalog query parameters are invalid.',
+              parsed.error.flatten(),
+            ),
+          )
+      }
+      const tenantId = dependencies.auth ? await resolveTenantId(request, dependencies.auth) : null
+      if (!tenantId) return tenantUnavailable(reply)
+
+      try {
+        const product = await dependencies.catalogRepository.findProduct(tenantId, {
+          slug: request.params.slug,
+          cityId: parsed.data.cityId,
+          ...(parsed.data.operationalZoneId && {
+            operationalZoneId: parsed.data.operationalZoneId,
+          }),
+        })
+        if (!product) {
+          return reply
+            .code(404)
+            .send(errorEnvelope('PRODUCT_NOT_FOUND', 'No such product is on sale in this city.'))
+        }
+        // Parsed on the way out, so a repository that grows a field the public
+        // contract does not have cannot leak it to a customer.
+        return {
+          success: true,
+          data: productDetailSchema.parse(product),
+          meta: responseMeta(),
+        }
+      } catch (error) {
+        request.log.error({ err: error }, 'Catalog product read failed')
+        return reply
+          .code(503)
+          .send(errorEnvelope('CATALOG_UNAVAILABLE', 'Catalog is temporarily unavailable.'))
+      }
+    },
+  )
 
   app.post('/api/v1/serviceability/check', async (request, reply) => {
     const parsed = serviceabilityRequestSchema.safeParse(request.body)

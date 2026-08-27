@@ -4,8 +4,10 @@ import { cookies } from 'next/headers'
 
 import type { ActiveCitySummary } from '@alo-noon/contracts'
 
+import type { ProductDetail } from '@alo-noon/contracts'
+
 import { buildCatalogView, type CatalogView } from './catalog-view'
-import { listCities, listProducts } from './shop-api'
+import { listCities, listProducts, readProduct } from './shop-api'
 import { CITY_COOKIE, ZONE_COOKIE } from './shop-cookies'
 
 /**
@@ -27,7 +29,19 @@ export type StorefrontData =
   /** The API could not be reached or refused; the page says so rather than looking empty. */
   | { readonly state: 'unavailable'; readonly message: string }
 
-export async function loadStorefront(): Promise<StorefrontData> {
+/**
+ * Which city this visitor is shopping in, and which zone within it.
+ *
+ * Shared by the storefront and the product page so a bread's own page is
+ * priced against the same city the card that linked to it was.
+ */
+type CityChoice =
+  | { readonly state: 'ready'; readonly city: ActiveCitySummary; readonly zoneId?: string }
+  | { readonly state: 'choose-city'; readonly cities: readonly ActiveCitySummary[] }
+  | { readonly state: 'closed' }
+  | { readonly state: 'unavailable'; readonly message: string }
+
+async function resolveCity(): Promise<CityChoice> {
   const cities = await listCities()
   if (!cities.ok) return { state: 'unavailable', message: cities.error.message }
   if (cities.data.length === 0) return { state: 'closed' }
@@ -41,9 +55,45 @@ export async function loadStorefront(): Promise<StorefrontData> {
     (cities.data.length === 1 ? cities.data[0] : undefined)
   if (!city) return { state: 'choose-city', cities: cities.data }
 
-  const zone = cookieStore.get(ZONE_COOKIE)?.value
-  const products = await listProducts(city.id, zone ? { operationalZoneId: zone } : {})
+  const zoneId = cookieStore.get(ZONE_COOKIE)?.value
+  return { state: 'ready', city, ...(zoneId && { zoneId }) }
+}
+
+export async function loadStorefront(): Promise<StorefrontData> {
+  const choice = await resolveCity()
+  if (choice.state !== 'ready') return choice
+
+  const products = await listProducts(
+    choice.city.id,
+    choice.zoneId ? { operationalZoneId: choice.zoneId } : {},
+  )
   if (!products.ok) return { state: 'unavailable', message: products.error.message }
 
-  return { state: 'ready', city, catalog: buildCatalogView(products.data) }
+  return { state: 'ready', city: choice.city, catalog: buildCatalogView(products.data) }
+}
+
+export type ProductPageData =
+  | { readonly state: 'ready'; readonly city: ActiveCitySummary; readonly product: ProductDetail }
+  /** The slug is not on sale in this city. The page answers 404. */
+  | { readonly state: 'missing' }
+  | { readonly state: 'choose-city'; readonly cities: readonly ActiveCitySummary[] }
+  | { readonly state: 'closed' }
+  | { readonly state: 'unavailable'; readonly message: string }
+
+export async function loadProduct(slug: string): Promise<ProductPageData> {
+  const choice = await resolveCity()
+  if (choice.state !== 'ready') return choice
+
+  const product = await readProduct(
+    slug,
+    choice.city.id,
+    choice.zoneId ? { operationalZoneId: choice.zoneId } : {},
+  )
+  if (product.ok) return { state: 'ready', city: choice.city, product: product.data }
+
+  // A bread that is not sold here is a missing page, not a broken one. Every
+  // other failure keeps its own message, so "we could not reach the catalog"
+  // is never dressed up as "this bread does not exist".
+  if (product.error.code === 'PRODUCT_NOT_FOUND') return { state: 'missing' }
+  return { state: 'unavailable', message: product.error.message }
 }

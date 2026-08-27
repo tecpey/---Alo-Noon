@@ -109,6 +109,9 @@ const unavailableCatalogRepository: CatalogRepository = {
   listProducts: async () => {
     throw new Error('Catalog repository unavailable')
   },
+  findProduct: async () => {
+    throw new Error('Catalog repository unavailable')
+  },
 }
 
 const unavailableServiceabilityRepository: ServiceabilityRepository = {
