@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatToman, groupDigits, toPersianDigits } from './persian'
+import { formatToman, groupDigits, sumRial, toPersianDigits } from './persian'
 
 describe('persian number presentation', () => {
   it('shows a price in Toman from an amount held in Rial', () => {
@@ -24,5 +24,37 @@ describe('persian number presentation', () => {
 
   it('converts digits without touching anything else', () => {
     expect(toPersianDigits('۱۸:۰۰ – 19:30')).toBe('۱۸:۰۰ – ۱۹:۳۰')
+  })
+})
+
+describe('adding up a basket', () => {
+  it('multiplies and sums without leaving integers', () => {
+    expect(
+      sumRial([
+        { priceRial: '280000', quantity: 2 },
+        { priceRial: '95000', quantity: 1 },
+        { priceRial: '60000', quantity: 1 },
+      ]),
+    ).toBe('715000')
+  })
+
+  it('stays exact past the float-safe range', () => {
+    // A month of a working city. A total that quietly rounded here would still
+    // look like a number somebody could reconcile against.
+    expect(sumRial([{ priceRial: '9007199254740993', quantity: 3 }])).toBe('27021597764222979')
+  })
+
+  it('ignores a line with a nonsense price rather than throwing', () => {
+    // One bad row must not take the whole basket down with it.
+    expect(
+      sumRial([
+        { priceRial: 'abc', quantity: 2 },
+        { priceRial: '5000', quantity: 1 },
+      ]),
+    ).toBe('5000')
+  })
+
+  it('treats a negative quantity as none', () => {
+    expect(sumRial([{ priceRial: '5000', quantity: -3 }])).toBe('0')
   })
 })

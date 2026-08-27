@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { foundationStatus } from './page'
-import { everydayBreads, heroCopy, specialBakes } from '../lib/storefront-content'
+import {
+  categories,
+  everydayBreads,
+  heroCopy,
+  specialBakes,
+  trustClaims,
+} from '../lib/storefront-content'
 
 describe('storefront', () => {
   it('exposes the foundation status in Persian', () => {
@@ -26,5 +32,40 @@ describe('storefront', () => {
 
   it('keeps the headline in the two lines the artwork sets', () => {
     expect(heroCopy.headlineFa).toHaveLength(2)
+  })
+})
+
+describe('the category rail', () => {
+  it('has a chip for every category a product claims', () => {
+    // A product filed under a category with no chip is a product the filter can
+    // permanently hide.
+    const chips = new Set(categories.map((category) => category.id))
+    for (const product of [...specialBakes.products, ...everydayBreads.products]) {
+      expect(chips.has(product.categoryId)).toBe(true)
+    }
+  })
+
+  it('opens on a chip that hides nothing', () => {
+    expect(categories[0]?.id).toBe('all')
+  })
+
+  it('leaves no chip that matches nothing at all', () => {
+    // A filter that can only ever produce an empty page is a filter that should
+    // not be on the page.
+    const used = new Set(
+      [...specialBakes.products, ...everydayBreads.products].map((product) => product.categoryId),
+    )
+    for (const category of categories) {
+      if (category.id === 'all') continue
+      expect(used.has(category.id)).toBe(true)
+    }
+  })
+})
+
+describe('what the storefront claims', () => {
+  it('backs every trust claim with a sentence rather than a slogan', () => {
+    for (const claim of trustClaims) {
+      expect(claim.bodyFa.length).toBeGreaterThan(20)
+    }
   })
 })

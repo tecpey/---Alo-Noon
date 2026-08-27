@@ -46,3 +46,20 @@ export function formatToman(amountRial: string): string {
   const toman = digits.length > 1 ? digits.slice(0, -1) : '0'
   return `${toPersianDigits(groupDigits(toman))} تومان`
 }
+
+/**
+ * Adds up a basket, in Rial, without ever leaving integer arithmetic.
+ *
+ * BigInt rather than number for the same reason the rest of this system keeps
+ * money as strings: a basket is small, but the code that sums it is the code
+ * that will one day sum a month of orders, and a total that silently loses
+ * precision is a total somebody will act on.
+ */
+export function sumRial(entries: Iterable<{ priceRial: string; quantity: number }>): string {
+  let total = 0n
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry.priceRial)) continue
+    total += BigInt(entry.priceRial) * BigInt(Math.max(0, Math.trunc(entry.quantity)))
+  }
+  return total.toString()
+}

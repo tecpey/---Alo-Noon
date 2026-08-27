@@ -200,6 +200,69 @@ export const tint = {
   info: stateTint(colors.info),
 } as const
 
+/**
+ * Glass, and where it is allowed.
+ *
+ * Glass is a material for things that float above other things. Used that way
+ * it tells a real story — the bar you are reading through is not part of the
+ * page, it is over it — and the blur carries the colour of whatever passes
+ * underneath, which on a page of bread photographs is warm and alive.
+ *
+ * Used on a flat card sitting on flat paper it says nothing, costs a compositor
+ * layer, and makes text harder to read for the sake of a texture nobody asked
+ * about. So there are exactly three glasses here and each names its job: the
+ * bar pinned to the top, the panel that sits on a photograph, and the sheet
+ * that rises over the whole page. Anything else gets a solid surface.
+ *
+ * Every one carries a lit top edge and a hairline. Real glass has an edge; a
+ * translucent rectangle without one reads as a rendering bug.
+ */
+export const glass = {
+  /** The pinned top bar. Light enough to read type through at speed. */
+  bar: {
+    background: 'rgba(251, 243, 232, 0.72)',
+    backdropFilter: 'blur(20px) saturate(1.7)',
+    border: 'rgba(255, 255, 255, 0.55)',
+    highlight: 'rgba(255, 255, 255, 0.65)',
+    shadow: '0 8px 28px -14px rgb(38 31 23 / 0.28)',
+    /** When the browser has no backdrop-filter, and on the first paint. */
+    fallback: '#FAF1E5',
+  },
+  /** A panel laid over imagery — the delivery bar on the hero photograph. */
+  panel: {
+    background: 'rgba(251, 243, 232, 0.62)',
+    backdropFilter: 'blur(26px) saturate(1.8)',
+    border: 'rgba(255, 255, 255, 0.5)',
+    highlight: 'rgba(255, 255, 255, 0.55)',
+    shadow: '0 18px 44px -24px rgb(38 31 23 / 0.42)',
+    fallback: '#F8EDDF',
+  },
+  /** A sheet that rises over everything: dialogs, the basket, a filter drawer. */
+  sheet: {
+    background: 'rgba(248, 238, 226, 0.86)',
+    backdropFilter: 'blur(34px) saturate(1.5)',
+    border: 'rgba(255, 255, 255, 0.6)',
+    highlight: 'rgba(255, 255, 255, 0.7)',
+    shadow: '0 32px 70px -30px rgb(38 31 23 / 0.5)',
+    fallback: '#F7EDE0',
+  },
+} as const
+
+/**
+ * The elevation ladder, in the order things stack.
+ *
+ * Named by what lives there rather than by number, because "z-index: 60" tells
+ * the next person nothing about whether their tooltip should be above it.
+ */
+export const elevation = {
+  flat: 0,
+  raised: 1,
+  sticky: 10,
+  overlay: 40,
+  modal: 60,
+  toast: 80,
+} as const
+
 export const spacing = {
   0: '0',
   0.5: '0.125rem',
@@ -321,11 +384,30 @@ export const zIndex = {
  * each component eases differently feels assembled rather than made.
  */
 export const motion = {
-  duration: { fast: '120ms', base: '200ms', slow: '320ms' },
+  duration: { fast: '120ms', base: '200ms', slow: '320ms', reveal: '520ms' },
   easing: {
+    /** Almost everything. Fast out of the gate, settles without a bounce. */
     standard: 'cubic-bezier(0.2, 0, 0, 1)',
+    /** Leaving. Quicker than arriving, because nobody watches an exit. */
     exit: 'cubic-bezier(0.4, 0, 1, 1)',
+    /**
+     * One overshoot, for things that appear under a finger: a badge counting
+     * up, a card accepting a tap. Used anywhere else it turns an interface
+     * into a toy.
+     */
+    spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+    /** A long, flat curve for content arriving on scroll. */
+    reveal: 'cubic-bezier(0.16, 1, 0.3, 1)',
   },
+  /**
+   * How far a revealed element travels before it settles.
+   *
+   * Small on purpose. Content that flies in from off-screen reads as a
+   * slideshow; content that rises a few pixels reads as paper settling.
+   */
+  revealDistance: '14px',
+  /** Between one revealed item and the next in a row. */
+  stagger: '55ms',
 } as const
 
 // RTL-specific utilities
@@ -368,6 +450,12 @@ export function cssVariables(): string {
   for (const [name, value] of Object.entries(shadows)) push(`shadow-${name}`, value)
   for (const [name, value] of Object.entries(motion.duration)) push(`duration-${name}`, value)
   for (const [name, value] of Object.entries(motion.easing)) push(`easing-${name}`, value)
+  push('reveal-distance', motion.revealDistance)
+  push('stagger', motion.stagger)
+  for (const [name, values] of Object.entries(glass)) {
+    for (const [part, value] of Object.entries(values)) push(`glass-${name}-${part}`, value)
+  }
+  for (const [name, value] of Object.entries(elevation)) push(`z-${name}`, String(value))
   push('success', colors.success)
   push('warning', colors.warning)
   push('error', colors.error)
@@ -385,6 +473,8 @@ export const config = {
   line,
   gradients,
   tint,
+  glass,
+  elevation,
   spacing,
   typography,
   borderRadius,
