@@ -1,0 +1,476 @@
+/*
+ * The storefront.
+ *
+ * Laid out in logical properties throughout — `inline-start`, not `left` — so
+ * the Persian interface and any future left-to-right one are the same
+ * stylesheet rather than the same stylesheet plus a mirror of it.
+ */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * The application sits on the page as a raised sheet rather than filling it.
+ * That is the brand's own instinct — an arch, a tile, a rounded mark — and it
+ * gives the warm paper somewhere to show.
+ */
+.app-frame {
+  max-width: 1180px;
+  margin-inline: auto;
+  margin-block: clamp(0px, 2vw, 28px);
+  background: var(--surface-base);
+  border-radius: var(--radius-3xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .app-frame {
+    margin-block: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* ------------------------------------------------------------------- header */
+
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+}
+
+.site-header__brand {
+  flex: none;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.brand-lockup__words {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+.brand-lockup__name {
+  color: var(--ink-strong);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+.brand-lockup__tagline {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+/* Address and search share one raised bar: together they are the question of
+   what this shop can sell you, and separating them made two half-questions. */
+.site-header__controls {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+}
+
+.site-header__address {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-base);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.site-header__address svg {
+  color: var(--primary-600);
+}
+
+.site-header__search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  padding-inline: 1rem;
+  border-inline-start: 1px solid var(--line-subtle);
+  color: var(--ink-faint);
+}
+.site-header__search input {
+  flex: 1;
+  min-width: 0;
+  padding-block: 0.55rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink-base);
+  font: inherit;
+}
+.site-header__search input::placeholder {
+  color: var(--ink-faint);
+}
+.site-header__search input:focus {
+  outline: none;
+}
+.site-header__search:focus-within {
+  color: var(--primary-600);
+}
+
+.site-header__account {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.site-header__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-full);
+  color: var(--ink-base);
+  font-size: 0.95rem;
+  transition: background var(--duration-base) var(--easing-standard);
+}
+.site-header__link:hover {
+  background: var(--surface-sunken);
+}
+.site-header__basket {
+  position: relative;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+}
+/* The count rides the basket rather than sitting beside it: a number floating
+   next to two icons belongs to neither. */
+.site-header__count {
+  position: absolute;
+  inset-block-start: -0.45rem;
+  inset-inline-end: -0.35rem;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  padding-inline: 0.3rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  color: var(--ink-onAction);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+@media (max-width: 900px) {
+  .site-header {
+    flex-wrap: wrap;
+    padding: 0.9rem 1rem;
+  }
+  .site-header__controls {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .site-header__account span:not(.site-header__count) {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------------------- hero */
+
+.hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1.5rem 1.5rem;
+}
+
+.hero__art {
+  position: relative;
+  align-self: stretch;
+  min-height: 320px;
+  /* Runs the full height of the hero, both rows, so the delivery bar sits on
+     the photograph rather than under it — which is what the artwork does, and
+     what stops the bar reading as a separate strip bolted below the hero. */
+  grid-row: 1 / 3;
+  grid-column: 1;
+  /* Bleeds past the frame's padding so the bread reaches its edge, the way it
+     does on a bakery's own window. Inline-start, which in Persian is the right:
+     bleeding to `end` sent it across the page and over the top bar. */
+  margin-inline-start: -1.5rem;
+}
+.hero__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+}
+.hero__veil {
+  position: absolute;
+  inset: 0;
+  background: var(--gradient-heroVeil);
+}
+
+.hero__copy {
+  position: relative;
+  z-index: 1;
+  padding-block: 2.5rem;
+}
+.hero h1 {
+  display: flex;
+  flex-direction: column;
+  font-size: clamp(2.2rem, 4.6vw, 3.6rem);
+  line-height: 1.3;
+}
+.hero__lead {
+  max-width: 34rem;
+  margin-block-start: 1.1rem;
+  color: var(--ink-muted);
+  font-size: clamp(0.98rem, 1.3vw, 1.1rem);
+}
+.hero__cta {
+  margin-block-start: 1.9rem;
+}
+/* The chevron points the way the language runs. */
+.hero__cta svg {
+  transform: scaleX(1);
+}
+
+/* ------------------------------------------------------- delivery conditions */
+
+.conditions {
+  position: relative;
+  z-index: 2;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  /* Held off both edges the way the artwork holds it: clear of the frame on the
+     left, and clear of the photograph's un-faded half on the right. */
+  margin-inline: clamp(0px, 14%, 190px) clamp(0px, 10%, 140px);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.condition {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.9rem 1.1rem;
+  border: 0;
+  border-inline-start: 1px solid var(--line-subtle);
+  background: transparent;
+  text-align: start;
+  transition: background var(--duration-base) var(--easing-standard);
+}
+.condition:last-child {
+  border-inline-start: 0;
+}
+.condition:hover {
+  background: var(--surface-sunken);
+}
+.condition__glyph {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--ink-strong);
+}
+.condition__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.condition__label {
+  color: var(--ink-strong);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.condition__value {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.condition__chevron {
+  flex: none;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+    padding-inline: 1rem;
+  }
+  .hero__art {
+    order: -1;
+    grid-row: auto;
+    grid-column: auto;
+    margin: 0 -1rem;
+    min-height: 240px;
+  }
+  .hero__veil {
+    background: var(--gradient-heroVeilVertical);
+  }
+  .hero__copy {
+    padding-block: 0 0.5rem;
+    margin-block-start: -3rem;
+  }
+  .conditions {
+    grid-row: auto;
+    margin-inline: 0;
+    grid-template-columns: 1fr;
+  }
+  .condition {
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--line-subtle);
+  }
+  .condition:first-child {
+    border-block-start: 0;
+  }
+}
+
+/* -------------------------------------------------------------------- shelves */
+
+.shelf {
+  padding-inline: 1.5rem;
+}
+.shelf:last-of-type {
+  padding-block-end: 2rem;
+}
+
+/* The mark, at eyebrow size, beside every section title. Repeating it is what
+   makes a long page read as one shop instead of a stack of blocks. */
+.shelf__mark {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--gradient-brandArc);
+  color: var(--ink-onAction);
+}
+
+.shelf__grid {
+  display: grid;
+  gap: 1rem;
+}
+.shelf__grid--wide {
+  grid-template-columns: repeat(3, 1fr);
+}
+.shelf__grid--tall {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 900px) {
+  .shelf {
+    padding-inline: 1rem;
+  }
+  .shelf__grid--wide,
+  .shelf__grid--tall {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .shelf__grid--wide,
+  .shelf__grid--tall {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------- bread card */
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--duration-base) var(--easing-standard),
+    box-shadow var(--duration-base) var(--easing-standard);
+}
+.product-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.product-card__frame {
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.product-card__frame img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 5;
+  object-fit: cover;
+}
+.product-card--tall .product-card__frame img {
+  aspect-ratio: 8 / 3;
+}
+
+.product-card__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 0.55rem 0.4rem;
+}
+.product-card__name {
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+.product-card__price {
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------- footer */
+
+.site-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-block-start: 1rem;
+  padding: 1.5rem;
+  background: var(--surface-inverse);
+  color: var(--ink-onAction);
+}
+.site-footer .brand-lockup__name {
+  color: var(--ink-onAction);
+}
+.site-footer .brand-lockup__tagline {
+  color: var(--neutral-300);
+}
+.site-footer p {
+  color: var(--neutral-300);
+  font-size: 0.9rem;
+}

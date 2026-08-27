@@ -1,48 +1,162 @@
 /**
- * Design tokens for Alo Noon platform
- * Shared across web and mobile applications
- * Persian-first RTL design system foundation
+ * The Alo Noon design system.
+ *
+ * Every value here was read off the brand artwork rather than chosen: the
+ * oranges are sampled from the logo's own gradient, the browns from its
+ * wordmark, the papers from the interface it sits on. That matters because a
+ * palette invented alongside a logo drifts from it — the two look related for
+ * one screen and unrelated by the tenth.
+ *
+ * The identity is warm and printed, not digital: paper rather than white,
+ * brown ink rather than black, and one orange that means "act" and is spent
+ * nowhere else. Persian-first and right-to-left throughout, so type sizes are
+ * set for Vazirmatn's tall Arabic-script forms rather than for Latin.
+ *
+ * Shared by the web storefront, the admin panel and both mobile apps. There is
+ * no second copy of these numbers anywhere: the web emits them as CSS custom
+ * properties from this file (see `cssVariables`), and React Native reads them
+ * directly.
  */
 
+/**
+ * The logo's gradient, sampled along the arch from its top-left to its foot.
+ *
+ * Kept as its own scale rather than folded into `primary`, because the mark's
+ * tan-to-ember run belongs to the mark. Painting a button in it would make the
+ * logo one more decorated surface instead of the one thing on the page that is.
+ */
+export const brand = {
+  /** Where the arch begins: a wheat-fired clay. */
+  tan: '#C08452',
+  /** The turn from clay to fire. */
+  amber: '#E4761F',
+  /** The mark's own orange — the head, the steam, the app tile. */
+  ember: '#ED8732',
+  /** The foot of the arch, deepest point of the gradient. */
+  fired: '#DC652B',
+  /** The wordmark's ink. */
+  ink: '#261F17',
+} as const
+
 export const colors = {
-  // Primary palette - warm bread-inspired tones
+  /**
+   * The action colour.
+   *
+   * 500 is the mark's orange; 600 is the deeper one every button and price
+   * badge in the interface uses. They are deliberately close and deliberately
+   * distinct: the brand appears, the action commands.
+   */
   primary: {
-    50: '#FFF7ED',
-    100: '#FFEDD5',
-    200: '#FED7AA',
-    300: '#FDBA74',
-    400: '#FB923C',
-    500: '#F97316',
-    600: '#EA580C',
-    700: '#C2410C',
-    800: '#9A3412',
-    900: '#7C2D12',
-    950: '#431407',
+    50: '#FDF4EA',
+    100: '#FAE6D2',
+    200: '#F4CDA9',
+    300: '#EFAE79',
+    400: '#EE9A50',
+    500: '#ED8732',
+    600: '#E4520D',
+    700: '#C24309',
+    800: '#993507',
+    900: '#722705',
+    950: '#3A1608',
   },
-  // Neutral grays
+  /**
+   * Warm neutrals, tinted brown rather than grey.
+   *
+   * A grey next to this orange reads as dirty, and a pure white next to these
+   * papers reads as a hole in the page. 100 is the app's surface, 200 its
+   * hairlines, 600 its secondary text, 900 its ink — all sampled.
+   */
   neutral: {
-    50: '#FAFAFA',
-    100: '#F5F5F5',
-    200: '#E5E5E5',
-    300: '#D4D4D4',
-    400: '#A3A3A3',
-    500: '#737373',
-    600: '#525252',
-    700: '#404040',
-    800: '#262626',
-    900: '#171717',
-    950: '#0A0A0A',
+    50: '#FBF6EF',
+    100: '#F5EBDF',
+    200: '#EBDECD',
+    300: '#DCC9B0',
+    400: '#BFA98C',
+    500: '#9C8A72',
+    600: '#867765',
+    700: '#6B5C48',
+    800: '#4A3B2A',
+    900: '#261F17',
+    950: '#160F09',
   },
-  // Semantic colors
-  success: '#16A34A',
-  warning: '#CA8A04',
-  error: '#DC2626',
-  info: '#2563EB',
-  // Brand-specific
-  cream: '#FEF3E2',
-  wheat: '#D4A574',
+  /**
+   * Semantic colours, warmed to sit in this palette.
+   *
+   * The stock greens and reds of a default palette are cold enough beside these
+   * papers to look like they came from another product.
+   */
+  success: '#3F7D3A',
+  warning: '#B5820F',
+  error: '#C0392B',
+  info: '#3A6A8C',
+  // Named surfaces, kept for readability at the call site.
+  /** Raised cards, the top bar, the tab bar. */
+  cream: '#FBF3E8',
+  /** The application's own ground. */
+  paper: '#F5EBDF',
+  /** Behind the application, and every hairline drawn on it. */
+  sand: '#EBDECD',
+  wheat: '#C08452',
   crust: '#8B5A2B',
-  fresh: '#84CC16',
+  fresh: '#3F7D3A',
+} as const
+
+/**
+ * Surfaces and ink, named by role rather than by shade.
+ *
+ * A component asking for `surface.card` keeps working when the card colour is
+ * retuned; one asking for `neutral[50]` has to be found and edited.
+ */
+export const surface = {
+  /** Outside the app frame. */
+  page: colors.sand,
+  /** The app's own ground. */
+  base: colors.paper,
+  /** Cards, bars, anything lifted off the ground. */
+  card: colors.cream,
+  /** Inputs and quiet wells sunk into a card. */
+  sunken: '#F1E4D3',
+  /** Footers and any surface that carries light type. */
+  inverse: colors.neutral[900],
+} as const
+
+export const ink = {
+  /** Headlines and anything that must be read first. */
+  strong: colors.neutral[900],
+  /** Body copy. */
+  base: colors.neutral[800],
+  /** Captions, secondary lines, the second row of a card. */
+  muted: colors.neutral[600],
+  /** Placeholders, disabled text. */
+  faint: colors.neutral[500],
+  /** On the action colour and on inverse surfaces. */
+  onAction: '#FFF9F2',
+  /** Prices, links, anything that is itself the action. */
+  action: colors.primary[600],
+} as const
+
+export const line = {
+  /** Hairlines between rows and around cards. */
+  subtle: colors.sand,
+  /** Input borders and dividers that must be seen. */
+  base: colors.neutral[300],
+  /** A focused or selected edge. */
+  strong: colors.primary[600],
+} as const
+
+/**
+ * The mark's gradient, and the two washes the interface uses behind imagery.
+ *
+ * `brandArc` runs the way the logo does — top-left to bottom-right — so a
+ * surface painted with it and the mark on top read as one object.
+ */
+export const gradients = {
+  brandArc: `linear-gradient(155deg, ${brand.tan} 0%, ${brand.amber} 55%, ${brand.fired} 100%)`,
+  action: `linear-gradient(180deg, ${colors.primary[600]} 0%, ${colors.primary[700]} 100%)`,
+  /** Fades a photograph into the page so it has no visible edge. */
+  heroVeil: `linear-gradient(90deg, ${colors.paper} 12%, rgba(245,235,223,0.72) 42%, rgba(245,235,223,0) 78%)`,
+  /** Same idea, downward, for a photograph above stacked content on a phone. */
+  heroVeilVertical: `linear-gradient(180deg, rgba(245,235,223,0) 30%, rgba(245,235,223,0.86) 72%, ${colors.paper} 100%)`,
 } as const
 
 export const spacing = {
@@ -64,7 +178,14 @@ export const spacing = {
 } as const
 
 export const typography = {
-  // Persian/RTL-optimized font stack
+  /**
+   * Vazirmatn, self-hosted.
+   *
+   * Not loaded from a font CDN: this is a service for Iranian customers, and a
+   * font that fails to arrive leaves the whole interface in a fallback that was
+   * never designed for. The Arabic subset is what ships; Latin falls back,
+   * which is what the fallback stack is for.
+   */
   fontFamily: {
     body: ['Vazirmatn', 'Tahoma', 'Arial', 'sans-serif'],
     heading: ['Vazirmatn', 'Tahoma', 'Arial', 'sans-serif'],
@@ -87,29 +208,51 @@ export const typography = {
     medium: '500',
     semibold: '600',
     bold: '700',
+    /** The headline weight. Vazirmatn's 800 is what the artwork sets. */
+    black: '800',
   },
+  /**
+   * Persian script sits taller than Latin and its descenders are longer, so
+   * every line height here is looser than a Latin-first scale would set.
+   */
   lineHeight: {
-    tight: '1.25',
-    normal: '1.5',
-    relaxed: '1.75',
+    tight: '1.35',
+    normal: '1.7',
+    relaxed: '2',
   },
 } as const
 
+/**
+ * Corner radii.
+ *
+ * Generous, and matched to the artwork: cards are `lg`, the pills in the top
+ * bar and the CTA are `full` or `md`, and the app frame itself is `3xl`. Sharp
+ * corners would fight a logo built entirely from arcs.
+ */
 export const borderRadius = {
   none: '0',
-  sm: '0.25rem',
-  md: '0.375rem',
-  lg: '0.5rem',
-  xl: '0.75rem',
-  '2xl': '1rem',
+  sm: '0.375rem',
+  md: '0.625rem',
+  lg: '0.875rem',
+  xl: '1.125rem',
+  '2xl': '1.5rem',
+  '3xl': '2rem',
   full: '9999px',
 } as const
 
+/**
+ * Shadows tinted with the ink colour rather than black.
+ *
+ * A black shadow over warm paper turns grey and reads as grime; the same shadow
+ * in brown reads as depth.
+ */
 export const shadows = {
-  sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
-  md: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-  lg: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-  xl: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+  sm: '0 1px 2px 0 rgb(38 31 23 / 0.05)',
+  md: '0 4px 10px -3px rgb(38 31 23 / 0.10)',
+  lg: '0 12px 26px -12px rgb(38 31 23 / 0.18)',
+  xl: '0 24px 48px -20px rgb(38 31 23 / 0.24)',
+  /** For the action colour, so a button glows rather than casts. */
+  action: '0 10px 22px -10px rgb(228 82 13 / 0.55)',
 } as const
 
 export const breakpoints = {
@@ -130,6 +273,20 @@ export const zIndex = {
   tooltip: '1500',
 } as const
 
+/**
+ * How things move.
+ *
+ * One duration and one curve for nearly everything, because an interface where
+ * each component eases differently feels assembled rather than made.
+ */
+export const motion = {
+  duration: { fast: '120ms', base: '200ms', slow: '320ms' },
+  easing: {
+    standard: 'cubic-bezier(0.2, 0, 0, 1)',
+    exit: 'cubic-bezier(0.4, 0, 1, 1)',
+  },
+} as const
+
 // RTL-specific utilities
 export const rtl = {
   direction: 'rtl',
@@ -137,15 +294,61 @@ export const rtl = {
   logicalPropertyOrder: true, // Use logical properties (margin-inline-start vs margin-left)
 } as const
 
+/** Where the brand artwork lives, for anything that renders the mark. */
+export const brandAssets = {
+  lockup: '/brand/logo-lockup.png',
+  mark: '/brand/logo-mark.png',
+  markLight: '/brand/logo-mark-light.png',
+  appIcon: '/brand/app-icon.png',
+} as const
+
+/**
+ * The tokens as CSS custom properties.
+ *
+ * Generated rather than written out in a stylesheet, so the web cannot drift
+ * from the mobile apps: both read the constants above, and this is the only
+ * bridge between them.
+ */
+export function cssVariables(): string {
+  const entries: string[] = []
+  const push = (name: string, value: string) => entries.push(`  --${name}: ${value};`)
+
+  for (const [step, value] of Object.entries(colors.primary)) push(`primary-${step}`, value)
+  for (const [step, value] of Object.entries(colors.neutral)) push(`neutral-${step}`, value)
+  for (const [name, value] of Object.entries(brand)) push(`brand-${name}`, value)
+  for (const [name, value] of Object.entries(surface)) push(`surface-${name}`, value)
+  for (const [name, value] of Object.entries(ink)) push(`ink-${name}`, value)
+  for (const [name, value] of Object.entries(line)) push(`line-${name}`, value)
+  for (const [name, value] of Object.entries(gradients)) push(`gradient-${name}`, value)
+  for (const [name, value] of Object.entries(borderRadius)) push(`radius-${name}`, value)
+  for (const [name, value] of Object.entries(shadows)) push(`shadow-${name}`, value)
+  for (const [name, value] of Object.entries(motion.duration)) push(`duration-${name}`, value)
+  for (const [name, value] of Object.entries(motion.easing)) push(`easing-${name}`, value)
+  push('success', colors.success)
+  push('warning', colors.warning)
+  push('error', colors.error)
+  push('info', colors.info)
+  push('font-body', typography.fontFamily.body.join(', '))
+
+  return `:root {\n${entries.join('\n')}\n}`
+}
+
 export const config = {
+  brand,
   colors,
+  surface,
+  ink,
+  line,
+  gradients,
   spacing,
   typography,
   borderRadius,
   shadows,
   breakpoints,
   zIndex,
+  motion,
   rtl,
+  brandAssets,
 } as const
 
 export type DesignTokens = typeof config

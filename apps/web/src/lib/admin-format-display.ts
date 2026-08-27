@@ -6,31 +6,13 @@
  * total in Rial can exceed the float-safe range, and a dashboard that rounds
  * revenue is worse than one that shows nothing.
  */
+import { groupDigits, toPersianDigits } from './persian'
+
+export { groupDigits, toPersianDigits }
+
 export interface DisplayMoney {
   amount: string
   currency: string
-}
-
-const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
-
-function toPersianDigits(value: string): string {
-  return value.replace(/\d/g, (digit) => PERSIAN_DIGITS[Number(digit)]!)
-}
-
-/**
- * Groups an arbitrarily long digit string in threes, right to left.
- *
- * Stays in Latin digits throughout; every caller converts afterwards, so a
- * Persian digit returned from here would slip past that conversion untouched.
- */
-export function groupDigits(digits: string): string {
-  const normalized = digits.replace(/^0+(?=\d)/, '')
-  let grouped = ''
-  for (let index = normalized.length; index > 0; index -= 3) {
-    const start = Math.max(0, index - 3)
-    grouped = normalized.slice(start, index) + (grouped ? '٬' + grouped : '')
-  }
-  return grouped || '0'
 }
 
 export function formatMoney(money: DisplayMoney | undefined): string {
