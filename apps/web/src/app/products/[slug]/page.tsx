@@ -20,7 +20,7 @@ import { ChevronIcon, ClockIcon, OvenIcon, ShieldIcon, WheatIcon } from '../../c
 import { isFresh, productImage, toShelfProduct } from '../../../lib/catalog-view'
 import { minutes } from '../../../lib/duration'
 import { formatToman } from '../../../lib/persian'
-import { loadProduct } from '../../../lib/storefront-data'
+import { loadProduct, loadServerBasket } from '../../../lib/storefront-data'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,14 +52,19 @@ export async function generateMetadata({
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const data = await loadProduct(slug)
+  const [data, basket] = await Promise.all([loadProduct(slug), loadServerBasket()])
 
   // A bread nobody here sells is genuinely not a page. Rendering our own
   // "not found" body with a 200 would tell a search engine this URL is real.
   if (data.state === 'missing') notFound()
 
   return (
-    <StorefrontProvider products={data.state === 'ready' ? [toShelfProduct(data.product)] : []}>
+    <StorefrontProvider
+      products={data.state === 'ready' ? [toShelfProduct(data.product, data.city.id)] : []}
+      signedIn={basket.signedIn}
+      serverLines={basket.lines}
+      {...(basket.version !== undefined && { serverVersion: basket.version })}
+    >
       <div className="app-frame">
         <SiteHeader />
         <main className="product-page">

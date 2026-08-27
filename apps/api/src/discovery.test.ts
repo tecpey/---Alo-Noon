@@ -50,6 +50,7 @@ const product: ProductSummary = {
   freshnessClaim: 'FRESHLY_PRODUCED',
   price: { amount: '250000', currency: 'IRR' },
   bakeryBranchId: branchId,
+  operationalZoneId: zoneId,
   lifecycle: 'ACTIVE',
 }
 

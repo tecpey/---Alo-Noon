@@ -18,6 +18,14 @@ export interface ShelfProduct {
    * prices, and a basket line has to mean one of them.
    */
   readonly offeringId: string
+  /**
+   * The branch context this offering belongs to.
+   *
+   * Carried on every line because writing to the cart means naming both, and
+   * the server refuses the write unless they match the offering's own branch.
+   */
+  readonly cityId: string
+  readonly operationalZoneId: string
   /** The public address of the bread, for the product page. */
   readonly slug: string
   readonly nameFa: string
@@ -94,9 +102,17 @@ export function productImage(product: Pick<ProductSummary, 'slug' | 'mediaRef'>)
   return FALLBACK_IMAGES[product.slug] ?? null
 }
 
-export function toShelfProduct(product: ProductSummary): ShelfProduct {
+/**
+ * `cityId` is passed in rather than read off the product because the catalog is
+ * queried by city and the API only returns offerings whose branch is in it —
+ * so the value is already known, and a second copy on the wire could only ever
+ * disagree with the query that produced it.
+ */
+export function toShelfProduct(product: ProductSummary, cityId: string): ShelfProduct {
   return {
     offeringId: product.offeringId,
+    cityId,
+    operationalZoneId: product.operationalZoneId,
     slug: product.slug,
     nameFa: product.nameFa,
     categoryCode: product.categoryCode,
@@ -115,11 +131,11 @@ export function toShelfProduct(product: ProductSummary): ShelfProduct {
  * entirely when it has nothing on it, so a shop selling only packaged bread
  * does not show an empty "پخت‌های ویژه".
  */
-export function buildCatalogView(products: readonly ProductSummary[]): CatalogView {
+export function buildCatalogView(products: readonly ProductSummary[], cityId: string): CatalogView {
   const fresh: ShelfProduct[] = []
   const packaged: ShelfProduct[] = []
   for (const product of products) {
-    ;(isFresh(product) ? fresh : packaged).push(toShelfProduct(product))
+    ;(isFresh(product) ? fresh : packaged).push(toShelfProduct(product, cityId))
   }
 
   const shelves: CatalogShelf[] = []

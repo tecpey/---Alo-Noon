@@ -4,6 +4,8 @@ import type { ProductSummary } from '@alo-noon/contracts'
 
 import { ALL_CATEGORIES, buildCatalogView, productImage, toShelfProduct } from './catalog-view'
 
+const CITY = '99999999-9999-4999-8999-999999999999'
+
 let counter = 0
 function product(overrides: Partial<ProductSummary> = {}): ProductSummary {
   counter += 1
@@ -17,6 +19,7 @@ function product(overrides: Partial<ProductSummary> = {}): ProductSummary {
     nameFa: 'نان',
     categoryCode: 'BARBARI',
     categoryNameFa: 'بربری',
+    operationalZoneId: '44444444-4444-4444-8444-444444444444',
     fulfillmentClass: 'PACKAGED_TRADITIONAL',
     freshnessClaim: 'PACKAGED',
     price: { amount: '60000', currency: 'IRR' },
@@ -27,14 +30,17 @@ function product(overrides: Partial<ProductSummary> = {}): ProductSummary {
 
 describe('buildCatalogView', () => {
   it('puts fresh bakes on the first shelf and packaged bread on the second', () => {
-    const view = buildCatalogView([
-      product({ slug: 'lavash' }),
-      product({
-        slug: 'komaj',
-        fulfillmentClass: 'SIGNATURE_FRESH',
-        freshnessClaim: 'FRESHLY_PRODUCED',
-      }),
-    ])
+    const view = buildCatalogView(
+      [
+        product({ slug: 'lavash' }),
+        product({
+          slug: 'komaj',
+          fulfillmentClass: 'SIGNATURE_FRESH',
+          freshnessClaim: 'FRESHLY_PRODUCED',
+        }),
+      ],
+      CITY,
+    )
 
     expect(view.shelves.map((shelf) => shelf.id)).toEqual(['special', 'everyday'])
     expect(view.shelves[0]?.products.map((entry) => entry.slug)).toEqual(['komaj'])
@@ -46,20 +52,23 @@ describe('buildCatalogView', () => {
    * shelf with nothing on it.
    */
   it('drops a shelf that has nothing on it', () => {
-    const view = buildCatalogView([product(), product()])
+    const view = buildCatalogView([product(), product()], CITY)
     expect(view.shelves.map((shelf) => shelf.id)).toEqual(['everyday'])
   })
 
   it('has no shelves at all for an empty catalog', () => {
-    expect(buildCatalogView([]).shelves).toEqual([])
+    expect(buildCatalogView([], CITY).shelves).toEqual([])
   })
 
   it('derives one chip per category actually on sale, "همه" first', () => {
-    const view = buildCatalogView([
-      product({ categoryCode: 'LAVASH', categoryNameFa: 'لواش' }),
-      product({ categoryCode: 'BARBARI', categoryNameFa: 'بربری' }),
-      product({ categoryCode: 'BARBARI', categoryNameFa: 'بربری' }),
-    ])
+    const view = buildCatalogView(
+      [
+        product({ categoryCode: 'LAVASH', categoryNameFa: 'لواش' }),
+        product({ categoryCode: 'BARBARI', categoryNameFa: 'بربری' }),
+        product({ categoryCode: 'BARBARI', categoryNameFa: 'بربری' }),
+      ],
+      CITY,
+    )
 
     expect(view.chips).toEqual([
       { code: ALL_CATEGORIES, labelFa: 'همه' },
@@ -71,21 +80,24 @@ describe('buildCatalogView', () => {
   it('introduces categories in the order the shelves reach them', () => {
     // The packaged bread is listed first, but the fresh shelf renders above it,
     // so its category has to be the first chip.
-    const view = buildCatalogView([
-      product({ categoryCode: 'LAVASH', categoryNameFa: 'لواش' }),
-      product({
-        categoryCode: 'SWEET',
-        categoryNameFa: 'شیرینی',
-        fulfillmentClass: 'SIGNATURE_FRESH',
-        freshnessClaim: 'FRESHLY_PRODUCED',
-      }),
-    ])
+    const view = buildCatalogView(
+      [
+        product({ categoryCode: 'LAVASH', categoryNameFa: 'لواش' }),
+        product({
+          categoryCode: 'SWEET',
+          categoryNameFa: 'شیرینی',
+          fulfillmentClass: 'SIGNATURE_FRESH',
+          freshnessClaim: 'FRESHLY_PRODUCED',
+        }),
+      ],
+      CITY,
+    )
 
     expect(view.chips.map((chip) => chip.code)).toEqual([ALL_CATEGORIES, 'SWEET', 'LAVASH'])
   })
 
   it('draws no rail when everything is in one category', () => {
-    const view = buildCatalogView([product(), product()])
+    const view = buildCatalogView([product(), product()], CITY)
     expect(view.chips).toEqual([])
   })
 })
@@ -119,11 +131,11 @@ describe('productImage', () => {
 describe('toShelfProduct', () => {
   it('keys the basket line on the offering, not the product', () => {
     const summary = product({ slug: 'sangak' })
-    expect(toShelfProduct(summary).offeringId).toBe(summary.offeringId)
+    expect(toShelfProduct(summary, CITY).offeringId).toBe(summary.offeringId)
   })
 
   it('carries the price through as the ledger holds it', () => {
-    const shelf = toShelfProduct(product({ price: { amount: '280000', currency: 'IRR' } }))
+    const shelf = toShelfProduct(product({ price: { amount: '280000', currency: 'IRR' } }), CITY)
     // Rial, undivided. A Toman value here would be a tenth of the real price.
     expect(shelf.priceRial).toBe('280000')
     expect(shelf.priceRial).toMatch(/^\d+$/)
@@ -133,8 +145,9 @@ describe('toShelfProduct', () => {
     expect(
       toShelfProduct(
         product({ fulfillmentClass: 'SIGNATURE_FRESH', freshnessClaim: 'FRESHLY_PRODUCED' }),
+        CITY,
       ).fresh,
     ).toBe(true)
-    expect(toShelfProduct(product()).fresh).toBe(false)
+    expect(toShelfProduct(product(), CITY).fresh).toBe(false)
   })
 })

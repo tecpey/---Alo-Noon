@@ -6,12 +6,17 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
+import type { CartSummary } from '@alo-noon/contracts'
+
 import type { ActionState } from './action-state'
-import { authPost, sessionTokenFromSetCookie, SESSION_COOKIE } from './api-core'
+import { authPost, isUnauthenticated, sessionTokenFromSetCookie, SESSION_COOKIE } from './api-core'
 import { translateProviderError } from './admin-format'
+import { linesFromCart, mergePlan, type BasketLine } from './basket-lines'
+import { toPersianDigits } from './persian'
 import { CITY_COOKIE, ZONE_COOKIE } from './shop-cookies'
 import { normalizeMobile, normalizeOtpCode } from './shop-format'
-import { removeCartItem, revokeShopSession, setCartItem } from './shop-api'
+import { readCart, removeCartItem, revokeShopSession, setCartItem } from './shop-api'
+import { offeringContexts } from './storefront-data'
 
 /**
  * The customer's side of the shop, as Server Actions.
@@ -133,56 +138,122 @@ export async function selectCityAction(form: FormData): Promise<void> {
 
 /* --------------------------------------------------------------- basket */
 
-/**
- * Adds one of something to the cart.
- *
- * The quantity is read from the cart rather than sent blind, because the API's
- * write is a `PUT` of an absolute quantity and two taps in quick succession
- * would otherwise both write "1".
- */
-export async function addToCartAction(form: FormData): Promise<void> {
-  const offeringId = field(form, 'offeringId')
-  const cityId = field(form, 'cityId')
-  const operationalZoneId = field(form, 'operationalZoneId')
-  const quantity = Number(field(form, 'quantity') || '1')
-  const rawVersion = field(form, 'expectedCartVersion')
-  const expectedCartVersion = rawVersion ? Number(rawVersion) : undefined
-
-  await setCartItem(offeringId, {
-    cityId,
-    operationalZoneId,
-    quantity: Math.max(1, Math.min(100, quantity)),
-    ...(expectedCartVersion !== undefined &&
-      Number.isFinite(expectedCartVersion) && { expectedCartVersion }),
-  })
-  revalidatePath('/')
+export interface BasketResult {
+  /** Null when nobody is signed in: the basket stays in the browser. */
+  cart: CartSummary | null
+  /** Persian text for what went wrong, or null when nothing did. */
+  error: string | null
 }
 
-export async function removeFromCartAction(form: FormData): Promise<void> {
-  const offeringId = field(form, 'offeringId')
-  const rawVersion = field(form, 'expectedCartVersion')
-  const quantity = Number(field(form, 'quantity') || '0')
-  const cityId = field(form, 'cityId')
-  const operationalZoneId = field(form, 'operationalZoneId')
-  const expectedCartVersion = rawVersion ? Number(rawVersion) : undefined
+/**
+ * The signed-in customer's cart, or nothing.
+ *
+ * A missing session is not an error here. Most people looking at a bread shop
+ * are not signed in, and the basket they are building lives in their browser
+ * until they are.
+ */
+export async function readBasketAction(): Promise<BasketResult> {
+  const result = await readCart()
+  if (result.ok) return { cart: result.data, error: null }
+  if (isUnauthenticated(result.error)) return { cart: null, error: null }
+  return { cart: null, error: translateProviderError(result.error.code, 'سبد خرید خوانده نشد.') }
+}
 
-  // One fewer, or gone entirely at one. A decrement that deleted the line would
-  // lose a customer's other four loaves the first time they tapped minus.
-  if (quantity > 1) {
-    await setCartItem(offeringId, {
-      cityId,
-      operationalZoneId,
-      quantity: quantity - 1,
-      ...(expectedCartVersion !== undefined &&
-        Number.isFinite(expectedCartVersion) && { expectedCartVersion }),
-    })
-  } else {
-    await removeCartItem(
-      offeringId,
-      expectedCartVersion !== undefined && Number.isFinite(expectedCartVersion)
-        ? expectedCartVersion
-        : undefined,
-    )
+/**
+ * Sets the quantity of one bread to an exact number.
+ *
+ * The API's write is a `PUT` of an absolute quantity rather than a delta, which
+ * is what makes a double-tapped button safe: two identical writes leave two
+ * loaves in the basket, where two increments would leave four.
+ *
+ * `expectedCartVersion` is passed straight through. When the server rejects it,
+ * somebody else — another tab, the phone app — moved the cart first, and the
+ * caller is told to re-read rather than having its stale number forced through.
+ */
+export async function setBasketQuantityAction(input: {
+  offeringId: string
+  cityId: string
+  operationalZoneId: string
+  quantity: number
+  expectedCartVersion?: number
+}): Promise<BasketResult> {
+  const quantity = Math.trunc(input.quantity)
+  const result =
+    quantity <= 0
+      ? await removeCartItem(input.offeringId, input.expectedCartVersion)
+      : await setCartItem(input.offeringId, {
+          cityId: input.cityId,
+          operationalZoneId: input.operationalZoneId,
+          quantity: Math.min(100, quantity),
+          ...(input.expectedCartVersion !== undefined && {
+            expectedCartVersion: input.expectedCartVersion,
+          }),
+        })
+
+  if (result.ok) {
+    // The header's basket count and the shelves are rendered on the server, so
+    // a write that did not revalidate would leave the page disagreeing with the
+    // cart it just changed.
+    revalidatePath('/')
+    return { cart: result.data, error: null }
   }
+  if (isUnauthenticated(result.error)) return { cart: null, error: null }
+  return { cart: null, error: translateProviderError(result.error.code, 'سبد خرید به‌روز نشد.') }
+}
+
+/**
+ * Carries a browser basket onto the server cart after signing in.
+ *
+ * Lines are written one at a time because the API has no bulk write, and the
+ * cart's version moves on every one of them — so each write uses the version
+ * the previous write returned rather than the one this function started with.
+ * Sending a stale version would make the second loaf fail on a cart the first
+ * loaf had just changed.
+ *
+ * A line the server refuses does not abort the rest. The usual reason is that
+ * one bread stopped being available while the basket sat in a browser, and
+ * losing the other four because of it would be a worse answer than saying so.
+ */
+export async function mergeBasketAction(lines: readonly BasketLine[]): Promise<BasketResult> {
+  const current = await readCart()
+  if (!current.ok) {
+    if (isUnauthenticated(current.error)) return { cart: null, error: null }
+    return { cart: null, error: translateProviderError(current.error.code, 'سبد خرید خوانده نشد.') }
+  }
+
+  const plan = mergePlan(
+    new Map(lines.map((line) => [line.offeringId, line.quantity])),
+    linesFromCart(current.data),
+  )
+  if (plan.length === 0) return { cart: current.data, error: null }
+
+  const contexts = await offeringContexts()
+
+  let cart = current.data
+  let refused = 0
+  for (const line of plan) {
+    const context = contexts.get(line.offeringId)
+    // Not on sale in this city any more. Nothing to write, and nothing the
+    // customer can do about it — it is counted and reported, not retried.
+    if (!context) {
+      refused += 1
+      continue
+    }
+    const result = await setCartItem(line.offeringId, {
+      ...context,
+      quantity: line.quantity,
+      ...(cart && { expectedCartVersion: cart.version }),
+    })
+    if (result.ok) cart = result.data
+    else refused += 1
+  }
+
   revalidatePath('/')
+  return {
+    cart,
+    error:
+      refused > 0
+        ? `${toPersianDigits(String(refused))} مورد از سبد شما دیگر موجود نیست و منتقل نشد.`
+        : null,
+  }
 }

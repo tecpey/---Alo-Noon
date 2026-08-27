@@ -2,12 +2,11 @@ import 'server-only'
 
 import { cookies } from 'next/headers'
 
-import type { ActiveCitySummary } from '@alo-noon/contracts'
+import type { ActiveCitySummary, ProductDetail } from '@alo-noon/contracts'
 
-import type { ProductDetail } from '@alo-noon/contracts'
-
+import { linesFromCart } from './basket-lines'
 import { buildCatalogView, type CatalogView } from './catalog-view'
-import { listCities, listProducts, readProduct } from './shop-api'
+import { listCities, listProducts, readCart, readProduct } from './shop-api'
 import { CITY_COOKIE, ZONE_COOKIE } from './shop-cookies'
 
 /**
@@ -19,6 +18,28 @@ import { CITY_COOKIE, ZONE_COOKIE } from './shop-cookies'
  * hands the page a single value it can render without asking any more
  * questions.
  */
+
+/**
+ * The signed-in customer's basket as the page needs it: the lines to render and
+ * the version any write must quote back. Null all the way down when nobody is
+ * signed in, which is the ordinary case rather than a fault.
+ */
+export interface ServerBasket {
+  readonly signedIn: boolean
+  readonly lines: readonly (readonly [string, number])[]
+  readonly version?: number
+}
+
+export async function loadServerBasket(): Promise<ServerBasket> {
+  const result = await readCart()
+  if (!result.ok) return { signedIn: false, lines: [] }
+  const cart = result.data
+  return {
+    signedIn: true,
+    lines: [...linesFromCart(cart)],
+    ...(cart && { version: cart.version }),
+  }
+}
 
 export type StorefrontData =
   | { readonly state: 'ready'; readonly city: ActiveCitySummary; readonly catalog: CatalogView }
@@ -69,7 +90,41 @@ export async function loadStorefront(): Promise<StorefrontData> {
   )
   if (!products.ok) return { state: 'unavailable', message: products.error.message }
 
-  return { state: 'ready', city: choice.city, catalog: buildCatalogView(products.data) }
+  return {
+    state: 'ready',
+    city: choice.city,
+    catalog: buildCatalogView(products.data, choice.city.id),
+  }
+}
+
+/**
+ * Which branch context each offering on sale right now belongs to.
+ *
+ * Writing to the cart means naming a city and a zone that match the offering's
+ * own branch, and a basket carried in from a browser holds only offering ids.
+ * Resolving them against the live catalog rather than against anything stored
+ * alongside them means a bread that has since been withdrawn simply is not in
+ * the map, and is left behind instead of being written into a cart it can no
+ * longer belong to.
+ */
+export async function offeringContexts(): Promise<
+  ReadonlyMap<string, { cityId: string; operationalZoneId: string }>
+> {
+  const choice = await resolveCity()
+  if (choice.state !== 'ready') return new Map()
+
+  const products = await listProducts(
+    choice.city.id,
+    choice.zoneId ? { operationalZoneId: choice.zoneId } : {},
+  )
+  if (!products.ok) return new Map()
+
+  return new Map(
+    products.data.map((product) => [
+      product.offeringId,
+      { cityId: choice.city.id, operationalZoneId: product.operationalZoneId },
+    ]),
+  )
 }
 
 export type ProductPageData =

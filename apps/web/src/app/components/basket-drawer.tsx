@@ -26,7 +26,7 @@ import { formatToman, sumRial, toPersianDigits } from '../../lib/persian'
  * the control that opened it.
  */
 export function BasketDrawer() {
-  const { lines, catalog, add, remove, drawerOpen, closeDrawer } = useStorefront()
+  const { lines, catalog, add, remove, saving, error, drawerOpen, closeDrawer } = useStorefront()
   const panel = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -67,10 +67,11 @@ export function BasketDrawer() {
       />
 
       <div
-        className="drawer__panel"
+        className={`drawer__panel${saving ? ' is-saving' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label="سبد خرید"
+        aria-busy={saving}
         tabIndex={-1}
         ref={panel}
       >
@@ -134,6 +135,17 @@ export function BasketDrawer() {
             </ul>
 
             <footer className="drawer__foot">
+              {/*
+                A refused write is said out loud. The quantity on screen has
+                already been replaced by whatever the server actually stored, so
+                without this the number would simply spring back with no
+                explanation — the single most alarming thing a basket can do.
+              */}
+              {error && (
+                <p className="drawer__error" role="status">
+                  {error}
+                </p>
+              )}
               <div className="drawer__total">
                 <span>جمع نان‌ها</span>
                 <strong>{formatToman(subtotal)}</strong>

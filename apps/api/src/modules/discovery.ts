@@ -167,6 +167,7 @@ function toProductSummary(offering: OfferingRow): ProductSummary {
       currency: offering.priceCurrency,
     },
     bakeryBranchId: offering.bakeryBranchId,
+    operationalZoneId: offering.bakeryBranch.operationalZoneId,
     ...(offering.productVariant.product.mediaRef && {
       mediaRef: offering.productVariant.product.mediaRef,
     }),

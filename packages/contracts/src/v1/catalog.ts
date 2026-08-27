@@ -41,6 +41,15 @@ export const productSummarySchema = z.object({
   freshnessClaim: freshnessClaimSchema,
   price: moneySchema,
   bakeryBranchId: uuidSchema.optional(),
+  /**
+   * The zone the offering's branch operates in.
+   *
+   * Writing this bread into a cart requires naming a city and a zone, and the
+   * server rejects the write unless both match the offering's own branch. One
+   * city can hold several zones, so the client cannot infer it — without this
+   * field it would be guessing at a value it is about to be judged on.
+   */
+  operationalZoneId: uuidSchema,
   mediaRef: z.string().max(500).optional(),
   lifecycle: productLifecycleSchema,
 })

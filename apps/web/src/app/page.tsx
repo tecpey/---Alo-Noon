@@ -25,7 +25,7 @@ import {
   WheatIcon,
 } from './components/icons'
 import { toPersianDigits } from '../lib/persian'
-import { loadStorefront, type StorefrontData } from '../lib/storefront-data'
+import { loadServerBasket, loadStorefront, type StorefrontData } from '../lib/storefront-data'
 import {
   foundationStatus,
   heroCopy,
@@ -89,14 +89,21 @@ function ConditionField({ condition, value }: { condition: OrderCondition; value
  * glass, because there is nothing behind it to see through.
  */
 export default async function HomePage() {
-  const storefront = await loadStorefront()
+  // Both in one round trip: the catalog decides what may be shown, the basket
+  // decides what is already chosen, and neither depends on the other.
+  const [storefront, basket] = await Promise.all([loadStorefront(), loadServerBasket()])
   const products =
     storefront.state === 'ready'
       ? storefront.catalog.shelves.flatMap((shelf) => shelf.products)
       : []
 
   return (
-    <StorefrontProvider products={products}>
+    <StorefrontProvider
+      products={products}
+      signedIn={basket.signedIn}
+      serverLines={basket.lines}
+      {...(basket.version !== undefined && { serverVersion: basket.version })}
+    >
       <div className="app-frame">
         <SiteHeader />
 
