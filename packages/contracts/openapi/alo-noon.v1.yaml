@@ -270,6 +270,25 @@ paths:
           description: Cart or item was not found.
         '409':
           description: Expected cart version is stale.
+  /api/v1/cart/delivery-windows:
+    get:
+      operationId: listDeliveryWindows
+      summary: The delivery windows the caller's own basket can be booked into.
+      description: >-
+        Derived from the branch the caller's cart is already against, so there is
+        nothing to name and nothing to authorise beyond the session. Enumerating
+        windows writes nothing: browsing times costs a schedule lookup, not a row.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Bookable windows, soonest first. Empty when the branch has no hours recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryWindowListEnvelope' }
+        '401':
+          description: A valid customer session is required.
   /api/v1/cart/quote:
     post:
       operationId: createCartQuote
@@ -1538,6 +1557,40 @@ components:
         deliveryAddressId: { type: string, format: uuid }
         expectedCartVersion: { type: integer, minimum: 1 }
         idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+        promotionCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: >-
+            A discount code as the customer typed it. A refused code does not fail
+            the quote — the quote returns undiscounted and says why in
+            promotionRefusal.
+        deliveryWindowStartsAt:
+          type: string
+          format: date-time
+          description: >-
+            The chosen delivery window, named by the instant it starts. Optional;
+            omitting it means "as soon as the branch can". Re-derived from the
+            branch's own schedule on the server, so a window nobody offered is
+            refused.
+    DeliveryWindow:
+      type: object
+      required: [serviceDate, startsAt, endsAt, remaining, available]
+      properties:
+        serviceDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        remaining: { type: integer, minimum: 0 }
+        available: { type: boolean }
+    DeliveryWindowListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/DeliveryWindow' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     CommerceItemSnapshot:
       type: object
       required:
@@ -1640,6 +1693,20 @@ components:
         subtotal: { $ref: '#/components/schemas/Money' }
         deliveryFee: { $ref: '#/components/schemas/Money' }
         discount: { $ref: '#/components/schemas/Money' }
+        promotion:
+          type: object
+          required: [nameFa, basis]
+          properties:
+            nameFa: { type: string }
+            basis: { type: string, enum: [SUBTOTAL, DELIVERY_FEE] }
+        promotionRefusal: { type: string, minLength: 1, maxLength: 64 }
+        deliveryWindow:
+          type: object
+          required: [startsAt, endsAt]
+          properties:
+            startsAt: { type: string, format: date-time }
+            endsAt: { type: string, format: date-time }
+        deliveryWindowRefusal: { type: string, minLength: 1, maxLength: 64 }
         total: { $ref: '#/components/schemas/Money' }
         items:
           type: array

@@ -4,6 +4,7 @@ import type {
   ActiveCitySummary,
   AddressSummary,
   CartSummary,
+  DeliveryWindow,
   OrderSummary,
   PaymentExecutionSummary,
   PaymentSummary,
@@ -212,8 +213,20 @@ export async function createQuote(input: {
   idempotencyKey: string
   /** A discount code, as typed. A bad one does not fail the quote. */
   promotionCode?: string
+  /** The chosen delivery window, named by the instant it starts. */
+  deliveryWindowStartsAt?: string
 }): Promise<ApiResult<QuoteSummary>> {
   return request<QuoteSummary>('/api/v1/cart/quote', { method: 'POST', body: input })
+}
+
+/**
+ * When the bakery can bring it.
+ *
+ * Derived on the server from the basket's own branch, so there is nothing to
+ * pass and nothing a caller could point at the wrong bakery.
+ */
+export async function listDeliveryWindows(): Promise<ApiResult<DeliveryWindow[]>> {
+  return request<DeliveryWindow[]>('/api/v1/cart/delivery-windows', { method: 'GET' })
 }
 
 export async function placeOrder(input: {

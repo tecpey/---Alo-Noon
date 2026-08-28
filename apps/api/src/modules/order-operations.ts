@@ -14,6 +14,7 @@ import {
 
 import { holdsPermissionInTransaction } from './admin-auth.js'
 import { cancelDeliveryForOrder, openDeliveryForOrder } from './delivery.js'
+import { releaseDeliveryWindow } from './delivery-windows.js'
 import type { PaymentLedgerService } from './payment-ledger.js'
 
 /**
@@ -212,6 +213,13 @@ export function createPrismaOrderOperationsService(
         }
         if (step.to === OrderState.CANCELLED) {
           await cancelDeliveryForOrder(transaction, tenantId, order.id, now)
+          // The place in the window goes back on the shelf. A scheduled window
+          // holds twenty orders, not two hundred, so a cancellation that kept
+          // its place would take a morning's capacity out of circulation for a
+          // customer who is no longer coming.
+          if (order.deliveryWindowId) {
+            await releaseDeliveryWindow(transaction, tenantId, order.deliveryWindowId, now)
+          }
         }
         await recordOrderChange(transaction, tenantId, actor, {
           action: `order.${to.toLowerCase()}`,
@@ -358,6 +366,7 @@ async function lockOrder(
   productionState: string
   bakeryBranchId: string
   requestedDeliveryAt: Date | null
+  deliveryWindowId: string | null
 }> {
   await transaction.$queryRaw`
     SELECT "id" FROM "Order"
@@ -379,6 +388,8 @@ async function lockOrder(
       // collects from, and when the customer asked for it.
       bakeryBranchId: true,
       requestedDeliveryAt: true,
+      // Only used when a cancellation gives the window's place back.
+      deliveryWindowId: true,
     },
   })
   if (!order) throw new OrderOperationsError('ORDER_NOT_FOUND', 404)

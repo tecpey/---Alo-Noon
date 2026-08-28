@@ -967,8 +967,22 @@ model BakeryBranch {
   qualityStatus      QualityStatus           @default(PENDING_REVIEW)
   suspendedUntil     DateTime?
   suspensionReason   String?
+  /// How the branch cuts its opening hours into bookable delivery windows.
+  /// Held on the branch rather than globally because a bakery that bakes every
+  /// two hours and one that bakes twice a day cannot promise the same thing.
+  deliveryWindowMinutes     Int @default(120)
+  /// How long before a window opens the branch stops taking orders for it.
+  /// This is the dough, not the drive.
+  deliveryLeadTimeMinutes   Int @default(90)
+  /// How many days ahead a customer may book. Zero means today only.
+  deliveryWindowHorizonDays Int @default(1)
+  /// How many orders one window may hold. A bakery that can do two hundred
+  /// loaves a day cannot get forty of them out of the oven between seven and
+  /// eight, and a day-level cap alone cannot say that.
+  deliveryWindowMaxOrders   Int @default(20)
   operatingHours     BakeryOperatingHours[]
   capacitySlots      BakeryCapacitySlot[]
+  deliveryWindows    BakeryDeliveryWindow[]
   offerings          BakeryProductOffering[]
   orders             Order[]
   fulfillments       Fulfillment[]
@@ -1026,6 +1040,44 @@ model BakeryCapacitySlot {
   @@index([bakeryBranchId, tenantId], map: "g3b_BakeryCapacitySlot_bakeryBranchId_tenant_idx")
   @@unique([id, tenantId], map: "g3b_BakeryCapacitySlot_id_tenant_key")
   @@unique([id, tenantId, bakeryBranchId], map: "BakeryCapacitySlot_id_tenant_branch_key")
+}
+
+/// One bookable delivery window at one branch.
+///
+/// Materialised the moment a customer prices a basket against it, rather than
+/// generated ahead by a scheduled job: a window only needs to exist once
+/// somebody wants it, and a table pre-filled two weeks out for every branch in
+/// every city is a table that is wrong the day an operator changes the hours.
+///
+/// The row exists so the window's capacity can be claimed atomically. A count
+/// of orders would be a read that is stale by the time it is acted on, and two
+/// customers would both take the last slot of the seven o'clock batch.
+model BakeryDeliveryWindow {
+  id             String       @id @default(uuid()) @db.Uuid
+  tenantId       String       @db.Uuid
+  bakeryBranchId String       @db.Uuid
+  bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
+  /// The local calendar day this window belongs to, in the city's timezone.
+  serviceDate    DateTime     @db.Date
+  /// The window itself, as instants. Stored resolved rather than as local
+  /// minutes so that everything downstream — the courier's deadline, the
+  /// customer's notification — reads one unambiguous point in time.
+  startsAt       DateTime
+  endsAt         DateTime
+  maxOrders      Int
+  reservedOrders Int          @default(0)
+  suspended      Boolean      @default(false)
+  quotes         Quote[]
+  orders         Order[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([bakeryBranchId, startsAt])
+  @@index([tenantId])
+  @@index([bakeryBranchId, serviceDate])
+
+  @@unique([id, tenantId], map: "g3b_BakeryDeliveryWindow_id_tenant_key")
+  @@index([bakeryBranchId, tenantId], map: "g3b_BakeryDeliveryWindow_bakeryBranchId_tenant_idx")
 }
 
 model ProductCategory {
@@ -1250,6 +1302,10 @@ model Quote {
   deliveryInstructionsSnapshot String?
   promotionId       String?     @db.Uuid
   promotion         Promotion?  @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  /// The delivery window the customer chose, when they chose one. Null means
+  /// "as soon as you can", which is what every order was before windows existed.
+  deliveryWindowId  String?     @db.Uuid
+  deliveryWindow    BakeryDeliveryWindow? @relation(fields: [deliveryWindowId], references: [id], onDelete: Restrict)
   promotionRedemption PromotionRedemption?
   items             QuoteItem[]
   order             Order?
@@ -1262,6 +1318,7 @@ model Quote {
   @@index([deliveryPricingRuleId])
   @@index([deliveryAddressId, tenantId], map: "g3b_Quote_deliveryAddressId_tenant_idx")
   @@index([promotionId, tenantId], map: "g3b_Quote_promotionId_tenant_idx")
+  @@index([deliveryWindowId, tenantId], map: "g3b_Quote_deliveryWindowId_tenant_idx")
   @@index([deliveryPricingRuleId, tenantId], map: "g3b_Quote_deliveryPricingRuleId_tenant_idx")
   @@unique([tenantId, customerId, idempotencyKey], map: "Quote_tenant_customer_idempotency_key")
 
@@ -1346,6 +1403,9 @@ model Order {
   requestedDeliveryAt          DateTime?
   promotionId                  String?                @db.Uuid
   promotion                    Promotion?             @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  /// The window this order was promised for, and whose capacity it claimed.
+  deliveryWindowId             String?                @db.Uuid
+  deliveryWindow               BakeryDeliveryWindow?  @relation(fields: [deliveryWindowId], references: [id], onDelete: Restrict)
   promotionRedemption          PromotionRedemption?
   items                        OrderItem[]
   transitions                  OrderStateTransition[]
@@ -1370,6 +1430,7 @@ model Order {
   @@index([cityId, tenantId], map: "g3b_Order_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_Order_operationalZoneId_tenant_idx")
   @@index([promotionId, tenantId], map: "g3b_Order_promotionId_tenant_idx")
+  @@index([deliveryWindowId, tenantId], map: "g3b_Order_deliveryWindowId_tenant_idx")
   @@index([bakeryBranchId, tenantId], map: "g3b_Order_bakeryBranchId_tenant_idx")
   @@index([savedAddressId, tenantId], map: "g3b_Order_savedAddressId_tenant_idx")
   @@index([quoteId, tenantId], map: "g3b_Order_quoteId_tenant_idx")

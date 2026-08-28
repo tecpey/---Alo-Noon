@@ -9,7 +9,7 @@ import { BasketMerge } from '../components/basket-merge'
 import { BrandMark } from '../components/brand-mark'
 import { CheckoutFlow } from './checkout-flow'
 import { EmptyBasketArt } from '../components/brand-art'
-import { listAddresses, readCart } from '../../lib/shop-api'
+import { listAddresses, listDeliveryWindows, readCart } from '../../lib/shop-api'
 import { isUnauthenticated } from '../../lib/api-core'
 
 export const metadata: Metadata = {
@@ -70,11 +70,20 @@ export default async function CheckoutPage() {
 
   // A failed address read is not a reason to block checkout: the customer can
   // still add one, which is the same thing they would do with an empty list.
-  const addresses = await listAddresses()
+  //
+  // Windows are read the same way and for the same reason. A bakery that has
+  // not recorded its opening hours offers none, and checkout then works exactly
+  // as it did before windows existed — the customer orders for as soon as the
+  // branch can manage.
+  const [addresses, windows] = await Promise.all([listAddresses(), listDeliveryWindows()])
 
   return (
     <Shell>
-      <CheckoutFlow cart={cart.data} addresses={addresses.ok ? addresses.data : []} />
+      <CheckoutFlow
+        cart={cart.data}
+        addresses={addresses.ok ? addresses.data : []}
+        windows={windows.ok ? windows.data : []}
+      />
     </Shell>
   )
 }

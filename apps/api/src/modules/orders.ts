@@ -21,6 +21,7 @@ import {
 
 import type { AuthDependencies } from './auth.js'
 import { authenticatedCustomer, serviceDateAt } from './commerce.js'
+import { claimDeliveryWindow } from './delivery-windows.js'
 import { consumeRedemptionForQuote } from './promotions.js'
 
 const quoteForOrderInclude = {
@@ -31,6 +32,9 @@ const quoteForOrderInclude = {
   deliveryAddress: true,
   deliveryPricingRule: true,
   order: { select: { id: true } },
+  // The window this basket was priced for. The order claims its capacity and
+  // inherits its end as the deadline everything downstream reads.
+  deliveryWindow: { select: { id: true, startsAt: true, endsAt: true, serviceDate: true } },
   cart: {
     include: {
       bakeryBranch: { include: { bakery: true, city: true } },
@@ -267,7 +271,13 @@ export function createPrismaOrderRepository(
           assertCurrentDependencies(quote, tenantId, customerId, now)
 
           const branch = quote.cart.bakeryBranch
-          const serviceDate = serviceDateAt(now, branch.city.timezone)
+          // The day whose capacity this order consumes. An order for tomorrow
+          // morning must come out of tomorrow's ovens, not today's — reading it
+          // from `now` would let a branch take a full day of scheduled orders
+          // on top of a full day of immediate ones.
+          const serviceDate = quote.deliveryWindow
+            ? quote.deliveryWindow.serviceDate
+            : serviceDateAt(now, branch.city.timezone)
           const capacitySlot = await transaction.bakeryCapacitySlot.findUnique({
             where: { bakeryBranchId_serviceDate: { bakeryBranchId: branch.id, serviceDate } },
           })
@@ -284,6 +294,17 @@ export function createPrismaOrderRepository(
             RETURNING "id"
           `
           if (reserved.length !== 1) throw new OrderError('CAPACITY_UNAVAILABLE', 422)
+
+          // A place in the chosen window, claimed the same way and for the same
+          // reason: a bakery that can do two hundred loaves a day cannot get
+          // forty of them out of the oven between seven and eight, and the day
+          // slot alone cannot say that.
+          if (
+            quote.deliveryWindow &&
+            !(await claimDeliveryWindow(transaction, tenantId, quote.deliveryWindow.id, now))
+          ) {
+            throw new OrderError('DELIVERY_WINDOW_UNAVAILABLE', 422)
+          }
 
           for (const item of quote.items) {
             if (!item.bakeryProductOffering.stockTracked) continue
@@ -316,6 +337,13 @@ export function createPrismaOrderRepository(
               operationalZoneId: quote.deliveryOperationalZoneIdSnapshot!,
               bakeryBranchId: branch.id,
               bakeryCapacitySlotId: capacitySlot.id,
+              ...(quote.deliveryWindow && {
+                deliveryWindowId: quote.deliveryWindow.id,
+                // The end of the window, not its start: the window is a promise
+                // to arrive *by* then, and every deadline downstream — the
+                // courier's, the late-delivery report's — reads this field.
+                requestedDeliveryAt: quote.deliveryWindow.endsAt,
+              }),
               savedAddressId: quote.deliveryAddressId,
               state: 'DRAFT',
               paymentState: 'NOT_STARTED',

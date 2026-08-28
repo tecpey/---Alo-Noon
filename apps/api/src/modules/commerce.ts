@@ -9,6 +9,7 @@ import {
   uuidSchema,
   type CartItemMutation,
   type CartSummary,
+  type DeliveryWindow,
   type ErrorEnvelope,
   type QuoteCreate,
   type QuoteSummary,
@@ -29,6 +30,10 @@ import {
 } from '@alo-noon/domain'
 
 import { authenticateRequest, type AuthDependencies } from './auth.js'
+import {
+  listDeliveryWindows as listBranchDeliveryWindows,
+  resolveDeliveryWindow,
+} from './delivery-windows.js'
 import {
   attachRedemptionToQuote,
   releaseRedemptionsForQuotes,
@@ -57,6 +62,9 @@ const quoteInclude = {
   // working code from a coincidence.
   promotion: { select: { nameFa: true } },
   promotionRedemption: { select: { basis: true } },
+  // So the quote can restate the window it was priced for. The customer agreed
+  // to a time, and a summary that omits it is a summary of a different order.
+  deliveryWindow: { select: { startsAt: true, endsAt: true } },
 } satisfies Prisma.QuoteInclude
 
 type CartRecord = Prisma.CartGetPayload<{ include: typeof cartInclude }>
@@ -93,6 +101,15 @@ export interface CommerceRepository {
     now: Date,
     correlationId: string,
   ): Promise<QuoteSummary>
+  /**
+   * The delivery windows the customer's own basket can be booked into.
+   *
+   * Derived from the branch their cart is already against rather than from a
+   * branch identifier in the request. There is nothing to authorise because
+   * there is nothing to name: a customer can only ever ask about their own
+   * basket's bakery.
+   */
+  listDeliveryWindows(tenantId: string, customerId: string, now: Date): Promise<DeliveryWindow[]>
 }
 
 export interface CommerceDependencies {
@@ -194,6 +211,39 @@ export function registerCommerceRoutes(
           parsed.data.expectedCartVersion,
           currentTime(dependencies),
           randomUUID(),
+        ),
+        meta: responseMeta(),
+      }
+    } catch (error) {
+      return commerceFailure(request, reply, error)
+    }
+  })
+
+  /**
+   * When the bakery can bring it.
+   *
+   * Read-only and derived entirely from the customer's own basket, so there is
+   * nothing to authorise beyond the session. Enumerating windows writes
+   * nothing: a customer browsing times costs the platform a schedule lookup,
+   * not a row, which is what keeps a shopper who never buys from filling a
+   * table.
+   */
+  app.get('/api/v1/cart/delivery-windows', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const session = await authenticatedCustomer(request, dependencies.auth)
+    if (!session) {
+      return reply
+        .code(401)
+        .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
+    }
+
+    try {
+      return {
+        success: true,
+        data: await dependencies.repository.listDeliveryWindows(
+          session.tenantId,
+          session.customerId,
+          currentTime(dependencies),
         ),
         meta: responseMeta(),
       }
@@ -319,6 +369,29 @@ export function createPrismaCommerceRepository(
           include: cartInclude,
         })
         return cart ? mapCart(cart) : null
+      })
+    },
+
+    async listDeliveryWindows(tenantId, customerId, now) {
+      return serializable(prisma, tenantId, async (transaction) => {
+        const cart = await transaction.cart.findFirst({
+          where: { tenantId, customerId, state: 'ACTIVE' },
+          select: { bakeryBranchId: true },
+        })
+        if (!cart) return []
+        const windows = await listBranchDeliveryWindows(
+          transaction,
+          tenantId,
+          cart.bakeryBranchId,
+          now,
+        )
+        return windows.map((window) => ({
+          serviceDate: window.serviceDate,
+          startsAt: window.startsAt.toISOString(),
+          endsAt: window.endsAt.toISOString(),
+          remaining: window.remaining,
+          available: window.available,
+        }))
       })
     },
 
@@ -604,6 +677,23 @@ export function createPrismaCommerceRepository(
               correlationId,
             })
           : null
+        // The window the customer chose, if they chose one. Re-derived from the
+        // branch's own schedule rather than trusted: the start arrives from a
+        // browser, and without checking it an order could be accepted for three
+        // in the morning. A refusal here is reported, not thrown — a window that
+        // filled while the customer was typing their address means "pick
+        // another one", not an error page.
+        const chosenWindow = input.deliveryWindowStartsAt
+          ? await resolveDeliveryWindow(
+              transaction,
+              tenantId,
+              cart.bakeryBranchId,
+              new Date(input.deliveryWindowStartsAt),
+              now,
+            )
+          : null
+        const windowRefused = Boolean(input.deliveryWindowStartsAt) && chosenWindow === null
+
         const discountAmount = promotion?.applied ? promotion.discountAmount : 0n
         const total = Money.irr(
           totalAfterDiscount({
@@ -646,6 +736,7 @@ export function createPrismaCommerceRepository(
             discountAmount,
             totalAmount: total.amount,
             ...(promotion?.applied && { promotionId: promotion.promotionId }),
+            ...(chosenWindow && { deliveryWindowId: chosenWindow.id }),
             deliveryAddressId: address.id,
             deliveryServiceAreaIdSnapshot: address.serviceAreaId,
             deliveryOperationalZoneIdSnapshot: address.operationalZoneId,
@@ -703,6 +794,7 @@ export function createPrismaCommerceRepository(
         return {
           ...mapQuote(quote),
           ...(promotion && !promotion.applied && { promotionRefusal: promotion.reason }),
+          ...(windowRefused && { deliveryWindowRefusal: 'DELIVERY_WINDOW_UNAVAILABLE' }),
         }
       })
     },
@@ -900,6 +992,12 @@ function mapQuote(quote: QuoteRecord): QuoteSummary {
       promotion: {
         nameFa: quote.promotion.nameFa,
         basis: quote.promotionRedemption?.basis ?? 'SUBTOTAL',
+      },
+    }),
+    ...(quote.deliveryWindow && {
+      deliveryWindow: {
+        startsAt: quote.deliveryWindow.startsAt.toISOString(),
+        endsAt: quote.deliveryWindow.endsAt.toISOString(),
       },
     }),
     total: { amount: quote.totalAmount.toString(), currency: quote.currency },

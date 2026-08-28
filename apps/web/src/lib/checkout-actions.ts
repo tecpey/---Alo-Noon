@@ -116,6 +116,7 @@ export async function createAddressAction(input: {
 export async function quoteAction(
   deliveryAddressId: string,
   promotionCode?: string,
+  deliveryWindowStartsAt?: string,
 ): Promise<QuoteResult> {
   const cart = await readCart()
   if (!cart.ok) return fail(cart.error.code, 'سبد خرید خوانده نشد.', true)
@@ -135,8 +136,10 @@ export async function quoteAction(
       String(cart.data.version),
       deliveryAddressId,
       promotionCode ?? 'none',
+      deliveryWindowStartsAt ?? 'asap',
     ),
     ...(promotionCode && { promotionCode }),
+    ...(deliveryWindowStartsAt && { deliveryWindowStartsAt }),
   })
   if (!result.ok) return fail(result.error.code, 'محاسبهٔ هزینه ناموفق بود.', true)
   return { ok: true, quote: result.data }

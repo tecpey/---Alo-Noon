@@ -267,7 +267,14 @@ async function main(): Promise<void> {
     })
     const branch = await t.bakeryBranch.upsert({
       where: { cityId_code: { cityId: city.id, code: 'BABOL-1' } },
-      update: { operationalStatus: 'ACTIVE', qualityStatus: 'APPROVED' },
+      update: {
+        operationalStatus: 'ACTIVE',
+        qualityStatus: 'APPROVED',
+        deliveryWindowMinutes: 120,
+        deliveryLeadTimeMinutes: 90,
+        deliveryWindowHorizonDays: 1,
+        deliveryWindowMaxOrders: 20,
+      },
       create: {
         tenantId: TENANT_ID,
         bakeryId: bakery.id,
@@ -280,8 +287,32 @@ async function main(): Promise<void> {
         longitude: 52.6765,
         operationalStatus: 'ACTIVE',
         qualityStatus: 'APPROVED',
+        deliveryWindowMinutes: 120,
+        deliveryLeadTimeMinutes: 90,
+        deliveryWindowHorizonDays: 1,
+        deliveryWindowMaxOrders: 20,
       },
     })
+
+    // Opening hours, which are what delivery windows are cut out of. Without
+    // them the branch offers no windows at all — deliberately, since a bakery
+    // whose hours nobody recorded must not end up promising bread at four in
+    // the morning. Six until eight, every day: a bakery's week has no weekend.
+    for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek += 1) {
+      await t.bakeryOperatingHours.upsert({
+        where: { bakeryBranchId_dayOfWeek: { bakeryBranchId: branch.id, dayOfWeek } },
+        update: { opensAtMinute: 6 * 60, closesAtMinute: 20 * 60, isClosed: false },
+        create: {
+          tenantId: TENANT_ID,
+          bakeryBranchId: branch.id,
+          dayOfWeek,
+          opensAtMinute: 6 * 60,
+          closesAtMinute: 20 * 60,
+          isClosed: false,
+        },
+      })
+    }
+
     const categoryIds = new Map<string, string>()
     for (const definition of LAUNCH_CATEGORIES) {
       const category = await t.productCategory.upsert({

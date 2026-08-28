@@ -452,3 +452,64 @@
   font-size: 0.85rem;
   font-weight: 600;
 }
+
+/* --------------------------------------------------- delivery window picker */
+
+/* Chips rather than a select. A customer choosing when their bread arrives is
+   comparing two or three mornings, and a list they can see the whole of is one
+   they choose from faster than a dropdown they have to open. */
+.window {
+  margin: 0 0 0.9rem;
+  padding: 0;
+  border: 0;
+}
+.window__legend {
+  padding: 0;
+  margin-block-end: 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+.window__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.window__slot {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-full);
+  background: var(--surface-base);
+  color: var(--ink-base);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.window__slot:hover {
+  border-color: var(--primary-600);
+}
+/* The radio itself is hidden but still focusable and still what screen readers
+   and keyboards operate; the chip is only its skin. */
+.window__slot input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.window__slot:focus-within {
+  outline: 2px solid var(--primary-600);
+  outline-offset: 2px;
+}
+.window__slot--on {
+  border-color: var(--primary-600);
+  background: color-mix(in srgb, var(--primary-600) 12%, transparent);
+  font-weight: 600;
+}

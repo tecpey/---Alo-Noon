@@ -3,10 +3,11 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import type { AddressSummary, CartSummary, QuoteSummary } from '@alo-noon/contracts'
+import type { AddressSummary, CartSummary, DeliveryWindow, QuoteSummary } from '@alo-noon/contracts'
 
 import { AddressForm } from './address-form'
 import { CheckIcon, ChevronIcon, CourierIcon, PinIcon, ShieldIcon } from '../components/icons'
+import { formatDeliveryWindow } from '../../lib/delivery-window-label'
 import { formatToman, toPersianDigits } from '../../lib/persian'
 import { payAction, quoteAction } from '../../lib/checkout-actions'
 import { translateProviderError } from '../../lib/admin-format'
@@ -28,9 +29,11 @@ import { translateProviderError } from '../../lib/admin-format'
 export function CheckoutFlow({
   cart,
   addresses,
+  windows,
 }: {
   cart: CartSummary
   addresses: readonly AddressSummary[]
+  windows: readonly DeliveryWindow[]
 }) {
   const [saved, setSaved] = useState<readonly AddressSummary[]>(addresses)
   const [selected, setSelected] = useState<string | null>(addresses[0]?.id ?? null)
@@ -38,14 +41,26 @@ export function CheckoutFlow({
   const [quote, setQuote] = useState<QuoteSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [code, setCode] = useState('')
+  // Null is "as soon as you can", which is what every order was before windows
+  // existed and what a branch with no recorded hours still offers.
+  const [chosenWindow, setChosenWindow] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+  // Fixed for the life of the page. Recomputing it per render would make
+  // "امروز" flip to "فردا" underneath a customer at midnight, mid-checkout.
+  const [openedAt] = useState(() => new Date())
+
+  const bookable = windows.filter((entry) => entry.available)
 
   function priceIt(addressId: string) {
     setError(null)
     setQuote(null)
     startTransition(async () => {
-      const result = await quoteAction(addressId, code.trim() || undefined)
+      const result = await quoteAction(
+        addressId,
+        code.trim() || undefined,
+        chosenWindow ?? undefined,
+      )
       if (result.ok) setQuote(result.quote)
       else setError(result.message)
     })
@@ -156,6 +171,66 @@ export function CheckoutFlow({
               </p>
 
               {/*
+                When, before how much. Bread is the one product where the time
+                matters more than the speed — nobody wants barbari at eleven at
+                night, they want it on the table at seven — so the choice comes
+                before the price rather than being buried under it.
+
+                A branch with no hours recorded offers nothing here, and the
+                section disappears rather than showing an empty control that
+                looks broken.
+              */}
+              {bookable.length > 0 && (
+                <fieldset className="window">
+                  <legend className="window__legend">زمان تحویل</legend>
+                  <ul className="window__list">
+                    <li>
+                      <label
+                        className={`window__slot${chosenWindow === null ? ' window__slot--on' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="deliveryWindow"
+                          checked={chosenWindow === null}
+                          onChange={() => {
+                            setChosenWindow(null)
+                            setQuote(null)
+                          }}
+                        />
+                        <span>در اولین فرصت</span>
+                      </label>
+                    </li>
+                    {bookable.map((entry) => (
+                      <li key={entry.startsAt}>
+                        <label
+                          className={`window__slot${chosenWindow === entry.startsAt ? ' window__slot--on' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="deliveryWindow"
+                            value={entry.startsAt}
+                            checked={chosenWindow === entry.startsAt}
+                            onChange={() => {
+                              setChosenWindow(entry.startsAt)
+                              setQuote(null)
+                            }}
+                          />
+                          <span>
+                            {formatDeliveryWindow(entry.startsAt, entry.endsAt, openedAt)}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                  {quote?.deliveryWindowRefusal && (
+                    <p className="promo__refused" role="status">
+                      این زمان دیگر در دسترس نیست؛ زمان دیگری انتخاب کنید.
+                    </p>
+                  )}
+                </fieldset>
+              )}
+
+              {/*
                 The code goes in beside the price button rather than at the end
                 of checkout. A customer holding a code wants to see it work
                 before they commit, and one who finds the field after paying
@@ -230,6 +305,18 @@ export function CheckoutFlow({
             <div>
               <dt>تخفیف</dt>
               <dd>−{formatToman(quote.discount.amount)}</dd>
+            </div>
+          )}
+          {quote?.deliveryWindow && (
+            <div>
+              <dt>زمان تحویل</dt>
+              <dd>
+                {formatDeliveryWindow(
+                  quote.deliveryWindow.startsAt,
+                  quote.deliveryWindow.endsAt,
+                  openedAt,
+                )}
+              </dd>
             </div>
           )}
           <div className="summary__grand">
