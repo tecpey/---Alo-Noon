@@ -46,6 +46,7 @@ import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
 import { createPrismaPaymentExecutionService } from './modules/payment-execution.js'
+import { createPrismaCashOnDeliveryService } from './modules/cash-on-delivery.js'
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger.js'
 import { createPrismaPaymentSettlementService } from './modules/payment-settlement.js'
 import { createPaymentSecretResolver } from './providers/secret-resolver.js'
@@ -269,7 +270,18 @@ const orderOperations = {
 // Dispatch and the courier app share one service. A courier holds no admin
 // grant at all — their authority is the assignment offered to them, which the
 // service checks against the row on every write.
-const delivery = { service: createPrismaDeliveryService(prisma) }
+// Cash at the door. Shares the one ledger service, because a cash collection
+// is a capture like any other — only the account it debits differs, and that
+// difference is the whole feature.
+const cashOnDeliveryService = createPrismaCashOnDeliveryService(prisma, {
+  ledger: paymentLedgerService,
+})
+// The courier's delivery report is where cash changes hands, so the delivery
+// routes carry the cash service and post the money the moment they are told.
+const delivery = {
+  service: createPrismaDeliveryService(prisma),
+  cashOnDelivery: cashOnDeliveryService,
+}
 // The planner uses road distances where a routing engine is configured and the
 // straight line where one is not. That is not cosmetic: two doors fifty metres
 // apart with a river between them are a good batch on a map and a bad one in
@@ -315,6 +327,7 @@ const app = await buildApp({
   delivery,
   deliveryTrips,
   courierAssignments,
+  cash: { service: cashOnDeliveryService },
 })
 
 if (env.SENTRY_DSN) {

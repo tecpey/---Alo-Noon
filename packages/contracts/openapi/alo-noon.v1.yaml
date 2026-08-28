@@ -270,6 +270,67 @@ paths:
           description: Cart or item was not found.
         '409':
           description: Expected cart version is stale.
+  /api/v1/admin/cash/outstanding:
+    get:
+      operationId: listCourierCashPositions
+      summary: How much cash each courier is currently carrying.
+      description: >-
+        Derived from ledger postings rather than a running total on the courier
+        record: a number that is computed cannot drift away from the books, and
+        a number that is stored eventually does. Requires admin.orders.manage —
+        counting cash is an operational act, not a report.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: One row per courier still holding collected cash.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CourierCashPosition' }
+                  meta: { $ref: '#/components/schemas/ResponseMeta' }
+        '401':
+          description: A valid staff session is required.
+        '403':
+          description: This account may not manage orders.
+  /api/v1/admin/cash/remittances:
+    post:
+      operationId: recordCashRemittance
+      summary: Record a courier handing in the cash they collected.
+      description: >-
+        The amount is checked against what the named orders actually say, and
+        nothing is posted unless the two agree. A courier who is short has a
+        dispute — a decision a person makes and records — not a rounding the
+        ledger quietly absorbs. Each order posts its own journal, so an order's
+        cash can be handed in exactly once.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CashRemittanceCommand' }
+      responses:
+        '201':
+          description: Recorded and posted.
+        '401':
+          description: A valid staff session is required.
+        '403':
+          description: This account may not manage orders.
+        '409':
+          description: That remittance key was already used for a different courier.
+        '422':
+          description: >-
+            The count does not match, an order was carried by a different
+            courier, or one of them was never collected.
   /api/v1/cart/delivery-windows:
     get:
       operationId: listDeliveryWindows
@@ -1573,6 +1634,42 @@ components:
             omitting it means "as soon as the branch can". Re-derived from the
             branch's own schedule on the server, so a window nobody offered is
             refused.
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+    PaymentMethod:
+      type: string
+      enum: [ONLINE_GATEWAY, CASH_ON_DELIVERY]
+      description: >-
+        How an order is paid for. Cash is checked on the server against the
+        city's own policy — whether it is offered there at all, a ceiling on the
+        order total, and how many completed orders the customer needs first.
+    CourierCashPosition:
+      type: object
+      required: [courierId, courierName, orderCount, outstanding]
+      properties:
+        courierId: { type: string, format: uuid }
+        courierName: { type: string }
+        orderCount: { type: integer, minimum: 0 }
+        outstanding: { $ref: '#/components/schemas/Money' }
+    CashRemittanceCommand:
+      type: object
+      required: [courierId, orderIds, declaredAmount, idempotencyKey]
+      properties:
+        courierId: { type: string, format: uuid }
+        orderIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string, format: uuid }
+          description: >-
+            The orders being settled, named rather than implied. "Everything
+            this courier has" is exactly the instruction that settles an order
+            nobody actually handed over.
+        declaredAmount:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+          description: Rial counted onto the desk. Checked against what those orders come to.
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
     DeliveryWindow:
       type: object
       required: [serviceDate, startsAt, endsAt, remaining, available]

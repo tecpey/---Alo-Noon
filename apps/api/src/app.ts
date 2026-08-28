@@ -64,6 +64,7 @@ import {
   registerCourierAssignmentRoutes,
   type CourierAssignmentDependencies,
 } from './modules/courier-assignment-routes.js'
+import { registerCashRoutes, type CashRouteDependencies } from './modules/cash-routes.js'
 import { registerDeliveryRoutes, type DeliveryDependencies } from './modules/delivery-routes.js'
 import {
   registerDeliveryTripRoutes,
@@ -97,6 +98,7 @@ export interface AppOptions {
   delivery?: Omit<DeliveryDependencies, 'auth'>
   deliveryTrips?: Omit<DeliveryTripDependencies, 'auth'>
   courierAssignments?: Omit<CourierAssignmentDependencies, 'auth'>
+  cash?: Omit<CashRouteDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
   trustProxyHops?: number
@@ -239,6 +241,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.courierAssignments) {
     registerCourierAssignmentRoutes(app, { ...options.courierAssignments, auth: options.auth })
+  }
+  if (options.auth && options.cash) {
+    registerCashRoutes(app, { ...options.cash, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

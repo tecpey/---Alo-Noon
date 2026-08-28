@@ -78,7 +78,9 @@ describe('double-entry ledger', () => {
 
 describe('system chart of accounts', () => {
   it('defines a valid deterministic versioned hierarchy covering every account type', () => {
-    expect(SYSTEM_CHART_VERSION).toBe(1)
+    // v2 added the courier cash receivable when the platform began taking
+    // money at doors.
+    expect(SYSTEM_CHART_VERSION).toBe(2)
     expect(() => validateSystemChartTemplates()).not.toThrow()
     expect(new Set(SYSTEM_LEDGER_ACCOUNT_TEMPLATES.map(({ code }) => code)).size).toBe(
       SYSTEM_LEDGER_ACCOUNT_TEMPLATES.length,

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { addressInputSchema } from './geography'
 import { moneySchema, responseMetaSchema, uuidSchema } from './common'
 import { productFulfillmentClassSchema } from './catalog'
+import { paymentMethodSchema } from './payments'
 
 export const orderStateSchema = z.enum([
   'DRAFT',
@@ -79,6 +80,8 @@ export const orderSummarySchema = z.object({
   quoteId: uuidSchema,
   state: orderStateSchema,
   paymentState: paymentStateSchema,
+  /** How this order is paid for. Cash orders are settled at the door. */
+  paymentMethod: paymentMethodSchema,
   productionState: productionStateSchema,
   deliveryState: deliveryStateSchema,
   subtotal: moneySchema,

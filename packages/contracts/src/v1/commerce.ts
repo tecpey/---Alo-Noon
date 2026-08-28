@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { freshnessClaimSchema, productFulfillmentClassSchema } from './catalog'
 import { isoDateTimeSchema, moneySchema, responseMetaSchema, uuidSchema } from './common'
+import { paymentMethodSchema } from './payments'
 
 export const cartItemMutationSchema = z.object({
   cityId: uuidSchema,
@@ -37,6 +38,16 @@ export const quoteCreateSchema = z.object({
    * materialised yet — nothing exists to hold an id until somebody wants it.
    */
   deliveryWindowStartsAt: isoDateTimeSchema.optional(),
+  /**
+   * How the customer intends to pay.
+   *
+   * Optional, and a refusal does not fail the quote: a basket that will not
+   * price because cash is not on offer here is a basket that gets abandoned.
+   * The quote comes back set to the gateway and says why separately. Checked on
+   * the server against the city's own policy — a method asserted by a browser
+   * is a request, not a decision.
+   */
+  paymentMethod: paymentMethodSchema.optional(),
 })
 export type QuoteCreate = z.infer<typeof quoteCreateSchema>
 
@@ -122,6 +133,10 @@ export const quoteSummarySchema = z.object({
   deliveryWindow: z.object({ startsAt: isoDateTimeSchema, endsAt: isoDateTimeSchema }).optional(),
   /** Set when the chosen window could not be held — it filled, or it is no longer offered. */
   deliveryWindowRefusal: z.string().min(1).max(64).optional(),
+  /** How this quote will be paid for. Authoritative: the order inherits it. */
+  paymentMethod: paymentMethodSchema,
+  /** Why cash was not offered, when the customer asked for it. */
+  cashOnDeliveryRefusal: z.string().min(1).max(64).optional(),
   total: moneySchema,
   items: z.array(commerceItemSnapshotSchema).min(1),
   createdAt: isoDateTimeSchema,

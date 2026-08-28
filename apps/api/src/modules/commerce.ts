@@ -24,8 +24,10 @@ import {
   calculateDeliveryFee,
   calculateCartLine,
   calculateQuoteExpiry,
+  evaluateCashOnDelivery,
   selectDeliveryPricingRule,
   totalAfterDiscount,
+  type CashOnDeliveryDecision,
   type RouteDistance,
 } from '@alo-noon/domain'
 
@@ -703,6 +705,25 @@ export function createPrismaCommerceRepository(
           }),
         )
 
+        // Cash at the door, if this city offers it to this customer for a basket
+        // this size. Decided here rather than at checkout because the ceiling is
+        // a rule about the total, and the total does not exist until now.
+        //
+        // A refusal does not fail the quote — the customer is quoted for the
+        // gateway and told why — because a basket that will not price is a
+        // basket that gets abandoned.
+        let paymentMethod: 'ONLINE_GATEWAY' | 'CASH_ON_DELIVERY' = 'ONLINE_GATEWAY'
+        let cashRefusal: string | undefined
+        if (input.paymentMethod === 'CASH_ON_DELIVERY') {
+          const decision = await decideCashOnDelivery(transaction, tenantId, {
+            cityId: cart.cityId,
+            customerId,
+            orderTotal: total.amount,
+          })
+          if (decision.allowed) paymentMethod = 'CASH_ON_DELIVERY'
+          else cashRefusal = decision.reason
+        }
+
         // ownership-established: scoped to a cart loaded above filtered by customerId.
         const superseded = await transaction.quote.findMany({
           where: { cartId: cart.id, status: 'ACTIVE' },
@@ -737,6 +758,7 @@ export function createPrismaCommerceRepository(
             totalAmount: total.amount,
             ...(promotion?.applied && { promotionId: promotion.promotionId }),
             ...(chosenWindow && { deliveryWindowId: chosenWindow.id }),
+            paymentMethod,
             deliveryAddressId: address.id,
             deliveryServiceAreaIdSnapshot: address.serviceAreaId,
             deliveryOperationalZoneIdSnapshot: address.operationalZoneId,
@@ -795,6 +817,7 @@ export function createPrismaCommerceRepository(
           ...mapQuote(quote),
           ...(promotion && !promotion.applied && { promotionRefusal: promotion.reason }),
           ...(windowRefused && { deliveryWindowRefusal: 'DELIVERY_WINDOW_UNAVAILABLE' }),
+          ...(cashRefusal && { cashOnDeliveryRefusal: cashRefusal }),
         }
       })
     },
@@ -901,6 +924,42 @@ async function assertBranchCapacity(
   }
 }
 
+/**
+ * Whether this city offers cash at the door for this basket and this customer.
+ *
+ * Read inside the quote's own transaction rather than through the cash service,
+ * which opens its own: the decision has to see the same snapshot the quote is
+ * priced against, or a city switched off mid-checkout could still produce a
+ * cash order.
+ */
+async function decideCashOnDelivery(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  input: { cityId: string; customerId: string; orderTotal: bigint },
+): Promise<CashOnDeliveryDecision> {
+  const city = await transaction.city.findFirst({
+    where: { id: input.cityId, tenantId },
+    select: {
+      cashOnDeliveryEnabled: true,
+      cashOnDeliveryCeiling: true,
+      cashOnDeliveryMinimumOrders: true,
+    },
+  })
+  if (!city) return { allowed: false, reason: 'CASH_ON_DELIVERY_DISABLED' }
+
+  const completed = await transaction.order.count({
+    where: { tenantId, customerId: input.customerId, state: 'COMPLETED' },
+  })
+  return evaluateCashOnDelivery(
+    {
+      enabled: city.cashOnDeliveryEnabled,
+      ...(city.cashOnDeliveryCeiling !== null && { ceilingAmount: city.cashOnDeliveryCeiling }),
+      minimumCompletedOrders: city.cashOnDeliveryMinimumOrders,
+    },
+    { orderTotal: input.orderTotal, customerCompletedOrders: completed },
+  )
+}
+
 export function serviceDateAt(now: Date, timezone: string): Date {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
@@ -994,6 +1053,7 @@ function mapQuote(quote: QuoteRecord): QuoteSummary {
         basis: quote.promotionRedemption?.basis ?? 'SUBTOTAL',
       },
     }),
+    paymentMethod: quote.paymentMethod,
     ...(quote.deliveryWindow && {
       deliveryWindow: {
         startsAt: quote.deliveryWindow.startsAt.toISOString(),

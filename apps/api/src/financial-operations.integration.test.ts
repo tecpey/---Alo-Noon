@@ -90,7 +90,8 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
       include: { parent: { select: { systemKey: true } } },
       orderBy: { code: 'asc' },
     })
-    expect(accounts).toHaveLength(14)
+    // Fourteen from chart v1, plus the courier cash receivable from v2.
+    expect(accounts).toHaveLength(15)
     expect(accounts.filter(({ parentId }) => parentId === null)).toHaveLength(5)
     expect(
       accounts.filter(({ parentId }) => parentId === null).every(({ isPostable }) => !isPostable),
@@ -119,7 +120,7 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
       await prisma.ledgerAccountGovernanceEvent.count({
         where: { tenantId: tenantA, action: 'PROVISIONED' },
       }),
-    ).toBe(14)
+    ).toBe(15)
 
     const service = createPrismaFinancialOperationsService(prisma)
     const first = await service.provision(
@@ -136,7 +137,9 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
     )
     expect(replay).toEqual(first)
     expect(first).toMatchObject({ tenantId: tenantA, templateVersion: 1, accountCount: 14 })
-    expect(await prisma.tenantFinancialBootstrap.count({ where: { tenantId: tenantA } })).toBe(1)
+    // One bootstrap row per chart version: a version is a migration of the
+    // chart, and each one records what it added.
+    expect(await prisma.tenantFinancialBootstrap.count({ where: { tenantId: tenantA } })).toBe(2)
     expect(
       await prisma.auditEvent.count({
         where: { tenantId: tenantA, action: 'financial.chart_provisioned' },
@@ -351,7 +354,8 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
         `,
       ])
     })
-    expect(visible[0]).toEqual([{ count: 14n }])
-    expect(visible[1]).toEqual([{ count: 1n }])
+    expect(visible[0]).toEqual([{ count: 15n }])
+    // One bootstrap row per chart version, both belonging to this tenant.
+    expect(visible[1]).toEqual([{ count: 2n }])
   })
 })

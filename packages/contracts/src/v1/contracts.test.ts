@@ -423,6 +423,7 @@ describe('v1 cart and quote contracts', () => {
           cartId: cart.id,
           cartVersion: cart.version,
           status: 'ACTIVE',
+          paymentMethod: 'ONLINE_GATEWAY',
           expiresAt: '2026-07-29T12:10:00.000Z',
           deliveryAddressId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           deliveryServiceAreaId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',

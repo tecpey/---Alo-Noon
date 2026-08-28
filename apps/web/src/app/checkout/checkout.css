@@ -513,3 +513,61 @@
   background: color-mix(in srgb, var(--primary-600) 12%, transparent);
   font-weight: 600;
 }
+
+/* -------------------------------------------------------- payment method */
+
+/* Two choices, side by side and both visible. Cash is not a fallback in this
+   market — for a great many customers it is the only way they will buy from a
+   stranger's application — so it is not hidden behind a disclosure. */
+.method {
+  margin: 0 0 0.9rem;
+  padding: 0;
+  border: 0;
+}
+.method__legend {
+  padding: 0;
+  margin-block-end: 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+.method__list {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.method__pick {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--ink-base);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.method__pick:hover {
+  border-color: var(--primary-600);
+}
+.method__pick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.method__pick:focus-within {
+  outline: 2px solid var(--primary-600);
+  outline-offset: 2px;
+}
+.method__pick--on {
+  border-color: var(--primary-600);
+  background: color-mix(in srgb, var(--primary-600) 12%, transparent);
+  font-weight: 600;
+}

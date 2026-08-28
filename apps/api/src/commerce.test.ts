@@ -63,6 +63,7 @@ const quote: QuoteSummary = {
   subtotal: cart.subtotal,
   deliveryFee: { amount: '0', currency: 'IRR' },
   discount: { amount: '0', currency: 'IRR' },
+  paymentMethod: 'ONLINE_GATEWAY',
   total: cart.subtotal,
   items: [item],
   createdAt: now.toISOString(),

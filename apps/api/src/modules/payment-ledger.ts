@@ -200,6 +200,11 @@ export function createPrismaPaymentLedgerService(
             tenantId,
             orderId: order.id,
             customerId,
+            // Read from the order, never from the request. How an order is paid
+            // for is settled when the customer priced their basket against a
+            // city that allows cash; letting a payment declare its own method
+            // would let anyone opt out of the gateway by asking.
+            method: order.paymentMethod,
             amount: order.totalAmount,
             currency: order.currency,
             idempotencyKey: command.idempotencyKey,

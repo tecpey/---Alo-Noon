@@ -45,6 +45,8 @@ export type PayResult =
   | { ok: true; kind: 'redirect'; url: string; order: OrderSummary }
   /** The order exists and is placed, but the gateway would not open a payment. */
   | { ok: true; kind: 'unpaid'; order: OrderSummary; message: string }
+  /** Placed, and the customer pays the courier at the door. Nothing to redirect to. */
+  | { ok: true; kind: 'cash'; order: OrderSummary }
   | CheckoutFailure
 
 function fail(code: string, fallback: string, retryable = false): CheckoutFailure {
@@ -117,6 +119,7 @@ export async function quoteAction(
   deliveryAddressId: string,
   promotionCode?: string,
   deliveryWindowStartsAt?: string,
+  paymentMethod?: 'ONLINE_GATEWAY' | 'CASH_ON_DELIVERY',
 ): Promise<QuoteResult> {
   const cart = await readCart()
   if (!cart.ok) return fail(cart.error.code, 'سبد خرید خوانده نشد.', true)
@@ -137,9 +140,11 @@ export async function quoteAction(
       deliveryAddressId,
       promotionCode ?? 'none',
       deliveryWindowStartsAt ?? 'asap',
+      paymentMethod ?? 'gateway',
     ),
     ...(promotionCode && { promotionCode }),
     ...(deliveryWindowStartsAt && { deliveryWindowStartsAt }),
+    ...(paymentMethod && { paymentMethod }),
   })
   if (!result.ok) return fail(result.error.code, 'محاسبهٔ هزینه ناموفق بود.', true)
   return { ok: true, quote: result.data }
@@ -173,6 +178,14 @@ export async function payAction(quoteId: string): Promise<PayResult> {
       order: order.data,
       message: translateProviderError(payment.error.code, 'سفارش ثبت شد اما پرداخت باز نشد.'),
     }
+  }
+
+  // A cash order stops here, and that is the whole difference. The payment
+  // aggregate exists so the courier's collection has something to land on, but
+  // there is no gateway to open and nowhere to send the customer — the money
+  // arrives at their door.
+  if (order.data.paymentMethod === 'CASH_ON_DELIVERY') {
+    return { ok: true, kind: 'cash', order: order.data }
   }
 
   const execution = await initializePayment({

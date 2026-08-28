@@ -20,7 +20,40 @@ export const ledgerAccountTypeSchema = z.enum([
   'EXPENSE',
 ])
 export const ledgerEntrySideSchema = z.enum(['DEBIT', 'CREDIT'])
-export const financialTransactionTypeSchema = z.enum(['PAYMENT_CAPTURE', 'PAYMENT_REFUND'])
+/** How an order is paid for. */
+export const paymentMethodSchema = z.enum(['ONLINE_GATEWAY', 'CASH_ON_DELIVERY'])
+export type PaymentMethod = z.infer<typeof paymentMethodSchema>
+
+/**
+ * A courier handing in the cash they collected.
+ *
+ * The orders are named rather than implied. "Everything this courier has" is
+ * exactly the instruction that settles an order somebody has not actually
+ * handed over, and it cannot be checked against a count on a desk.
+ */
+export const cashRemittanceCommandSchema = z.object({
+  courierId: z.string().uuid(),
+  orderIds: z.array(z.string().uuid()).min(1).max(200),
+  /** Rial, as a decimal string. What was counted, not what was owed. */
+  declaredAmount: z.string().regex(/^[1-9][0-9]{0,18}$/),
+  idempotencyKey: z.string().trim().min(16).max(128),
+})
+export type CashRemittanceCommand = z.infer<typeof cashRemittanceCommandSchema>
+
+export const courierCashPositionSchema = z.object({
+  courierId: z.string().uuid(),
+  courierName: z.string(),
+  orderCount: z.number().int().min(0),
+  outstanding: moneySchema,
+})
+export type CourierCashPosition = z.infer<typeof courierCashPositionSchema>
+
+export const financialTransactionTypeSchema = z.enum([
+  'PAYMENT_CAPTURE',
+  'PAYMENT_REFUND',
+  /** A courier handing in cash they collected at a door. */
+  'CASH_REMITTANCE',
+])
 
 export const ledgerAccountGovernanceActionSchema = z.enum([
   'PROVISIONED',

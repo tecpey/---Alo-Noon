@@ -337,6 +337,10 @@ export function createPrismaOrderRepository(
               operationalZoneId: quote.deliveryOperationalZoneIdSnapshot!,
               bakeryBranchId: branch.id,
               bakeryCapacitySlotId: capacitySlot.id,
+              // Inherited from the quote, which is where the city's cash policy
+              // was actually applied. Taking it from the request instead would
+              // let anyone opt out of the gateway by asking.
+              paymentMethod: quote.paymentMethod,
               ...(quote.deliveryWindow && {
                 deliveryWindowId: quote.deliveryWindow.id,
                 // The end of the window, not its start: the window is a promise
@@ -621,6 +625,7 @@ function mapOrder(order: OrderRecord): OrderSummary {
     quoteId: order.quoteId,
     state: order.state,
     paymentState: order.paymentState,
+    paymentMethod: order.paymentMethod,
     productionState: order.productionState,
     deliveryState: order.deliveryState,
     subtotal: { amount: order.subtotalAmount.toString(), currency: order.currency },
