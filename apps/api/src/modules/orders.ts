@@ -21,6 +21,7 @@ import {
 
 import type { AuthDependencies } from './auth.js'
 import { authenticatedCustomer, serviceDateAt } from './commerce.js'
+import { consumeRedemptionForQuote } from './promotions.js'
 
 const quoteForOrderInclude = {
   items: {
@@ -333,6 +334,7 @@ export function createPrismaOrderRepository(
               discountAmount: quote.discountAmount,
               totalAmount: quote.totalAmount,
               currency: quote.currency,
+              ...(quote.promotionId && { promotionId: quote.promotionId }),
               items: {
                 create: quote.items.map((item) => ({
                   tenantId,
@@ -353,6 +355,11 @@ export function createPrismaOrderRepository(
             },
             include: orderInclude,
           })
+
+          // The campaign's budget is spent here and nowhere earlier. Until this
+          // moment the redemption was only held, so a customer who priced a
+          // basket and walked away cost the campaign nothing.
+          await consumeRedemptionForQuote(transaction, tenantId, quote.id, order.id)
 
           const transitionIdempotencyKey = `order-created-${order.id}`
           transitionOrder({

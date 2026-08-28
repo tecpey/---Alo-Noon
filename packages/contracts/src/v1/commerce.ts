@@ -20,6 +20,14 @@ export const quoteCreateSchema = z.object({
   deliveryAddressId: uuidSchema,
   expectedCartVersion: z.number().int().min(1),
   idempotencyKey: z.string().trim().min(16).max(128),
+  /**
+   * A discount code, as the customer typed it.
+   *
+   * Optional, and a bad one does not fail the quote: a basket that refuses to
+   * price because a code expired is a basket the customer abandons. The quote
+   * comes back without the discount and says why separately.
+   */
+  promotionCode: z.string().trim().min(1).max(64).optional(),
 })
 export type QuoteCreate = z.infer<typeof quoteCreateSchema>
 
@@ -75,6 +83,15 @@ export const quoteSummarySchema = z.object({
   subtotal: moneySchema,
   deliveryFee: moneySchema,
   discount: moneySchema,
+  /** The campaign that produced the discount, when one did. */
+  promotion: z
+    .object({
+      nameFa: z.string().min(1).max(200),
+      basis: z.enum(['SUBTOTAL', 'DELIVERY_FEE']),
+    })
+    .optional(),
+  /** Why a code the customer supplied did nothing. Absent when it worked. */
+  promotionRefusal: z.string().min(1).max(64).optional(),
   total: moneySchema,
   items: z.array(commerceItemSnapshotSchema).min(1),
   createdAt: isoDateTimeSchema,

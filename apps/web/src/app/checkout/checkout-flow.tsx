@@ -9,6 +9,7 @@ import { AddressForm } from './address-form'
 import { CheckIcon, ChevronIcon, CourierIcon, PinIcon, ShieldIcon } from '../components/icons'
 import { formatToman, toPersianDigits } from '../../lib/persian'
 import { payAction, quoteAction } from '../../lib/checkout-actions'
+import { translateProviderError } from '../../lib/admin-format'
 
 /**
  * The three questions checkout asks, in the order they can be answered.
@@ -36,6 +37,7 @@ export function CheckoutFlow({
   const [adding, setAdding] = useState(addresses.length === 0)
   const [quote, setQuote] = useState<QuoteSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [code, setCode] = useState('')
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -43,7 +45,7 @@ export function CheckoutFlow({
     setError(null)
     setQuote(null)
     startTransition(async () => {
-      const result = await quoteAction(addressId)
+      const result = await quoteAction(addressId, code.trim() || undefined)
       if (result.ok) setQuote(result.quote)
       else setError(result.message)
     })
@@ -152,6 +154,40 @@ export function CheckoutFlow({
               <p className="checkout__hint">
                 کرایه بر اساس مسیر واقعی تا «{chosen.label}» اندازه‌گیری می‌شود.
               </p>
+
+              {/*
+                The code goes in beside the price button rather than at the end
+                of checkout. A customer holding a code wants to see it work
+                before they commit, and one who finds the field after paying
+                has a complaint rather than an order.
+              */}
+              <div className="promo">
+                <label className="promo__label" htmlFor="promotionCode">
+                  کد تخفیف (اختیاری)
+                </label>
+                <div className="promo__row">
+                  <input
+                    id="promotionCode"
+                    name="promotionCode"
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    maxLength={64}
+                    autoComplete="off"
+                    placeholder="مثلاً NOON10"
+                  />
+                </div>
+                {quote?.promotionRefusal && (
+                  <p className="promo__refused" role="status">
+                    {translateProviderError(quote.promotionRefusal, 'این کد اعمال نشد.')}
+                  </p>
+                )}
+                {quote?.promotion && (
+                  <p className="promo__applied" role="status">
+                    <CheckIcon width={16} height={16} />«{quote.promotion.nameFa}» اعمال شد
+                    {quote.promotion.basis === 'DELIVERY_FEE' && ' — کرایه رایگان'}.
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
                 className="an-button an-button--quiet"

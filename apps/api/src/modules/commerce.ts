@@ -24,10 +24,16 @@ import {
   calculateCartLine,
   calculateQuoteExpiry,
   selectDeliveryPricingRule,
+  totalAfterDiscount,
   type RouteDistance,
 } from '@alo-noon/domain'
 
 import { authenticateRequest, type AuthDependencies } from './auth.js'
+import {
+  attachRedemptionToQuote,
+  releaseRedemptionsForQuotes,
+  reservePromotion,
+} from './promotions.js'
 import type { RoutingService } from './routing.js'
 
 const cartInclude = {
@@ -46,6 +52,11 @@ const cartInclude = {
 
 const quoteInclude = {
   items: { orderBy: { id: 'asc' } },
+  // So the quote can name the campaign that discounted it. A customer reading
+  // "۱۰٬۰۰۰ تومان تخفیف" with no idea which code produced it cannot tell a
+  // working code from a coincidence.
+  promotion: { select: { nameFa: true } },
+  promotionRedemption: { select: { basis: true } },
 } satisfies Prisma.QuoteInclude
 
 type CartRecord = Prisma.CartGetPayload<{ include: typeof cartInclude }>
@@ -579,12 +590,48 @@ export function createPrismaCommerceRepository(
           cart.operationalZoneId,
         )
         const delivery = calculateDeliveryFee(pricingRule, subtotal.amount, distanceMeters)
-        const total = subtotal.add(Money.irr(delivery.deliveryFeeAmount))
+
+        // A code the customer supplied. A refusal does not fail the quote: a
+        // basket that will not price because a code expired is a basket that
+        // gets abandoned. The quote comes back undiscounted and says why.
+        const promotion = input.promotionCode
+          ? await reservePromotion(transaction, tenantId, customerId, {
+              code: input.promotionCode,
+              subtotal: subtotal.amount,
+              deliveryFee: delivery.deliveryFeeAmount,
+              cityId: cart.cityId,
+              now,
+              correlationId,
+            })
+          : null
+        const discountAmount = promotion?.applied ? promotion.discountAmount : 0n
+        const total = Money.irr(
+          totalAfterDiscount({
+            subtotal: subtotal.amount,
+            deliveryFee: delivery.deliveryFeeAmount,
+            discountAmount,
+          }),
+        )
+
         // ownership-established: scoped to a cart loaded above filtered by customerId.
+        const superseded = await transaction.quote.findMany({
+          where: { cartId: cart.id, status: 'ACTIVE' },
+          select: { id: true },
+        })
+        // ownership-established: same cart, loaded above filtered by customerId.
         await transaction.quote.updateMany({
           where: { cartId: cart.id, status: 'ACTIVE' },
           data: { status: 'SUPERSEDED' },
         })
+        // The holds those quotes carried go back to the campaign. Without this a
+        // customer who re-prices their basket twice exhausts their own
+        // per-customer limit against quotes nobody will ever pay.
+        await releaseRedemptionsForQuotes(
+          transaction,
+          tenantId,
+          superseded.map((entry) => entry.id),
+          now,
+        )
 
         const quote = await transaction.quote.create({
           data: {
@@ -596,7 +643,9 @@ export function createPrismaCommerceRepository(
             expiresAt: calculateQuoteExpiry(now),
             subtotalAmount: subtotal.amount,
             deliveryFeeAmount: delivery.deliveryFeeAmount,
+            discountAmount,
             totalAmount: total.amount,
+            ...(promotion?.applied && { promotionId: promotion.promotionId }),
             deliveryAddressId: address.id,
             deliveryServiceAreaIdSnapshot: address.serviceAreaId,
             deliveryOperationalZoneIdSnapshot: address.operationalZoneId,
@@ -624,6 +673,11 @@ export function createPrismaCommerceRepository(
           },
           include: quoteInclude,
         })
+        // The hold now belongs to a quote, which is what lets it be released
+        // when that quote is superseded and spent when it becomes an order.
+        if (promotion?.applied && promotion.redemptionId) {
+          await attachRedemptionToQuote(transaction, promotion.redemptionId, quote.id)
+        }
         await recordCommerceChange(
           transaction,
           tenantId,
@@ -642,7 +696,14 @@ export function createPrismaCommerceRepository(
             expiresAt: quote.expiresAt.toISOString(),
           },
         )
-        return mapQuote(quote)
+        // The refusal is transient: it describes what happened to the code on
+        // this request, not a property of the quote. Storing it would mean a
+        // customer re-reading an old quote is told again about a code they have
+        // long since replaced.
+        return {
+          ...mapQuote(quote),
+          ...(promotion && !promotion.applied && { promotionRefusal: promotion.reason }),
+        }
       })
     },
   }
@@ -835,6 +896,12 @@ function mapQuote(quote: QuoteRecord): QuoteSummary {
     subtotal: { amount: quote.subtotalAmount.toString(), currency: quote.currency },
     deliveryFee: { amount: quote.deliveryFeeAmount.toString(), currency: quote.currency },
     discount: { amount: quote.discountAmount.toString(), currency: quote.currency },
+    ...(quote.promotion && {
+      promotion: {
+        nameFa: quote.promotion.nameFa,
+        basis: quote.promotionRedemption?.basis ?? 'SUBTOTAL',
+      },
+    }),
     total: { amount: quote.totalAmount.toString(), currency: quote.currency },
     items: quote.items.map((item) => ({
       id: item.id,

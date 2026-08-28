@@ -406,6 +406,25 @@ enum PaymentProviderEnvironment {
   PRODUCTION
 }
 
+enum PromotionKind {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_DELIVERY
+}
+
+enum DiscountBasis {
+  SUBTOTAL
+  DELIVERY_FEE
+}
+
+/// A redemption is held while a quote is alive and only spent when an order is
+/// accepted, so an abandoned checkout cannot consume a campaign's budget.
+enum PromotionRedemptionState {
+  RESERVED
+  CONSUMED
+  RELEASED
+}
+
 enum PaymentProviderCapability {
   PAYMENT_INITIALIZATION
   CALLBACK_VERIFICATION
@@ -487,6 +506,8 @@ model Tenant {
   routeEstimates RouteEstimate[]
   deliveryTrips DeliveryTrip[]
   deliveryTripStops DeliveryTripStop[]
+  promotions Promotion[]
+  promotionRedemptions PromotionRedemption[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -547,6 +568,7 @@ model City {
   @@index([tenantId])
 
   @@unique([id, tenantId], map: "g3b_City_id_tenant_key")
+  promotions           Promotion[]
 }
 
 model OperationalZone {
@@ -627,6 +649,7 @@ model Customer {
 
   @@unique([id, tenantId], map: "g3b_Customer_id_tenant_key")
   @@unique([tenantId, mobileE164], map: "auth_Customer_tenant_mobile_key")
+  promotionRedemptions PromotionRedemption[]
 }
 
 model IdentityAccount {
@@ -1225,6 +1248,9 @@ model Quote {
   deliveryLatitudeSnapshot Decimal? @db.Decimal(10, 7)
   deliveryLongitudeSnapshot Decimal? @db.Decimal(10, 7)
   deliveryInstructionsSnapshot String?
+  promotionId       String?     @db.Uuid
+  promotion         Promotion?  @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  promotionRedemption PromotionRedemption?
   items             QuoteItem[]
   order             Order?
   createdAt         DateTime    @default(now())
@@ -1235,6 +1261,7 @@ model Quote {
   @@index([deliveryAddressId])
   @@index([deliveryPricingRuleId])
   @@index([deliveryAddressId, tenantId], map: "g3b_Quote_deliveryAddressId_tenant_idx")
+  @@index([promotionId, tenantId], map: "g3b_Quote_promotionId_tenant_idx")
   @@index([deliveryPricingRuleId, tenantId], map: "g3b_Quote_deliveryPricingRuleId_tenant_idx")
   @@unique([tenantId, customerId, idempotencyKey], map: "Quote_tenant_customer_idempotency_key")
 
@@ -1317,6 +1344,9 @@ model Order {
   cancellationReasonCode       String?                @db.VarChar(64)
   cancellationNotes            String?
   requestedDeliveryAt          DateTime?
+  promotionId                  String?                @db.Uuid
+  promotion                    Promotion?             @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  promotionRedemption          PromotionRedemption?
   items                        OrderItem[]
   transitions                  OrderStateTransition[]
   payment                      Payment?
@@ -1339,6 +1369,7 @@ model Order {
   @@index([customerId, tenantId], map: "g3b_Order_customerId_tenant_idx")
   @@index([cityId, tenantId], map: "g3b_Order_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_Order_operationalZoneId_tenant_idx")
+  @@index([promotionId, tenantId], map: "g3b_Order_promotionId_tenant_idx")
   @@index([bakeryBranchId, tenantId], map: "g3b_Order_bakeryBranchId_tenant_idx")
   @@index([savedAddressId, tenantId], map: "g3b_Order_savedAddressId_tenant_idx")
   @@index([quoteId, tenantId], map: "g3b_Order_quoteId_tenant_idx")
@@ -2251,4 +2282,87 @@ model DeliveryTripStop {
   @@unique([deliveryTripId, sequence], map: "DeliveryTripStop_sequence_key")
   @@index([deliveryTripId, tenantId], map: "g3b_DeliveryTripStop_deliveryTripId_tenant_idx")
   @@index([deliveryTaskId, tenantId], map: "g3b_DeliveryTripStop_deliveryTaskId_tenant_idx")
+}
+
+/// A discount campaign.
+///
+/// `cityId` is the field that makes provincial and national rollout possible:
+/// a campaign opened for one city cannot be spent by customers in another, so
+/// one city's launch budget cannot be drained by a market it was never meant
+/// for. Null means the campaign runs everywhere.
+///
+/// Percentages are basis points, never floats — a campaign that is a hundredth
+/// of a Rial out is a ledger that will not reconcile.
+model Promotion {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  tenantId              String                 @db.Uuid
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// What the customer types. Stored normalised: upper case, no separators.
+  code                  String                 @db.VarChar(64)
+  nameFa                String
+  kind                  PromotionKind
+  percentageBasisPoints Int?
+  fixedAmount           BigInt?
+  maxDiscountAmount     BigInt?
+  minSubtotalAmount     BigInt?
+  currency              Currency               @default(IRR)
+  startsAt              DateTime
+  endsAt                DateTime?
+  totalRedemptionLimit  Int?
+  perCustomerLimit      Int?
+  firstOrderOnly        Boolean                @default(false)
+  cityId                String?                @db.Uuid
+  city                  City?                  @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  isActive              Boolean                @default(false)
+  /// Counted rather than derived, so the limit can be enforced by a conditional
+  /// update instead of a scan that races under concurrency.
+  redeemedCount         Int                    @default(0)
+  redemptions           PromotionRedemption[]
+  quotes                Quote[]
+  orders                Order[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@unique([tenantId, code], map: "Promotion_tenant_code_key")
+  @@index([tenantId, isActive, startsAt])
+  @@index([cityId])
+  @@unique([id, tenantId], map: "g3b_Promotion_id_tenant_key")
+  @@index([cityId, tenantId], map: "g3b_Promotion_cityId_tenant_idx")
+}
+
+/// One customer's use of one campaign.
+///
+/// Held when a quote is cut and only spent when the order is accepted. Without
+/// that distinction an abandoned basket would burn a redemption, and a campaign
+/// capped at a thousand would be exhausted by people who never bought anything.
+model PromotionRedemption {
+  id            String                   @id @default(uuid()) @db.Uuid
+  tenantId      String                   @db.Uuid
+  tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  promotionId   String                   @db.Uuid
+  promotion     Promotion                @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  customerId    String                   @db.Uuid
+  customer      Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quoteId       String?                  @unique @db.Uuid
+  quote         Quote?                   @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  orderId       String?                  @unique @db.Uuid
+  order         Order?                   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  /// What it was worth, snapshotted. The campaign's terms may change later; what
+  /// this customer was actually given must not.
+  amount        BigInt
+  basis         DiscountBasis
+  currency      Currency                 @default(IRR)
+  state         PromotionRedemptionState @default(RESERVED)
+  correlationId String                   @db.Uuid
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@index([tenantId, promotionId, customerId, state])
+  @@index([promotionId, state])
+  @@index([customerId])
+  @@unique([id, tenantId], map: "g3b_PromotionRedemption_id_tenant_key")
+  @@index([promotionId, tenantId], map: "g3b_PromotionRedemption_promotionId_tenant_idx")
+  @@index([customerId, tenantId], map: "g3b_PromotionRedemption_customerId_tenant_idx")
+  @@index([quoteId, tenantId], map: "g3b_PromotionRedemption_quoteId_tenant_idx")
+  @@index([orderId, tenantId], map: "g3b_PromotionRedemption_orderId_tenant_idx")
 }

@@ -210,6 +210,8 @@ export async function createQuote(input: {
   deliveryAddressId: string
   expectedCartVersion: number
   idempotencyKey: string
+  /** A discount code, as typed. A bad one does not fail the quote. */
+  promotionCode?: string
 }): Promise<ApiResult<QuoteSummary>> {
   return request<QuoteSummary>('/api/v1/cart/quote', { method: 'POST', body: input })
 }

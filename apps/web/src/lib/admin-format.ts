@@ -85,6 +85,16 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   ORDER_WRITE_CONFLICT: 'کس دیگری زودتر این سفارش را جابه‌جا کرد. صفحه را تازه کنید.',
   INVALID_ORDER_COMMAND: 'مقادیر فرم معتبر نیست.',
   INVALID_PRODUCTION_COMMAND: 'مقادیر فرم معتبر نیست.',
+  PROMOTION_NOT_FOUND: 'این کد تخفیف وجود ندارد.',
+  PROMOTION_INACTIVE: 'این کد تخفیف فعال نیست.',
+  PROMOTION_NOT_STARTED: 'این کمپین هنوز شروع نشده است.',
+  PROMOTION_EXPIRED: 'مهلت این کد تخفیف تمام شده است.',
+  PROMOTION_WRONG_CITY: 'این کد برای شهر دیگری است.',
+  PROMOTION_BELOW_MINIMUM: 'مبلغ سبد برای این کد کافی نیست.',
+  PROMOTION_EXHAUSTED: 'ظرفیت این کد تخفیف تمام شده است.',
+  PROMOTION_CUSTOMER_LIMIT_REACHED: 'شما قبلاً از این کد استفاده کرده‌اید.',
+  PROMOTION_NOT_FIRST_ORDER: 'این کد فقط برای اولین سفارش است.',
+  PROMOTION_NO_EFFECT: 'این کد روی این سبد تخفیفی ندارد.',
   REFUND_QUARANTINED:
     'بازگشت وجه رد شد و نیاز به بررسی انسان دارد. سفارش عمداً لغو نشد تا مشکل زیر یک سفارشِ ظاهراً تمام‌شده پنهان نماند.',
 }

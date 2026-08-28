@@ -399,3 +399,56 @@
   justify-content: center;
   gap: 0.6rem;
 }
+
+/* --------------------------------------------------------- discount code */
+
+/*
+ * The code field sits with the price step rather than at the end of checkout.
+ * A customer holding a code wants to watch it work before they commit; one who
+ * discovers the field after paying has a complaint rather than an order.
+ */
+.promo {
+  display: grid;
+  gap: 0.4rem;
+  margin-block-end: 0.9rem;
+}
+.promo__label {
+  color: var(--ink-muted);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+.promo__row input {
+  width: 100%;
+  max-width: 18rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--ink-base);
+  font: inherit;
+  /* Codes are Latin even in a Persian interface, so the field reads
+     left-to-right while the label beside it stays right-to-left. */
+  direction: ltr;
+  text-align: start;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.promo__row input:focus {
+  outline: none;
+  border-color: var(--primary-600);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-600) 20%, transparent);
+}
+/* A refused code is information, not a failure — the basket still priced. */
+.promo__refused {
+  color: var(--ink-muted);
+  font-size: 0.83rem;
+  line-height: 1.7;
+}
+.promo__applied {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--success);
+  font-size: 0.85rem;
+  font-weight: 600;
+}

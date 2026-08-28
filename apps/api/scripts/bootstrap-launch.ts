@@ -445,6 +445,35 @@ async function main(): Promise<void> {
       })
     }
 
+    // A welcome campaign, scoped to this city.
+    //
+    // Scoped rather than national on purpose: this is the shape every city
+    // launch takes, and a campaign that quietly ran everywhere would spend the
+    // next city's budget before it opened. Ten percent, capped, first order
+    // only, and limited — so the worst case is bounded and known in advance.
+    // Every mutable field is restated in `update`, so re-running this against a
+    // database that already holds a NOON10 corrects its terms rather than
+    // leaving whatever was there. A seed that only fixes an empty database is a
+    // seed nobody can trust twice.
+    const welcomeCampaign = {
+      nameFa: 'ده درصد خوش‌آمدگویی',
+      kind: 'PERCENTAGE' as const,
+      percentageBasisPoints: 1_000,
+      maxDiscountAmount: 50_000n,
+      minSubtotalAmount: 100_000n,
+      startsAt: new Date(now.getTime() - 86_400_000),
+      totalRedemptionLimit: 500,
+      perCustomerLimit: 1,
+      firstOrderOnly: true,
+      cityId: city.id,
+      isActive: true,
+    }
+    await t.promotion.upsert({
+      where: { tenantId_code: { tenantId: TENANT_ID, code: 'NOON10' } },
+      update: welcomeCampaign,
+      create: { tenantId: TENANT_ID, code: 'NOON10', ...welcomeCampaign },
+    })
+
     return {
       cityId: city.id,
       zoneId: zone.id,

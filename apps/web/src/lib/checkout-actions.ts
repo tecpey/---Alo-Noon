@@ -113,7 +113,10 @@ export async function createAddressAction(input: {
  * makes it safe to show a total at all: the price a customer sees is the price
  * they will be charged, for as long as the quote says.
  */
-export async function quoteAction(deliveryAddressId: string): Promise<QuoteResult> {
+export async function quoteAction(
+  deliveryAddressId: string,
+  promotionCode?: string,
+): Promise<QuoteResult> {
   const cart = await readCart()
   if (!cart.ok) return fail(cart.error.code, 'سبد خرید خوانده نشد.', true)
   if (!cart.data || cart.data.items.length === 0) {
@@ -123,12 +126,17 @@ export async function quoteAction(deliveryAddressId: string): Promise<QuoteResul
   const result = await createQuote({
     deliveryAddressId,
     expectedCartVersion: cart.data.version,
+    // The code is part of what makes this quote unique. Without it in the key,
+    // adding a code to a basket already priced would replay the undiscounted
+    // quote and the customer would watch their discount do nothing.
     idempotencyKey: derivedIdempotencyKey(
       'quote',
       cart.data.id,
       String(cart.data.version),
       deliveryAddressId,
+      promotionCode ?? 'none',
     ),
+    ...(promotionCode && { promotionCode }),
   })
   if (!result.ok) return fail(result.error.code, 'محاسبهٔ هزینه ناموفق بود.', true)
   return { ok: true, quote: result.data }
