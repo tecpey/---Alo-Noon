@@ -132,3 +132,116 @@
   border: 1px solid var(--tint-error-border);
   color: var(--tint-error-ink);
 }
+
+/* ------------------------------------------------ ordering it again, rating */
+
+.order__actions {
+  display: grid;
+  gap: 0.6rem;
+  margin-block-start: 0.9rem;
+  padding-block-start: 0.9rem;
+  border-block-start: 1px solid var(--line-base);
+}
+.order__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.order__notice,
+.order__error {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+.order__notice {
+  color: var(--ink-muted);
+}
+.order__error {
+  color: var(--danger, #b3261e);
+}
+/* A link, not a second button: the notice is the sentence and this is the way
+   out of it, so it should read as part of the same thought. */
+.order__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary-600);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.rating {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised, var(--surface-base));
+}
+.rating__row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.rating__row legend {
+  padding: 0;
+  margin-block-end: 0.4rem;
+  color: var(--ink-muted);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+.rating__scores {
+  display: flex;
+  gap: 0.35rem;
+}
+/* Numbers rather than stars. Five stars is a shape people read as a review of a
+   restaurant; a bakery order is being asked something narrower, and the digits
+   also survive a screen reader without needing a label per glyph. */
+.rating__score {
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-full);
+  background: var(--surface-base);
+  color: var(--ink-base);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.rating__score:hover {
+  border-color: var(--primary-600);
+}
+.rating__score--on {
+  border-color: var(--primary-600);
+  background: color-mix(in srgb, var(--primary-600) 16%, transparent);
+}
+.rating__comment {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--ink-muted);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+.rating__comment textarea {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--ink-base);
+  font: inherit;
+  font-weight: 400;
+  resize: vertical;
+}
+.rating__comment textarea:focus {
+  outline: none;
+  border-color: var(--primary-600);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-600) 20%, transparent);
+}

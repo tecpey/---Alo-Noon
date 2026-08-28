@@ -270,6 +270,161 @@ paths:
           description: Cart or item was not found.
         '409':
           description: Expected cart version is stale.
+  /api/v1/orders/{orderId}/reorder:
+    post:
+      operationId: reorderOrder
+      summary: Rebuild the basket from a past order.
+      description: >-
+        Priced at today's prices, never the prices the old order was placed at:
+        a basket rebuilt at three-week-old prices sells bread below what it
+        costs to bake. Replaces the basket rather than merging into it, and
+        reports everything it could not repeat instead of silently omitting it.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: The basket, rebuilt, with anything that had to change.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/ReorderResult' }
+                  meta: { $ref: '#/components/schemas/ResponseMeta' }
+        '401':
+          description: A valid customer session is required.
+        '404':
+          description: No such order for this customer.
+        '422':
+          description: Nothing from that order is still sold.
+  /api/v1/orders/{orderId}/rating:
+    get:
+      operationId: readOrderRating
+      summary: The caller's own rating for an order.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The rating.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/OrderRating' }
+                  meta: { $ref: '#/components/schemas/ResponseMeta' }
+        '401':
+          description: A valid customer session is required.
+        '404':
+          description: No rating has been left for that order.
+    post:
+      operationId: rateOrder
+      summary: Say how an order was.
+      description: >-
+        Only after it arrived, once, and within a month. Two scores because two
+        different things can go wrong and they belong to different people: the
+        bread is the bakery's and the delivery is the courier's.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderRatingInput' }
+      responses:
+        '201':
+          description: Recorded.
+        '401':
+          description: A valid customer session is required.
+        '404':
+          description: No such order for this customer.
+        '422':
+          description: >-
+            The order has not arrived, was already rated, or the rating window
+            has closed.
+  /api/v1/favourites:
+    get:
+      operationId: listFavourites
+      summary: The caller's saved bread.
+      description: >-
+        A favourite that has sold out stays in the list and says so. Removing it
+        would look like the platform lost it.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Saved offerings, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Favourite' }
+                  meta: { $ref: '#/components/schemas/ResponseMeta' }
+        '401':
+          description: A valid customer session is required.
+  /api/v1/favourites/{offeringId}:
+    put:
+      operationId: addFavourite
+      summary: Save a loaf. A second tap is the same favourite, not an error.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: offeringId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Saved.
+        '401':
+          description: A valid customer session is required.
+        '404':
+          description: No such offering.
+    delete:
+      operationId: removeFavourite
+      summary: Forget a loaf. Removing one that was never there is not a failure.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: offeringId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Gone.
+        '401':
+          description: A valid customer session is required.
   /api/v1/admin/cash/outstanding:
     get:
       operationId: listCourierCashPositions
@@ -1636,6 +1791,51 @@ components:
             refused.
         paymentMethod:
           $ref: '#/components/schemas/PaymentMethod'
+    OrderRatingInput:
+      type: object
+      required: [breadScore]
+      properties:
+        breadScore: { type: integer, minimum: 1, maximum: 5 }
+        deliveryScore: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 500 }
+    OrderRating:
+      type: object
+      required: [orderId, breadScore, deliveryScore, comment, createdAt]
+      properties:
+        orderId: { type: string, format: uuid }
+        breadScore: { type: integer, minimum: 1, maximum: 5 }
+        deliveryScore: { type: [integer, 'null'], minimum: 1, maximum: 5 }
+        comment: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    ReorderResult:
+      type: object
+      required: [cartId, addedCount, adjustments]
+      properties:
+        cartId: { type: string, format: uuid }
+        addedCount: { type: integer, minimum: 0 }
+        adjustments:
+          type: array
+          description: Everything that could not be repeated exactly, and why.
+          items:
+            type: object
+            required: [offeringId, nameFa, reason, quantity]
+            properties:
+              offeringId: { type: string, format: uuid }
+              nameFa: { type: string }
+              reason:
+                type: string
+                enum: [REORDER_OFFERING_UNAVAILABLE, REORDER_QUANTITY_REDUCED]
+              quantity: { type: integer, minimum: 0 }
+    Favourite:
+      type: object
+      required: [offeringId, productVariantId, nameFa, slug, priceAmount, available]
+      properties:
+        offeringId: { type: string, format: uuid }
+        productVariantId: { type: string, format: uuid }
+        nameFa: { type: string }
+        slug: { type: string }
+        priceAmount: { type: string }
+        available: { type: boolean }
     PaymentMethod:
       type: string
       enum: [ONLINE_GATEWAY, CASH_ON_DELIVERY]

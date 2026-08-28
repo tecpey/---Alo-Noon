@@ -5,7 +5,10 @@ import type {
   AddressSummary,
   CartSummary,
   DeliveryWindow,
+  Favourite,
+  OrderRating,
   OrderSummary,
+  ReorderResult,
   PaymentExecutionSummary,
   PaymentSummary,
   ProductDetail,
@@ -236,6 +239,43 @@ export async function placeOrder(input: {
   idempotencyKey: string
 }): Promise<ApiResult<OrderSummary>> {
   return request<OrderSummary>('/api/v1/orders', { method: 'POST', body: input })
+}
+
+/* ------------------------------------------------- reorder and engagement */
+
+/**
+ * Rebuilds the basket from a past order.
+ *
+ * The server prices it at today's prices and reports anything it could not
+ * repeat; nothing about the old order's money comes back with it.
+ */
+export async function reorder(orderId: string): Promise<ApiResult<ReorderResult>> {
+  if (!isUuid(orderId)) {
+    return { ok: false, error: { code: 'ORDER_NOT_FOUND', message: 'سفارش یافت نشد.' } }
+  }
+  return request<ReorderResult>(`/api/v1/orders/${orderId}/reorder`, { method: 'POST', body: {} })
+}
+
+export async function rateOrder(
+  orderId: string,
+  input: { breadScore: number; deliveryScore?: number; comment?: string },
+): Promise<ApiResult<OrderRating>> {
+  if (!isUuid(orderId)) {
+    return { ok: false, error: { code: 'ORDER_NOT_FOUND', message: 'سفارش یافت نشد.' } }
+  }
+  return request<OrderRating>(`/api/v1/orders/${orderId}/rating`, { method: 'POST', body: input })
+}
+
+export async function listFavourites(): Promise<ApiResult<Favourite[]>> {
+  return request<Favourite[]>('/api/v1/favourites', { method: 'GET' })
+}
+
+export async function addFavourite(offeringId: string): Promise<ApiResult<undefined>> {
+  return request<undefined>(`/api/v1/favourites/${offeringId}`, { method: 'PUT' })
+}
+
+export async function removeFavourite(offeringId: string): Promise<ApiResult<undefined>> {
+  return request<undefined>(`/api/v1/favourites/${offeringId}`, { method: 'DELETE' })
 }
 
 export async function listOrders(): Promise<ApiResult<OrderSummary[]>> {

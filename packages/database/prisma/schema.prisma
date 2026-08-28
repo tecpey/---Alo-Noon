@@ -664,6 +664,8 @@ model Customer {
   tenantMemberships      TenantMembership[]
   carts                  Cart[]
   quotes                 Quote[]
+  ratings          OrderRating[]
+  favourites       CustomerFavourite[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
@@ -1193,6 +1195,7 @@ model BakeryProductOffering {
   orderItems         OrderItem[]
   cartItems          CartItem[]
   quoteItems         QuoteItem[]
+  favourites              CustomerFavourite[]
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
 
@@ -1435,6 +1438,7 @@ model Order {
   deliveryWindow               BakeryDeliveryWindow?  @relation(fields: [deliveryWindowId], references: [id], onDelete: Restrict)
   paymentMethod                PaymentMethod          @default(ONLINE_GATEWAY)
   cashRemittanceItems          CourierCashRemittanceItem[]
+  rating                       OrderRating?
   promotionRedemption          PromotionRedemption?
   items                        OrderItem[]
   transitions                  OrderStateTransition[]
@@ -2079,6 +2083,55 @@ model CustomerEvent {
   @@index([tenantId])
 
   @@index([customerId, tenantId], map: "g3b_CustomerEvent_customerId_tenant_idx")
+}
+
+/// What a customer thought of an order, once it arrived.
+///
+/// One rating per order, and only after it was delivered. Two scores rather
+/// than one because two different things can go wrong and they belong to
+/// different people: the bread is the bakery's, the delivery is the courier's,
+/// and a single star that blames both teaches nobody anything.
+model OrderRating {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  orderId       String   @unique @db.Uuid
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customerId    String   @db.Uuid
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  /// How the bread was. One to five.
+  breadScore    Int
+  /// How the delivery was. Optional — plenty of people only care about one.
+  deliveryScore Int?
+  comment       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@unique([id, tenantId], map: "g3b_OrderRating_id_tenant_key")
+  @@index([orderId, tenantId], map: "g3b_OrderRating_orderId_tenant_idx")
+  @@index([customerId, tenantId], map: "g3b_OrderRating_customerId_tenant_idx")
+}
+
+/// Bread a customer wants to find again without searching for it.
+///
+/// Against the offering rather than the product: a favourite is something you
+/// can put in a basket, and the same loaf from a different bakery is a
+/// different thing to buy.
+model CustomerFavourite {
+  id                      String                @id @default(uuid()) @db.Uuid
+  tenantId                String                @db.Uuid
+  customerId              String                @db.Uuid
+  customer                Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  bakeryProductOfferingId String                @db.Uuid
+  bakeryProductOffering   BakeryProductOffering @relation(fields: [bakeryProductOfferingId], references: [id], onDelete: Cascade)
+  createdAt               DateTime              @default(now())
+
+  @@unique([tenantId, customerId, bakeryProductOfferingId], map: "CustomerFavourite_identity_key")
+  @@index([tenantId])
+  @@unique([id, tenantId], map: "g3b_CustomerFavourite_id_tenant_key")
+  @@index([customerId, tenantId], map: "g3b_CustomerFavourite_customerId_tenant_idx")
+  @@index([bakeryProductOfferingId, tenantId], map: "g3b_CustomerFavourite_bakeryProductOfferingId_tenant_idx")
 }
 
 model DomainEventOutbox {

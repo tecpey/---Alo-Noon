@@ -42,7 +42,15 @@ const quoteForOrderInclude = {
   },
 } satisfies Prisma.QuoteInclude
 
-const orderInclude = { items: { orderBy: { id: 'asc' } } } satisfies Prisma.OrderInclude
+const orderInclude = {
+  items: { orderBy: { id: 'asc' } },
+  // So the customer's own list can tell whether they already said something,
+  // without a round trip per order. Offering the rating form for an order
+  // already rated invites somebody to fill in a form that will be refused.
+  rating: {
+    select: { breadScore: true, deliveryScore: true, comment: true, createdAt: true },
+  },
+} satisfies Prisma.OrderInclude
 type QuoteForOrder = Prisma.QuoteGetPayload<{ include: typeof quoteForOrderInclude }>
 type OrderRecord = Prisma.OrderGetPayload<{ include: typeof orderInclude }>
 
@@ -626,6 +634,14 @@ function mapOrder(order: OrderRecord): OrderSummary {
     state: order.state,
     paymentState: order.paymentState,
     paymentMethod: order.paymentMethod,
+    rating: order.rating
+      ? {
+          breadScore: order.rating.breadScore,
+          deliveryScore: order.rating.deliveryScore,
+          comment: order.rating.comment,
+          createdAt: order.rating.createdAt.toISOString(),
+        }
+      : null,
     productionState: order.productionState,
     deliveryState: order.deliveryState,
     subtotal: { amount: order.subtotalAmount.toString(), currency: order.currency },

@@ -54,6 +54,7 @@ const order: OrderSummary = {
   state: 'PENDING_CONFIRMATION',
   paymentState: 'NOT_STARTED',
   paymentMethod: 'ONLINE_GATEWAY',
+  rating: null,
   productionState: 'UNSCHEDULED',
   deliveryState: 'UNASSIGNED',
   subtotal: { amount: '500000', currency: 'IRR' },

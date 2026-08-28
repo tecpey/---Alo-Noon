@@ -10,6 +10,7 @@ import { BrandMark } from '../components/brand-mark'
 import { CheckIcon, ChevronIcon, ReceiptIcon } from '../components/icons'
 import { EmptyBasketArt } from '../components/brand-art'
 import { formatToman, toPersianDigits } from '../../lib/persian'
+import { OrderActions } from './order-actions'
 import { orderProgress, type OrderStates } from '../../lib/order-display'
 import { currentSession, listOrders } from '../../lib/shop-api'
 
@@ -75,6 +76,7 @@ interface OrderRow extends OrderStates {
   publicId: string
   total: { amount: string }
   items: Array<{ id: string; nameFaSnapshot: string; quantity: number }>
+  rating: { breadScore: number } | null
   createdAt: string
 }
 
@@ -119,6 +121,18 @@ function OrderCard({ order }: { order: OrderRow }) {
           .map((item) => `${item.nameFaSnapshot} × ${toPersianDigits(String(item.quantity))}`)
           .join('، ')}
       </p>
+
+      {/*
+        Ordering it again is offered on every order, not only finished ones:
+        somebody whose bread is still on its way may well want tomorrow's too,
+        and there is nothing about a basket that requires the last one to have
+        arrived. Rating is the opposite — there is nothing to rate until it has.
+      */}
+      <OrderActions
+        orderId={order.id}
+        completed={order.state === 'COMPLETED'}
+        alreadyRated={order.rating !== null}
+      />
     </article>
   )
 }

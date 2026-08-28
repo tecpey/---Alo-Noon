@@ -47,6 +47,7 @@ import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
 import { createPrismaPaymentExecutionService } from './modules/payment-execution.js'
 import { createPrismaCashOnDeliveryService } from './modules/cash-on-delivery.js'
+import { createPrismaEngagementService } from './modules/engagement.js'
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger.js'
 import { createPrismaPaymentSettlementService } from './modules/payment-settlement.js'
 import { createPaymentSecretResolver } from './providers/secret-resolver.js'
@@ -328,6 +329,9 @@ const app = await buildApp({
   deliveryTrips,
   courierAssignments,
   cash: { service: cashOnDeliveryService },
+  // Coming back: ordering again, rating, favourites. Reorder is the one that
+  // earns the second order, which for a daily staple is most of the business.
+  engagement: { service: createPrismaEngagementService(prisma) },
 })
 
 if (env.SENTRY_DSN) {
