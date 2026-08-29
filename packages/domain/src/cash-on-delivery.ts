@@ -113,6 +113,31 @@ export function evaluateCashOnDelivery(
 }
 
 /**
+ * Why cash was not offered, in the words that tell a customer what to do next.
+ *
+ * Three refusals with three different answers: come back another time, spend
+ * less, or order once through the gateway first. One message for all of them
+ * would send two thirds of these customers to the wrong next step.
+ *
+ * It sits beside the codes rather than in either application because both the
+ * site and the phone offer cash, and because a fourth refusal added above
+ * should make the missing sentence obvious here instead of silently falling
+ * through to the generic line in two places at once.
+ */
+export function cashRefusalMessage(reason: string): string {
+  switch (reason) {
+    case CashOnDeliveryRefusal.DISABLED:
+      return 'در این شهر فعلاً پرداخت نقدی ممکن نیست.'
+    case CashOnDeliveryRefusal.ABOVE_CEILING:
+      return 'مبلغ این سفارش از سقف پرداخت نقدی بیشتر است؛ لطفاً اینترنتی پرداخت کنید.'
+    case CashOnDeliveryRefusal.CUSTOMER_NOT_ESTABLISHED:
+      return 'پرداخت نقدی پس از اولین سفارش موفق فعال می‌شود.'
+    default:
+      return 'پرداخت نقدی برای این سفارش ممکن نیست.'
+  }
+}
+
+/**
  * The journal for cash taken at the door.
  *
  * Mirrors a gateway capture on the credit side — the order is paid either way,

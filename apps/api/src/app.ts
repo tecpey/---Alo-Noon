@@ -183,6 +183,20 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   await app.register(cors, {
     origin: options.corsOrigins?.length ? options.corsOrigins : false,
     credentials: true,
+    /**
+     * The methods this API actually serves.
+     *
+     * Stated rather than left to the library, whose default is GET, HEAD and
+     * POST. Under that default a browser on an allowed origin can read the
+     * catalog and place an order but cannot change a basket item or sign out,
+     * because the preflight for PUT and DELETE is refused — and refused as a
+     * network error with no status, so the client reports "could not reach the
+     * service" about a service it is talking to happily.
+     *
+     * The allow-list is the origin list above. Naming a method here grants
+     * nothing to an origin that is not on it.
+     */
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   })
   registerDiscoveryRoutes(app, {
     catalogRepository: options.catalogRepository ?? unavailableCatalogRepository,

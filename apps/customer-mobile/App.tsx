@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import * as Location from 'expo-location'
 import { StatusBar } from 'expo-status-bar'
 import {
@@ -18,21 +18,24 @@ import type {
   ActiveCitySummary,
   AddressSummary,
   CartSummary,
+  DeliveryWindow,
   OrderSummary,
   PaymentExecutionSummary,
+  PaymentMethod,
   PaymentSummary,
   ProductSummary,
   QuoteSummary,
   SessionContext,
 } from '@alo-noon/contracts'
 import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
-import { orderProgress } from '@alo-noon/domain'
+import { formatDeliveryWindow, orderProgress } from '@alo-noon/domain'
 import { GlassSurface, OvenIcon, PlusIcon, PressScale, SteamIcon } from '@alo-noon/mobile-ui'
 
 import brandMark from './assets/logo-mark.png'
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
 import { customerCopy } from './src/copy'
 import { AccountScreen } from './src/screens/account'
+import { CheckoutChoices } from './src/screens/checkout-choices'
 import { OrderDetailScreen, OrdersScreen } from './src/screens/orders'
 import { TabBar, type Tab } from './src/screens/tabs'
 import {
@@ -72,6 +75,13 @@ export default function App() {
   const [products, setProducts] = useState<ProductSummary[]>([])
   const [cart, setCart] = useState<CartSummary | null>(null)
   const [quote, setQuote] = useState<QuoteSummary | null>(null)
+  // What the customer chose before pricing. A quote is priced against all
+  // three, so changing any of them throws the quote away rather than leaving a
+  // total on screen that belongs to a different set of choices.
+  const [windows, setWindows] = useState<DeliveryWindow[]>([])
+  const [chosenWindow, setChosenWindow] = useState<string | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ONLINE_GATEWAY')
+  const [promotionCode, setPromotionCode] = useState('')
   const [order, setOrder] = useState<OrderSummary | null>(null)
   const [addresses, setAddresses] = useState<AddressSummary[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState<string>()
@@ -149,6 +159,42 @@ export default function App() {
       active = false
     }
   }, [api])
+
+  /**
+   * The windows this basket's branch is offering.
+   *
+   * Read when a basket first has something in it, because the offer belongs to
+   * the branch the basket is with — an empty basket has no branch to ask about.
+   * Re-read on the branch rather than on every cart version: adding a second
+   * loaf does not change what time the ovens run, and refetching on each tap
+   * would spend a customer's data to be told the same thing.
+   *
+   * A failure is silent by design. No windows means the section is not offered
+   * and the order goes out as soon as it is ready, which is a complete way to
+   * buy bread — putting an error in front of somebody for it would break a
+   * checkout that still works.
+   */
+  const branchWithBasket = cart && cart.items.length > 0 ? cart.bakeryBranchId : null
+  useEffect(() => {
+    if (!api || !branchWithBasket) {
+      setWindows([])
+      return
+    }
+
+    let active = true
+    void api
+      .listDeliveryWindows()
+      .then((offered) => {
+        if (active) setWindows(offered)
+      })
+      .catch(() => {
+        if (active) setWindows([])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [api, branchWithBasket])
 
   const requestOtp = async () => {
     if (!api || busy) return
@@ -354,7 +400,14 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     try {
-      setQuote(await api.createQuote(selectedAddressId, cart.version, idempotencyKey))
+      const trimmedCode = promotionCode.trim()
+      setQuote(
+        await api.createQuote(selectedAddressId, cart.version, idempotencyKey, {
+          ...(trimmedCode && { promotionCode: trimmedCode }),
+          ...(chosenWindow && { deliveryWindowStartsAt: chosenWindow }),
+          paymentMethod,
+        }),
+      )
       setOrder(null)
       resetPayment()
       setQuoteCommandKey(undefined)
@@ -372,8 +425,18 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     try {
-      setOrder(await api.createOrder(quote.id, idempotencyKey))
+      const placed = await api.createOrder(quote.id, idempotencyKey)
+      setOrder(placed)
       setOrderCommandKey(undefined)
+
+      // A cash order has nothing for the customer to do next, so it does not
+      // get a button that says "pay". The payment is opened here instead — it
+      // is what the courier's collection lands on, and asking somebody to tap
+      // "pay" for money they will hand over at their door is a step that only
+      // exists because of how this screen is built.
+      if (placed.paymentMethod === 'CASH_ON_DELIVERY') {
+        setPayment(await api.startPayment(placed.id, `${idempotencyKey}-cash`))
+      }
     } catch (error) {
       handleAuthenticatedError(error)
     } finally {
@@ -488,6 +551,27 @@ export default function App() {
     } finally {
       setBusy(false)
     }
+  }
+
+  /**
+   * Discards the price when a choice that produced it changes.
+   *
+   * A quote is priced against the window, the payment method and the code that
+   * were sent with it. Leaving the old total on screen after one of them moves
+   * shows a number that is no longer the number, and the customer only finds
+   * out at the gateway.
+   */
+  const chooseWindow = (startsAt: string | null) => {
+    setChosenWindow(startsAt)
+    setQuote(null)
+  }
+  const chooseMethod = (method: PaymentMethod) => {
+    setPaymentMethod(method)
+    setQuote(null)
+  }
+  const changePromotionCode = (code: string) => {
+    setPromotionCode(code)
+    setQuote(null)
   }
 
   /**
@@ -776,6 +860,19 @@ export default function App() {
               onOrder={() => void createOrder()}
               onPay={() => void startPayment()}
               onRefreshPayment={() => void refreshPayment()}
+              choices={
+                <CheckoutChoices
+                  windows={windows}
+                  chosenWindow={chosenWindow}
+                  onChooseWindow={chooseWindow}
+                  method={paymentMethod}
+                  onChooseMethod={chooseMethod}
+                  promotionCode={promotionCode}
+                  onPromotionCode={changePromotionCode}
+                  quote={quote}
+                  now={new Date()}
+                />
+              }
             />
           )}
           {message && <InlineMessage text={message} />}
@@ -1085,6 +1182,7 @@ function CartCard({
   onOrder,
   onPay,
   onRefreshPayment,
+  choices,
 }: {
   cart: CartSummary
   quote: QuoteSummary | null
@@ -1099,7 +1197,15 @@ function CartCard({
   onOrder: () => void
   onPay: () => void
   onRefreshPayment: () => void
+  /**
+   * When, how and with what code — passed in rather than built here so this
+   * component keeps knowing only about the basket it was already about.
+   */
+  choices: ReactNode
 }) {
+  // The order's own method, not the one still selected on screen: once an order
+  // exists the choice is settled, and the server settled it.
+  const cashOrder = order?.paymentMethod === 'CASH_ON_DELIVERY'
   return (
     <View style={styles.cartCard}>
       <View style={styles.cartTitleRow}>
@@ -1131,8 +1237,11 @@ function CartCard({
         <Text style={styles.price}>{formatRials(cart.subtotal.amount)}</Text>
         <Text style={styles.totalLabel}>جمع سبد</Text>
       </View>
+      {/* Above the price, because each of these changes it. Hidden once an
+          order exists: by then they are decided and the server holds them. */}
+      {cart.items.length > 0 && !order && choices}
       <PrimaryButton
-        label="دریافت قیمت نهایی"
+        label={quote ? 'محاسبهٔ دوباره' : 'دریافت قیمت نهایی'}
         busy={busy}
         disabled={cart.items.length === 0 || !addressSelected}
         onPress={onQuote}
@@ -1144,6 +1253,21 @@ function CartCard({
             انقضا: {new Date(quote.expiresAt).toLocaleTimeString('fa-IR')}
           </Text>
           <Text style={styles.quoteMeta}>هزینه ارسال: {formatRials(quote.deliveryFee.amount)}</Text>
+          {/* Only when there is one. A zero discount line invites the question
+              "why is my discount nothing". */}
+          {quote.discount.amount !== '0' && (
+            <Text style={styles.quoteMeta}>تخفیف: {formatRials(quote.discount.amount)}</Text>
+          )}
+          {quote.deliveryWindow && (
+            <Text style={styles.quoteMeta}>
+              زمان تحویل:{' '}
+              {formatDeliveryWindow(
+                quote.deliveryWindow.startsAt,
+                quote.deliveryWindow.endsAt,
+                new Date(),
+              )}
+            </Text>
+          )}
           <Text style={styles.quoteTotal}>{formatRials(quote.total.amount)}</Text>
           <Text style={styles.quoteNotice}>
             مبلغ و نشانی این قیمت در سرور ثبت شده‌اند. پرداخت هنوز آغاز نمی‌شود.
@@ -1166,6 +1290,11 @@ function CartCard({
 
           {payment?.state === 'CAPTURED' ? (
             <Text style={styles.quoteNotice}>پرداخت شما تأیید شد.</Text>
+          ) : cashOrder ? (
+            // Nothing to press. There is no gateway to open, and a "pay"
+            // button on an order that is paid at the door is an instruction to
+            // do something that cannot be done.
+            <Text style={styles.quoteNotice}>مبلغ سفارش را هنگام تحویل، نقدی به پیک بپردازید.</Text>
           ) : (
             <>
               {awaitingReturn && (

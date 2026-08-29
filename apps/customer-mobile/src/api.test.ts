@@ -216,6 +216,48 @@ describe('customer API client', () => {
     )
   })
 
+  /**
+   * The three checkout choices reach the wire, and an unused one stays off it.
+   *
+   * The failure this guards against is quiet: a blank code field sent as
+   * `promotionCode: ''` is refused by the quote schema, so a customer who
+   * never touched the discount box cannot get a price at all. Nothing about
+   * the screen would say why.
+   */
+  it('carries the checkout choices, and omits the ones not made', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse({}, 500))
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    await expect(
+      client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001', {
+        promotionCode: 'NOON10',
+        paymentMethod: 'CASH_ON_DELIVERY',
+      }),
+    ).rejects.toBeInstanceOf(CustomerApiError)
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
+    expect(body).toMatchObject({
+      promotionCode: 'NOON10',
+      paymentMethod: 'CASH_ON_DELIVERY',
+    })
+    expect(body).not.toHaveProperty('deliveryWindowStartsAt')
+  })
+
+  it('drops an empty discount code rather than sending a blank one', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse({}, 500))
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    await expect(
+      client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001', {
+        promotionCode: '',
+      }),
+    ).rejects.toBeInstanceOf(CustomerApiError)
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty(
+      'promotionCode',
+    )
+  })
+
   it('sends only quote identity and an idempotency key when creating an order', async () => {
     const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
       jsonResponse({

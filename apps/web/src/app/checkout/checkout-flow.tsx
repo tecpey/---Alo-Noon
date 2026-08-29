@@ -4,10 +4,10 @@ import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
 import type { AddressSummary, CartSummary, DeliveryWindow, QuoteSummary } from '@alo-noon/contracts'
+import { cashRefusalMessage, formatDeliveryWindow } from '@alo-noon/domain'
 
 import { AddressForm } from './address-form'
 import { CheckIcon, ChevronIcon, CourierIcon, PinIcon, ShieldIcon } from '../components/icons'
-import { formatDeliveryWindow } from '../../lib/delivery-window-label'
 import { formatToman, toPersianDigits } from '../../lib/persian'
 import { payAction, quoteAction } from '../../lib/checkout-actions'
 import { translateProviderError } from '../../lib/admin-format'
@@ -26,20 +26,6 @@ import { translateProviderError } from '../../lib/admin-format'
  * number that will be charged, and if this component did the arithmetic itself
  * it would eventually disagree with the ledger.
  */
-/**
- * Why cash was not offered, in the words that tell a customer what to do next.
- *
- * Three refusals with three different answers: come back another time, spend
- * less, or order once through the gateway first. One message for all of them
- * would send two thirds of these customers to the wrong next step.
- */
-const CASH_REFUSALS: Readonly<Record<string, string>> = {
-  CASH_ON_DELIVERY_DISABLED: 'در این شهر فعلاً پرداخت نقدی ممکن نیست.',
-  CASH_ON_DELIVERY_ABOVE_CEILING:
-    'مبلغ این سفارش از سقف پرداخت نقدی بیشتر است؛ لطفاً اینترنتی پرداخت کنید.',
-  CASH_ON_DELIVERY_CUSTOMER_NOT_ESTABLISHED: 'پرداخت نقدی پس از اولین سفارش موفق فعال می‌شود.',
-}
-
 export function CheckoutFlow({
   cart,
   addresses,
@@ -293,8 +279,7 @@ export function CheckoutFlow({
                 </ul>
                 {quote?.cashOnDeliveryRefusal && (
                   <p className="promo__refused" role="status">
-                    {CASH_REFUSALS[quote.cashOnDeliveryRefusal] ??
-                      'پرداخت نقدی برای این سفارش ممکن نیست.'}
+                    {cashRefusalMessage(quote.cashOnDeliveryRefusal)}
                   </p>
                 )}
               </fieldset>

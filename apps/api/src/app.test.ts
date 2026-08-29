@@ -67,4 +67,42 @@ describe('operational endpoints', () => {
     })
     expect(denied.headers['access-control-allow-origin']).toBeUndefined()
   })
+
+  /**
+   * The preflight has to cover every method the API publishes.
+   *
+   * It did not. @fastify/cors defaults to GET, HEAD and POST, so a browser on
+   * an allowed origin could read the catalog and place an order but could not
+   * change a basket item or sign out. The refusal arrives as a failed preflight
+   * with no status, which surfaces in the app as "could not reach the service"
+   * — about a service that is answering everything else.
+   *
+   * Asserted from the route table rather than a hard-coded list, so a route
+   * added with a method nobody allowed fails here instead of in somebody's
+   * browser.
+   */
+  it('preflights every method its own routes serve', async () => {
+    const app = await buildApp({ corsOrigins: ['http://localhost:8081'] })
+    apps.push(app)
+
+    const served = new Set<string>()
+    for (const line of app.printRoutes({ commonPrefix: false }).split('\n')) {
+      for (const method of line.match(/\b(GET|POST|PUT|PATCH|DELETE)\b/g) ?? []) {
+        served.add(method)
+      }
+    }
+    expect(served.size).toBeGreaterThan(0)
+
+    for (const method of served) {
+      const preflight = await app.inject({
+        method: 'OPTIONS',
+        url: '/api/v1/serviceability/cities',
+        headers: { origin: 'http://localhost:8081', 'access-control-request-method': method },
+      })
+      const allowed = String(preflight.headers['access-control-allow-methods'] ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+      expect(allowed).toContain(method)
+    }
+  })
 })

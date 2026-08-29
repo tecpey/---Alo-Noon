@@ -5,6 +5,7 @@ import {
   COURIER_CASH_RECEIVABLE_ACCOUNT,
   PaymentMethod,
   cashCollectionJournal,
+  cashRefusalMessage,
   cashRemittanceJournal,
   evaluateCashOnDelivery,
   reconcileRemittance,
@@ -191,5 +192,29 @@ describe('reconcileRemittance', () => {
 describe('PaymentMethod', () => {
   it('names both ways an order can be paid for', () => {
     expect(Object.values(PaymentMethod)).toEqual(['ONLINE_GATEWAY', 'CASH_ON_DELIVERY'])
+  })
+})
+
+describe('cashRefusalMessage', () => {
+  /**
+   * The point of three refusals is three different next steps. If two of them
+   * ever collapse onto the same sentence, a customer who could pay cash by
+   * ordering once through the gateway gets told the city does not offer it.
+   */
+  it('gives every refusal its own answer', () => {
+    const messages = Object.values(CashOnDeliveryRefusal).map(cashRefusalMessage)
+    expect(new Set(messages).size).toBe(messages.length)
+  })
+
+  it('never leaves a refusal speaking its code', () => {
+    for (const reason of Object.values(CashOnDeliveryRefusal)) {
+      expect(cashRefusalMessage(reason)).not.toContain('CASH_ON_DELIVERY')
+    }
+  })
+
+  it('still says something when the API grows a refusal this does not know', () => {
+    expect(cashRefusalMessage('CASH_ON_DELIVERY_SOMETHING_NEW')).toBe(
+      'پرداخت نقدی برای این سفارش ممکن نیست.',
+    )
   })
 })

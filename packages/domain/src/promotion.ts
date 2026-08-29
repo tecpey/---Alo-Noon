@@ -116,6 +116,47 @@ export type PromotionOutcome =
   | { readonly applied: false; readonly reason: PromotionRefusal }
 
 /**
+ * A refusal in the words the customer holding the code needs to hear.
+ *
+ * "This ended", "add more to your basket" and "you have used this already" are
+ * three different next steps, and the whole reason the refusals stay separate
+ * above is so they can be said separately here.
+ *
+ * `PROMOTION_NOT_FOUND` is not in the enumeration — a code nobody ever created
+ * is refused before any campaign is evaluated — but it is the refusal a
+ * customer meets most often, usually because they mistyped, so it is answered
+ * here too rather than falling through to the generic line.
+ */
+export function promotionRefusalMessage(reason: string): string | undefined {
+  switch (reason) {
+    case 'PROMOTION_NOT_FOUND':
+      return 'این کد تخفیف وجود ندارد.'
+    case PromotionRefusal.INACTIVE:
+      return 'این کد تخفیف فعال نیست.'
+    case PromotionRefusal.NOT_STARTED:
+      return 'این کمپین هنوز شروع نشده است.'
+    case PromotionRefusal.EXPIRED:
+      return 'مهلت این کد تخفیف تمام شده است.'
+    case PromotionRefusal.WRONG_CITY:
+      return 'این کد برای شهر دیگری است.'
+    case PromotionRefusal.BELOW_MINIMUM:
+      return 'مبلغ سبد برای این کد کافی نیست.'
+    case PromotionRefusal.EXHAUSTED:
+      return 'ظرفیت این کد تخفیف تمام شده است.'
+    case PromotionRefusal.CUSTOMER_LIMIT_REACHED:
+      return 'شما قبلاً از این کد استفاده کرده‌اید.'
+    case PromotionRefusal.NOT_FIRST_ORDER:
+      return 'این کد فقط برای اولین سفارش است.'
+    case PromotionRefusal.NO_EFFECT:
+      return 'این کد روی این سبد تخفیفی ندارد.'
+    default:
+      // Undefined rather than a generic sentence: the caller knows what it is
+      // translating and has a better fallback than this function does.
+      return undefined
+  }
+}
+
+/**
  * Checks the terms make sense before they are ever stored.
  *
  * A promotion with no percentage, or one over a hundred percent, is not a

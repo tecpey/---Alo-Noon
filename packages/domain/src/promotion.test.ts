@@ -6,6 +6,7 @@ import {
   PromotionKind,
   PromotionRefusal,
   evaluatePromotion,
+  promotionRefusalMessage,
   normalizePromotionCode,
   totalAfterDiscount,
   validatePromotionTerms,
@@ -309,5 +310,38 @@ describe('normalizePromotionCode', () => {
 
   it('strips the zero-width joiner a Persian keyboard inserts', () => {
     expect(normalizePromotionCode('NOON‌10')).toBe('NOON10')
+  })
+})
+
+describe('promotionRefusalMessage', () => {
+  /**
+   * Every refusal above exists because it needs different words. A code added
+   * to the enumeration without a sentence here reaches the customer as
+   * «این کد اعمال نشد» — technically true, and no help to somebody whose
+   * basket is four hundred tomans short of the minimum.
+   */
+  it('answers every refusal the domain can produce', () => {
+    for (const reason of Object.values(PromotionRefusal)) {
+      expect(promotionRefusalMessage(reason)).toBeTruthy()
+    }
+  })
+
+  it('gives each refusal its own answer', () => {
+    const messages = Object.values(PromotionRefusal).map(promotionRefusalMessage)
+    expect(new Set(messages).size).toBe(messages.length)
+  })
+
+  /** Not a refusal the domain evaluates, but the one customers hit by mistyping. */
+  it('answers a code that does not exist', () => {
+    expect(promotionRefusalMessage('PROMOTION_NOT_FOUND')).toBe('این کد تخفیف وجود ندارد.')
+  })
+
+  /**
+   * Undefined rather than a sentence, so the caller's own fallback wins: the
+   * web appends the raw code for an operator, which is more use during
+   * provisioning than a polite line that hides which invariant tripped.
+   */
+  it('defers to the caller on a code it does not know', () => {
+    expect(promotionRefusalMessage('SOMETHING_ELSE')).toBeUndefined()
   })
 })

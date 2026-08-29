@@ -3,6 +3,12 @@ const TEHRAN = 'Asia/Tehran'
 /**
  * A delivery window, in the words a customer would use for it.
  *
+ * Lives in the domain for the same reason `orderProgress` does: the site and
+ * the phone both offer windows, and a customer who books "فردا ۸ تا ۱۰" on one
+ * must be shown the same words by the other. A repository rule forbids one
+ * application importing another, so the only alternative is two copies that
+ * drift.
+ *
  * "امروز ۸ تا ۱۰" rather than a pair of timestamps. Somebody choosing when
  * their bread arrives is picking between this morning and tomorrow morning, and
  * a date they have to decode is a date they misread — which here means a

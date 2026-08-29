@@ -4,6 +4,7 @@ import {
   addressesEnvelopeSchema,
   cartEnvelopeSchema,
   catalogPageSchema,
+  deliveryWindowListEnvelopeSchema,
   errorEnvelopeSchema,
   otpRequestEnvelopeSchema,
   quoteEnvelopeSchema,
@@ -18,7 +19,9 @@ import {
   type AddressCreate,
   type AddressSummary,
   type CartSummary,
+  type DeliveryWindow,
   type OtpRequestAccepted,
+  type PaymentMethod,
   type ProductSummary,
   type QuoteSummary,
   type OrderSummary,
@@ -70,10 +73,31 @@ export interface CustomerApiClient {
     },
   ): Promise<CartSummary>
   removeCartItem(offeringId: string, expectedCartVersion?: number): Promise<CartSummary>
+  /**
+   * The delivery windows this basket's branch is offering.
+   *
+   * Empty is a normal answer, not a failure: a branch with no recorded hours
+   * offers no windows, and its orders go out as soon as they are ready — which
+   * is what every order did before windows existed.
+   */
+  listDeliveryWindows(): Promise<DeliveryWindow[]>
+  /**
+   * Prices the basket for one address.
+   *
+   * The three optional choices are requests, not decisions. A quote never fails
+   * because of them — a code that does not apply, a window that has filled, or
+   * cash where cash is not offered each come back as a refusal on an otherwise
+   * good quote. A basket that will not price is a basket that gets abandoned.
+   */
   createQuote(
     deliveryAddressId: string,
     expectedCartVersion: number,
     idempotencyKey: string,
+    choices?: {
+      promotionCode?: string
+      deliveryWindowStartsAt?: string
+      paymentMethod?: PaymentMethod
+    },
   ): Promise<QuoteSummary>
   createOrder(quoteId: string, idempotencyKey: string): Promise<OrderSummary>
   /**
@@ -206,10 +230,24 @@ export function createCustomerApiClient(
           ...(expectedCartVersion !== undefined && { expectedCartVersion }),
         }),
       }).then(requireCart),
-    createQuote: async (deliveryAddressId, expectedCartVersion, idempotencyKey) =>
+    listDeliveryWindows: async () =>
+      request('/api/v1/cart/delivery-windows', deliveryWindowListEnvelopeSchema),
+    createQuote: async (deliveryAddressId, expectedCartVersion, idempotencyKey, choices = {}) =>
       request('/api/v1/cart/quote', quoteEnvelopeSchema, {
         method: 'POST',
-        body: JSON.stringify({ deliveryAddressId, expectedCartVersion, idempotencyKey }),
+        body: JSON.stringify({
+          deliveryAddressId,
+          expectedCartVersion,
+          idempotencyKey,
+          // Spread rather than sent as undefined: the quote schema rejects an
+          // explicit null, and an empty code field must read as "no code" and
+          // not as "this code is blank".
+          ...(choices.promotionCode && { promotionCode: choices.promotionCode }),
+          ...(choices.deliveryWindowStartsAt && {
+            deliveryWindowStartsAt: choices.deliveryWindowStartsAt,
+          }),
+          ...(choices.paymentMethod && { paymentMethod: choices.paymentMethod }),
+        }),
       }),
     createOrder: async (quoteId, idempotencyKey) =>
       request('/api/v1/orders', orderEnvelopeSchema, {
