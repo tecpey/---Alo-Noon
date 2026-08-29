@@ -111,6 +111,19 @@ export async function listEmailConfigurations(): Promise<ApiResult<EmailConfigur
   })
 }
 
+export interface AlertRecipientSummary {
+  id: string
+  address: string
+  displayName: string
+  enabled: boolean
+  criticalOnly: boolean
+  createdAt: string
+}
+
+export async function listAlertRecipients(): Promise<ApiResult<AlertRecipientSummary[]>> {
+  return request<AlertRecipientSummary[]>('/api/v1/admin/alert-recipients', { method: 'GET' })
+}
+
 export async function listRoutingConfigurations(): Promise<
   ApiResult<RoutingConfigurationSummary[]>
 > {

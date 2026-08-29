@@ -514,6 +514,8 @@ model Tenant {
   customerNotifications              CustomerNotification[]
   routingProviderConfigurations      RoutingProviderConfiguration[]
   emailProviderConfigurations        EmailProviderConfiguration[]
+  operatorAlertRecipients            OperatorAlertRecipient[]
+  operatorAlertDispatches            OperatorAlertDispatch[]
   routeEstimates                     RouteEstimate[]
   deliveryTrips                      DeliveryTrip[]
   deliveryTripStops                  DeliveryTripStop[]
@@ -2297,6 +2299,55 @@ enum RoutingProviderHealthStatus {
   HEALTHY
   DEGRADED
   UNHEALTHY
+}
+
+enum OperatorAlertKind {
+  PAYMENT_GATEWAY_UNHEALTHY
+  OUTBOX_EVENTS_PARKED
+  PAYMENTS_AWAITING_SETTLEMENT
+  COURIER_CASH_OUTSTANDING
+  SMS_PROVIDER_UNAVAILABLE
+}
+
+/// Who hears when something breaks.
+///
+/// Separate from staff accounts on purpose: the person who should be woken at
+/// 4am is often the owner or a shared inbox, and requiring an account would mean
+/// creating sign-ins for people who must never be able to sign in.
+model OperatorAlertRecipient {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  address      String   @db.VarChar(254)
+  displayName  String   @db.VarChar(128)
+  enabled      Boolean  @default(true)
+  /// An owner may want only the critical ones; whoever reconciles cash wants
+  /// the daily warning too.
+  criticalOnly Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId, enabled], map: "OperatorAlertRecipient_tenant_enabled_idx")
+}
+
+/// When each kind was last said, and how often it was held back.
+model OperatorAlertDispatch {
+  id                      String            @id @default(uuid()) @db.Uuid
+  tenantId                String            @db.Uuid
+  tenant                  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  kind                    OperatorAlertKind
+  lastSentAt              DateTime?
+  lastObservedCount       Int               @default(0)
+  /// Kept rather than discarded: "we knew for six hours and said nothing" is a
+  /// different fact from "we did not know", and only one means the quiet period
+  /// is set wrong.
+  suppressedSinceLastSend Int               @default(0)
+  sendCount               Int               @default(0)
+  lastOutcome             String?           @db.VarChar(32)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  @@unique([tenantId, kind], map: "OperatorAlertDispatch_tenant_kind_key")
 }
 
 enum EmailEnvironment {

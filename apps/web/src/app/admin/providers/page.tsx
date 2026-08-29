@@ -1,12 +1,14 @@
 import { redirect } from 'next/navigation'
 
 import {
+  addAlertRecipientAction,
   createPaymentConfigurationAction,
   createEmailConfigurationAction,
   createPaymentCredentialAction,
   createRoutingConfigurationAction,
   createSmsConfigurationAction,
   governPaymentConfigurationAction,
+  setAlertRecipientEnabledAction,
   setEmailHealthAction,
   setPaymentHealthAction,
   setRoutingHealthAction,
@@ -14,10 +16,12 @@ import {
 } from '../../../lib/admin-actions'
 import {
   isUnauthenticated,
+  listAlertRecipients,
   listEmailConfigurations,
   listPaymentConfigurations,
   listRoutingConfigurations,
   listSmsConfigurations,
+  type AlertRecipientSummary,
   type EmailConfigurationSummary,
   type PaymentConfigurationSummary,
   type RoutingConfigurationSummary,
@@ -44,11 +48,12 @@ const HEALTH_LABELS: Readonly<Record<string, string>> = {
 }
 
 export default async function AdminProvidersPage() {
-  const [payments, sms, routing, email] = await Promise.all([
+  const [payments, sms, routing, email, recipients] = await Promise.all([
     listPaymentConfigurations(),
     listSmsConfigurations(),
     listRoutingConfigurations(),
     listEmailConfigurations(),
+    listAlertRecipients(),
   ])
 
   // The lists themselves are the authorization check. A separate session probe
@@ -286,6 +291,46 @@ export default async function AdminProvidersPage() {
                 dir="ltr"
                 inputMode="numeric"
                 hint="عدد بین ۱ تا ۱۰۰۰. خالی بگذارید تا مقدار پیش‌فرض اعمال شود."
+              />
+              <Field label="دلیل" name="reason" required />
+            </ActionForm>
+          </details>
+        )}
+      </section>
+
+      <section>
+        <h2>گیرندگان هشدار</h2>
+        <p className="muted">
+          چه کسی خبردار شود. اگر این فهرست خالی باشد، هیچ هشداری فرستاده نمی‌شود — هرچقدر هم سرویس
+          ایمیل سالم باشد. «فقط بحرانی» یعنی آن نشانی فقط دربارهٔ چیزهایی که فروش را متوقف می‌کنند
+          خبر می‌گیرد، نه دربارهٔ پول نقد تسویه‌نشده.
+        </p>
+        {recipients.ok ? (
+          <RecipientTable recipients={recipients.data} />
+        ) : (
+          <p className="error-box">{readFailureMessage(recipients.error.code)}</p>
+        )}
+
+        {recipients.ok && (
+          <details className="card">
+            <summary>افزودن گیرنده</summary>
+            <ActionForm action={addAlertRecipientAction} submitLabel="افزودن گیرنده">
+              <Field
+                label="نشانی ایمیل"
+                name="address"
+                required
+                dir="ltr"
+                placeholder="ops@example.com"
+              />
+              <Field label="نام" name="displayName" required placeholder="مدیر عملیات" />
+              <SelectField
+                label="فقط هشدارهای بحرانی"
+                name="criticalOnly"
+                options={[
+                  { value: 'false', label: 'خیر — همه را بفرست' },
+                  { value: 'true', label: 'بله — فقط چیزی که فروش را می‌خواباند' },
+                ]}
+                defaultValue="false"
               />
               <Field label="دلیل" name="reason" required />
             </ActionForm>
@@ -621,5 +666,58 @@ function EmailTable({ configurations }: Readonly<{ configurations: EmailConfigur
         </article>
       ))}
     </div>
+  )
+}
+
+/**
+ * Who hears when something breaks.
+ *
+ * Disabling rather than deleting, because an address that stops receiving
+ * alerts is a decision worth being able to see and reverse — and because the
+ * audit row that recorded the change points at a row that still exists.
+ */
+function RecipientTable({ recipients }: Readonly<{ recipients: AlertRecipientSummary[] }>) {
+  const listening = recipients.filter((recipient) => recipient.enabled)
+  if (recipients.length === 0) {
+    return (
+      <p className="error-box">
+        هیچ گیرنده‌ای ثبت نشده است. یعنی اگر نیمه‌شب درگاه پرداخت بخوابد، هیچ‌کس خبردار نمی‌شود.
+      </p>
+    )
+  }
+  return (
+    <>
+      {listening.length === 0 && (
+        <p className="error-box">همهٔ گیرنده‌ها غیرفعال‌اند؛ عملاً هیچ هشداری فرستاده نمی‌شود.</p>
+      )}
+      <div className="rows">
+        {recipients.map((recipient) => (
+          <article key={recipient.id} className="row">
+            <div className="row-head">
+              <strong>{recipient.displayName}</strong>
+              <span dir="ltr" className="badge">
+                {recipient.address}
+              </span>
+              {recipient.enabled ? (
+                <span className="badge on">فعال</span>
+              ) : (
+                <span className="badge">غیرفعال</span>
+              )}
+              {recipient.criticalOnly && <span className="badge">فقط بحرانی</span>}
+            </div>
+            <div className="row-actions">
+              <ActionForm
+                action={setAlertRecipientEnabledAction}
+                submitLabel={recipient.enabled ? 'غیرفعال کن' : 'فعال کن'}
+              >
+                <input type="hidden" name="recipientId" value={recipient.id} />
+                <input type="hidden" name="enabled" value={String(!recipient.enabled)} />
+                <Field label="دلیل" name="reason" required />
+              </ActionForm>
+            </div>
+          </article>
+        ))}
+      </div>
+    </>
   )
 }

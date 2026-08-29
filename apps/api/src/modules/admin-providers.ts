@@ -8,6 +8,8 @@ import {
   adminPaymentProviderConfigurationCreateSchema,
   adminPaymentProviderGovernanceSchema,
   adminPaymentProviderHealthSchema,
+  adminAlertRecipientCreateSchema,
+  adminAlertRecipientEnabledSchema,
   adminEmailConfigurationCreateSchema,
   adminEmailHealthSchema,
   adminProviderCredentialCreateSchema,
@@ -542,6 +544,80 @@ export function registerAdminProviderRoutes(
       }
     },
   )
+
+  // Who hears about it. Under the same permission as the service that carries
+  // the message, because configuring one without the other sends alerts to
+  // nobody or configures an audience with nothing to reach them.
+  app.get('/api/v1/admin/alert-recipients', ADMIN_RATE_LIMIT, async (request, reply) => {
+    const actor = await authenticatedStaff(request, reply, dependencies, EMAIL_GOVERN_PERMISSION)
+    if (!actor) return reply
+
+    try {
+      const recipients = await dependencies.emailProviderService.listAlertRecipients(
+        actor.tenantId,
+        { actor: 'STAFF', actorId: actor.accountId },
+        currentTime(),
+      )
+      return reply.send({ success: true, data: recipients, meta: adminResponseMeta() })
+    } catch (error) {
+      return emailGovernanceFailure(request, reply, error)
+    }
+  })
+
+  app.post('/api/v1/admin/alert-recipients', ADMIN_RATE_LIMIT, async (request, reply) => {
+    const actor = await authenticatedStaff(request, reply, dependencies, EMAIL_GOVERN_PERMISSION)
+    if (!actor) return reply
+    const parsed = adminAlertRecipientCreateSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send(errorEnvelope('INVALID_ALERT_RECIPIENT_COMMAND', 'The command is invalid.'))
+    }
+
+    try {
+      const recipient = await dependencies.emailProviderService.addAlertRecipient(
+        actor.tenantId,
+        { actor: 'STAFF', actorId: actor.accountId, ...parsed.data },
+        currentTime(),
+        randomUUID(),
+      )
+      return reply.code(201).send({ success: true, data: recipient, meta: adminResponseMeta() })
+    } catch (error) {
+      return emailGovernanceFailure(request, reply, error)
+    }
+  })
+
+  app.post<{ Params: { recipientId: string } }>(
+    '/api/v1/admin/alert-recipients/:recipientId/enabled',
+    ADMIN_RATE_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(request, reply, dependencies, EMAIL_GOVERN_PERMISSION)
+      if (!actor) return reply
+      const parsed = adminAlertRecipientEnabledSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_ALERT_RECIPIENT_COMMAND', 'The command is invalid.'))
+      }
+
+      try {
+        const recipient = await dependencies.emailProviderService.setAlertRecipientEnabled(
+          actor.tenantId,
+          {
+            actor: 'STAFF',
+            actorId: actor.accountId,
+            recipientId: request.params.recipientId,
+            ...parsed.data,
+          },
+          currentTime(),
+          randomUUID(),
+        )
+        return reply.send({ success: true, data: recipient, meta: adminResponseMeta() })
+      } catch (error) {
+        return emailGovernanceFailure(request, reply, error)
+      }
+    },
+  )
 }
 
 /**
@@ -608,6 +684,10 @@ const EMAIL_GOVERNANCE_STATUS: Readonly<Record<string, 400 | 403 | 404 | 409>> =
   EMAIL_PRIORITY_OUT_OF_RANGE: 400,
   EMAIL_DEFAULT_MUST_BE_ENABLED: 400,
   EMAIL_REASON_REQUIRED: 400,
+  EMAIL_RECIPIENT_ADDRESS_INVALID: 400,
+  EMAIL_RECIPIENT_NAME_INVALID: 400,
+  EMAIL_RECIPIENT_ALREADY_EXISTS: 409,
+  EMAIL_RECIPIENT_NOT_FOUND: 404,
 }
 
 function paymentGovernanceFailure(

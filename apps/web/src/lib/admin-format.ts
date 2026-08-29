@@ -56,6 +56,13 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   EMAIL_ADAPTER_VERSION_INVALID: 'نسخهٔ آداپتور باید به شکل ۱.۰.۰ باشد.',
   EMAIL_PRIORITY_OUT_OF_RANGE: 'اولویت باید عددی بین ۱ تا ۱۰۰۰ باشد.',
   EMAIL_REASON_REQUIRED: 'دلیل را بنویسید؛ در تاریخچهٔ ممیزی ثبت می‌شود.',
+  EMAIL_RECIPIENT_ADDRESS_INVALID: 'نشانی گیرنده معتبر نیست.',
+  EMAIL_RECIPIENT_NAME_INVALID: 'نام گیرنده را بنویسید.',
+  EMAIL_RECIPIENT_ALREADY_EXISTS:
+    'این نشانی از قبل در فهرست است. بزرگی و کوچکی حروف فرقی نمی‌کند — یک صندوق است.',
+  EMAIL_RECIPIENT_NOT_FOUND: 'چنین گیرنده‌ای ثبت نشده است.',
+  INVALID_ALERT_RECIPIENT_COMMAND:
+    'مقادیر فرم معتبر نیست. معمولاً نشانی است — باید مثل ops@example.com باشد، بدون فاصله.',
   ROUTING_PROVIDER_OPERATION_FORBIDDEN: 'این حساب اجازهٔ مدیریت مسیریاب را ندارد.',
   ROUTING_CONFIGURATION_NOT_FOUND: 'چنین مسیریابی برای این مستأجر ثبت نشده است.',
   ROUTING_DEFAULT_ALREADY_EXISTS:

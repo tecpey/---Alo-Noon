@@ -246,6 +246,45 @@ export async function createSmsConfigurationAction(
 }
 
 /**
+ * Who gets woken up.
+ *
+ * Deliberately not tied to staff accounts: the person who should hear at 4am is
+ * often the owner or a shared inbox the shift reads, and requiring an account
+ * would mean creating sign-ins for people who must never be able to sign in.
+ */
+export async function addAlertRecipientAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const result = await post<{ id: string }>('/api/v1/admin/alert-recipients', {
+    address: field(form, 'address'),
+    displayName: field(form, 'displayName'),
+    criticalOnly: field(form, 'criticalOnly') === 'true',
+    reason: field(form, 'reason'),
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'افزودن گیرنده ناموفق بود.'))
+  revalidatePath('/admin/providers')
+  return success('گیرنده اضافه شد.')
+}
+
+export async function setAlertRecipientEnabledAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const recipientId = field(form, 'recipientId')
+  const enabled = field(form, 'enabled') === 'true'
+  const result = await post(`/api/v1/admin/alert-recipients/${recipientId}/enabled`, {
+    enabled,
+    reason: field(form, 'reason') || 'تغییر از پنل مدیریت',
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'تغییر گیرنده ناموفق بود.'))
+  revalidatePath('/admin/providers')
+  return success(enabled ? 'گیرنده دوباره فعال شد.' : 'گیرنده غیرفعال شد؛ دیگر هشدار نمی‌گیرد.')
+}
+
+/**
  * Email is how the operator finds out that something broke at 4am. Today those
  * warnings only reach the server log, where nobody is looking — a gateway that
  * went unhealthy overnight is discovered by a customer failing to pay.

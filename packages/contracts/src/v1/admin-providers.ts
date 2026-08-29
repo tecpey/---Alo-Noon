@@ -231,6 +231,28 @@ export const adminEmailConfigurationSummarySchema = z.object({
   createdAt: isoDateTimeSchema,
 })
 
+export const adminAlertRecipientCreateSchema = z
+  .object({
+    address: emailAddressSchema,
+    displayName: z.string().min(1).max(128),
+    criticalOnly: z.boolean(),
+    reason: governanceReasonSchema,
+  })
+  .strict()
+
+export const adminAlertRecipientEnabledSchema = z
+  .object({ enabled: z.boolean(), reason: governanceReasonSchema })
+  .strict()
+
+export const adminAlertRecipientSummarySchema = z.object({
+  id: uuidSchema,
+  address: emailAddressSchema,
+  displayName: z.string().min(1).max(128),
+  enabled: z.boolean(),
+  criticalOnly: z.boolean(),
+  createdAt: isoDateTimeSchema,
+})
+
 export type AdminProviderCredentialCreate = z.infer<typeof adminProviderCredentialCreateSchema>
 export type AdminProviderCredentialSummary = z.infer<typeof adminProviderCredentialSummarySchema>
 export type AdminPaymentProviderConfigurationCreate = z.infer<
@@ -253,3 +275,5 @@ export type AdminRoutingHealth = z.infer<typeof adminRoutingHealthSchema>
 export type AdminEmailConfigurationCreate = z.infer<typeof adminEmailConfigurationCreateSchema>
 export type AdminEmailConfigurationSummary = z.infer<typeof adminEmailConfigurationSummarySchema>
 export type AdminEmailHealth = z.infer<typeof adminEmailHealthSchema>
+export type AdminAlertRecipientCreate = z.infer<typeof adminAlertRecipientCreateSchema>
+export type AdminAlertRecipientSummary = z.infer<typeof adminAlertRecipientSummarySchema>

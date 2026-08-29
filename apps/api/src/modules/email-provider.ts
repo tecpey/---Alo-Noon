@@ -56,7 +56,47 @@ export interface EmailConfigurationSummary {
   createdAt: string
 }
 
+export interface AlertRecipientSummary {
+  id: string
+  address: string
+  displayName: string
+  enabled: boolean
+  criticalOnly: boolean
+  createdAt: string
+}
+
+export type AddAlertRecipientCommand = EmailGovernanceActor & {
+  address: string
+  displayName: string
+  criticalOnly: boolean
+  reason: string
+}
+
+export type SetAlertRecipientEnabledCommand = EmailGovernanceActor & {
+  recipientId: string
+  enabled: boolean
+  reason: string
+}
+
 export interface EmailProviderService {
+  /** Who is told when something breaks. */
+  listAlertRecipients(
+    tenantId: string,
+    actor: EmailGovernanceActor,
+    now: Date,
+  ): Promise<AlertRecipientSummary[]>
+  addAlertRecipient(
+    tenantId: string,
+    command: AddAlertRecipientCommand,
+    now: Date,
+    correlationId: string,
+  ): Promise<AlertRecipientSummary>
+  setAlertRecipientEnabled(
+    tenantId: string,
+    command: SetAlertRecipientEnabledCommand,
+    now: Date,
+    correlationId: string,
+  ): Promise<AlertRecipientSummary>
   createConfiguration(
     tenantId: string,
     command: CreateEmailConfigurationCommand,
@@ -222,6 +262,95 @@ export function createPrismaEmailProviderService(
       })
     },
 
+    async listAlertRecipients(tenantId, actor, now) {
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await authorizeGovernanceActor(transaction, tenantId, actor, now, options)
+        const recipients = await transaction.operatorAlertRecipient.findMany({
+          where: { tenantId },
+          orderBy: [{ enabled: 'desc' }, { createdAt: 'asc' }],
+        })
+        return recipients.map(mapRecipient)
+      })
+    },
+
+    async addAlertRecipient(tenantId, command, now, correlationId) {
+      if (!SENDER_ADDRESS.test(command.address) || command.address.length > 254) {
+        throw new EmailProviderError('EMAIL_RECIPIENT_ADDRESS_INVALID')
+      }
+      if (!command.displayName.trim() || command.displayName.length > 128) {
+        throw new EmailProviderError('EMAIL_RECIPIENT_NAME_INVALID')
+      }
+      if (!command.reason.trim()) throw new EmailProviderError('EMAIL_REASON_REQUIRED')
+
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await authorizeGovernanceActor(transaction, tenantId, command, now, options)
+        // The unique index is on lower(address), because Operator@x and
+        // operator@x are one inbox and adding both would send it everything
+        // twice. Reading first turns that into a sentence.
+        const existing = await transaction.operatorAlertRecipient.findFirst({
+          where: { tenantId, address: { equals: command.address, mode: 'insensitive' } },
+        })
+        if (existing) throw new EmailProviderError('EMAIL_RECIPIENT_ALREADY_EXISTS')
+
+        const recipient = await transaction.operatorAlertRecipient.create({
+          data: {
+            tenantId,
+            address: command.address,
+            displayName: command.displayName,
+            criticalOnly: command.criticalOnly,
+            enabled: true,
+            createdAt: now,
+            updatedAt: now,
+          },
+        })
+        await writeAudit(
+          transaction,
+          tenantId,
+          recipient.id,
+          command.actor,
+          command.actorId,
+          'notification.alert_recipient.added',
+          `Alert recipient ${command.address} added`,
+          command.reason,
+          correlationId,
+          now,
+        )
+        return mapRecipient(recipient)
+      })
+    },
+
+    async setAlertRecipientEnabled(tenantId, command, now, correlationId) {
+      if (!command.reason.trim()) throw new EmailProviderError('EMAIL_REASON_REQUIRED')
+
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        await authorizeGovernanceActor(transaction, tenantId, command, now, options)
+        const existing = await transaction.operatorAlertRecipient.findFirst({
+          where: { id: command.recipientId, tenantId },
+        })
+        if (!existing) throw new EmailProviderError('EMAIL_RECIPIENT_NOT_FOUND')
+
+        const updated = await transaction.operatorAlertRecipient.update({
+          where: { id: existing.id },
+          data: { enabled: command.enabled, updatedAt: now },
+        })
+        await writeAudit(
+          transaction,
+          tenantId,
+          updated.id,
+          command.actor,
+          command.actorId,
+          command.enabled
+            ? 'notification.alert_recipient.enabled'
+            : 'notification.alert_recipient.disabled',
+          `Alert recipient ${existing.address} ${command.enabled ? 'enabled' : 'disabled'}`,
+          command.reason,
+          correlationId,
+          now,
+        )
+        return mapRecipient(updated)
+      })
+    },
+
     async listConfigurations(tenantId, actor, now) {
       return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
         await authorizeGovernanceActor(transaction, tenantId, actor, now, options)
@@ -349,6 +478,24 @@ async function writeAudit(
       occurredAt,
     },
   })
+}
+
+function mapRecipient(recipient: {
+  id: string
+  address: string
+  displayName: string
+  enabled: boolean
+  criticalOnly: boolean
+  createdAt: Date
+}): AlertRecipientSummary {
+  return {
+    id: recipient.id,
+    address: recipient.address,
+    displayName: recipient.displayName,
+    enabled: recipient.enabled,
+    criticalOnly: recipient.criticalOnly,
+    createdAt: recipient.createdAt.toISOString(),
+  }
 }
 
 function mapConfiguration(configuration: {

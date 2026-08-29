@@ -8,6 +8,7 @@ import {
   createAuthenticationDeliveryPolicy,
   createAuthenticationDeliveryRegistry,
   createPaymentProviderAdapterRegistry,
+  createEmailRegistry,
   createRoutingProviderRegistry,
   createProviderExecutionPolicy,
 } from '@alo-noon/domain'
@@ -44,6 +45,8 @@ import { createPrismaOrderOperationsService } from './modules/order-operations.j
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaRoutingProviderService } from './modules/routing-provider.js'
 import { createPrismaEmailProviderService } from './modules/email-provider.js'
+import { createPrismaOperatorAlertService } from './modules/operator-alerts.js'
+import { createSmtpAdapter } from './providers/smtp.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
@@ -74,6 +77,11 @@ const SETTLEMENT_SWEEP_BATCH = 25
 // of messages the tenant pays for all at once.
 const OUTBOX_SWEEP_INTERVAL_MS = 15_000
 const OUTBOX_SWEEP_BATCH = 50
+
+// Slower than the others on purpose. Nothing here is time-critical to the
+// minute — the quiet periods are measured in hours — and a tighter loop would
+// only mean opening a mail connection more often to discover nothing is wrong.
+const ALERT_SWEEP_INTERVAL_MS = 5 * 60_000
 
 // Error reporting is opt-in: without SENTRY_DSN this stays fully inert, so
 // development and CI never depend on an external service being reachable.
@@ -418,8 +426,59 @@ const outboxSweep = setInterval(() => {
 }, OUTBOX_SWEEP_INTERVAL_MS)
 outboxSweep.unref()
 
+/**
+ * Tells a person what the log has been saying to nobody.
+ *
+ * Every condition it reports was already detected and already logged. The one
+ * thing this adds is that somebody finds out — and the one thing it must never
+ * do is take down the sweeps above it, so it holds its own errors and reports a
+ * failure to alert as a log line rather than an exception.
+ *
+ * The panel URL is where the message tells the operator to go. Falling back to
+ * the callback base means a deployment that has configured payments has also,
+ * without being asked twice, configured this.
+ */
+const operatorAlertService = createPrismaOperatorAlertService(prisma, {
+  registry: createEmailRegistry([createSmtpAdapter()]),
+  credentialResolver: (reference) => {
+    const match = /^env:\/\/(EMAIL_[A-Z0-9_]{1,120})$/.exec(reference)
+    const value = match ? process.env[match[1]!] : undefined
+    return value && value.trim().length > 0 ? value.trim() : undefined
+  },
+  environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
+  panelUrl: new URL(
+    '/admin',
+    env.PAYMENT_RESULT_REDIRECT_URL ?? 'http://localhost:3000',
+  ).toString(),
+})
+
+const alertSweep = setInterval(() => {
+  void (async () => {
+    try {
+      const tenants = await prisma.tenant.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true },
+      })
+      for (const tenant of tenants) {
+        const summary = await operatorAlertService.sweep(tenant.id, new Date(), randomUUID())
+        if (summary.failed > 0) {
+          // The alert about the alerts. Nowhere else to send it.
+          app.log.error(
+            { tenantId: tenant.id, failed: summary.failed },
+            'Operator alerts could not be delivered',
+          )
+        }
+      }
+    } catch (error) {
+      app.log.error({ err: error }, 'Operator alert sweep failed')
+    }
+  })()
+}, ALERT_SWEEP_INTERVAL_MS)
+alertSweep.unref()
+
 const close = async (signal: string): Promise<void> => {
   app.log.info({ signal }, 'Shutting down')
+  clearInterval(alertSweep)
   clearInterval(settlementSweep)
   clearInterval(outboxSweep)
   await app.close()
