@@ -1,0 +1,65 @@
+; The API service.
+;
+; Reads its configuration from /etc/alo-noon/api.env, which holds the database
+; password and the three authentication peppers and is therefore root-owned and
+; 0600. Nothing secret appears in this file, so this file can live in the
+; repository.
+;
+; Install: copy to /etc/systemd/system/, then
+;   systemctl daemon-reload && systemctl enable --now alo-noon-api
+
+[Unit]
+Description=Alo Noon API
+Documentation=https://github.com/tecpey/---Alo-Noon
+; Ordering only. If Postgres is on another host, both lines are inert and the
+; service still starts — Restart=always below is what actually covers the case
+; of a database that is not up yet.
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+; A crash loop against an unreachable database should back off rather than
+; hammer it: five starts in a minute and systemd stops trying, leaving the
+; failure visible in `systemctl status` instead of buried in a log.
+; These two belong in [Unit] — systemd ignores them under [Service], silently.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=alo-noon
+Group=alo-noon
+WorkingDirectory=/srv/alo-noon/current/apps/api
+EnvironmentFile=/etc/alo-noon/api.env
+; Plain node: the service is bundled at build time, so no TypeScript loader is
+; involved and boot does not compile anything.
+ExecStart=/usr/bin/node dist/server.js
+
+; The server closes both sweep intervals and the Fastify instance on SIGTERM,
+; so a stop is clean rather than a kill. The timeout is generous enough for an
+; in-flight payment verification to finish.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+
+; The service reads a bundle and writes nothing but logs. Everything below is
+; the difference between a compromised process and a compromised machine.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alo-noon-api
+
+[Install]
+WantedBy=multi-user.target

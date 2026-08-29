@@ -427,4 +427,4 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => void close(signal))
 }
 
-await app.listen({ host: '0.0.0.0', port: env.API_PORT })
+await app.listen({ host: env.API_HOST, port: env.API_PORT })

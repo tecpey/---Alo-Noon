@@ -11,6 +11,17 @@ export const envSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
     API_PORT: z.coerce.number().int().min(1024).max(65535).default(3001),
+    /**
+     * Which interface to listen on.
+     *
+     * The default binds everywhere, because a container has no other useful
+     * choice — its loopback is its own and nothing outside could reach it. On a
+     * server where the API sits behind nginx, set this to `127.0.0.1`: left at
+     * the default, the API answers on the public interface too, and a request
+     * that arrives there skips TLS and arrives with no proxy headers, so the
+     * rate limiter and the OTP abuse counters see the wrong client entirely.
+     */
+    API_HOST: z.string().min(1).default('0.0.0.0'),
     API_VERSION: z
       .string()
       .regex(/^v\d+$/)

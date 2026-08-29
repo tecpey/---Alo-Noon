@@ -1,0 +1,120 @@
+# nginx in front of Alo Noon.
+#
+# Two upstreams on one host: the Fastify API and the Next.js server that renders
+# the storefront and the admin panel. Everything under /api/ goes to the API,
+# everything else to the site.
+#
+# Copy to /etc/nginx/sites-available/alo-noon, replace every <placeholder>, then
+#   ln -s ../sites-available/alo-noon /etc/nginx/sites-enabled/
+#   nginx -t && systemctl reload nginx
+#
+# TLS certificates come from certbot:
+#   certbot --nginx -d <domain> -d www.<domain>
+# Run it after this file is in place; it rewrites the listen lines itself.
+
+upstream alo_noon_api {
+    server 127.0.0.1:3001;
+    keepalive 32;
+}
+
+upstream alo_noon_web {
+    server 127.0.0.1:3200;
+    keepalive 32;
+}
+
+# Plain HTTP exists only to send people to HTTPS. The one exception would be
+# certbot's challenge path, which certbot itself inserts when it runs.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name <domain> www.<domain>;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    # nginx 1.25.1 and newer. On anything older this directive does not exist —
+    # delete it and put `http2` on the two listen lines above instead.
+    http2 on;
+    server_name <domain> www.<domain>;
+
+    # certbot fills these in. Left as placeholders so that a copy of this file
+    # cannot accidentally point at another site's certificate.
+    ssl_certificate     /etc/letsencrypt/live/<domain>/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/<domain>/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # Two years, and only once the domain has been served over HTTPS long enough
+    # that you are sure. HSTS is not reversible on a browser that has seen it.
+    add_header Strict-Transport-Security "max-age=63072000" always;
+
+    # Addresses and baskets are small; nothing here accepts an upload. A low
+    # ceiling costs nothing and removes a way to tie up the process.
+    client_max_body_size 1m;
+
+    # Persian text compresses well and Babol is not all on fibre.
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript image/svg+xml;
+    gzip_min_length 1024;
+
+    access_log /var/log/nginx/alo-noon.access.log;
+    error_log  /var/log/nginx/alo-noon.error.log;
+
+    location /api/ {
+        proxy_pass http://alo_noon_api;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        # These three are load-bearing, not decoration. The API counts exactly
+        # one trusted proxy hop (API_TRUST_PROXY_HOPS=1) and reads the client
+        # address from X-Forwarded-For. Drop them and every request in the city
+        # shares one rate-limit bucket and one OTP abuse counter, which means
+        # the first person to request a code locks out everybody else.
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # A payment gateway's callback lands here. It must never be served from
+        # a cache, and it must not be cut off early: a verification that gets
+        # cut mid-flight is money taken from a customer and not recorded.
+        proxy_buffering off;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 5s;
+    }
+
+    location / {
+        proxy_pass http://alo_noon_web;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 5s;
+    }
+
+    # Next.js content-hashes everything under this path, so a long cache is safe
+    # and a new deployment invalidates it by changing the filename.
+    location /_next/static/ {
+        proxy_pass http://alo_noon_web;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # Health endpoints sit at the API's root, not under /api/, so without these
+    # they would fall through to the site and 404. Restricted to the machine
+    # itself: /ready names the database and the SMS provider's state, which is
+    # free reconnaissance for anyone who asks. The operator's own check in the
+    # runbook talks to 127.0.0.1:3001 directly and does not need these at all —
+    # they are here for a monitoring agent running on the same host.
+    location = /ready  { allow 127.0.0.1; deny all; proxy_pass http://alo_noon_api; }
+    location = /health { allow 127.0.0.1; deny all; proxy_pass http://alo_noon_api; }
+}

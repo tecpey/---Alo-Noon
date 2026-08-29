@@ -1,0 +1,54 @@
+; The customer site and the admin panel — one Next.js server.
+;
+; Built with `output: 'standalone'`, so what runs is the copied server under
+; .next/standalone rather than the workspace. That directory carries its own
+; node_modules, which is why this unit does not need the repository's.
+;
+; Install: copy to /etc/systemd/system/, then
+;   systemctl daemon-reload && systemctl enable --now alo-noon-web
+
+[Unit]
+Description=Alo Noon web
+Documentation=https://github.com/tecpey/---Alo-Noon
+; Ordering only, and deliberately not Requires=: the site should come up and
+; render its error states even when the API is down. A storefront that refuses
+; to load tells a customer nothing; one that loads and says "we cannot take
+; orders right now" tells them what they need to know.
+After=network-online.target alo-noon-api.service
+Wants=network-online.target
+
+; In [Unit], not [Service] — systemd ignores these under [Service] silently.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=alo-noon
+Group=alo-noon
+WorkingDirectory=/srv/alo-noon/current/apps/web/.next/standalone/apps/web
+EnvironmentFile=/etc/alo-noon/web.env
+ExecStart=/usr/bin/node server.js
+
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alo-noon-web
+
+[Install]
+WantedBy=multi-user.target

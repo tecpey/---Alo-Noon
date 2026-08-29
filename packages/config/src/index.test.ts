@@ -10,6 +10,18 @@ describe('environment configuration', () => {
     if (result.success) expect(result.data.API_PORT).toBe(3001)
   })
 
+  it('listens everywhere by default, and on whatever it is told', () => {
+    // The default has to suit a container, whose loopback nothing else shares.
+    // A server behind nginx overrides it, and that override must survive.
+    const fallback = validateEnv({})
+    expect(fallback.success && fallback.data.API_HOST).toBe('0.0.0.0')
+
+    const loopback = validateEnv({ API_HOST: '127.0.0.1' })
+    expect(loopback.success && loopback.data.API_HOST).toBe('127.0.0.1')
+
+    expect(validateEnv({ API_HOST: '' }).success).toBe(false)
+  })
+
   it('requires non-default authentication secrets in production', () => {
     const missing = validateEnv({ NODE_ENV: 'production' })
     expect(missing.success).toBe(false)
