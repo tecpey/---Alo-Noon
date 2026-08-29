@@ -40,6 +40,20 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   AUTH_DELIVERY_ENV_CREDENTIAL_REFERENCE_UNRESOLVABLE:
     'ارجاع env:// باید با AUTH_SMS_ شروع شود تا در زمان ارسال قابل تشخیص باشد.',
   AUTH_DELIVERY_DEFAULT_MUST_BE_ENABLED: 'سرویس پیش‌فرض باید فعال باشد.',
+  ROUTING_PROVIDER_OPERATION_FORBIDDEN: 'این حساب اجازهٔ مدیریت مسیریاب را ندارد.',
+  ROUTING_CONFIGURATION_NOT_FOUND: 'چنین مسیریابی برای این مستأجر ثبت نشده است.',
+  ROUTING_DEFAULT_ALREADY_EXISTS:
+    'برای این محیط از قبل یک مسیریاب پیش‌فرض وجود دارد. اول آن را از چرخه خارج کنید.',
+  ROUTING_CONFIGURATION_CONFLICT: 'مسیریابی با همین کد و نسخه هست ولی مقادیرش فرق دارد.',
+  ROUTING_ENV_CREDENTIAL_REFERENCE_UNRESOLVABLE:
+    'ارجاع env:// باید با ROUTING_ شروع شود، وگرنه هنگام محاسبهٔ فاصله هیچ کلیدی پیدا نمی‌شود.',
+  ROUTING_CREDENTIAL_REFERENCE_INVALID:
+    'ارجاع کلید معتبر نیست. باید مثل env://ROUTING_NESHAN_KEY باشد.',
+  ROUTING_DEFAULT_MUST_BE_ENABLED: 'مسیریاب پیش‌فرض باید فعال باشد.',
+  ROUTING_PROVIDER_CODE_INVALID: 'کد مسیریاب باید با حروف بزرگ لاتین باشد، مثل NESHAN.',
+  ROUTING_ADAPTER_VERSION_INVALID: 'نسخهٔ آداپتور باید به شکل ۱.۰.۰ باشد.',
+  ROUTING_PRIORITY_OUT_OF_RANGE: 'اولویت باید عددی بین ۱ تا ۱۰۰۰ باشد.',
+  ROUTING_REASON_REQUIRED: 'دلیل را بنویسید؛ در تاریخچهٔ ممیزی ثبت می‌شود.',
   INVALID_OTP_REQUEST: 'شمارهٔ موبایل معتبر نیست.',
   INVALID_PROVIDER_CREDENTIAL_COMMAND: 'مقادیر فرم معتبر نیست.',
   INVALID_PROVIDER_CONFIGURATION_COMMAND: 'مقادیر فرم معتبر نیست.',

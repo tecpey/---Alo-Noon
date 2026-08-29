@@ -245,6 +245,54 @@ export async function createSmsConfigurationAction(
   return success('سرویس پیامک ثبت شد. این پیکربندی تغییرناپذیر است؛ فقط سلامت آن قابل تغییر است.')
 }
 
+/**
+ * A routing engine is what turns an address into a delivery distance, and the
+ * distance is what the customer is charged for. So this is a pricing control as
+ * much as an integration one, which is why it carries its own permission and its
+ * own audit reason.
+ */
+export async function createRoutingConfigurationAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const priority = field(form, 'priority')
+  const result = await post<{ id: string }>('/api/v1/admin/routing-providers/configurations', {
+    providerCode: field(form, 'providerCode').toUpperCase(),
+    adapterVersion: field(form, 'adapterVersion') || '1.0.0',
+    environment: field(form, 'environment'),
+    credentialReference: field(form, 'credentialReference'),
+    enabled: field(form, 'enabled') === 'true',
+    isDefault: field(form, 'isDefault') === 'true',
+    ...(priority && { priority: Number(priority) }),
+    reason: field(form, 'reason'),
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'ثبت مسیریاب ناموفق بود.'))
+  revalidatePath('/admin/providers')
+  return success(
+    'مسیریاب ثبت شد. تا وقتی «سالم» علامت نخورده باشد برای محاسبهٔ فاصله انتخاب نمی‌شود.',
+  )
+}
+
+export async function setRoutingHealthAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const configurationId = field(form, 'configurationId')
+  const healthStatus = field(form, 'healthStatus')
+  const result = await post(
+    `/api/v1/admin/routing-providers/configurations/${configurationId}/health`,
+    { healthStatus, reason: field(form, 'reason') || 'ثبت سلامت از پنل مدیریت' },
+  )
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت سلامت ناموفق بود.'))
+  revalidatePath('/admin/providers')
+  return success(
+    healthStatus === 'HEALTHY'
+      ? 'مسیریاب به چرخه بازگشت.'
+      : 'مسیریاب از چرخه خارج شد. تا زمانی که مسیریاب سالمی نباشد، کرایه بر پایهٔ فاصلهٔ مستقیم حساب می‌شود.',
+  )
+}
+
 export async function setSmsHealthAction(
   _previous: ActionState,
   form: FormData,

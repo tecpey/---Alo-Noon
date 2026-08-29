@@ -6,6 +6,7 @@ import { createPaymentProviderAdapterRegistry, type PaymentProviderAdapter } fro
 
 import { buildApp } from './app'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider'
+import { createPrismaRoutingProviderService } from './modules/routing-provider'
 import { authenticationSessionDigest } from './modules/auth-delivery'
 import { createPrismaAuthRepository } from './modules/auth'
 import { createPrismaPaymentProviderService } from './modules/payment-provider'
@@ -56,6 +57,7 @@ databaseDescribe('admin provider governance over PostgreSQL', () => {
           adapterRegistry: createPaymentProviderAdapterRegistry([adapter]),
         }),
         authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
+        routingProviderService: createPrismaRoutingProviderService(prisma),
       },
     })
 
@@ -185,6 +187,7 @@ databaseDescribe('admin provider governance over PostgreSQL', () => {
       adminProviders: {
         paymentProviderService: createPrismaPaymentProviderService(prisma),
         authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
+        routingProviderService: createPrismaRoutingProviderService(prisma),
       },
     })
 
@@ -226,6 +229,92 @@ databaseDescribe('admin provider governance over PostgreSQL', () => {
       expect(listed.statusCode).toBe(200)
       // The credential reference is not part of the published summary.
       expect(listed.body).not.toContain('AUTH_SMS_')
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('configures a routing engine, audits it, and refuses a second default', async () => {
+    const suffix = randomUUID().slice(0, 8).toUpperCase()
+    const fixture = await createTenant(suffix)
+    const now = new Date()
+    const governor = await createOperator(fixture, `R${suffix}`, now, [
+      'routing-provider.configuration.govern',
+    ])
+    // Holds every other provider permission and not this one: the point of a
+    // separate permission is that it is separately withholdable.
+    const neighbour = await createOperator(fixture, `N${suffix}`, now, [
+      'payment-provider.configuration.govern',
+      'auth-delivery-provider.configuration.govern',
+    ])
+    const app = await buildApp({
+      auth: authDependencies(),
+      adminProviders: {
+        paymentProviderService: createPrismaPaymentProviderService(prisma),
+        authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
+        routingProviderService: createPrismaRoutingProviderService(prisma),
+      },
+    })
+
+    try {
+      const headers = { host: fixture.host, authorization: `Bearer ${governor.token}` }
+      const payload = {
+        providerCode: `ADMIN_ROUTE_${suffix}`,
+        adapterVersion: '1.0.0',
+        environment: 'TEST',
+        credentialReference: `env://ROUTING_${suffix}_KEY`,
+        enabled: true,
+        isDefault: true,
+        reason: 'Integration provisioning',
+      }
+
+      const created = await app.inject({
+        method: 'POST',
+        headers,
+        url: '/api/v1/admin/routing-providers/configurations',
+        payload,
+      })
+      expect(created.statusCode).toBe(201)
+      const configurationId = created.json().data.id as string
+
+      // The whole reason this route exists rather than a raw CLI write: the
+      // change is attributable afterwards.
+      const audit = await prisma.auditEvent.findFirst({
+        where: {
+          tenantId: fixture.tenantId,
+          entityType: 'routing_provider_configuration',
+          entityId: configurationId,
+          action: 'routing.provider.configured',
+        },
+      })
+      expect(audit?.actorId).toBe(governor.accountId)
+
+      // A second default for the same environment is refused with a sentence,
+      // not a partial-unique-index violation.
+      const secondDefault = await app.inject({
+        method: 'POST',
+        headers,
+        url: '/api/v1/admin/routing-providers/configurations',
+        payload: { ...payload, providerCode: `ADMIN_ROUTE2_${suffix}` },
+      })
+      expect(secondDefault.statusCode).toBe(409)
+      expect(secondDefault.json().error.code).toBe('ROUTING_DEFAULT_ALREADY_EXISTS')
+
+      const withdrawn = await app.inject({
+        method: 'POST',
+        headers,
+        url: `/api/v1/admin/routing-providers/configurations/${configurationId}/health`,
+        payload: { healthStatus: 'UNHEALTHY', reason: 'Integration rotation check' },
+      })
+      expect(withdrawn.statusCode).toBe(200)
+      expect(withdrawn.json().data.healthStatus).toBe('UNHEALTHY')
+
+      const refused = await app.inject({
+        method: 'GET',
+        headers: { host: fixture.host, authorization: `Bearer ${neighbour.token}` },
+        url: '/api/v1/admin/routing-providers/configurations',
+      })
+      expect(refused.statusCode).toBe(403)
     } finally {
       await app.close()
     }

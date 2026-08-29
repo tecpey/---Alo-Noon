@@ -30,6 +30,7 @@ import {
   createPrismaAuthDeliveryProviderService,
   AuthDeliveryProviderError,
 } from './modules/auth-delivery-provider.js'
+import { createPrismaRoutingProviderService } from './modules/routing-provider.js'
 import {
   createPrismaPaymentProviderService,
   PaymentProviderError,
@@ -342,6 +343,9 @@ async function main(): Promise<void> {
     const smsService = createPrismaAuthDeliveryProviderService(prisma, {
       allowSystemOperations: true,
     })
+    const routingService = createPrismaRoutingProviderService(prisma, {
+      allowSystemOperations: true,
+    })
 
     if (command === 'configure-sms-provider') {
       const configuration = await smsService.createConfiguration(
@@ -387,36 +391,27 @@ async function main(): Promise<void> {
       return
     }
 
-    // Routing has no service of its own: unlike a payment gateway or an SMS
-    // sender, a routing configuration governs no state machine and writes no
-    // audit-paired records — it names an engine and says whether to trust it.
-    // The guard trigger enforces the parts that matter.
+    // Goes through the same service the admin panel calls, so a configuration
+    // made from a shell is validated and audited exactly like one made from the
+    // panel. This used to be a raw Prisma write, which meant the setting that
+    // decides every delivery distance could change with nothing recorded.
     if (command === 'configure-routing-provider') {
-      const reference = required(flags, 'credential-reference')
-      if (!/^env:\/\/ROUTING_[A-Z0-9_]{1,120}$/.test(reference)) {
-        throw new Error(
-          'A routing credential reference must look like env://ROUTING_<NAME>. ' +
-            'The prefix is what stops a configuration from naming an unrelated ' +
-            'environment variable and handing its value to a routing adapter.',
-        )
-      }
-      const configuration = await prisma.$transaction(async (transaction) => {
-        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
-        return transaction.routingProviderConfiguration.create({
-          data: {
-            tenantId,
-            providerCode: required(flags, 'provider').toUpperCase(),
-            adapterVersion: flags['adapter-version'] ?? '1.0.0',
-            adapterSpiVersion: 1,
-            environment: (flags['environment'] ?? 'TEST') as 'TEST' | 'PRODUCTION',
-            credentialReference: reference,
-            enabled: asBoolean(flags, 'enabled', true),
-            isDefault: asBoolean(flags, 'default', true),
-            ...(flags['priority'] && { priority: Number(flags['priority']) }),
-            updatedAt: now,
-          },
-        })
-      })
+      const configuration = await routingService.createConfiguration(
+        tenantId,
+        {
+          actor: 'SYSTEM',
+          providerCode: required(flags, 'provider').toUpperCase(),
+          adapterVersion: flags['adapter-version'] ?? '1.0.0',
+          environment: (flags['environment'] ?? 'TEST') as 'TEST' | 'PRODUCTION',
+          credentialReference: required(flags, 'credential-reference'),
+          enabled: asBoolean(flags, 'enabled', true),
+          isDefault: asBoolean(flags, 'default', true),
+          ...(flags['priority'] && { priority: Number(flags['priority']) }),
+          reason: flags['reason'] ?? 'Operator provisioning',
+        },
+        now,
+        correlationId,
+      )
       process.stdout.write(
         `Routing provider configured\n  configurationId: ${configuration.id}\n` +
           `  provider: ${configuration.providerCode}\n`,
@@ -429,13 +424,11 @@ async function main(): Promise<void> {
     }
 
     if (command === 'list-routing-providers') {
-      const configurations = await prisma.$transaction(async (transaction) => {
-        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
-        return transaction.routingProviderConfiguration.findMany({
-          where: { tenantId },
-          orderBy: { createdAt: 'asc' },
-        })
-      })
+      const configurations = await routingService.listConfigurations(
+        tenantId,
+        { actor: 'SYSTEM' },
+        now,
+      )
       if (configurations.length === 0) {
         process.stdout.write(
           'No routing provider is configured. Delivery distance is the scaled straight line.\n',
@@ -453,24 +446,22 @@ async function main(): Promise<void> {
     }
 
     if (command === 'set-routing-provider-health') {
-      const configuration = await prisma.$transaction(async (transaction) => {
-        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
-        const existing = await transaction.routingProviderConfiguration.findFirstOrThrow({
-          where: { id: required(flags, 'configuration'), tenantId },
-        })
-        return transaction.routingProviderConfiguration.update({
-          where: { id: existing.id },
-          data: {
-            healthStatus: required(flags, 'health').toUpperCase() as
-              'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY',
-            // The guard refuses an update that does not advance this, which is
-            // what stops two concurrent operators from silently overwriting
-            // each other's decision about whether an engine is trustworthy.
-            governanceVersion: existing.governanceVersion + 1,
-            updatedAt: now,
-          },
-        })
-      })
+      const configuration = await routingService.setConfigurationHealth(
+        tenantId,
+        {
+          actor: 'SYSTEM',
+          configurationId: required(flags, 'configuration'),
+          // UNKNOWN is not offered: nothing may claim an engine was never
+          // observed once it has been. The service raises governanceVersion,
+          // which is what stops two concurrent operators from silently
+          // overwriting each other's decision about an engine.
+          healthStatus: required(flags, 'health').toUpperCase() as
+            'HEALTHY' | 'DEGRADED' | 'UNHEALTHY',
+          reason: required(flags, 'reason'),
+        },
+        now,
+        correlationId,
+      )
       process.stdout.write(
         `Routing provider health is now ${configuration.healthStatus} for ${configuration.providerCode}\n`,
       )

@@ -42,6 +42,7 @@ import { createPrismaCourierAssignmentService } from './modules/courier-assignme
 import { createPrismaDeliveryTripService } from './modules/delivery-trips.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
+import { createPrismaRoutingProviderService } from './modules/routing-provider.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
@@ -227,6 +228,7 @@ const adminProviders = {
     adapterRegistry: paymentProviderAdapterRegistry,
   }),
   authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
+  routingProviderService: createPrismaRoutingProviderService(prisma),
 }
 
 // Read-only, and gated on its own permissions, so it shares no service instance

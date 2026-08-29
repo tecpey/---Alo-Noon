@@ -16,6 +16,7 @@ export const ADMIN_PERMISSIONS = {
   paymentProviderGovern: 'payment-provider.configuration.govern',
   authDeliveryProviderGovern: 'auth-delivery-provider.configuration.govern',
   notificationProviderGovern: 'notification-provider.configuration.govern',
+  routingProviderGovern: 'routing-provider.configuration.govern',
   reportsRead: 'admin.reports.read',
   ordersRead: 'admin.orders.read',
   ordersManage: 'admin.orders.manage',
@@ -43,6 +44,10 @@ export const ADMIN_PERMISSION_DEFINITIONS: readonly AdminPermissionDefinition[] 
   {
     code: ADMIN_PERMISSIONS.notificationProviderGovern,
     description: 'Configure notification providers and control their rotation',
+  },
+  {
+    code: ADMIN_PERMISSIONS.routingProviderGovern,
+    description: 'Configure routing engines and control their rotation',
   },
   { code: ADMIN_PERMISSIONS.reportsRead, description: 'Read tenant sales and operations reports' },
   { code: ADMIN_PERMISSIONS.ordersRead, description: 'Read any order in the tenant' },
@@ -80,6 +85,7 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
       ADMIN_PERMISSIONS.paymentProviderGovern,
       ADMIN_PERMISSIONS.authDeliveryProviderGovern,
       ADMIN_PERMISSIONS.notificationProviderGovern,
+      ADMIN_PERMISSIONS.routingProviderGovern,
     ],
   },
   {
@@ -112,6 +118,7 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
       ADMIN_PERMISSIONS.paymentProviderGovern,
       ADMIN_PERMISSIONS.authDeliveryProviderGovern,
       ADMIN_PERMISSIONS.notificationProviderGovern,
+      ADMIN_PERMISSIONS.routingProviderGovern,
       ADMIN_PERMISSIONS.reportsRead,
       ADMIN_PERMISSIONS.ordersRead,
       ADMIN_PERMISSIONS.ordersManage,

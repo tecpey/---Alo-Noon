@@ -57,6 +57,24 @@ export interface SmsConfigurationSummary {
   createdAt: string
 }
 
+export interface RoutingConfigurationSummary {
+  id: string
+  providerCode: string
+  adapterVersion: string
+  environment: 'TEST' | 'PRODUCTION'
+  /**
+   * The reference, never the key. Shown deliberately: an operator asking why
+   * delivery distances look wrong needs to see which variable the engine is
+   * reading from.
+   */
+  credentialReference: string
+  enabled: boolean
+  isDefault: boolean
+  priority: number
+  healthStatus: 'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY'
+  createdAt: string
+}
+
 export async function listPaymentConfigurations(): Promise<
   ApiResult<PaymentConfigurationSummary[]>
 > {
@@ -67,6 +85,14 @@ export async function listPaymentConfigurations(): Promise<
 
 export async function listSmsConfigurations(): Promise<ApiResult<SmsConfigurationSummary[]>> {
   return request<SmsConfigurationSummary[]>('/api/v1/admin/sms-providers/configurations', {
+    method: 'GET',
+  })
+}
+
+export async function listRoutingConfigurations(): Promise<
+  ApiResult<RoutingConfigurationSummary[]>
+> {
+  return request<RoutingConfigurationSummary[]>('/api/v1/admin/routing-providers/configurations', {
     method: 'GET',
   })
 }

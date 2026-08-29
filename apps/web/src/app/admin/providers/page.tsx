@@ -3,16 +3,20 @@ import { redirect } from 'next/navigation'
 import {
   createPaymentConfigurationAction,
   createPaymentCredentialAction,
+  createRoutingConfigurationAction,
   createSmsConfigurationAction,
   governPaymentConfigurationAction,
   setPaymentHealthAction,
+  setRoutingHealthAction,
   setSmsHealthAction,
 } from '../../../lib/admin-actions'
 import {
   isUnauthenticated,
   listPaymentConfigurations,
+  listRoutingConfigurations,
   listSmsConfigurations,
   type PaymentConfigurationSummary,
+  type RoutingConfigurationSummary,
   type SmsConfigurationSummary,
 } from '../../../lib/admin-api'
 import { ActionForm, Field, SelectField } from '../action-form'
@@ -36,12 +40,20 @@ const HEALTH_LABELS: Readonly<Record<string, string>> = {
 }
 
 export default async function AdminProvidersPage() {
-  const [payments, sms] = await Promise.all([listPaymentConfigurations(), listSmsConfigurations()])
+  const [payments, sms, routing] = await Promise.all([
+    listPaymentConfigurations(),
+    listSmsConfigurations(),
+    listRoutingConfigurations(),
+  ])
 
   // The lists themselves are the authorization check. A separate session probe
   // would gate the page on session.self.read, a permission a governance-only
   // operator has no reason to hold — and the page would be unreachable for
   // exactly the accounts it exists for.
+  // Routing is deliberately not part of this test. Its permission is separate,
+  // so an operator who governs payment and SMS but not routing gets a 403 on
+  // that one list — which must render as a message inside the page, not as a
+  // bounce to the login screen for someone who is plainly signed in.
   if (
     (!payments.ok && isUnauthenticated(payments.error)) ||
     (!sms.ok && isUnauthenticated(sms.error))
@@ -54,7 +66,7 @@ export default async function AdminProvidersPage() {
       <AdminNav
         active="/admin/providers"
         title="سرویس‌دهنده‌ها"
-        subtitle="درگاه پرداخت و سرویس پیامکِ کد ورود"
+        subtitle="درگاه پرداخت، سرویس پیامکِ کد ورود، و موتور مسیریابی"
       />
 
       <aside className="note">
@@ -191,6 +203,80 @@ export default async function AdminProvidersPage() {
           </ActionForm>
         </details>
       </section>
+      <section>
+        <h2>موتور مسیریابی</h2>
+        <p className="muted">
+          این همان چیزی است که نشانی مشتری را به «چند کیلومتر» تبدیل می‌کند، و کرایهٔ تحویل روی همان
+          عدد حساب می‌شود. تا وقتی هیچ مسیریاب سالمی ثبت نشده باشد، سیستم به فاصلهٔ مستقیم روی نقشه
+          برمی‌گردد — کار می‌کند، ولی برای شهری با رودخانه و خیابان یک‌طرفه کم‌برآورد می‌کند.
+        </p>
+        {routing.ok ? (
+          <RoutingTable configurations={routing.data} />
+        ) : (
+          <p className="error-box">{readFailureMessage(routing.error.code)}</p>
+        )}
+
+        {routing.ok && (
+          <details className="card">
+            <summary>افزودن مسیریاب</summary>
+            <p className="muted">
+              مثل سرویس پیامک، این پیکربندی پس از ثبت تغییرناپذیر است؛ برای کنار گذاشتنش سلامتش را
+              «ناسالم» کنید.
+            </p>
+            <ActionForm action={createRoutingConfigurationAction} submitLabel="ثبت مسیریاب">
+              <Field
+                label="کد مسیریاب"
+                name="providerCode"
+                required
+                dir="ltr"
+                placeholder="NESHAN"
+              />
+              <Field
+                label="ارجاع کلید"
+                name="credentialReference"
+                required
+                dir="ltr"
+                placeholder="env://ROUTING_NESHAN_KEY"
+                hint="ارجاع env:// باید با ROUTING_ شروع شود. مقدار کلید را این‌جا وارد نکنید."
+              />
+              <Field label="نسخهٔ آداپتور" name="adapterVersion" dir="ltr" defaultValue="1.0.0" />
+              <SelectField
+                label="محیط"
+                name="environment"
+                options={ENVIRONMENTS}
+                defaultValue="TEST"
+              />
+              <SelectField
+                label="فعال"
+                name="enabled"
+                options={[
+                  { value: 'true', label: 'بله' },
+                  { value: 'false', label: 'خیر' },
+                ]}
+                defaultValue="true"
+              />
+              <SelectField
+                label="پیش‌فرض"
+                name="isDefault"
+                options={[
+                  { value: 'true', label: 'بله' },
+                  { value: 'false', label: 'خیر' },
+                ]}
+                defaultValue="true"
+                hint="در هر محیط فقط یک مسیریاب پیش‌فرض مجاز است."
+              />
+              <Field
+                label="اولویت"
+                name="priority"
+                dir="ltr"
+                inputMode="numeric"
+                hint="عدد بین ۱ تا ۱۰۰۰. خالی بگذارید تا مقدار پیش‌فرض اعمال شود."
+              />
+              <Field label="دلیل" name="reason" required />
+            </ActionForm>
+          </details>
+        )}
+      </section>
     </main>
   )
 }
@@ -298,6 +384,75 @@ function SmsTable({ configurations }: Readonly<{ configurations: SmsConfiguratio
                 label="وضعیت سلامت"
                 name="healthStatus"
                 // UNKNOWN is absent by design: nothing may claim a provider was
+                // never observed once it has been.
+                options={[
+                  { value: 'HEALTHY', label: 'سالم' },
+                  { value: 'DEGRADED', label: 'کاهش‌یافته' },
+                  { value: 'UNHEALTHY', label: 'ناسالم' },
+                ]}
+                defaultValue={configuration.healthStatus === 'HEALTHY' ? 'UNHEALTHY' : 'HEALTHY'}
+              />
+              <Field label="دلیل" name="reason" required />
+            </ActionForm>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * What each routing engine is, and the one control an operator has over it.
+ *
+ * The credential reference is shown on purpose. It is not the key — the key
+ * never leaves the deployment's environment — but "which variable is this
+ * reading?" is the first question when distances come back wrong, and making
+ * the operator guess it wastes the hour that matters.
+ */
+function RoutingTable({
+  configurations,
+}: Readonly<{ configurations: RoutingConfigurationSummary[] }>) {
+  if (configurations.length === 0) {
+    return (
+      <p className="muted">
+        هیچ مسیریابی ثبت نشده است؛ کرایهٔ تحویل روی فاصلهٔ مستقیم حساب می‌شود.
+      </p>
+    )
+  }
+  return (
+    <div className="rows">
+      {configurations.map((configuration) => (
+        <article key={configuration.id} className="row">
+          <div className="row-head">
+            <strong dir="ltr">{configuration.providerCode}</strong>
+            <span className="badge">{configuration.environment}</span>
+            <span className={`badge health-${configuration.healthStatus.toLowerCase()}`}>
+              {HEALTH_LABELS[configuration.healthStatus] ?? configuration.healthStatus}
+            </span>
+            {configuration.enabled && <span className="badge on">فعال</span>}
+            {configuration.isDefault && <span className="badge on">پیش‌فرض</span>}
+          </div>
+          <dl className="row-meta">
+            <div>
+              <dt>شناسه</dt>
+              <dd dir="ltr">{configuration.id}</dd>
+            </div>
+            <div>
+              <dt>ارجاع کلید</dt>
+              <dd dir="ltr">{configuration.credentialReference}</dd>
+            </div>
+            <div>
+              <dt>اولویت</dt>
+              <dd dir="ltr">{configuration.priority}</dd>
+            </div>
+          </dl>
+          <div className="row-actions">
+            <ActionForm action={setRoutingHealthAction} submitLabel="ثبت سلامت">
+              <input type="hidden" name="configurationId" value={configuration.id} />
+              <SelectField
+                label="وضعیت سلامت"
+                name="healthStatus"
+                // UNKNOWN is absent by design: nothing may claim an engine was
                 // never observed once it has been.
                 options={[
                   { value: 'HEALTHY', label: 'سالم' },

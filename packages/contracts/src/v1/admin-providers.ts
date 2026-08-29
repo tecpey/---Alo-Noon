@@ -114,6 +114,61 @@ export const adminAuthDeliveryConfigurationSummarySchema = z.object({
   createdAt: isoDateTimeSchema,
 })
 
+/**
+ * Mirrors the CHECK constraint on RoutingProviderConfiguration. A stricter
+ * `env://ROUTING_*` shape is additionally enforced server-side, because the
+ * environment-backed resolver only answers to that prefix — and because the
+ * prefix is what stops a configuration from naming an unrelated environment
+ * variable and handing its value to a routing adapter.
+ */
+const routingCredentialReferenceSchema = z
+  .string()
+  .min(8)
+  .max(250)
+  .regex(/^(?:env|vault|aws-sm|gcp-sm|azure-kv):\/\/[A-Za-z0-9_./:-]{1,240}$/)
+
+export const adminRoutingConfigurationCreateSchema = z
+  .object({
+    providerCode: providerCodeSchema,
+    adapterVersion: paymentProviderAdapterVersionSchema,
+    environment: paymentProviderEnvironmentSchema,
+    credentialReference: routingCredentialReferenceSchema,
+    enabled: z.boolean(),
+    isDefault: z.boolean(),
+    priority: z.number().int().min(1).max(1000).optional(),
+    reason: governanceReasonSchema,
+  })
+  .strict()
+
+/**
+ * Health is the only control after creation, as with SMS. UNKNOWN is absent
+ * deliberately: nothing may reset an engine to "never observed" once it has
+ * been.
+ */
+export const adminRoutingHealthSchema = z
+  .object({
+    healthStatus: z.enum(['HEALTHY', 'DEGRADED', 'UNHEALTHY']),
+    reason: governanceReasonSchema,
+  })
+  .strict()
+
+export const adminRoutingConfigurationSummarySchema = z.object({
+  id: uuidSchema,
+  providerCode: providerCodeSchema,
+  adapterVersion: paymentProviderAdapterVersionSchema,
+  adapterSpiVersion: z.literal(1),
+  environment: paymentProviderEnvironmentSchema,
+  // The reference is safe to return and useful to see: an operator debugging
+  // dead routing needs to know which variable the configuration points at. The
+  // value behind it never leaves the deployment's secret store.
+  credentialReference: routingCredentialReferenceSchema,
+  enabled: z.boolean(),
+  isDefault: z.boolean(),
+  priority: z.number().int().min(1).max(1000),
+  healthStatus: providerHealthStatusSchema,
+  createdAt: isoDateTimeSchema,
+})
+
 export type AdminProviderCredentialCreate = z.infer<typeof adminProviderCredentialCreateSchema>
 export type AdminProviderCredentialSummary = z.infer<typeof adminProviderCredentialSummarySchema>
 export type AdminPaymentProviderConfigurationCreate = z.infer<
@@ -128,3 +183,8 @@ export type AdminAuthDeliveryConfigurationSummary = z.infer<
   typeof adminAuthDeliveryConfigurationSummarySchema
 >
 export type AdminAuthDeliveryHealth = z.infer<typeof adminAuthDeliveryHealthSchema>
+export type AdminRoutingConfigurationCreate = z.infer<typeof adminRoutingConfigurationCreateSchema>
+export type AdminRoutingConfigurationSummary = z.infer<
+  typeof adminRoutingConfigurationSummarySchema
+>
+export type AdminRoutingHealth = z.infer<typeof adminRoutingHealthSchema>

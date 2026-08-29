@@ -4,6 +4,8 @@ import type { AccessGrantContract, SessionContext } from '@alo-noon/contracts'
 
 import { buildApp } from './app'
 import type { AuthDeliveryProviderService } from './modules/auth-delivery-provider'
+import type { RoutingProviderService } from './modules/routing-provider'
+import { RoutingProviderError } from './modules/routing-provider'
 import { AuthDeliveryProviderError } from './modules/auth-delivery-provider'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
 import type { PaymentProviderService } from './modules/payment-provider'
@@ -15,6 +17,7 @@ const configurationId = '00000000-0000-4000-8000-0000000000c1'
 const credentialReferenceId = '00000000-0000-4000-8000-0000000000d1'
 const PAYMENT_PERMISSION = 'payment-provider.configuration.govern'
 const DELIVERY_PERMISSION = 'auth-delivery-provider.configuration.govern'
+const ROUTING_PERMISSION = 'routing-provider.configuration.govern'
 
 function grant(permissions: string[], scopeType = 'GLOBAL', scopeId: string | null = null) {
   return {
@@ -85,6 +88,20 @@ const deliverySummary = {
   createdAt: '2026-01-01T00:00:00.000Z',
 }
 
+const routingSummary = {
+  id: configurationId,
+  providerCode: 'DEMOROUTE',
+  adapterVersion: '1.0.0',
+  adapterSpiVersion: 1,
+  environment: 'TEST',
+  credentialReference: 'env://ROUTING_DEMO_KEY',
+  enabled: true,
+  isDefault: true,
+  priority: 100,
+  healthStatus: 'UNKNOWN',
+  createdAt: '2026-01-01T00:00:00.000Z',
+}
+
 function serviceFixtures() {
   const paymentProviderService = {
     createCredentialReference: vi.fn().mockResolvedValue({
@@ -109,7 +126,14 @@ function serviceFixtures() {
       .mockResolvedValue({ ...deliverySummary, healthStatus: 'HEALTHY' }),
     listConfigurations: vi.fn().mockResolvedValue([deliverySummary]),
   }
-  return { paymentProviderService, authDeliveryProviderService }
+  const routingProviderService = {
+    createConfiguration: vi.fn().mockResolvedValue(routingSummary),
+    setConfigurationHealth: vi
+      .fn()
+      .mockResolvedValue({ ...routingSummary, healthStatus: 'HEALTHY' }),
+    listConfigurations: vi.fn().mockResolvedValue([routingSummary]),
+  }
+  return { paymentProviderService, authDeliveryProviderService, routingProviderService }
 }
 
 // The repository fixture decides what the token resolves to, so any non-empty
@@ -132,6 +156,7 @@ async function adminApp(options: {
       paymentProviderService: services.paymentProviderService as unknown as PaymentProviderService,
       authDeliveryProviderService:
         services.authDeliveryProviderService as unknown as AuthDeliveryProviderService,
+      routingProviderService: services.routingProviderService as unknown as RoutingProviderService,
     },
   })
   apps.push(app)
@@ -168,6 +193,16 @@ const smsCommand = {
   credentialReference: 'env://AUTH_SMS_DEMOSMS_API_KEY',
   senderReference: '3000',
   templateReference: 'otp-fa',
+  enabled: true,
+  isDefault: true,
+  reason: 'Soft launch provisioning',
+}
+
+const routingCommand = {
+  providerCode: 'DEMOROUTE',
+  adapterVersion: '1.0.0',
+  environment: 'TEST',
+  credentialReference: 'env://ROUTING_DEMO_KEY',
   enabled: true,
   isDefault: true,
   reason: 'Soft launch provisioning',
@@ -442,6 +477,115 @@ describe('admin provider governance routes', () => {
 
     expect(response.statusCode).toBe(409)
     expect(response.json().error.code).toBe('AUTH_DELIVERY_DEFAULT_ALREADY_EXISTS')
+  })
+
+  it('configures a routing engine and attributes it to the acting account', async () => {
+    const { app, services } = await adminApp({ grants: [grant([ROUTING_PERMISSION])] })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/routing-providers/configurations',
+      payload: routingCommand,
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json().data.providerCode).toBe('DEMOROUTE')
+    expect(services.routingProviderService.createConfiguration).toHaveBeenCalledWith(
+      tenantId,
+      expect.objectContaining({ actor: 'STAFF', actorId: accountId, providerCode: 'DEMOROUTE' }),
+      expect.any(Date),
+      expect.any(String),
+    )
+  })
+
+  it('refuses a routing change to an account holding only the SMS permission', async () => {
+    // The three provider kinds are governed separately on purpose: whoever tunes
+    // delivery distances is not automatically trusted with the OTP gateway.
+    const services = serviceFixtures()
+    const { app } = await adminApp({ grants: [grant([DELIVERY_PERMISSION])], services })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/routing-providers/configurations',
+      payload: routingCommand,
+    })
+
+    expect(response.statusCode).toBe(403)
+    expect(services.routingProviderService.createConfiguration).not.toHaveBeenCalled()
+  })
+
+  it('reports a routing credential reference the resolver could never answer', async () => {
+    // env://NESHAN_KEY resolves to nothing at distance time, because the
+    // resolver only reads ROUTING_-prefixed variables. The transport schema
+    // accepts the general reference shape — vault:// and aws-sm:// are equally
+    // valid — so the prefix rule belongs to the service, as it does for SMS.
+    // What this route owes the operator is turning that refusal into a 400
+    // carrying the code, rather than a 503 that reads like an outage.
+    const services = serviceFixtures()
+    services.routingProviderService.createConfiguration.mockRejectedValue(
+      new RoutingProviderError('ROUTING_ENV_CREDENTIAL_REFERENCE_UNRESOLVABLE'),
+    )
+    const { app } = await adminApp({ grants: [grant([ROUTING_PERMISSION])], services })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/routing-providers/configurations',
+      payload: { ...routingCommand, credentialReference: 'env://NESHAN_KEY' },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error.code).toBe('ROUTING_ENV_CREDENTIAL_REFERENCE_UNRESOLVABLE')
+  })
+
+  it('refuses a malformed reference at the boundary, before any service runs', async () => {
+    const services = serviceFixtures()
+    const { app } = await adminApp({ grants: [grant([ROUTING_PERMISSION])], services })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/routing-providers/configurations',
+      payload: { ...routingCommand, credentialReference: 'NESHAN_KEY' },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(services.routingProviderService.createConfiguration).not.toHaveBeenCalled()
+  })
+
+  it('refuses to reset a routing engine to UNKNOWN', async () => {
+    const services = serviceFixtures()
+    const { app } = await adminApp({ grants: [grant([ROUTING_PERMISSION])], services })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: `/api/v1/admin/routing-providers/configurations/${configurationId}/health`,
+      payload: { healthStatus: 'UNKNOWN', reason: 'Attempting to clear observed state' },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(services.routingProviderService.setConfigurationHealth).not.toHaveBeenCalled()
+  })
+
+  it('maps a second routing default to 409', async () => {
+    const services = serviceFixtures()
+    services.routingProviderService.createConfiguration.mockRejectedValue(
+      new RoutingProviderError('ROUTING_DEFAULT_ALREADY_EXISTS'),
+    )
+    const { app } = await adminApp({ grants: [grant([ROUTING_PERMISSION])], services })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/routing-providers/configurations',
+      payload: routingCommand,
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json().error.code).toBe('ROUTING_DEFAULT_ALREADY_EXISTS')
   })
 
   it('is not registered at all when no admin services are configured', async () => {

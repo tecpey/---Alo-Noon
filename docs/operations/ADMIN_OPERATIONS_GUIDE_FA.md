@@ -107,6 +107,16 @@ Role TENANT_ADMIN granted to +989121234567
 Permissions: payment-provider.configuration.govern, ...
 ```
 
+> [!IMPORTANT] **بعد از هر ارتقا که دسترسی تازه‌ای اضافه کرده، همین دستور را
+> دوباره بزنید.** افزوده‌شدن یک دسترسی به فهرست کد، آن را به نقش‌هایی که از قبل
+> در پایگاه داده هستند اضافه نمی‌کند؛ `grant-role` نقش را با فهرست کد آشتی
+> می‌دهد. اجرای دوباره‌اش بی‌خطر است — اگر حساب همان نقش را داشته باشد
+> `already holds` می‌گوید و فقط دسترسی‌های تازه را می‌چسباند. بدون این، اپراتور
+> صفحهٔ تازه را می‌بیند و روی آن ۴۰۳ می‌گیرد.
+>
+> نمونهٔ واقعی: دسترسی `routing-provider.configuration.govern` که با بخش مسیریاب
+> اضافه شد، تا وقتی این دستور دوباره اجرا نشده بود به `TENANT_ADMIN` نچسبید.
+
 فهرست نقش‌ها و دسترسی‌هایشان را با `provision list-roles` ببینید (به tenant
 نیازی ندارد). نقش‌های موجود:
 
@@ -329,7 +339,12 @@ pnpm --filter @alo-noon/api provision configure-sms-provider \
 ROUTING_NESHAN_KEY=service.<کلید-شما>
 ```
 
-سپس مسیریاب را برای tenant ثبت کنید:
+سپس مسیریاب را برای tenant ثبت کنید. **از پنل مدیریت** ساده‌تر است: صفحهٔ
+[سرویس‌دهنده‌ها](#پنل) بخش «موتور مسیریابی» را دارد و همان کار را با ثبت دلیل در
+تاریخچهٔ ممیزی انجام می‌دهد. دسترسی لازم `routing-provider.configuration.govern`
+است که نقش‌های `PROVIDER_GOVERNOR` و `TENANT_ADMIN` دارند.
+
+از خط فرمان هم همان سرویس صدا زده می‌شود، پس نتیجه یکی است:
 
 ```bash
 pnpm --filter @alo-noon/api provision configure-routing-provider \
@@ -350,8 +365,12 @@ pnpm --filter @alo-noon/api provision configure-routing-provider \
 pnpm --filter @alo-noon/api provision set-routing-provider-health \
   --tenant "<شناسه-tenant>" \
   --configuration "<configurationId>" \
-  --health HEALTHY
+  --health HEALTHY \
+  --reason "آزمون واقعی روی سرویس نشان"
 ```
+
+`--reason` اجباری است و در تاریخچهٔ ممیزی می‌نشیند: «چه کسی، کِی، و به چه دلیل
+گفت این موتور قابل اعتماد است» سؤالی است که ماه بعد پرسیده می‌شود.
 
 و برای دیدن وضعیت:
 

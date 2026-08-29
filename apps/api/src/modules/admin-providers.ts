@@ -9,6 +9,8 @@ import {
   adminPaymentProviderGovernanceSchema,
   adminPaymentProviderHealthSchema,
   adminProviderCredentialCreateSchema,
+  adminRoutingConfigurationCreateSchema,
+  adminRoutingHealthSchema,
 } from '@alo-noon/contracts'
 
 import { ADMIN_PERMISSIONS } from '@alo-noon/domain'
@@ -24,6 +26,7 @@ import {
   type AdminAuthDependencies,
 } from './admin-auth.js'
 import { PaymentProviderError, type PaymentProviderService } from './payment-provider.js'
+import { RoutingProviderError, type RoutingProviderService } from './routing-provider.js'
 
 /**
  * Staff-facing provider governance.
@@ -45,6 +48,7 @@ import { PaymentProviderError, type PaymentProviderService } from './payment-pro
  */
 const PAYMENT_GOVERN_PERMISSION = ADMIN_PERMISSIONS.paymentProviderGovern
 const DELIVERY_GOVERN_PERMISSION = ADMIN_PERMISSIONS.authDeliveryProviderGovern
+const ROUTING_GOVERN_PERMISSION = ADMIN_PERMISSIONS.routingProviderGovern
 
 // Governance is low-volume and high-consequence. A tighter budget than the
 // global one limits how fast a stolen staff session can churn configuration.
@@ -53,6 +57,7 @@ const ADMIN_RATE_LIMIT = { config: { rateLimit: { max: 60, timeWindow: '1 minute
 export interface AdminProviderDependencies extends AdminAuthDependencies {
   paymentProviderService: PaymentProviderService
   authDeliveryProviderService: AuthDeliveryProviderService
+  routingProviderService: RoutingProviderService
 }
 
 export function registerAdminProviderRoutes(
@@ -334,6 +339,112 @@ export function registerAdminProviderRoutes(
       }
     },
   )
+
+  // Routing engines. Governed separately from payment and SMS because the risk
+  // is different in kind: a routing key buys distances rather than moving money,
+  // and the operator who tunes delivery pricing is not necessarily the one
+  // trusted with a payment gateway.
+  app.get(
+    '/api/v1/admin/routing-providers/configurations',
+    ADMIN_RATE_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(
+        request,
+        reply,
+        dependencies,
+        ROUTING_GOVERN_PERMISSION,
+      )
+      if (!actor) return reply
+
+      try {
+        const configurations = await dependencies.routingProviderService.listConfigurations(
+          actor.tenantId,
+          { actor: 'STAFF', actorId: actor.accountId },
+          currentTime(),
+        )
+        return reply.send({ success: true, data: configurations, meta: adminResponseMeta() })
+      } catch (error) {
+        return routingGovernanceFailure(request, reply, error)
+      }
+    },
+  )
+
+  app.post(
+    '/api/v1/admin/routing-providers/configurations',
+    ADMIN_RATE_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(
+        request,
+        reply,
+        dependencies,
+        ROUTING_GOVERN_PERMISSION,
+      )
+      if (!actor) return reply
+      const parsed = adminRoutingConfigurationCreateSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_ROUTING_PROVIDER_COMMAND', 'The command is invalid.'))
+      }
+
+      const { priority, ...command } = parsed.data
+      try {
+        const configuration = await dependencies.routingProviderService.createConfiguration(
+          actor.tenantId,
+          {
+            actor: 'STAFF',
+            actorId: actor.accountId,
+            ...command,
+            ...(priority !== undefined && { priority }),
+          },
+          currentTime(),
+          randomUUID(),
+        )
+        return reply
+          .code(201)
+          .send({ success: true, data: configuration, meta: adminResponseMeta() })
+      } catch (error) {
+        return routingGovernanceFailure(request, reply, error)
+      }
+    },
+  )
+
+  app.post<{ Params: { configurationId: string } }>(
+    '/api/v1/admin/routing-providers/configurations/:configurationId/health',
+    ADMIN_RATE_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(
+        request,
+        reply,
+        dependencies,
+        ROUTING_GOVERN_PERMISSION,
+      )
+      if (!actor) return reply
+      const parsed = adminRoutingHealthSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_ROUTING_PROVIDER_HEALTH_COMMAND', 'The command is invalid.'))
+      }
+
+      try {
+        const configuration = await dependencies.routingProviderService.setConfigurationHealth(
+          actor.tenantId,
+          {
+            actor: 'STAFF',
+            actorId: actor.accountId,
+            configurationId: request.params.configurationId,
+            ...parsed.data,
+          },
+          currentTime(),
+          randomUUID(),
+        )
+        return reply.send({ success: true, data: configuration, meta: adminResponseMeta() })
+      } catch (error) {
+        return routingGovernanceFailure(request, reply, error)
+      }
+    },
+  )
 }
 
 /**
@@ -370,6 +481,21 @@ const DELIVERY_GOVERNANCE_STATUS: Readonly<Record<string, 400 | 403 | 404 | 409>
   AUTH_DELIVERY_REASON_REQUIRED: 400,
 }
 
+const ROUTING_GOVERNANCE_STATUS: Readonly<Record<string, 400 | 403 | 404 | 409>> = {
+  ROUTING_PROVIDER_OPERATION_FORBIDDEN: 403,
+  ROUTING_CONFIGURATION_NOT_FOUND: 404,
+  ROUTING_CONFIGURATION_CONFLICT: 409,
+  ROUTING_DEFAULT_ALREADY_EXISTS: 409,
+  ROUTING_PROVIDER_CONCURRENCY_CONFLICT: 409,
+  ROUTING_PROVIDER_CODE_INVALID: 400,
+  ROUTING_ADAPTER_VERSION_INVALID: 400,
+  ROUTING_CREDENTIAL_REFERENCE_INVALID: 400,
+  ROUTING_ENV_CREDENTIAL_REFERENCE_UNRESOLVABLE: 400,
+  ROUTING_PRIORITY_OUT_OF_RANGE: 400,
+  ROUTING_DEFAULT_MUST_BE_ENABLED: 400,
+  ROUTING_REASON_REQUIRED: 400,
+}
+
 function paymentGovernanceFailure(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -401,6 +527,26 @@ function deliveryGovernanceFailure(
     if (status) return reply.code(status).send(errorEnvelope(error.code, governanceMessage(status)))
   }
   request.log.error({ err: error }, 'Authentication delivery provider governance failed')
+  return reply
+    .code(503)
+    .send(
+      errorEnvelope(
+        'PROVIDER_GOVERNANCE_UNAVAILABLE',
+        'Provider governance is temporarily unavailable.',
+      ),
+    )
+}
+
+function routingGovernanceFailure(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  error: unknown,
+): unknown {
+  if (error instanceof RoutingProviderError) {
+    const status = ROUTING_GOVERNANCE_STATUS[error.code]
+    if (status) return reply.code(status).send(errorEnvelope(error.code, governanceMessage(status)))
+  }
+  request.log.error({ err: error }, 'Routing provider governance failed')
   return reply
     .code(503)
     .send(
