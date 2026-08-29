@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
+import type { ResponseMeta } from '@alo-noon/contracts'
+
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
 import { orderRatingInputSchema, uuidSchema } from '@alo-noon/contracts'
@@ -230,6 +232,14 @@ function envelope(code: string, message: string) {
   return { success: false as const, error: { code, message }, meta: meta() }
 }
 
-function meta() {
-  return { requestId: randomUUID(), timestamp: new Date().toISOString(), apiVersion: 'v1' as const }
+/**
+ * The published envelope shape, which is `version` and not `apiVersion`.
+ *
+ * These routes shipped with the wrong key. Nothing noticed because the web
+ * client does not validate the responses it receives — the mobile one does, and
+ * every reorder from the phone failed with "the service reply was not valid"
+ * while the server happily returned 201.
+ */
+function meta(): ResponseMeta {
+  return { requestId: randomUUID(), timestamp: new Date().toISOString(), version: 'v1' }
 }

@@ -11,7 +11,7 @@ import { CheckIcon, ChevronIcon, ReceiptIcon } from '../components/icons'
 import { EmptyBasketArt } from '../components/brand-art'
 import { formatToman, toPersianDigits } from '../../lib/persian'
 import { OrderActions } from './order-actions'
-import { orderProgress, type OrderStates } from '../../lib/order-display'
+import { orderProgress, type OrderStates } from '@alo-noon/domain'
 import { currentSession, listOrders } from '../../lib/shop-api'
 
 export const metadata: Metadata = {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { orderProgress } from './order-display'
+import { orderProgress } from './order-progress'
 
 const base = {
   state: 'CONFIRMED',

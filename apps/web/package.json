@@ -16,6 +16,7 @@
     "@alo-noon/config": "workspace:*",
     "@alo-noon/contracts": "workspace:*",
     "@alo-noon/design-tokens": "workspace:*",
+    "@alo-noon/domain": "workspace:*",
     "next": "16.2.11",
     "react": "19.2.8",
     "react-dom": "19.2.8"

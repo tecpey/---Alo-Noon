@@ -9,6 +9,7 @@ import {
   quoteEnvelopeSchema,
   orderEnvelopeSchema,
   orderListEnvelopeSchema,
+  reorderEnvelopeSchema,
   paymentEnvelopeSchema,
   paymentExecutionEnvelopeSchema,
   serviceabilityEnvelopeSchema,
@@ -21,6 +22,7 @@ import {
   type ProductSummary,
   type QuoteSummary,
   type OrderSummary,
+  type ReorderResult,
   type PaymentExecutionSummary,
   type PaymentSummary,
   type ServiceabilityResponse,
@@ -102,6 +104,14 @@ export interface CustomerApiClient {
   listOrders(): Promise<OrderSummary[]>
   /** One order, for following it after payment. */
   readOrder(orderId: string): Promise<OrderSummary>
+  /**
+   * Rebuilds the basket from a past order, at today's prices.
+   *
+   * The adjustments are the half that matters: a customer who taps "order
+   * again" and quietly receives two loaves instead of four has been let down
+   * twice — once by the bakery, and once by the app that did not mention it.
+   */
+  reorder(orderId: string): Promise<ReorderResult>
 }
 
 export function createCustomerApiClient(
@@ -221,6 +231,10 @@ export function createCustomerApiClient(
     listOrders: async () => request('/api/v1/orders', orderListEnvelopeSchema),
     readOrder: async (orderId) =>
       request(`/api/v1/orders/${encodeURIComponent(orderId)}`, orderEnvelopeSchema),
+    reorder: async (orderId) =>
+      request(`/api/v1/orders/${encodeURIComponent(orderId)}/reorder`, reorderEnvelopeSchema, {
+        method: 'POST',
+      }),
   }
 }
 

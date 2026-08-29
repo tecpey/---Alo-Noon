@@ -26,11 +26,15 @@ import type {
   SessionContext,
 } from '@alo-noon/contracts'
 import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
+import { orderProgress } from '@alo-noon/domain'
 import { GlassSurface, OvenIcon, PlusIcon, PressScale, SteamIcon } from '@alo-noon/mobile-ui'
 
 import brandMark from './assets/logo-mark.png'
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
 import { customerCopy } from './src/copy'
+import { AccountScreen } from './src/screens/account'
+import { OrderDetailScreen, OrdersScreen } from './src/screens/orders'
+import { TabBar, type Tab } from './src/screens/tabs'
 import {
   formatRials,
   normalizeIranianMobile,
@@ -53,6 +57,14 @@ export default function App() {
     }
   }, [])
   const [screen, setScreen] = useState<Screen>('boot')
+  // Which of the three destinations is showing, once the funnel is done. Kept
+  // here rather than in a router because there is no history to keep: three
+  // flat tabs and one detail below one of them.
+  const [tab, setTab] = useState<Tab>('shop')
+  const [orders, setOrders] = useState<OrderSummary[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [openOrderId, setOpenOrderId] = useState<string>()
+  const [reordering, setReordering] = useState(false)
   const [session, setSession] = useState<SessionContext | null>(null)
   const [cities, setCities] = useState<ActiveCitySummary[]>([])
   const [selectedCityId, setSelectedCityId] = useState<string>()
@@ -345,7 +357,6 @@ export default function App() {
       setQuote(await api.createQuote(selectedAddressId, cart.version, idempotencyKey))
       setOrder(null)
       resetPayment()
-      resetPayment()
       setQuoteCommandKey(undefined)
     } catch (error) {
       handleAuthenticatedError(error)
@@ -458,7 +469,6 @@ export default function App() {
       setQuote(null)
       setOrder(null)
       resetPayment()
-      resetPayment()
       setAddresses([])
       setSelectedAddressId(undefined)
       setCoordinates(undefined)
@@ -466,12 +476,65 @@ export default function App() {
       setQuoteCommandKey(undefined)
       setOrderCommandKey(undefined)
       setChallengeId(undefined)
+      // Everything the previous customer could see goes with them. Leaving the
+      // order list behind would show one person's orders to the next.
+      setOrders([])
+      setOpenOrderId(undefined)
+      setTab('shop')
       setScreen('phone')
       setMessage(undefined)
     } catch (error) {
       setMessage(errorMessage(error))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Reads the order list on demand rather than on a timer.
+   *
+   * A customer opening this tab wants what is true now; a poll would spend
+   * their data all morning to say nothing changed.
+   */
+  const loadOrders = async () => {
+    if (!api) return
+    setOrdersLoading(true)
+    try {
+      setOrders(await api.listOrders())
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setOrdersLoading(false)
+    }
+  }
+
+  const reorderFrom = async (orderId: string) => {
+    if (!api || reordering) return
+    setReordering(true)
+    setMessage(undefined)
+    try {
+      const result = await api.reorder(orderId)
+      setCart(await api.getCart())
+      // The adjustments are the point. Saying nothing and handing somebody two
+      // loaves where they asked for four is the failure this exists to avoid.
+      setMessage(
+        result.adjustments.length === 0
+          ? 'سبد از روی همان سفارش پر شد.'
+          : result.adjustments
+              .map((adjustment) =>
+                adjustment.reason === 'REORDER_QUANTITY_REDUCED'
+                  ? `${adjustment.nameFa} فقط ${adjustment.quantity.toLocaleString('fa-IR')} عدد موجود بود`
+                  : `${adjustment.nameFa} الان موجود نیست`,
+              )
+              .join(' · '),
+      )
+      setOpenOrderId(undefined)
+      setTab('shop')
+    } catch (error) {
+      setMessage(errorMessage(error))
+      handleAuthenticatedError(error)
+    } finally {
+      setReordering(false)
     }
   }
 
@@ -485,7 +548,6 @@ export default function App() {
       setCart(null)
       setQuote(null)
       setOrder(null)
-      resetPayment()
       resetPayment()
       setAddresses([])
       setSelectedAddressId(undefined)
@@ -507,8 +569,33 @@ export default function App() {
     )
   }
 
+  const openOrder = orders.find((candidate) => candidate.id === openOrderId)
+  // What is actually in motion, so the badge means "something is happening"
+  // rather than "you have ordered before". A finished order is not news.
+  const liveOrderCount = orders.filter((candidate) => {
+    const tone = orderProgress(candidate).tone
+    return tone === 'live' || tone === 'waiting'
+  }).length
+
   return (
-    <Shell>
+    <Shell
+      footer={
+        // Only once there is somewhere to go. During the funnel the tabs would
+        // lead to two empty screens and one the customer has not reached yet.
+        screen === 'catalog' ? (
+          <TabBar
+            active={tab}
+            liveOrderCount={liveOrderCount}
+            onChange={(next) => {
+              setMessage(undefined)
+              setOpenOrderId(undefined)
+              setTab(next)
+              if (next === 'orders') void loadOrders()
+            }}
+          />
+        ) : undefined
+      }
+    >
       {screen === 'boot' && <Loading label="در حال بررسی نشست امن…" />}
 
       {screen === 'phone' && (
@@ -593,7 +680,49 @@ export default function App() {
         </View>
       )}
 
-      {screen === 'catalog' && (
+      {screen === 'catalog' && tab === 'orders' && (
+        <View style={styles.catalogPanel}>
+          {openOrder ? (
+            <OrderDetailScreen
+              order={openOrder}
+              reordering={reordering}
+              onBack={() => setOpenOrderId(undefined)}
+              onReorder={() => void reorderFrom(openOrder.id)}
+            />
+          ) : (
+            <OrdersScreen
+              orders={orders}
+              loading={ordersLoading}
+              onOpen={(picked) => setOpenOrderId(picked.id)}
+              onRefresh={() => void loadOrders()}
+            />
+          )}
+          {message && <InlineMessage text={message} />}
+        </View>
+      )}
+
+      {screen === 'catalog' && tab === 'account' && (
+        <View style={styles.catalogPanel}>
+          <AccountScreen
+            session={session}
+            addresses={addresses}
+            loading={busy}
+            selectedAddressId={selectedAddressId}
+            onSelect={(addressId) => {
+              setSelectedAddressId(addressId)
+              // Choosing where it goes is a shopping decision, so it hands the
+              // customer back to the basket rather than leaving them on a
+              // settings screen wondering whether it took.
+              setTab('shop')
+            }}
+            onAdd={() => setTab('shop')}
+            onLogout={() => void logout()}
+          />
+          {message && <InlineMessage text={message} />}
+        </View>
+      )}
+
+      {screen === 'catalog' && tab === 'shop' && (
         <View style={styles.catalogPanel}>
           <Header session={session} onLogout={logout} />
           <Text style={styles.title}>{customerCopy.title}</Text>
@@ -659,7 +788,6 @@ export default function App() {
               setQuote(null)
               setOrder(null)
               resetPayment()
-              resetPayment()
               setScreen('location')
             }}
           >
@@ -678,10 +806,24 @@ export default function App() {
  * things the shopfront and the panel show — a phone app that spells the brand
  * out in the system font is a phone app that belongs to a different company.
  */
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({
+  children,
+  footer,
+}: {
+  children: React.ReactNode
+  /**
+   * Rendered below the scroll view rather than inside it, so the tab bar does
+   * not scroll away. Reaching the bottom of a long order list is exactly when
+   * somebody wants to leave it.
+   */
+  footer?: React.ReactNode
+}) {
   return (
     <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, footer ? styles.scrollContentTabbed : null]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/*
           Glass, for the same reason the web's bar is: it floats over a screen
           of bread photographs, and a solid bar there cuts the screen in half.
@@ -703,6 +845,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         </GlassSurface>
         {children}
       </ScrollView>
+      {footer}
       <StatusBar style="dark" />
     </SafeAreaView>
   )
@@ -1171,6 +1314,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 32,
   },
+  // Centring is right for a single auth card and wrong for a list: an order
+  // history that starts halfway down the screen looks like a rendering fault.
+  scrollContentTabbed: { justifyContent: 'flex-start' },
   brandBar: {
     flexDirection: 'row-reverse',
     alignItems: 'center',

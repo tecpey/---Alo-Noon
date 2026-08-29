@@ -14,7 +14,7 @@ import { RetryButton } from '../../components/retry-button'
 import { isUnauthenticated } from '../../../lib/api-core'
 import { formatToman, toPersianDigits } from '../../../lib/persian'
 import { listOrders } from '../../../lib/shop-api'
-import { orderProgress } from '../../../lib/order-display'
+import { orderProgress } from '@alo-noon/domain'
 
 export const metadata: Metadata = {
   title: 'نتیجهٔ پرداخت | الو نون',

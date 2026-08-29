@@ -1,6 +1,12 @@
 /**
  * How an order's four states read to the customer who placed it.
  *
+ * Lives in the domain rather than in one app because both the site and the
+ * phone show it, and a repository rule forbids one application importing
+ * another. The alternative — a copy in each — is the version where the web says
+ * "در حال پخت" and the app says something slightly different about the same
+ * order, and nobody notices until a customer reads both.
+ *
  * The system tracks order, payment, production and delivery separately, which is
  * right — an order can be paid and unbaked, or baked and undelivered — but a
  * customer does not want four status badges. They want one sentence about where

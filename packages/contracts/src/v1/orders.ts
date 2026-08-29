@@ -118,6 +118,12 @@ export const reorderResultSchema = z.object({
 })
 export type ReorderResult = z.infer<typeof reorderResultSchema>
 
+export const reorderEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: reorderResultSchema,
+  meta: responseMetaSchema,
+})
+
 export const favouriteSchema = z.object({
   offeringId: uuidSchema,
   productVariantId: uuidSchema,
