@@ -2,19 +2,23 @@ import { redirect } from 'next/navigation'
 
 import {
   createPaymentConfigurationAction,
+  createEmailConfigurationAction,
   createPaymentCredentialAction,
   createRoutingConfigurationAction,
   createSmsConfigurationAction,
   governPaymentConfigurationAction,
+  setEmailHealthAction,
   setPaymentHealthAction,
   setRoutingHealthAction,
   setSmsHealthAction,
 } from '../../../lib/admin-actions'
 import {
   isUnauthenticated,
+  listEmailConfigurations,
   listPaymentConfigurations,
   listRoutingConfigurations,
   listSmsConfigurations,
+  type EmailConfigurationSummary,
   type PaymentConfigurationSummary,
   type RoutingConfigurationSummary,
   type SmsConfigurationSummary,
@@ -40,10 +44,11 @@ const HEALTH_LABELS: Readonly<Record<string, string>> = {
 }
 
 export default async function AdminProvidersPage() {
-  const [payments, sms, routing] = await Promise.all([
+  const [payments, sms, routing, email] = await Promise.all([
     listPaymentConfigurations(),
     listSmsConfigurations(),
     listRoutingConfigurations(),
+    listEmailConfigurations(),
   ])
 
   // The lists themselves are the authorization check. A separate session probe
@@ -66,7 +71,7 @@ export default async function AdminProvidersPage() {
       <AdminNav
         active="/admin/providers"
         title="سرویس‌دهنده‌ها"
-        subtitle="درگاه پرداخت، سرویس پیامکِ کد ورود، و موتور مسیریابی"
+        subtitle="درگاه پرداخت، پیامک، ایمیل، و موتور مسیریابی"
       />
 
       <aside className="note">
@@ -203,6 +208,91 @@ export default async function AdminProvidersPage() {
           </ActionForm>
         </details>
       </section>
+      <section>
+        <h2>سرویس ایمیل</h2>
+        <p className="muted">
+          ایمیل در الو نون برای مشتری نیست — مشتری با پیامک کار می‌کند. این‌جا برای <em>شماست</em>:
+          وقتی نیمه‌شب درگاه پرداخت از کار می‌افتد، پیامی ارسال‌نشده می‌ماند، یا پشتیبان‌گیری شکست
+          می‌خورد، امروز فقط در لاگ سرور نوشته می‌شود و کسی نمی‌بیندش. تا وقتی این‌جا سرویسی سالم
+          ثبت نشده باشد، هیچ هشداری فرستاده نمی‌شود.
+        </p>
+        {email.ok ? (
+          <EmailTable configurations={email.data} />
+        ) : (
+          <p className="error-box">{readFailureMessage(email.error.code)}</p>
+        )}
+
+        {email.ok && (
+          <details className="card">
+            <summary>افزودن سرویس ایمیل</summary>
+            <p className="muted">
+              مثل بقیه، این پیکربندی پس از ثبت تغییرناپذیر است؛ برای کنار گذاشتنش سلامتش را «ناسالم»
+              کنید.
+            </p>
+            <ActionForm action={createEmailConfigurationAction} submitLabel="ثبت سرویس ایمیل">
+              <Field label="کد سرویس" name="providerCode" required dir="ltr" placeholder="SMTP" />
+              <Field
+                label="ارجاع رمز"
+                name="credentialReference"
+                required
+                dir="ltr"
+                placeholder="env://EMAIL_SMTP_PASSWORD"
+                hint="ارجاع env:// باید با EMAIL_ شروع شود. خود رمز را این‌جا وارد نکنید."
+              />
+              <Field
+                label="نشانی فرستنده"
+                name="senderAddress"
+                required
+                dir="ltr"
+                placeholder="no-reply@example.com"
+                hint="همان نشانی‌ای که گیرنده در «از» می‌بیند."
+              />
+              <Field
+                label="نام فرستنده"
+                name="senderName"
+                required
+                defaultValue="الو نون"
+                hint="نامی که کنار نشانی نشان داده می‌شود."
+              />
+              <Field label="نسخهٔ آداپتور" name="adapterVersion" dir="ltr" defaultValue="1.0.0" />
+              <SelectField
+                label="محیط"
+                name="environment"
+                options={ENVIRONMENTS}
+                defaultValue="TEST"
+              />
+              <SelectField
+                label="فعال"
+                name="enabled"
+                options={[
+                  { value: 'true', label: 'بله' },
+                  { value: 'false', label: 'خیر' },
+                ]}
+                defaultValue="true"
+              />
+              <SelectField
+                label="پیش‌فرض"
+                name="isDefault"
+                options={[
+                  { value: 'true', label: 'بله' },
+                  { value: 'false', label: 'خیر' },
+                ]}
+                defaultValue="true"
+                hint="در هر محیط فقط یک سرویس ایمیل پیش‌فرض مجاز است."
+              />
+              <Field
+                label="اولویت"
+                name="priority"
+                dir="ltr"
+                inputMode="numeric"
+                hint="عدد بین ۱ تا ۱۰۰۰. خالی بگذارید تا مقدار پیش‌فرض اعمال شود."
+              />
+              <Field label="دلیل" name="reason" required />
+            </ActionForm>
+          </details>
+        )}
+      </section>
+
       <section>
         <h2>موتور مسیریابی</h2>
         <p className="muted">
@@ -453,6 +543,70 @@ function RoutingTable({
                 label="وضعیت سلامت"
                 name="healthStatus"
                 // UNKNOWN is absent by design: nothing may claim an engine was
+                // never observed once it has been.
+                options={[
+                  { value: 'HEALTHY', label: 'سالم' },
+                  { value: 'DEGRADED', label: 'کاهش‌یافته' },
+                  { value: 'UNHEALTHY', label: 'ناسالم' },
+                ]}
+                defaultValue={configuration.healthStatus === 'HEALTHY' ? 'UNHEALTHY' : 'HEALTHY'}
+              />
+              <Field label="دلیل" name="reason" required />
+            </ActionForm>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Each email service, and the one control an operator has over it.
+ *
+ * The sender address and name are shown because they are the two things a
+ * recipient actually sees, and "why does our mail look like it is from nobody"
+ * is answered here rather than by reading a database.
+ */
+function EmailTable({ configurations }: Readonly<{ configurations: EmailConfigurationSummary[] }>) {
+  if (configurations.length === 0) {
+    return <p className="muted">هیچ سرویس ایمیلی ثبت نشده است؛ هشدارها فقط در لاگ سرور می‌مانند.</p>
+  }
+  return (
+    <div className="rows">
+      {configurations.map((configuration) => (
+        <article key={configuration.id} className="row">
+          <div className="row-head">
+            <strong dir="ltr">{configuration.providerCode}</strong>
+            <span className="badge">{configuration.environment}</span>
+            <span className={`badge health-${configuration.healthStatus.toLowerCase()}`}>
+              {HEALTH_LABELS[configuration.healthStatus] ?? configuration.healthStatus}
+            </span>
+            {configuration.enabled && <span className="badge on">فعال</span>}
+            {configuration.isDefault && <span className="badge on">پیش‌فرض</span>}
+          </div>
+          <dl className="row-meta">
+            <div>
+              <dt>فرستنده</dt>
+              <dd dir="ltr">
+                {configuration.senderName} &lt;{configuration.senderAddress}&gt;
+              </dd>
+            </div>
+            <div>
+              <dt>ارجاع رمز</dt>
+              <dd dir="ltr">{configuration.credentialReference}</dd>
+            </div>
+            <div>
+              <dt>شناسه</dt>
+              <dd dir="ltr">{configuration.id}</dd>
+            </div>
+          </dl>
+          <div className="row-actions">
+            <ActionForm action={setEmailHealthAction} submitLabel="ثبت سلامت">
+              <input type="hidden" name="configurationId" value={configuration.id} />
+              <SelectField
+                label="وضعیت سلامت"
+                name="healthStatus"
+                // UNKNOWN is absent by design: nothing may claim a service was
                 // never observed once it has been.
                 options={[
                   { value: 'HEALTHY', label: 'سالم' },

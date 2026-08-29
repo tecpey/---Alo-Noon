@@ -169,6 +169,68 @@ export const adminRoutingConfigurationSummarySchema = z.object({
   createdAt: isoDateTimeSchema,
 })
 
+/**
+ * Deliberately loose, matching the database CHECK: one @, something either
+ * side, no spaces. The authority on whether an address works is the receiving
+ * mail server, and a stricter pattern here would refuse addresses that deliver
+ * perfectly well.
+ */
+const emailAddressSchema = z
+  .string()
+  .min(3)
+  .max(254)
+  .regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)
+
+export const adminEmailConfigurationCreateSchema = z
+  .object({
+    providerCode: providerCodeSchema,
+    adapterVersion: paymentProviderAdapterVersionSchema,
+    environment: paymentProviderEnvironmentSchema,
+    // A stricter `env://EMAIL_*` shape is additionally enforced server-side,
+    // because the environment-backed resolver only answers to that prefix.
+    credentialReference: z
+      .string()
+      .min(8)
+      .max(250)
+      .regex(/^(?:env|vault|aws-sm|gcp-sm|azure-kv):\/\/[A-Za-z0-9_./:-]{1,240}$/),
+    senderAddress: emailAddressSchema,
+    senderName: z.string().min(1).max(128),
+    enabled: z.boolean(),
+    isDefault: z.boolean(),
+    priority: z.number().int().min(1).max(1000).optional(),
+    reason: governanceReasonSchema,
+  })
+  .strict()
+
+/**
+ * Health is the only control after creation. UNKNOWN is absent deliberately:
+ * nothing may reset a service to "never observed" once it has been.
+ */
+export const adminEmailHealthSchema = z
+  .object({
+    healthStatus: z.enum(['HEALTHY', 'DEGRADED', 'UNHEALTHY']),
+    reason: governanceReasonSchema,
+  })
+  .strict()
+
+export const adminEmailConfigurationSummarySchema = z.object({
+  id: uuidSchema,
+  providerCode: providerCodeSchema,
+  adapterVersion: paymentProviderAdapterVersionSchema,
+  adapterSpiVersion: z.literal(1),
+  environment: paymentProviderEnvironmentSchema,
+  credentialReference: z.string().min(8).max(250),
+  // Printed on every message the tenant sends, so neither is a secret, and
+  // both are what an operator needs when mail goes to spam.
+  senderAddress: emailAddressSchema,
+  senderName: z.string().min(1).max(128),
+  enabled: z.boolean(),
+  isDefault: z.boolean(),
+  priority: z.number().int().min(1).max(1000),
+  healthStatus: providerHealthStatusSchema,
+  createdAt: isoDateTimeSchema,
+})
+
 export type AdminProviderCredentialCreate = z.infer<typeof adminProviderCredentialCreateSchema>
 export type AdminProviderCredentialSummary = z.infer<typeof adminProviderCredentialSummarySchema>
 export type AdminPaymentProviderConfigurationCreate = z.infer<
@@ -188,3 +250,6 @@ export type AdminRoutingConfigurationSummary = z.infer<
   typeof adminRoutingConfigurationSummarySchema
 >
 export type AdminRoutingHealth = z.infer<typeof adminRoutingHealthSchema>
+export type AdminEmailConfigurationCreate = z.infer<typeof adminEmailConfigurationCreateSchema>
+export type AdminEmailConfigurationSummary = z.infer<typeof adminEmailConfigurationSummarySchema>
+export type AdminEmailHealth = z.infer<typeof adminEmailHealthSchema>

@@ -40,6 +40,22 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   AUTH_DELIVERY_ENV_CREDENTIAL_REFERENCE_UNRESOLVABLE:
     'ارجاع env:// باید با AUTH_SMS_ شروع شود تا در زمان ارسال قابل تشخیص باشد.',
   AUTH_DELIVERY_DEFAULT_MUST_BE_ENABLED: 'سرویس پیش‌فرض باید فعال باشد.',
+  EMAIL_PROVIDER_OPERATION_FORBIDDEN: 'این حساب اجازهٔ مدیریت سرویس ایمیل را ندارد.',
+  EMAIL_CONFIGURATION_NOT_FOUND: 'چنین سرویس ایمیلی برای این مستأجر ثبت نشده است.',
+  EMAIL_DEFAULT_ALREADY_EXISTS:
+    'برای این محیط از قبل یک سرویس ایمیل پیش‌فرض وجود دارد. اول آن را از چرخه خارج کنید.',
+  EMAIL_CONFIGURATION_CONFLICT: 'سرویسی با همین کد و نسخه هست ولی مقادیرش فرق دارد.',
+  EMAIL_ENV_CREDENTIAL_REFERENCE_UNRESOLVABLE:
+    'ارجاع env:// باید با EMAIL_ شروع شود، وگرنه هنگام ارسال هیچ رمزی پیدا نمی‌شود.',
+  EMAIL_CREDENTIAL_REFERENCE_INVALID:
+    'ارجاع رمز معتبر نیست. باید مثل env://EMAIL_SMTP_PASSWORD باشد.',
+  EMAIL_SENDER_ADDRESS_INVALID: 'نشانی فرستنده معتبر نیست.',
+  EMAIL_SENDER_NAME_INVALID: 'نام فرستنده را بنویسید؛ همان چیزی است که گیرنده می‌بیند.',
+  EMAIL_DEFAULT_MUST_BE_ENABLED: 'سرویس ایمیل پیش‌فرض باید فعال باشد.',
+  EMAIL_PROVIDER_CODE_INVALID: 'کد سرویس باید با حروف بزرگ لاتین باشد، مثل SMTP.',
+  EMAIL_ADAPTER_VERSION_INVALID: 'نسخهٔ آداپتور باید به شکل ۱.۰.۰ باشد.',
+  EMAIL_PRIORITY_OUT_OF_RANGE: 'اولویت باید عددی بین ۱ تا ۱۰۰۰ باشد.',
+  EMAIL_REASON_REQUIRED: 'دلیل را بنویسید؛ در تاریخچهٔ ممیزی ثبت می‌شود.',
   ROUTING_PROVIDER_OPERATION_FORBIDDEN: 'این حساب اجازهٔ مدیریت مسیریاب را ندارد.',
   ROUTING_CONFIGURATION_NOT_FOUND: 'چنین مسیریابی برای این مستأجر ثبت نشده است.',
   ROUTING_DEFAULT_ALREADY_EXISTS:
@@ -61,6 +77,15 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   INVALID_PROVIDER_HEALTH_COMMAND: 'مقادیر فرم معتبر نیست.',
   INVALID_SMS_PROVIDER_COMMAND: 'مقادیر فرم معتبر نیست.',
   INVALID_SMS_PROVIDER_HEALTH_COMMAND: 'مقادیر فرم معتبر نیست.',
+  // These name the likely field rather than stopping at «فرم معتبر نیست»: the
+  // schema refuses before it can say which value was wrong, and the operator
+  // is left staring at a form with eight inputs.
+  INVALID_EMAIL_PROVIDER_COMMAND:
+    'مقادیر فرم معتبر نیست. معمولاً نشانی فرستنده است — باید مثل no-reply@example.com باشد، بدون فاصله.',
+  INVALID_EMAIL_PROVIDER_HEALTH_COMMAND: 'مقادیر فرم معتبر نیست.',
+  INVALID_ROUTING_PROVIDER_COMMAND:
+    'مقادیر فرم معتبر نیست. معمولاً ارجاع کلید است — باید مثل env://ROUTING_NESHAN_KEY باشد.',
+  INVALID_ROUTING_PROVIDER_HEALTH_COMMAND: 'مقادیر فرم معتبر نیست.',
   RATE_LIMIT_EXCEEDED: 'تعداد درخواست‌ها زیاد است. کمی بعد دوباره تلاش کنید.',
   PROVIDER_GOVERNANCE_UNAVAILABLE: 'سرویس مدیریت موقتاً در دسترس نیست.',
   CATALOG_OPERATION_FORBIDDEN: 'این حساب اجازهٔ مدیریت کاتالوگ را ندارد.',

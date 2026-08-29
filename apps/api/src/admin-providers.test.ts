@@ -6,6 +6,8 @@ import { buildApp } from './app'
 import type { AuthDeliveryProviderService } from './modules/auth-delivery-provider'
 import type { RoutingProviderService } from './modules/routing-provider'
 import { RoutingProviderError } from './modules/routing-provider'
+import type { EmailProviderService } from './modules/email-provider'
+import { EmailProviderError } from './modules/email-provider'
 import { AuthDeliveryProviderError } from './modules/auth-delivery-provider'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
 import type { PaymentProviderService } from './modules/payment-provider'
@@ -18,6 +20,7 @@ const credentialReferenceId = '00000000-0000-4000-8000-0000000000d1'
 const PAYMENT_PERMISSION = 'payment-provider.configuration.govern'
 const DELIVERY_PERMISSION = 'auth-delivery-provider.configuration.govern'
 const ROUTING_PERMISSION = 'routing-provider.configuration.govern'
+const NOTIFICATION_PERMISSION = 'notification-provider.configuration.govern'
 
 function grant(permissions: string[], scopeType = 'GLOBAL', scopeId: string | null = null) {
   return {
@@ -102,6 +105,22 @@ const routingSummary = {
   createdAt: '2026-01-01T00:00:00.000Z',
 }
 
+const emailSummary = {
+  id: configurationId,
+  providerCode: 'DEMOMAIL',
+  adapterVersion: '1.0.0',
+  adapterSpiVersion: 1,
+  environment: 'TEST',
+  credentialReference: 'env://EMAIL_DEMO_PASSWORD',
+  senderAddress: 'no-reply@alonoon.example',
+  senderName: 'الو نون',
+  enabled: true,
+  isDefault: true,
+  priority: 100,
+  healthStatus: 'UNKNOWN',
+  createdAt: '2026-01-01T00:00:00.000Z',
+}
+
 function serviceFixtures() {
   const paymentProviderService = {
     createCredentialReference: vi.fn().mockResolvedValue({
@@ -133,7 +152,17 @@ function serviceFixtures() {
       .mockResolvedValue({ ...routingSummary, healthStatus: 'HEALTHY' }),
     listConfigurations: vi.fn().mockResolvedValue([routingSummary]),
   }
-  return { paymentProviderService, authDeliveryProviderService, routingProviderService }
+  const emailProviderService = {
+    createConfiguration: vi.fn().mockResolvedValue(emailSummary),
+    setConfigurationHealth: vi.fn().mockResolvedValue({ ...emailSummary, healthStatus: 'HEALTHY' }),
+    listConfigurations: vi.fn().mockResolvedValue([emailSummary]),
+  }
+  return {
+    paymentProviderService,
+    authDeliveryProviderService,
+    routingProviderService,
+    emailProviderService,
+  }
 }
 
 // The repository fixture decides what the token resolves to, so any non-empty
@@ -157,6 +186,7 @@ async function adminApp(options: {
       authDeliveryProviderService:
         services.authDeliveryProviderService as unknown as AuthDeliveryProviderService,
       routingProviderService: services.routingProviderService as unknown as RoutingProviderService,
+      emailProviderService: services.emailProviderService as unknown as EmailProviderService,
     },
   })
   apps.push(app)
@@ -193,6 +223,18 @@ const smsCommand = {
   credentialReference: 'env://AUTH_SMS_DEMOSMS_API_KEY',
   senderReference: '3000',
   templateReference: 'otp-fa',
+  enabled: true,
+  isDefault: true,
+  reason: 'Soft launch provisioning',
+}
+
+const emailCommand = {
+  providerCode: 'DEMOMAIL',
+  adapterVersion: '1.0.0',
+  environment: 'TEST',
+  credentialReference: 'env://EMAIL_DEMO_PASSWORD',
+  senderAddress: 'no-reply@alonoon.example',
+  senderName: 'الو نون',
   enabled: true,
   isDefault: true,
   reason: 'Soft launch provisioning',
@@ -586,6 +628,73 @@ describe('admin provider governance routes', () => {
 
     expect(response.statusCode).toBe(409)
     expect(response.json().error.code).toBe('ROUTING_DEFAULT_ALREADY_EXISTS')
+  })
+
+  it('configures an email service and attributes it to the acting account', async () => {
+    const { app, services } = await adminApp({ grants: [grant([NOTIFICATION_PERMISSION])] })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/email-providers/configurations',
+      payload: emailCommand,
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(services.emailProviderService.createConfiguration).toHaveBeenCalledWith(
+      tenantId,
+      expect.objectContaining({ actor: 'STAFF', actorId: accountId, providerCode: 'DEMOMAIL' }),
+      expect.any(Date),
+      expect.any(String),
+    )
+  })
+
+  it('refuses an email change to an account holding only the payment permission', async () => {
+    const services = serviceFixtures()
+    const { app } = await adminApp({ grants: [grant([PAYMENT_PERMISSION])], services })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/email-providers/configurations',
+      payload: emailCommand,
+    })
+
+    expect(response.statusCode).toBe(403)
+    expect(services.emailProviderService.createConfiguration).not.toHaveBeenCalled()
+  })
+
+  it('refuses a sender that is not an address, before any service runs', async () => {
+    const services = serviceFixtures()
+    const { app } = await adminApp({ grants: [grant([NOTIFICATION_PERMISSION])], services })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/email-providers/configurations',
+      payload: { ...emailCommand, senderAddress: 'alo noon@example.com' },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(services.emailProviderService.createConfiguration).not.toHaveBeenCalled()
+  })
+
+  it('maps a second email default to 409', async () => {
+    const services = serviceFixtures()
+    services.emailProviderService.createConfiguration.mockRejectedValue(
+      new EmailProviderError('EMAIL_DEFAULT_ALREADY_EXISTS'),
+    )
+    const { app } = await adminApp({ grants: [grant([NOTIFICATION_PERMISSION])], services })
+
+    const response = await app.inject({
+      method: 'POST',
+      headers: staffHeaders,
+      url: '/api/v1/admin/email-providers/configurations',
+      payload: emailCommand,
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json().error.code).toBe('EMAIL_DEFAULT_ALREADY_EXISTS')
   })
 
   it('is not registered at all when no admin services are configured', async () => {

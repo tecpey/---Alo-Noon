@@ -246,6 +246,51 @@ export async function createSmsConfigurationAction(
 }
 
 /**
+ * Email is how the operator finds out that something broke at 4am. Today those
+ * warnings only reach the server log, where nobody is looking — a gateway that
+ * went unhealthy overnight is discovered by a customer failing to pay.
+ */
+export async function createEmailConfigurationAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const priority = field(form, 'priority')
+  const result = await post<{ id: string }>('/api/v1/admin/email-providers/configurations', {
+    providerCode: field(form, 'providerCode').toUpperCase(),
+    adapterVersion: field(form, 'adapterVersion') || '1.0.0',
+    environment: field(form, 'environment'),
+    credentialReference: field(form, 'credentialReference'),
+    senderAddress: field(form, 'senderAddress'),
+    senderName: field(form, 'senderName'),
+    enabled: field(form, 'enabled') === 'true',
+    isDefault: field(form, 'isDefault') === 'true',
+    ...(priority && { priority: Number(priority) }),
+    reason: field(form, 'reason'),
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'ثبت سرویس ایمیل ناموفق بود.'))
+  revalidatePath('/admin/providers')
+  return success('سرویس ایمیل ثبت شد. تا وقتی «سالم» علامت نخورده باشد استفاده نمی‌شود.')
+}
+
+export async function setEmailHealthAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const configurationId = field(form, 'configurationId')
+  const healthStatus = field(form, 'healthStatus')
+  const result = await post(
+    `/api/v1/admin/email-providers/configurations/${configurationId}/health`,
+    { healthStatus, reason: field(form, 'reason') || 'ثبت سلامت از پنل مدیریت' },
+  )
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت سلامت ناموفق بود.'))
+  revalidatePath('/admin/providers')
+  return success(
+    healthStatus === 'HEALTHY' ? 'سرویس ایمیل به چرخه بازگشت.' : 'سرویس ایمیل از چرخه خارج شد.',
+  )
+}
+
+/**
  * A routing engine is what turns an address into a delivery distance, and the
  * distance is what the customer is charged for. So this is a pricing control as
  * much as an integration one, which is why it carries its own permission and its

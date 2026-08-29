@@ -132,6 +132,7 @@ describe('admin OpenAPI boundary', () => {
         paymentProviderService: {} as never,
         authDeliveryProviderService: {} as never,
         routingProviderService: {} as never,
+        emailProviderService: {} as never,
       },
       adminReporting: { service: {} as never, financialService: {} as never },
       adminCatalog: { service: {} as never },

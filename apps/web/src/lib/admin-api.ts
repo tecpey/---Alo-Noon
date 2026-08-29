@@ -89,6 +89,28 @@ export async function listSmsConfigurations(): Promise<ApiResult<SmsConfiguratio
   })
 }
 
+export interface EmailConfigurationSummary {
+  id: string
+  providerCode: string
+  adapterVersion: string
+  environment: 'TEST' | 'PRODUCTION'
+  credentialReference: string
+  /** Printed on every message the tenant sends, so neither is a secret. */
+  senderAddress: string
+  senderName: string
+  enabled: boolean
+  isDefault: boolean
+  priority: number
+  healthStatus: 'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY'
+  createdAt: string
+}
+
+export async function listEmailConfigurations(): Promise<ApiResult<EmailConfigurationSummary[]>> {
+  return request<EmailConfigurationSummary[]>('/api/v1/admin/email-providers/configurations', {
+    method: 'GET',
+  })
+}
+
 export async function listRoutingConfigurations(): Promise<
   ApiResult<RoutingConfigurationSummary[]>
 > {

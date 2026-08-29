@@ -38,6 +38,7 @@ const migrationUrls = [
   new URL('../prisma/migrations/20260828140000_delivery_windows/migration.sql', import.meta.url),
   new URL('../prisma/migrations/20260828170000_cash_on_delivery/migration.sql', import.meta.url),
   new URL('../prisma/migrations/20260828200000_engagement/migration.sql', import.meta.url),
+  new URL('../prisma/migrations/20260829080000_email_providers/migration.sql', import.meta.url),
 ]
 
 type TenantRelation = {

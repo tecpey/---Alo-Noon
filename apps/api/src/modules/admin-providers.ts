@@ -8,6 +8,8 @@ import {
   adminPaymentProviderConfigurationCreateSchema,
   adminPaymentProviderGovernanceSchema,
   adminPaymentProviderHealthSchema,
+  adminEmailConfigurationCreateSchema,
+  adminEmailHealthSchema,
   adminProviderCredentialCreateSchema,
   adminRoutingConfigurationCreateSchema,
   adminRoutingHealthSchema,
@@ -27,6 +29,7 @@ import {
 } from './admin-auth.js'
 import { PaymentProviderError, type PaymentProviderService } from './payment-provider.js'
 import { RoutingProviderError, type RoutingProviderService } from './routing-provider.js'
+import { EmailProviderError, type EmailProviderService } from './email-provider.js'
 
 /**
  * Staff-facing provider governance.
@@ -49,6 +52,10 @@ import { RoutingProviderError, type RoutingProviderService } from './routing-pro
 const PAYMENT_GOVERN_PERMISSION = ADMIN_PERMISSIONS.paymentProviderGovern
 const DELIVERY_GOVERN_PERMISSION = ADMIN_PERMISSIONS.authDeliveryProviderGovern
 const ROUTING_GOVERN_PERMISSION = ADMIN_PERMISSIONS.routingProviderGovern
+// Shared with message templates rather than a fourth permission: both answer
+// "what does this tenant say to people, and through what". Splitting them would
+// mean an operator who can write the wording cannot fix the service carrying it.
+const EMAIL_GOVERN_PERMISSION = ADMIN_PERMISSIONS.notificationProviderGovern
 
 // Governance is low-volume and high-consequence. A tighter budget than the
 // global one limits how fast a stolen staff session can churn configuration.
@@ -58,6 +65,7 @@ export interface AdminProviderDependencies extends AdminAuthDependencies {
   paymentProviderService: PaymentProviderService
   authDeliveryProviderService: AuthDeliveryProviderService
   routingProviderService: RoutingProviderService
+  emailProviderService: EmailProviderService
 }
 
 export function registerAdminProviderRoutes(
@@ -445,6 +453,95 @@ export function registerAdminProviderRoutes(
       }
     },
   )
+
+  // Email. Governed under the notification permission alongside message
+  // templates, because the wording and the service that carries it are one job.
+  app.get(
+    '/api/v1/admin/email-providers/configurations',
+    ADMIN_RATE_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(request, reply, dependencies, EMAIL_GOVERN_PERMISSION)
+      if (!actor) return reply
+
+      try {
+        const configurations = await dependencies.emailProviderService.listConfigurations(
+          actor.tenantId,
+          { actor: 'STAFF', actorId: actor.accountId },
+          currentTime(),
+        )
+        return reply.send({ success: true, data: configurations, meta: adminResponseMeta() })
+      } catch (error) {
+        return emailGovernanceFailure(request, reply, error)
+      }
+    },
+  )
+
+  app.post(
+    '/api/v1/admin/email-providers/configurations',
+    ADMIN_RATE_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(request, reply, dependencies, EMAIL_GOVERN_PERMISSION)
+      if (!actor) return reply
+      const parsed = adminEmailConfigurationCreateSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_EMAIL_PROVIDER_COMMAND', 'The command is invalid.'))
+      }
+
+      const { priority, ...command } = parsed.data
+      try {
+        const configuration = await dependencies.emailProviderService.createConfiguration(
+          actor.tenantId,
+          {
+            actor: 'STAFF',
+            actorId: actor.accountId,
+            ...command,
+            ...(priority !== undefined && { priority }),
+          },
+          currentTime(),
+          randomUUID(),
+        )
+        return reply
+          .code(201)
+          .send({ success: true, data: configuration, meta: adminResponseMeta() })
+      } catch (error) {
+        return emailGovernanceFailure(request, reply, error)
+      }
+    },
+  )
+
+  app.post<{ Params: { configurationId: string } }>(
+    '/api/v1/admin/email-providers/configurations/:configurationId/health',
+    ADMIN_RATE_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(request, reply, dependencies, EMAIL_GOVERN_PERMISSION)
+      if (!actor) return reply
+      const parsed = adminEmailHealthSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_EMAIL_PROVIDER_HEALTH_COMMAND', 'The command is invalid.'))
+      }
+
+      try {
+        const configuration = await dependencies.emailProviderService.setConfigurationHealth(
+          actor.tenantId,
+          {
+            actor: 'STAFF',
+            actorId: actor.accountId,
+            configurationId: request.params.configurationId,
+            ...parsed.data,
+          },
+          currentTime(),
+          randomUUID(),
+        )
+        return reply.send({ success: true, data: configuration, meta: adminResponseMeta() })
+      } catch (error) {
+        return emailGovernanceFailure(request, reply, error)
+      }
+    },
+  )
 }
 
 /**
@@ -494,6 +591,23 @@ const ROUTING_GOVERNANCE_STATUS: Readonly<Record<string, 400 | 403 | 404 | 409>>
   ROUTING_PRIORITY_OUT_OF_RANGE: 400,
   ROUTING_DEFAULT_MUST_BE_ENABLED: 400,
   ROUTING_REASON_REQUIRED: 400,
+}
+
+const EMAIL_GOVERNANCE_STATUS: Readonly<Record<string, 400 | 403 | 404 | 409>> = {
+  EMAIL_PROVIDER_OPERATION_FORBIDDEN: 403,
+  EMAIL_CONFIGURATION_NOT_FOUND: 404,
+  EMAIL_CONFIGURATION_CONFLICT: 409,
+  EMAIL_DEFAULT_ALREADY_EXISTS: 409,
+  EMAIL_PROVIDER_CONCURRENCY_CONFLICT: 409,
+  EMAIL_PROVIDER_CODE_INVALID: 400,
+  EMAIL_ADAPTER_VERSION_INVALID: 400,
+  EMAIL_CREDENTIAL_REFERENCE_INVALID: 400,
+  EMAIL_ENV_CREDENTIAL_REFERENCE_UNRESOLVABLE: 400,
+  EMAIL_SENDER_ADDRESS_INVALID: 400,
+  EMAIL_SENDER_NAME_INVALID: 400,
+  EMAIL_PRIORITY_OUT_OF_RANGE: 400,
+  EMAIL_DEFAULT_MUST_BE_ENABLED: 400,
+  EMAIL_REASON_REQUIRED: 400,
 }
 
 function paymentGovernanceFailure(
@@ -547,6 +661,26 @@ function routingGovernanceFailure(
     if (status) return reply.code(status).send(errorEnvelope(error.code, governanceMessage(status)))
   }
   request.log.error({ err: error }, 'Routing provider governance failed')
+  return reply
+    .code(503)
+    .send(
+      errorEnvelope(
+        'PROVIDER_GOVERNANCE_UNAVAILABLE',
+        'Provider governance is temporarily unavailable.',
+      ),
+    )
+}
+
+function emailGovernanceFailure(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  error: unknown,
+): unknown {
+  if (error instanceof EmailProviderError) {
+    const status = EMAIL_GOVERNANCE_STATUS[error.code]
+    if (status) return reply.code(status).send(errorEnvelope(error.code, governanceMessage(status)))
+  }
+  request.log.error({ err: error }, 'Email provider governance failed')
   return reply
     .code(503)
     .send(

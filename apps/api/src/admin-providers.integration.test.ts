@@ -7,6 +7,7 @@ import { createPaymentProviderAdapterRegistry, type PaymentProviderAdapter } fro
 import { buildApp } from './app'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider'
 import { createPrismaRoutingProviderService } from './modules/routing-provider'
+import { createPrismaEmailProviderService } from './modules/email-provider'
 import { authenticationSessionDigest } from './modules/auth-delivery'
 import { createPrismaAuthRepository } from './modules/auth'
 import { createPrismaPaymentProviderService } from './modules/payment-provider'
@@ -58,6 +59,7 @@ databaseDescribe('admin provider governance over PostgreSQL', () => {
         }),
         authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
         routingProviderService: createPrismaRoutingProviderService(prisma),
+        emailProviderService: createPrismaEmailProviderService(prisma),
       },
     })
 
@@ -188,6 +190,7 @@ databaseDescribe('admin provider governance over PostgreSQL', () => {
         paymentProviderService: createPrismaPaymentProviderService(prisma),
         authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
         routingProviderService: createPrismaRoutingProviderService(prisma),
+        emailProviderService: createPrismaEmailProviderService(prisma),
       },
     })
 
@@ -253,6 +256,7 @@ databaseDescribe('admin provider governance over PostgreSQL', () => {
         paymentProviderService: createPrismaPaymentProviderService(prisma),
         authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
         routingProviderService: createPrismaRoutingProviderService(prisma),
+        emailProviderService: createPrismaEmailProviderService(prisma),
       },
     })
 
@@ -315,6 +319,83 @@ databaseDescribe('admin provider governance over PostgreSQL', () => {
         url: '/api/v1/admin/routing-providers/configurations',
       })
       expect(refused.statusCode).toBe(403)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('configures an email service, audits it, and keeps it inside its tenant', async () => {
+    const suffix = randomUUID().slice(0, 8).toUpperCase()
+    const fixture = await createTenant(suffix)
+    const other = await createTenant(`X${suffix}`.slice(0, 8))
+    const now = new Date()
+    const governor = await createOperator(fixture, `M${suffix}`, now, [
+      'notification-provider.configuration.govern',
+    ])
+    const app = await buildApp({
+      auth: authDependencies(),
+      adminProviders: {
+        paymentProviderService: createPrismaPaymentProviderService(prisma),
+        authDeliveryProviderService: createPrismaAuthDeliveryProviderService(prisma),
+        routingProviderService: createPrismaRoutingProviderService(prisma),
+        emailProviderService: createPrismaEmailProviderService(prisma),
+      },
+    })
+
+    try {
+      const headers = { host: fixture.host, authorization: `Bearer ${governor.token}` }
+      const created = await app.inject({
+        method: 'POST',
+        headers,
+        url: '/api/v1/admin/email-providers/configurations',
+        payload: {
+          providerCode: `ADMIN_MAIL_${suffix}`,
+          adapterVersion: '1.0.0',
+          environment: 'TEST',
+          credentialReference: `env://EMAIL_${suffix}_PASSWORD`,
+          senderAddress: `no-reply@${suffix.toLowerCase()}.example`,
+          senderName: 'الو نون',
+          enabled: true,
+          isDefault: true,
+          reason: 'Integration provisioning',
+        },
+      })
+      expect(created.statusCode).toBe(201)
+      const configurationId = created.json().data.id as string
+
+      const audit = await prisma.auditEvent.findFirst({
+        where: {
+          tenantId: fixture.tenantId,
+          entityType: 'email_provider_configuration',
+          entityId: configurationId,
+          action: 'notification.email_provider.configured',
+        },
+      })
+      expect(audit?.actorId).toBe(governor.accountId)
+
+      // The health change is the update the guard trigger refuses unless
+      // governanceVersion advances.
+      const withdrawn = await app.inject({
+        method: 'POST',
+        headers,
+        url: `/api/v1/admin/email-providers/configurations/${configurationId}/health`,
+        payload: { healthStatus: 'HEALTHY', reason: 'Integration attestation' },
+      })
+      expect(withdrawn.statusCode).toBe(200)
+      expect(withdrawn.json().data.healthStatus).toBe('HEALTHY')
+
+      // A second tenant's operator must not see it. The role this runs as
+      // bypasses RLS, so this is checking the service's own tenant scoping.
+      const stranger = await createOperator(other, `Y${suffix}`.slice(0, 8), now, [
+        'notification-provider.configuration.govern',
+      ])
+      const listed = await app.inject({
+        method: 'GET',
+        headers: { host: other.host, authorization: `Bearer ${stranger.token}` },
+        url: '/api/v1/admin/email-providers/configurations',
+      })
+      expect(listed.statusCode).toBe(200)
+      expect(listed.json().data).toHaveLength(0)
     } finally {
       await app.close()
     }
