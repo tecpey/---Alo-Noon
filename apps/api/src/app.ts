@@ -23,6 +23,7 @@ import {
   type CommerceRepository,
 } from './modules/commerce.js'
 import { registerAddressRoutes, type AddressRepository } from './modules/addresses.js'
+import { registerPushDeviceRoutes, type PushDeviceDependencies } from './modules/push-devices.js'
 import { registerOrderRoutes, type OrderRepository } from './modules/orders.js'
 import {
   registerPaymentExecutionRoutes,
@@ -88,6 +89,7 @@ export interface AppOptions {
   auth?: AuthDependencies
   commerceRepository?: CommerceRepository
   addressRepository?: AddressRepository
+  pushDevices?: Omit<PushDeviceDependencies, 'auth'>
   orderRepository?: OrderRepository
   paymentExecutionService?: PaymentExecutionService
   paymentCallback?: Omit<PaymentCallbackDependencies, 'auth'>
@@ -266,6 +268,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.engagement) {
     registerEngagementRoutes(app, { ...options.engagement, auth: options.auth })
+  }
+  if (options.auth && options.pushDevices) {
+    registerPushDeviceRoutes(app, { ...options.pushDevices, auth: options.auth })
   }
 
   app.get('/health', async (): Promise<HealthResponse> => ({

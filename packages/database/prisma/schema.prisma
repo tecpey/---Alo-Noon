@@ -276,6 +276,12 @@ enum AuthDeliveryEnvironment {
 
 enum MessageChannel {
   SMS
+  PUSH
+}
+
+enum PushDevicePlatform {
+  IOS
+  ANDROID
 }
 
 enum CustomerNotificationState {
@@ -512,6 +518,7 @@ model Tenant {
   authAbuseEvents                    AuthAbuseEvent[]
   messageTemplates                   MessageTemplate[]
   customerNotifications              CustomerNotification[]
+  customerPushDevices                CustomerPushDevice[]
   routingProviderConfigurations      RoutingProviderConfiguration[]
   emailProviderConfigurations        EmailProviderConfiguration[]
   operatorAlertRecipients            OperatorAlertRecipient[]
@@ -664,6 +671,7 @@ model Customer {
   quotes                 Quote[]
   ratings                OrderRating[]
   favourites             CustomerFavourite[]
+  pushDevices            CustomerPushDevice[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   promotionRedemptions   PromotionRedemption[]
@@ -2275,6 +2283,11 @@ model CustomerNotification {
   providerReference String?                   @db.VarChar(200)
   failureCode       String?                   @db.VarChar(64)
   attempts          Int                       @default(0)
+  /// Which handset carried it, when a push did. Null for every SMS, and for a
+  /// push that found no device — "it says it was sent and I never got it" is
+  /// only answerable if the record names where it went.
+  pushDeviceId      String?                   @db.Uuid
+  pushDevice        CustomerPushDevice?       @relation(fields: [pushDeviceId], references: [id], onDelete: SetNull)
   correlationId     String                    @db.Uuid
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
@@ -2282,6 +2295,40 @@ model CustomerNotification {
   @@unique([tenantId, orderId, purpose], map: "customer_notification_identity_key")
   @@index([tenantId, state, createdAt], map: "customer_notification_state_idx")
   @@index([orderId, tenantId], map: "g3b_CustomerNotification_orderId_tenant_idx")
+  @@index([pushDeviceId, tenantId], map: "g3b_CustomerNotification_pushDeviceId_tenant_idx")
+}
+
+/// Where a customer can be reached without paying for a text message.
+///
+/// One row per installed app rather than per customer: somebody with a phone
+/// and a tablet expects both to buzz, and somebody who reinstalled has a new
+/// token while the old one is still on file and already dead.
+model CustomerPushDevice {
+  id             String                 @id @default(uuid()) @db.Uuid
+  tenantId       String                 @db.Uuid
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  customerId     String                 @db.Uuid
+  customer       Customer               @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// Expo's own token. Stored whole because it is the address the message is
+  /// sent to; a digest could not be delivered to.
+  expoPushToken  String                 @db.VarChar(200)
+  platform       PushDevicePlatform
+  /// False once the push service has said this token is dead. Kept rather than
+  /// deleted so the device can register over its own row, and so an operator
+  /// can see that a customer's silence has a reason.
+  enabled        Boolean                @default(true)
+  disabledReason String?                @db.VarChar(64)
+  disabledAt     DateTime?
+  lastSeenAt     DateTime
+  lastSuccessAt  DateTime?
+  notifications  CustomerNotification[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([tenantId, expoPushToken], map: "CustomerPushDevice_tenant_token_key")
+  @@unique([id, tenantId], map: "g3b_CustomerPushDevice_id_tenant_key")
+  @@index([tenantId, customerId, enabled], map: "CustomerPushDevice_customer_enabled_idx")
+  @@index([customerId, tenantId], map: "g3b_CustomerPushDevice_customerId_tenant_idx")
 }
 
 enum RouteDistanceSource {

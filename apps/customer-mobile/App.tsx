@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import Constants from 'expo-constants'
 import * as Location from 'expo-location'
+import * as Notifications from 'expo-notifications'
 import { StatusBar } from 'expo-status-bar'
 import {
   ActivityIndicator,
   Image,
   Linking,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -34,6 +37,7 @@ import { GlassSurface, OvenIcon, PlusIcon, PressScale, SteamIcon } from '@alo-no
 import brandMark from './assets/logo-mark.png'
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
 import { customerCopy } from './src/copy'
+import { registerForPushNotifications } from './src/push'
 import { AccountScreen } from './src/screens/account'
 import { CheckoutChoices } from './src/screens/checkout-choices'
 import { OrderDetailScreen, OrdersScreen } from './src/screens/orders'
@@ -49,6 +53,15 @@ import {
 type Screen = 'boot' | 'phone' | 'otp' | 'location' | 'catalog'
 
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL
+
+/**
+ * The EAS project Expo issues push tokens against.
+ *
+ * Absent in a build that was never made by EAS — a bare `expo start`, or the
+ * web export — and absent is handled rather than guessed at: without it there
+ * is no token to register, and the app says nothing about it.
+ */
+const easProjectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined
 
 export default function App() {
   const api = useMemo(() => {
@@ -82,6 +95,9 @@ export default function App() {
   const [chosenWindow, setChosenWindow] = useState<string | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ONLINE_GATEWAY')
   const [promotionCode, setPromotionCode] = useState('')
+  // Kept so sign-out can hand the same token back. Without it the row stays
+  // and the next order buzzes a phone nobody is signed into.
+  const [pushToken, setPushToken] = useState<string>()
   const [order, setOrder] = useState<OrderSummary | null>(null)
   const [addresses, setAddresses] = useState<AddressSummary[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState<string>()
@@ -120,6 +136,10 @@ export default function App() {
           return
         }
         setScreen('location')
+        // Tokens rotate, so a customer who already agreed has to be
+        // re-registered every launch. Silent: `false` means this never puts a
+        // permission dialog in front of somebody who has not been asked yet.
+        void registerPush(false)
         try {
           await Promise.all([
             loadCities(api, active),
@@ -195,6 +215,31 @@ export default function App() {
       active = false
     }
   }, [api, branchWithBasket])
+
+  /**
+   * Tells the server where to reach this customer, if it can.
+   *
+   * Best-effort and silent by design: every way this fails leaves order
+   * messages arriving by SMS, which is what happened before push existed, and
+   * none of them is worth an error in front of somebody who came here for
+   * bread.
+   */
+  const registerPush = async (askIfUndetermined: boolean) => {
+    if (!api) return
+    const outcome = await registerForPushNotifications({
+      runtime: Notifications,
+      api: {
+        register: async (input) => {
+          await api.registerPushDevice(input)
+          setPushToken(input.expoPushToken)
+        },
+      },
+      projectId: easProjectId,
+      platform: Platform.OS,
+      askIfUndetermined,
+    })
+    if (outcome !== 'REGISTERED') setPushToken(undefined)
+  }
 
   const requestOtp = async () => {
     if (!api || busy) return
@@ -437,6 +482,12 @@ export default function App() {
       if (placed.paymentMethod === 'CASH_ON_DELIVERY') {
         setPayment(await api.startPayment(placed.id, `${idempotencyKey}-cash`))
       }
+
+      // Now, and not before. An app that asks to send notifications at first
+      // launch is asking a stranger for permission to interrupt them; an app
+      // that asks the moment there is an order to report on has a reason the
+      // customer can see. iOS only ever shows the prompt once.
+      void registerPush(true)
     } catch (error) {
       handleAuthenticatedError(error)
     } finally {
@@ -522,6 +573,11 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     try {
+      // Before the session goes, while the request can still be authorised.
+      if (pushToken) {
+        await api.forgetPushDevice(pushToken).catch(() => undefined)
+        setPushToken(undefined)
+      }
       await api.logout()
       setSession(null)
       setCities([])

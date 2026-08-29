@@ -1,15 +1,19 @@
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
+  composePushMessage,
   notificationPurposeForEvent,
   renderMessageTemplate,
   selectAuthenticationProvider,
+  selectPushDevices,
   type AuthenticationCredentialResolver,
   type AuthenticationDeliveryEnvironment,
   type MessageTemplatePurpose,
+  type PushMessageProvider,
   type TextMessageProvider,
 } from '@alo-noon/domain'
 
 import type { AdminMessagingService } from './admin-messaging.js'
+import type { PushDeviceService } from './push-devices.js'
 
 /**
  * Telling a customer what happened to their order.
@@ -48,9 +52,29 @@ export interface CustomerNotificationOptions {
   readonly environment: AuthenticationDeliveryEnvironment
   readonly messagingService: AdminMessagingService
   readonly timeoutMs?: number
+  /**
+   * The free channel, when one is configured.
+   *
+   * Optional so that a deployment without push behaves exactly as it did
+   * before: every message goes by SMS and nothing here is reached. Push is an
+   * improvement to the cost of a working system, not a dependency of it.
+   */
+  readonly push?: {
+    readonly provider: PushMessageProvider
+    readonly devices: PushDeviceService
+  }
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000
+
+/**
+ * A push is given less time than an SMS.
+ *
+ * It is the first of two attempts, and the customer is waiting on the result of
+ * the second. Ten seconds spent on a push service that has stopped answering is
+ * ten seconds added to a message that was always going to be a text.
+ */
+const PUSH_TIMEOUT_MS = 4_000
 
 export function createPrismaCustomerNotificationService(
   prisma: PrismaClient,
@@ -100,6 +124,25 @@ export function createPrismaCustomerNotificationService(
       if (!claimed) return 'ALREADY_HANDLED'
       if (!template.enabled) return 'SUPPRESSED'
 
+      // Push first, because it is free and lands on the handset the customer is
+      // already holding. A refusal is not the end of the message — the SMS
+      // below carries it, and the row records which channel actually did.
+      const pushed = await tryPush(options, tenantId, {
+        customerId: order.customerId,
+        purpose,
+        body,
+        orderId: order.id,
+        orderCode: order.publicId,
+        now,
+      })
+      if (pushed) {
+        await settle(prisma, tenantId, claimed.id, pushed.result, {
+          channel: 'PUSH',
+          pushDeviceId: pushed.deviceId,
+        })
+        return 'SENT'
+      }
+
       const result = await send(prisma, options, tenantId, {
         mobileE164: order.recipientPhoneSnapshot,
         body,
@@ -125,6 +168,7 @@ async function readOrder(prisma: PrismaClient, tenantId: string, orderId: string
       select: {
         id: true,
         publicId: true,
+        customerId: true,
         recipientNameSnapshot: true,
         recipientPhoneSnapshot: true,
         bakeryNameSnapshot: true,
@@ -174,6 +218,110 @@ async function claim(
     if (error && typeof error === 'object' && Reflect.get(error, 'code') === 'P2002') return null
     throw error
   }
+}
+
+interface PushAttempt {
+  customerId: string
+  purpose: MessageTemplatePurpose
+  body: string
+  orderId: string
+  orderCode: string
+  now: Date
+}
+
+/**
+ * Tries the customer's handsets, and reports only an actual delivery.
+ *
+ * Returns null for every other outcome — no push configured, no live device,
+ * a service that would not answer, a token the service has retired — because
+ * the caller's next move is the same in all of them: send the text message.
+ * Distinguishing "no device" from "device refused" here would give the caller a
+ * choice it does not have.
+ *
+ * Devices are tried in order and the loop stops at the first success. It does
+ * not stop at the first failure: somebody whose old tablet is retired but whose
+ * phone works should be reached on the phone rather than sent an SMS because
+ * the tablet was tried first.
+ *
+ * Every verdict is written back to the device, which is what stops a retired
+ * token being tried again on the next order.
+ */
+async function tryPush(
+  options: CustomerNotificationOptions,
+  tenantId: string,
+  input: PushAttempt,
+): Promise<{
+  result: { outcome: string; providerReference?: string; code: string }
+  deviceId: string
+} | null> {
+  const push = options.push
+  if (!push) return null
+
+  const message = composePushMessage({
+    purpose: input.purpose,
+    body: input.body,
+    orderId: input.orderId,
+    orderCode: input.orderCode,
+  })
+  // A purpose the domain will not put on a lock screen — a sign-in code above
+  // all. Not an error, and not something to work around here.
+  if (!message) return null
+
+  let devices
+  try {
+    devices = selectPushDevices(
+      await push.devices.listForCustomer(tenantId, input.customerId),
+      input.now,
+    )
+  } catch {
+    // A device registry that will not answer must not stop the SMS.
+    return null
+  }
+
+  for (const device of devices) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), PUSH_TIMEOUT_MS)
+    let sent
+    try {
+      sent = await push.provider.sendPush({
+        token: device.expoPushToken,
+        message,
+        timeoutMs: PUSH_TIMEOUT_MS,
+        signal: controller.signal,
+      })
+    } catch {
+      sent = { outcome: 'UNKNOWN' as const, normalizedCode: 'PROVIDER_OUTCOME_UNKNOWN' }
+    } finally {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+
+    // Recorded before the loop continues, so a token the service retired is
+    // disabled even when a later device carries the message.
+    await push.devices
+      .recordOutcome(
+        tenantId,
+        device.id,
+        { delivered: sent.outcome === 'DELIVERED', code: sent.normalizedCode },
+        input.now,
+      )
+      .catch(() => undefined)
+
+    if (sent.outcome === 'DELIVERED') {
+      return {
+        deviceId: device.id,
+        result: {
+          outcome: 'DELIVERED',
+          ...(sent.providerReference !== undefined && {
+            providerReference: sent.providerReference,
+          }),
+          code: sent.normalizedCode ?? 'UNSPECIFIED',
+        },
+      }
+    }
+  }
+
+  return null
 }
 
 interface SendInput {
@@ -269,6 +417,14 @@ async function settle(
   tenantId: string,
   notificationId: string,
   result: { outcome: string; providerReference?: string | undefined; code: string },
+  /**
+   * Set when a push carried the message. The row was claimed as SMS because
+   * that is what would have happened, so the channel is corrected here by the
+   * attempt that actually succeeded rather than guessed at claim time — a claim
+   * that named PUSH and then fell back to SMS would leave the record lying
+   * about which one the customer received.
+   */
+  via?: { channel: 'PUSH'; pushDeviceId: string },
 ): Promise<void> {
   // A provider that accepted the message without naming it leaves nothing to
   // point at when a customer says it never arrived, so the reference falls back
@@ -279,7 +435,11 @@ async function settle(
     await transaction.customerNotification.update({
       where: { id: notificationId },
       data: sent
-        ? { state: 'SENT', providerReference: result.providerReference ?? result.code }
+        ? {
+            state: 'SENT',
+            providerReference: result.providerReference ?? result.code,
+            ...(via && { channel: via.channel, pushDeviceId: via.pushDeviceId }),
+          }
         : { state: 'FAILED', failureCode: result.code.slice(0, 64) },
     })
   })

@@ -13,6 +13,7 @@ import {
   reorderEnvelopeSchema,
   paymentEnvelopeSchema,
   paymentExecutionEnvelopeSchema,
+  pushDeviceEnvelopeSchema,
   serviceabilityEnvelopeSchema,
   sessionEnvelopeSchema,
   type ActiveCitySummary,
@@ -28,6 +29,8 @@ import {
   type ReorderResult,
   type PaymentExecutionSummary,
   type PaymentSummary,
+  type PushDeviceRegister,
+  type PushDeviceSummary,
   type ServiceabilityResponse,
   type SessionContext,
 } from '@alo-noon/contracts'
@@ -136,6 +139,16 @@ export interface CustomerApiClient {
    * twice — once by the bakery, and once by the app that did not mention it.
    */
   reorder(orderId: string): Promise<ReorderResult>
+  /**
+   * Tells the server which handset to reach this customer on.
+   *
+   * Idempotent by token: the app calls it on every sign-in and every cold
+   * start, and the right answer to "this token again" is to move the row's
+   * clock forward rather than accumulate a row per launch.
+   */
+  registerPushDevice(input: PushDeviceRegister): Promise<PushDeviceSummary>
+  /** On sign-out, so the next order does not buzz a phone nobody is signed into. */
+  forgetPushDevice(expoPushToken: string): Promise<void>
 }
 
 export function createCustomerApiClient(
@@ -273,6 +286,20 @@ export function createCustomerApiClient(
       request(`/api/v1/orders/${encodeURIComponent(orderId)}/reorder`, reorderEnvelopeSchema, {
         method: 'POST',
       }),
+    registerPushDevice: async (input) =>
+      request('/api/v1/push/devices', pushDeviceEnvelopeSchema, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    async forgetPushDevice(expoPushToken) {
+      const response = await fetchImplementation(`${normalizedBaseUrl}/api/v1/push/devices`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expoPushToken }),
+      })
+      if (!response.ok && response.status !== 204) throw await apiError(response)
+    },
   }
 }
 

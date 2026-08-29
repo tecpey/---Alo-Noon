@@ -80,6 +80,17 @@ export const envSchema = z
      */
     AUTH_SMS_LIMOSMS_ENDPOINT: z.string().url().optional(),
     /**
+     * Where the Expo push adapter sends, for the same two reasons as the SMS
+     * endpoint above.
+     *
+     * A stub proves the channel works without reaching Expo's servers, which is
+     * the only way to test that a customer with the app gets a push and one
+     * without gets a text. And a deployment whose network cannot reach
+     * exp.host directly can point this at a proxy rather than at a fork of the
+     * adapter.
+     */
+    EXPO_PUSH_ENDPOINT: z.string().url().optional(),
+    /**
      * Where the Neshan routing adapter asks, keeping Neshan's own paths.
      *
      * Absent it uses the real service, which is what production wants. Routing

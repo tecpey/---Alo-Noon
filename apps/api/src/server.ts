@@ -32,6 +32,8 @@ import { createPrismaAdminCatalogService } from './modules/admin-catalog.js'
 import { createPrismaAdminAccessService } from './modules/admin-access.js'
 import { createPrismaAdminMessagingService } from './modules/admin-messaging.js'
 import { createPrismaCustomerNotificationService } from './modules/customer-notifications.js'
+import { createPrismaPushDeviceService } from './modules/push-devices.js'
+import { createExpoPushAdapter } from './providers/expo-push.js'
 import { createPrismaOutboxPublisher } from './modules/outbox-publisher.js'
 import {
   createEnvironmentRoutingCredentialResolver,
@@ -260,15 +262,28 @@ const adminAccess = { service: createPrismaAdminAccessService(prisma) }
 // an operator trusted with gateways is trusted with what those gateways say.
 const adminMessaging = { service: createPrismaAdminMessagingService(prisma) }
 
+// The handsets a customer can be reached on without paying for a text message.
+const pushDeviceService = createPrismaPushDeviceService(prisma)
+
 // Customer notifications go out over the same SMS gateway that carries sign-in
 // codes, but through their own path: the wording comes from the tenant's
 // editable templates, and each message is claimed once per order step so an
 // event retried after a crash cannot text anyone twice.
+//
+// Push is tried first and SMS carries whatever push refuses, so a customer with
+// the app installed costs nothing to tell and one without it is told exactly as
+// before. Both are the same sentence from the same template.
 const customerNotificationService = createPrismaCustomerNotificationService(prisma, {
   providers: [limoSmsAdapter],
   credentialResolver: createEnvironmentAuthenticationCredentialResolver(process.env),
   environment: authenticationDeliveryPolicy.environment,
   messagingService: adminMessaging.service,
+  push: {
+    provider: createExpoPushAdapter(
+      env.EXPO_PUSH_ENDPOINT ? { endpoint: env.EXPO_PUSH_ENDPOINT } : {},
+    ),
+    devices: pushDeviceService,
+  },
 })
 const outboxPublisher = createPrismaOutboxPublisher(prisma, {
   notificationService: customerNotificationService,
@@ -330,6 +345,7 @@ const app = await buildApp({
   auth,
   commerceRepository: createPrismaCommerceRepository(prisma, { routingService }),
   addressRepository: createPrismaAddressRepository(prisma),
+  pushDevices: { service: pushDeviceService },
   orderRepository: createPrismaOrderRepository(prisma),
   paymentExecutionService,
   paymentCheckout,
