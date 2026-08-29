@@ -53,7 +53,6 @@ import { createPrismaCommerceRepository } from './modules/commerce.js'
 import { createPrismaAddressRepository } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
 import { createPrismaPaymentExecutionService } from './modules/payment-execution.js'
-import { createPrismaCashOnDeliveryService } from './modules/cash-on-delivery.js'
 import { createPrismaEngagementService } from './modules/engagement.js'
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger.js'
 import { createPrismaPaymentSettlementService } from './modules/payment-settlement.js'
@@ -298,17 +297,8 @@ const orderOperations = {
 // Dispatch and the courier app share one service. A courier holds no admin
 // grant at all — their authority is the assignment offered to them, which the
 // service checks against the row on every write.
-// Cash at the door. Shares the one ledger service, because a cash collection
-// is a capture like any other — only the account it debits differs, and that
-// difference is the whole feature.
-const cashOnDeliveryService = createPrismaCashOnDeliveryService(prisma, {
-  ledger: paymentLedgerService,
-})
-// The courier's delivery report is where cash changes hands, so the delivery
-// routes carry the cash service and post the money the moment they are told.
 const delivery = {
   service: createPrismaDeliveryService(prisma),
-  cashOnDelivery: cashOnDeliveryService,
 }
 // One engagement service, shared: the customer surfaces read it and the
 // operator's quality report reads it, and two instances would be two pools
@@ -360,7 +350,6 @@ const app = await buildApp({
   delivery,
   deliveryTrips,
   courierAssignments,
-  cash: { service: cashOnDeliveryService, engagement: engagementService },
   // Coming back: ordering again, rating, favourites. Reorder is the one that
   // earns the second order, which for a daily staple is most of the business.
   engagement: { service: engagementService },

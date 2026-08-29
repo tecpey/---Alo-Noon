@@ -15,14 +15,6 @@ export type LedgerEntrySide = (typeof LedgerEntrySide)[keyof typeof LedgerEntryS
 export const FinancialTransactionType = {
   PAYMENT_CAPTURE: 'PAYMENT_CAPTURE',
   PAYMENT_REFUND: 'PAYMENT_REFUND',
-  /**
-   * A courier handing in the cash they collected.
-   *
-   * Not a payment event — the order was paid when the notes changed hands — but
-   * it moves the same money from a pocket into the bank, and it is a posting
-   * like any other.
-   */
-  CASH_REMITTANCE: 'CASH_REMITTANCE',
 } as const
 export type FinancialTransactionType =
   (typeof FinancialTransactionType)[keyof typeof FinancialTransactionType]
@@ -30,10 +22,14 @@ export type FinancialTransactionType =
 /**
  * The newest system chart version.
  *
- * Two exist: v1 laid out the fourteen accounts every tenant starts with, and v2
- * added the courier cash receivable when the platform began taking money at
- * doors. Both are provisioned, in order, for every tenant — a version is a
- * migration of the chart, not a variant of it.
+ * Two exist. v1 laid out the fourteen accounts every tenant starts with. v2
+ * added a courier cash receivable when the platform took money at doors, and
+ * provisions nothing now that it does not — the account it introduced is no
+ * longer created, though the tenants that received it keep it.
+ *
+ * The number stays at 2 rather than reverting. A version is a migration of the
+ * chart, and a chart that reached v2 reached it; renumbering would make an
+ * existing tenant's history disagree with its own accounts.
  */
 export const SYSTEM_CHART_VERSION = 2 as const
 
@@ -59,23 +55,6 @@ export const SYSTEM_LEDGER_ACCOUNT_TEMPLATES = Object.freeze([
     key: 'CASH_CLEARING',
     code: 'A_1100_CASH_CLEARING',
     name: 'Cash clearing',
-    type: 'ASSET',
-    parentKey: 'ASSETS',
-    isPostable: true,
-  },
-  {
-    /**
-     * What couriers owe the platform for cash they took at a door.
-     *
-     * Separate from cash clearing on purpose: clearing means "money we can
-     * spend", this means "money someone is carrying". Added in chart v2, which
-     * is why it is provisioned by its own additive function rather than by
-     * editing v1 — a tenant already holding fourteen accounts must not have
-     * that history rewritten underneath it.
-     */
-    key: 'COURIER_CASH_RECEIVABLE',
-    code: 'A_1200_COURIER_CASH_RECEIVABLE',
-    name: 'Courier cash receivable',
     type: 'ASSET',
     parentKey: 'ASSETS',
     isPostable: true,

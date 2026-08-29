@@ -48,6 +48,22 @@ function directTables(sql: string, statement: RegExp): string[] {
   return [...sql.matchAll(statement)].flatMap((match) => (match[1] ? [match[1]] : []))
 }
 
+/**
+ * Keeps only the tables that still exist.
+ *
+ * The SQL read here is the whole migration history, so a table that was
+ * created, given RLS and later dropped still appears in every statement that
+ * ever mentioned it — and the assertion below is an exact set equality, so a
+ * retired table would fail it forever. The schema is the authority on what
+ * exists now, which is also why filtering this way cannot hide a real gap: a
+ * live model whose policy is missing is still absent from coverage and still
+ * fails.
+ */
+function stillInSchema(models: readonly string[]) {
+  const live = new Set(models)
+  return (tables: readonly string[]) => tables.filter((table) => live.has(table))
+}
+
 describe('tenant RLS policy coverage', () => {
   const schema = readFileSync(schemaUrl, 'utf8')
   const migrations = migrationSql()
@@ -55,27 +71,31 @@ describe('tenant RLS policy coverage', () => {
   const g5Sql =
     [...migrations.entries()].find(([name]) => name.includes('tenant_rls_isolation_g5'))?.[1] ?? ''
   const dynamicTables = g5DynamicTables(g5Sql)
+  const live = stillInSchema(tenantOwnedModels(schema))
 
   it('enables, forces and policies every tenant-owned business model exactly once', () => {
     const expected = tenantOwnedModels(schema)
     const coverage = [
       [
         'ENABLE ROW LEVEL SECURITY',
-        [
+        live([
           ...dynamicTables,
           ...directTables(allSql, /ALTER TABLE "(\w+)" ENABLE ROW LEVEL SECURITY/g),
-        ],
+        ]),
       ],
       [
         'FORCE ROW LEVEL SECURITY',
-        [
+        live([
           ...dynamicTables,
           ...directTables(allSql, /ALTER TABLE "(\w+)" FORCE ROW LEVEL SECURITY/g),
-        ],
+        ]),
       ],
       [
         'tenant_isolation policy',
-        [...dynamicTables, ...directTables(allSql, /CREATE POLICY tenant_isolation ON "(\w+)"/g)],
+        live([
+          ...dynamicTables,
+          ...directTables(allSql, /CREATE POLICY tenant_isolation ON "(\w+)"/g),
+        ]),
       ],
     ] as const
 

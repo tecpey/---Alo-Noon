@@ -215,20 +215,9 @@ async function main(): Promise<void> {
   }
 
   const ids = await tenantTransaction(async (t) => {
-    // Cash at the door, capped. A pilot city where nobody knows the brand yet
-    // needs cash to sell anything at all, and the ceiling is what bounds the
-    // loss on the orders nobody answers the door for. Every mutable field is
-    // restated in `update` so re-running this cannot leave stale terms behind.
-    const cityPolicy = {
-      isActive: true,
-      cashOnDeliveryEnabled: true,
-      // Two million Rial — two hundred thousand Toman. Far above an ordinary
-      // bread order and far below a number worth defrauding anyone for.
-      cashOnDeliveryCeiling: 2_000_000n,
-      // Zero: a neighbourhood bakery's first customers cannot have ordered
-      // before, and refusing them cash would refuse them the shop.
-      cashOnDeliveryMinimumOrders: 0,
-    }
+    // Every mutable field is restated in `update` so re-running this cannot
+    // leave stale terms behind.
+    const cityPolicy = { isActive: true }
     const city = await t.city.upsert({
       where: { code: 'BABOL' },
       update: cityPolicy,

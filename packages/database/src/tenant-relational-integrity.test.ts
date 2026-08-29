@@ -128,10 +128,18 @@ describe('tenant relational integrity G3B', () => {
     ...migrationUrls.slice(1).map((migrationUrl) => readFileSync(migrationUrl, 'utf8')),
   ].join('\n')
   const schemaRelations = tenantRelationsFromSchema(schema)
-  const registeredRelations = registeredRelationsFromMigration(sql)
+  // Registrations accumulate across the whole migration history, so a relation
+  // on a table a later migration dropped is still listed. The schema is the
+  // authority on what exists now. Filtering by it cannot hide a real gap: a
+  // live relation that was never registered is still missing from this list and
+  // still fails the equality below.
+  const liveChildren = new Set(schemaRelations.map((relation) => relation.child))
+  const registeredRelations = registeredRelationsFromMigration(sql).filter((relation) =>
+    liveChildren.has(relation.child),
+  )
 
   it('covers every implemented tenant-owned relation exactly once', () => {
-    expect(schemaRelations).toHaveLength(95)
+    expect(schemaRelations).toHaveLength(91)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
       new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,

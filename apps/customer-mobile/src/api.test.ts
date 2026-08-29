@@ -231,15 +231,11 @@ describe('customer API client', () => {
     await expect(
       client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001', {
         promotionCode: 'NOON10',
-        paymentMethod: 'CASH_ON_DELIVERY',
       }),
     ).rejects.toBeInstanceOf(CustomerApiError)
 
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
-    expect(body).toMatchObject({
-      promotionCode: 'NOON10',
-      paymentMethod: 'CASH_ON_DELIVERY',
-    })
+    expect(body).toMatchObject({ promotionCode: 'NOON10' })
     expect(body).not.toHaveProperty('deliveryWindowStartsAt')
   })
 

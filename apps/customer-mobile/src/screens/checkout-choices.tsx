@@ -1,32 +1,29 @@
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 
-import type { DeliveryWindow, PaymentMethod, QuoteSummary } from '@alo-noon/contracts'
+import type { DeliveryWindow, QuoteSummary } from '@alo-noon/contracts'
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
-import { cashRefusalMessage, formatDeliveryWindow, promotionRefusalMessage } from '@alo-noon/domain'
+import { formatDeliveryWindow, promotionRefusalMessage } from '@alo-noon/domain'
 
 /**
- * The three things a customer decides before they see a price.
+ * The two things a customer decides before they see a price.
  *
- * All three existed in the API and on the site while the phone offered none of
- * them, which meant a customer holding a discount code had to go and find a
- * browser, and one who only ever pays cash could not finish at all. On a phone
- * that is not a missing feature, it is a lost order.
+ * Both existed in the API and on the site while the phone offered neither,
+ * which meant a customer holding a discount code had to go and find a browser.
+ * On a phone that is not a missing feature, it is a lost order.
  *
  * They sit above the price rather than after it. Each one changes the total, so
  * asking afterwards means either a number that moves under the customer or a
  * checkout they have to walk back through.
  *
- * None of them can fail the quote. The API answers a refused code, a filled
- * window and unavailable cash as notes on an otherwise good price, so what a
- * customer gets for a bad discount code is their real total plus a sentence
- * about the code — never an error where the price should be.
+ * Neither can fail the quote. The API answers a refused code and a filled
+ * window as notes on an otherwise good price, so what a customer gets for a bad
+ * discount code is their real total plus a sentence about the code — never an
+ * error where the price should be.
  */
 export function CheckoutChoices({
   windows,
   chosenWindow,
   onChooseWindow,
-  method,
-  onChooseMethod,
   promotionCode,
   onPromotionCode,
   quote,
@@ -36,8 +33,6 @@ export function CheckoutChoices({
   /** Null is "as soon as you can" — what every order was before windows existed. */
   chosenWindow: string | null
   onChooseWindow: (startsAt: string | null) => void
-  method: PaymentMethod
-  onChooseMethod: (method: PaymentMethod) => void
   promotionCode: string
   onPromotionCode: (code: string) => void
   /** The last quote, for the refusals it carries. Null before pricing. */
@@ -73,31 +68,6 @@ export function CheckoutChoices({
           )}
         </View>
       )}
-
-      {/*
-        Cash is not a fallback in this market — for a great many customers it is
-        the only way they will buy from a stranger's application — so it is a
-        choice presented plainly, not an option hidden under the fold.
-
-        Its refusal appears after pricing because the ceiling is a rule about
-        the total, and the total does not exist until the quote does.
-      */}
-      <View style={styles.group} accessibilityRole="radiogroup">
-        <Text style={styles.legend}>روش پرداخت</Text>
-        <Choice
-          label="پرداخت اینترنتی"
-          selected={method === 'ONLINE_GATEWAY'}
-          onPress={() => onChooseMethod('ONLINE_GATEWAY')}
-        />
-        <Choice
-          label="نقدی به پیک"
-          selected={method === 'CASH_ON_DELIVERY'}
-          onPress={() => onChooseMethod('CASH_ON_DELIVERY')}
-        />
-        {quote?.cashOnDeliveryRefusal && (
-          <Refusal text={cashRefusalMessage(quote.cashOnDeliveryRefusal)} />
-        )}
-      </View>
 
       <View style={styles.group}>
         <Text style={styles.legend}>کد تخفیف (اختیاری)</Text>

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
 import type { AddressSummary, CartSummary, DeliveryWindow, QuoteSummary } from '@alo-noon/contracts'
-import { cashRefusalMessage, formatDeliveryWindow } from '@alo-noon/domain'
+import { formatDeliveryWindow } from '@alo-noon/domain'
 
 import { AddressForm } from './address-form'
 import { CheckIcon, ChevronIcon, CourierIcon, PinIcon, ShieldIcon } from '../components/icons'
@@ -49,7 +49,6 @@ export function CheckoutFlow({
   // Fixed for the life of the page. Recomputing it per render would make
   // "امروز" flip to "فردا" underneath a customer at midnight, mid-checkout.
   const [openedAt] = useState(() => new Date())
-  const [method, setMethod] = useState<'ONLINE_GATEWAY' | 'CASH_ON_DELIVERY'>('ONLINE_GATEWAY')
 
   const bookable = windows.filter((entry) => entry.available)
 
@@ -61,7 +60,6 @@ export function CheckoutFlow({
         addressId,
         code.trim() || undefined,
         chosenWindow ?? undefined,
-        method,
       )
       if (result.ok) setQuote(result.quote)
       else setError(result.message)
@@ -75,13 +73,6 @@ export function CheckoutFlow({
       const result = await payAction(quote.id)
       if (!result.ok) {
         setError(result.message)
-        return
-      }
-      // Cash is paid at the door, so there is nowhere to send the customer.
-      // Straight to their orders, where the courier's arrival is the next thing
-      // that happens.
-      if (result.kind === 'cash') {
-        router.push('/orders')
         return
       }
       if (result.kind === 'redirect') {
@@ -240,51 +231,6 @@ export function CheckoutFlow({
               )}
 
               {/*
-                How they pay, before what it costs. In this market cash is not
-                a fallback — for a great many customers it is the only way they
-                will buy from a stranger's application — so it is a choice
-                presented plainly rather than an option hidden under the fold.
-
-                A refusal is reported after pricing, because the ceiling is a
-                rule about the total and the total does not exist until the
-                quote does.
-              */}
-              <fieldset className="method">
-                <legend className="method__legend">روش پرداخت</legend>
-                <ul className="method__list">
-                  {(
-                    [
-                      ['ONLINE_GATEWAY', 'پرداخت اینترنتی'],
-                      ['CASH_ON_DELIVERY', 'نقدی به پیک'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <li key={value}>
-                      <label
-                        className={`method__pick${method === value ? ' method__pick--on' : ''}`}
-                      >
-                        <input
-                          type="radio"
-                          name="paymentMethod"
-                          value={value}
-                          checked={method === value}
-                          onChange={() => {
-                            setMethod(value)
-                            setQuote(null)
-                          }}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-                {quote?.cashOnDeliveryRefusal && (
-                  <p className="promo__refused" role="status">
-                    {cashRefusalMessage(quote.cashOnDeliveryRefusal)}
-                  </p>
-                )}
-              </fieldset>
-
-              {/*
                 The code goes in beside the price button rather than at the end
                 of checkout. A customer holding a code wants to see it work
                 before they commit, and one who finds the field after paying
@@ -403,7 +349,7 @@ export function CheckoutFlow({
           ) : (
             <>
               <CheckIcon width={18} height={18} />
-              {quote?.paymentMethod === 'CASH_ON_DELIVERY' ? 'ثبت سفارش' : 'پرداخت'}
+              پرداخت
               <ChevronIcon width={18} height={18} />
             </>
           )}
@@ -411,9 +357,7 @@ export function CheckoutFlow({
 
         <p className="checkout__trust">
           <ShieldIcon width={16} height={16} />
-          {quote?.paymentMethod === 'CASH_ON_DELIVERY'
-            ? 'مبلغ را هنگام تحویل به پیک بپردازید. لطفاً پول خرد همراه داشته باشید.'
-            : 'پرداخت در درگاه بانکی انجام می‌شود و تأیید نهایی با پاسخ خود درگاه است.'}
+          پرداخت در درگاه بانکی انجام می‌شود و تأیید نهایی با پاسخ خود درگاه است.
         </p>
       </aside>
     </div>

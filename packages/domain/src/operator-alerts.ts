@@ -23,8 +23,6 @@ export const OPERATOR_ALERT_KINDS = [
   'OUTBOX_EVENTS_PARKED',
   /** Money taken from a customer that we still have not recorded. */
   'PAYMENTS_AWAITING_SETTLEMENT',
-  /** Cash a courier collected and has not handed in. */
-  'COURIER_CASH_OUTSTANDING',
   /** No SMS service is selectable, so nobody can sign in. */
   'SMS_PROVIDER_UNAVAILABLE',
 ] as const
@@ -81,19 +79,13 @@ export const OPERATOR_ALERT_DEFINITIONS: Readonly<
     severity: 'WARNING',
     quietPeriodMs: 6 * HOUR,
   },
-  // A daily fact about a daily routine. More often than this is noise.
-  COURIER_CASH_OUTSTANDING: {
-    kind: 'COURIER_CASH_OUTSTANDING',
-    severity: 'WARNING',
-    quietPeriodMs: 24 * HOUR,
-  },
 })
 
 export interface OperatorAlertObservation {
   readonly kind: OperatorAlertKind
   /**
-   * How many things are wrong — orders unsettled, events parked, couriers
-   * carrying. Zero means the condition has cleared.
+   * How many things are wrong — orders unsettled, events parked. Zero means
+   * the condition has cleared.
    */
   readonly count: number
   /** Short Persian detail; goes into the body under the summary line. */
@@ -180,7 +172,6 @@ const KIND_SUBJECT_FA: Readonly<Record<OperatorAlertKind, string>> = {
   SMS_PROVIDER_UNAVAILABLE: 'سرویس پیامک در دسترس نیست',
   PAYMENTS_AWAITING_SETTLEMENT: 'پرداخت‌های تسویه‌نشده',
   OUTBOX_EVENTS_PARKED: 'پیام‌هایی که ارسال نشدند',
-  COURIER_CASH_OUTSTANDING: 'پول نقد نزد پیک‌ها',
 }
 
 /**
@@ -219,15 +210,14 @@ export function composeOperatorAlert(
 }
 
 const CONSEQUENCE_FA: Readonly<Record<OperatorAlertKind, string>> = {
-  PAYMENT_GATEWAY_UNHEALTHY: 'یعنی مشتری نمی‌تواند آنلاین پرداخت کند. سفارش نقدی هنوز کار می‌کند.',
+  PAYMENT_GATEWAY_UNHEALTHY:
+    'یعنی هیچ مشتری‌ای نمی‌تواند پرداخت کند، و چون سفارش پیش از پرداخت قطعی نمی‌شود، هیچ سفارشی هم ثبت نمی‌شود. فروش متوقف است.',
   SMS_PROVIDER_UNAVAILABLE:
     'یعنی هیچ‌کس نمی‌تواند وارد شود، چون کد ورود فرستاده نمی‌شود. مشتری تازه سفارش نمی‌دهد.',
   PAYMENTS_AWAITING_SETTLEMENT:
     'یعنی پولی از مشتری گرفته شده و هنوز در دفاتر ما ثبت نشده. این خودش را درست نمی‌کند.',
   OUTBOX_EVENTS_PARKED:
     'هر کدام یک مشتری است که خبردار نشد. هیچ‌چیز دوباره تلاش نمی‌کند؛ باید دستی رسیدگی شود.',
-  COURIER_CASH_OUTSTANDING:
-    'پولی که مشتری داده و هنوز به صندوق نرسیده. در دفاتر «مطالبات از پیک» است.',
 }
 
 function humanQuietPeriodFa(quietPeriodMs: number): string {

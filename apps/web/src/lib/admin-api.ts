@@ -296,36 +296,6 @@ export async function listCouriers(): Promise<ApiResult<CourierSummary[]>> {
   return request<CourierSummary[]>('/api/v1/admin/couriers', { method: 'GET' })
 }
 
-/* ----------------------------------------------------------- the cash desk */
-
-export interface CourierCashPosition {
-  courierId: string
-  courierName: string
-  orderCount: number
-  outstanding: { amount: string; currency: string }
-}
-
-export interface OutstandingCashOrder {
-  orderId: string
-  publicId: string
-  amount: { amount: string; currency: string }
-  collectedAt: string
-}
-
-/** How much cash each courier is carrying right now. */
-export async function listCourierCashPositions(): Promise<ApiResult<CourierCashPosition[]>> {
-  return request<CourierCashPosition[]>('/api/v1/admin/cash/outstanding', { method: 'GET' })
-}
-
-/** The individual orders one courier is still carrying cash for. */
-export async function listCourierCashOrders(
-  courierId: string,
-): Promise<ApiResult<OutstandingCashOrder[]>> {
-  return request<OutstandingCashOrder[]>(`/api/v1/admin/cash/couriers/${courierId}/orders`, {
-    method: 'GET',
-  })
-}
-
 export interface BranchQuality {
   bakeryBranchId: string
   branchNameFa: string

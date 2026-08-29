@@ -18,7 +18,6 @@ import {
   type AdminAuthDependencies,
 } from './admin-auth.js'
 import { authenticateRequest } from './auth.js'
-import type { CashOnDeliveryService } from './cash-on-delivery.js'
 import { DeliveryError, type CourierActor, type DeliveryService } from './delivery.js'
 import { ADMIN_PERMISSIONS } from '@alo-noon/domain'
 
@@ -41,12 +40,6 @@ const COURIER_LIMIT = { config: { rateLimit: { max: 120, timeWindow: '1 minute' 
 
 export interface DeliveryDependencies extends AdminAuthDependencies {
   service: DeliveryService
-  /**
-   * Optional so a deployment that never takes cash carries none of this. When
-   * it is absent a delivery is simply reported and nothing is collected, which
-   * is exactly how the platform behaved before cash existed.
-   */
-  cashOnDelivery?: CashOnDeliveryService
 }
 
 export function registerDeliveryRoutes(
@@ -285,31 +278,6 @@ export function registerDeliveryRoutes(
           currentTime(),
           randomUUID(),
         )
-        // Cash changes hands at the same moment the courier reports the
-        // delivery, so the money is recorded here rather than waiting for
-        // anybody to reconcile anything.
-        //
-        // Outside the delivery transaction on purpose: the ledger opens its own
-        // SERIALIZABLE transaction and cannot be nested inside this one. That
-        // leaves a window where an order is delivered and the cash is not yet
-        // posted, which is exactly what the sweep exists to close — and it
-        // fails quietly rather than turning a successful delivery into an error
-        // the courier cannot act on.
-        if (dependencies.cashOnDelivery && task.state === 'DELIVERED') {
-          try {
-            await dependencies.cashOnDelivery.collectForOrder(
-              context.tenantId,
-              task.orderId,
-              currentTime(),
-              randomUUID(),
-            )
-          } catch (error) {
-            request.log.error(
-              { err: error, orderId: task.orderId },
-              'cash collection failed after delivery; the sweep will retry',
-            )
-          }
-        }
         return reply.send({ success: true, data: task, meta: adminResponseMeta() })
       } catch (error) {
         return deliveryFailure(request, reply, error)

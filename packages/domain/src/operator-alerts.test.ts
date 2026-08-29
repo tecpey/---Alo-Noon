@@ -77,13 +77,13 @@ describe('deciding whether to wake somebody', () => {
   })
 
   it('gives money-shaped problems a shorter leash than routine ones', () => {
-    // Not a style preference: unsettled payments have a reconciliation window
-    // with the gateway, and unremitted cash does not.
-    expect(OPERATOR_ALERT_DEFINITIONS.PAYMENTS_AWAITING_SETTLEMENT.quietPeriodMs).toBeLessThan(
-      OPERATOR_ALERT_DEFINITIONS.COURIER_CASH_OUTSTANDING.quietPeriodMs,
-    )
+    // Not a style preference. Money already taken from a customer and not
+    // recorded is the one condition where waiting makes the reconciliation
+    // harder rather than just later.
+    expect(
+      OPERATOR_ALERT_DEFINITIONS.PAYMENTS_AWAITING_SETTLEMENT.quietPeriodMs,
+    ).toBeLessThanOrEqual(OPERATOR_ALERT_DEFINITIONS.OUTBOX_EVENTS_PARKED.quietPeriodMs)
     expect(OPERATOR_ALERT_DEFINITIONS.PAYMENTS_AWAITING_SETTLEMENT.severity).toBe('CRITICAL')
-    expect(OPERATOR_ALERT_DEFINITIONS.COURIER_CASH_OUTSTANDING.severity).toBe('WARNING')
   })
 
   it('defines every kind it claims to know', () => {
@@ -118,19 +118,20 @@ describe('what the operator reads at four in the morning', () => {
 
     expect(body).toContain('جزئیات آزمون')
     // The consequence, because "gateway unhealthy" tells an operator nothing
-    // about whether they can still take orders.
-    expect(body).toContain('نقدی')
+    // about whether they can still take orders. With one way to pay, they
+    // cannot: no payment means no order.
+    expect(body).toContain('فروش متوقف است')
     expect(body).toContain('https://alonoon.ir/admin')
   })
 
   it('tells the reader it will not repeat immediately', () => {
     const { body } = composeOperatorAlert(
-      observation(1, 'COURIER_CASH_OUTSTANDING'),
+      observation(1, 'OUTBOX_EVENTS_PARKED'),
       'نان سنگک بابل',
       'https://alonoon.ir/admin',
     )
 
-    expect(body).toContain('یک شبانه‌روز دیگر')
+    expect(body).toContain('دیگر')
   })
 
   it('has wording for every kind, so none can ship as a bare code', () => {

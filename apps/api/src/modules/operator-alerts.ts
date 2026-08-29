@@ -31,8 +31,6 @@ import {
 
 /** How long a payment may sit collected-but-unrecorded before it is worth saying. */
 const SETTLEMENT_GRACE_MS = 30 * 60_000
-/** How long cash may sit with a courier before it is worth a daily nudge. */
-const CASH_GRACE_MS = 12 * 60 * 60_000
 
 export interface OperatorAlertSweepSummary {
   readonly evaluated: number
@@ -155,7 +153,7 @@ async function observe(
   now: Date,
 ): Promise<readonly OperatorAlertObservation[]> {
   return withTenant(prisma, tenantId, async (transaction) => {
-    const [gateways, sms, parked, unsettled, cash] = await Promise.all([
+    const [gateways, sms, parked, unsettled] = await Promise.all([
       // Configured to be used, and not usable. A gateway nobody enabled is not
       // a problem; one that is enabled and default and unhealthy is.
       transaction.paymentProviderConfiguration.count({
@@ -175,37 +173,7 @@ async function observe(
           receivedAt: { lt: new Date(now.getTime() - SETTLEMENT_GRACE_MS) },
         },
       }),
-      // Deliberately the same definition of "still carrying it" the cash desk
-      // uses: the absence of a remittance item, which is written in the same
-      // transaction as the ledger posting. A second definition here would
-      // eventually disagree with the screen the operator is sent to.
-      transaction.$queryRaw<Array<{ couriers: bigint; total: bigint }>>`
-        SELECT COUNT(DISTINCT assignment."courierId") AS couriers,
-               COALESCE(SUM(payment."amount"), 0)     AS total
-        FROM "Payment" payment
-        JOIN "Order" o ON o."id" = payment."orderId" AND o."tenantId" = payment."tenantId"
-        JOIN "Fulfillment" f ON f."orderId" = o."id" AND f."tenantId" = o."tenantId"
-        JOIN "DeliveryTask" task
-          ON task."fulfillmentId" = f."id" AND task."tenantId" = f."tenantId"
-        JOIN "DeliveryAssignment" assignment
-          ON assignment."deliveryTaskId" = task."id" AND assignment."tenantId" = task."tenantId"
-         AND assignment."state" = 'COMPLETED'
-        WHERE payment."tenantId" = ${tenantId}::uuid
-          AND payment."method" = 'CASH_ON_DELIVERY'
-          AND payment."state" = 'CAPTURED'
-          -- Payment has no capturedAt column; the capture is what last touched
-          -- the row, so this is the age of the collection.
-          AND payment."updatedAt" < ${new Date(now.getTime() - CASH_GRACE_MS)}
-          AND NOT EXISTS (
-            SELECT 1 FROM "CourierCashRemittanceItem" item
-            WHERE item."paymentId" = payment."id" AND item."tenantId" = payment."tenantId"
-          )
-      `,
     ])
-
-    const cashRow = cash[0]
-    const cashCouriers = Number(cashRow?.couriers ?? 0n)
-    const cashTotal = cashRow?.total ?? 0n
 
     return [
       {
@@ -229,11 +197,6 @@ async function observe(
         kind: 'PAYMENTS_AWAITING_SETTLEMENT' as const,
         count: unsettled,
         detailFa: `${toFa(unsettled)} بازگشت پرداخت بیش از نیم ساعت است که تسویه نشده.`,
-      },
-      {
-        kind: 'COURIER_CASH_OUTSTANDING' as const,
-        count: cashCouriers,
-        detailFa: `${toFa(cashCouriers)} پیک مجموعاً ${toFa(Number(cashTotal))} ریال نقد تحویل نداده‌اند.`,
       },
     ]
   })

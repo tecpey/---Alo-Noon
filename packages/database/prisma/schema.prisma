@@ -399,16 +399,11 @@ enum LedgerEntrySide {
 enum FinancialTransactionType {
   PAYMENT_CAPTURE
   PAYMENT_REFUND
-  /// A courier handing in the cash they collected. Not a payment event — the
-  /// order was already paid when the notes changed hands — but a movement of
-  /// the same money from a courier's pocket into the bank.
-  CASH_REMITTANCE
 }
 
 /// How an order is paid for.
 enum PaymentMethod {
   ONLINE_GATEWAY
-  CASH_ON_DELIVERY
 }
 
 enum LedgerAccountGovernanceAction {
@@ -576,20 +571,6 @@ model City {
   nameFa                      String
   timezone                    String                @default("Asia/Tehran") @db.VarChar(64)
   isActive                    Boolean               @default(false)
-  /// Whether this city takes cash at the door.
-  ///
-  /// Per city rather than per tenant because it is a market decision, not a
-  /// product one: a launch city where nobody knows the brand yet may need cash
-  /// to sell anything, and an established one may be ready to stop carrying
-  /// the risk. Off by default — taking cash is a deliberate act.
-  cashOnDeliveryEnabled       Boolean               @default(false)
-  /// The most an order may be worth and still be payable in cash. Null is
-  /// uncapped, which an operator should have to choose.
-  cashOnDeliveryCeiling       BigInt?
-  /// Completed orders a customer needs before cash is offered to them. Zero
-  /// offers it to anyone, which suits a bakery that knows its neighbourhood
-  /// and does not suit a city launch.
-  cashOnDeliveryMinimumOrders Int                   @default(0)
   operationalZones            OperationalZone[]
   addresses                   Address[]
   bakeryBranches              BakeryBranch[]
@@ -1412,7 +1393,6 @@ model Order {
   deliveryWindowId             String?                     @db.Uuid
   deliveryWindow               BakeryDeliveryWindow?       @relation(fields: [deliveryWindowId], references: [id], onDelete: Restrict)
   paymentMethod                PaymentMethod               @default(ONLINE_GATEWAY)
-  cashRemittanceItems          CourierCashRemittanceItem[]
   rating                       OrderRating?
   promotionRedemption          PromotionRedemption?
   items                        OrderItem[]
@@ -1512,7 +1492,6 @@ model Payment {
   transitions           PaymentStateTransition[]
   financialTransactions FinancialTransaction[]
   attempts              PaymentAttempt[]
-  cashRemittanceItems   CourierCashRemittanceItem[]
   createdAt             DateTime                    @default(now())
   updatedAt             DateTime                    @updatedAt
 
@@ -1521,64 +1500,6 @@ model Payment {
   @@index([orderId, tenantId], map: "g3b_Payment_orderId_tenant_idx")
   @@index([customerId, tenantId], map: "g3b_Payment_customerId_tenant_idx")
   @@index([tenantId, state, createdAt])
-}
-
-/// A courier handing in the cash they collected.
-///
-/// The header of the act: which courier, how much they were expected to bring,
-/// how much they actually handed over, and who counted it. The individual
-/// orders hang off it, and each one posts its own journal — an order's cash can
-/// be handed in exactly once, which is the invariant that matters when someone
-/// is standing at a desk with a bag of notes.
-model CourierCashRemittance {
-  id             String                      @id @default(uuid()) @db.Uuid
-  tenantId       String                      @db.Uuid
-  courierId      String                      @db.Uuid
-  courier        Courier                     @relation(fields: [courierId], references: [id], onDelete: Restrict)
-  /// Derived from the orders being settled, never typed in.
-  expectedAmount BigInt
-  /// What was actually counted onto the desk.
-  declaredAmount BigInt
-  currency       Currency                    @default(IRR)
-  /// The staff account that counted it. A remittance nobody signed for is a
-  /// remittance nobody can be asked about. Unconstrained, like every other
-  /// actor id here: identity accounts are not tenant-owned.
-  countedById    String                      @db.Uuid
-  idempotencyKey String                      @db.VarChar(128)
-  correlationId  String                      @db.Uuid
-  occurredAt     DateTime
-  items          CourierCashRemittanceItem[]
-  createdAt      DateTime                    @default(now())
-
-  @@unique([tenantId, idempotencyKey], map: "CourierCashRemittance_tenant_idempotency_key")
-  @@unique([id, tenantId], map: "g3b_CourierCashRemittance_id_tenant_key")
-  @@index([courierId, tenantId], map: "g3b_CourierCashRemittance_courierId_tenant_idx")
-  @@index([tenantId, occurredAt])
-}
-
-/// One order's cash inside a remittance.
-model CourierCashRemittanceItem {
-  id           String                @id @default(uuid()) @db.Uuid
-  tenantId     String                @db.Uuid
-  remittanceId String                @db.Uuid
-  remittance   CourierCashRemittance @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
-  orderId      String                @db.Uuid
-  order        Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  paymentId    String                @db.Uuid
-  payment      Payment               @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  /// Snapshotted from the payment. What the courier was carrying for this
-  /// order does not change because something was edited afterwards.
-  amount       BigInt
-  createdAt    DateTime              @default(now())
-
-  /// An order's cash belongs to one remittance. The ledger enforces the same
-  /// thing through the unique posting per payment; this says it where an
-  /// operator can be told about it before any money moves.
-  @@unique([tenantId, orderId], map: "CourierCashRemittanceItem_tenant_order_key")
-  @@unique([id, tenantId], map: "g3b_CourierCashRemittanceItem_id_tenant_key")
-  @@index([remittanceId, tenantId], map: "g3b_CourierCashRemittanceItem_remittanceId_tenant_idx")
-  @@index([orderId, tenantId], map: "g3b_CourierCashRemittanceItem_orderId_tenant_idx")
-  @@index([paymentId, tenantId], map: "g3b_CourierCashRemittanceItem_paymentId_tenant_idx")
 }
 
 model ProviderCredentialReference {
@@ -1935,7 +1856,6 @@ model Courier {
   displayName      String
   status           CourierStatus           @default(ONBOARDING)
   assignments      DeliveryAssignment[]
-  cashRemittances  CourierCashRemittance[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 
@@ -2352,7 +2272,6 @@ enum OperatorAlertKind {
   PAYMENT_GATEWAY_UNHEALTHY
   OUTBOX_EVENTS_PARKED
   PAYMENTS_AWAITING_SETTLEMENT
-  COURIER_CASH_OUTSTANDING
   SMS_PROVIDER_UNAVAILABLE
 }
 

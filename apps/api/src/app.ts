@@ -65,7 +65,6 @@ import {
   registerCourierAssignmentRoutes,
   type CourierAssignmentDependencies,
 } from './modules/courier-assignment-routes.js'
-import { registerCashRoutes, type CashRouteDependencies } from './modules/cash-routes.js'
 import {
   registerEngagementRoutes,
   type EngagementDependencies,
@@ -104,7 +103,6 @@ export interface AppOptions {
   delivery?: Omit<DeliveryDependencies, 'auth'>
   deliveryTrips?: Omit<DeliveryTripDependencies, 'auth'>
   courierAssignments?: Omit<CourierAssignmentDependencies, 'auth'>
-  cash?: Omit<CashRouteDependencies, 'auth'>
   engagement?: Omit<EngagementDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
@@ -262,9 +260,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.courierAssignments) {
     registerCourierAssignmentRoutes(app, { ...options.courierAssignments, auth: options.auth })
-  }
-  if (options.auth && options.cash) {
-    registerCashRoutes(app, { ...options.cash, auth: options.auth })
   }
   if (options.auth && options.engagement) {
     registerEngagementRoutes(app, { ...options.engagement, auth: options.auth })

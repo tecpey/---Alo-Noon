@@ -24,7 +24,6 @@ import type {
   DeliveryWindow,
   OrderSummary,
   PaymentExecutionSummary,
-  PaymentMethod,
   PaymentSummary,
   ProductSummary,
   QuoteSummary,
@@ -88,12 +87,11 @@ export default function App() {
   const [products, setProducts] = useState<ProductSummary[]>([])
   const [cart, setCart] = useState<CartSummary | null>(null)
   const [quote, setQuote] = useState<QuoteSummary | null>(null)
-  // What the customer chose before pricing. A quote is priced against all
-  // three, so changing any of them throws the quote away rather than leaving a
-  // total on screen that belongs to a different set of choices.
+  // What the customer chose before pricing. A quote is priced against both, so
+  // changing either throws the quote away rather than leaving a total on screen
+  // that belongs to a different set of choices.
   const [windows, setWindows] = useState<DeliveryWindow[]>([])
   const [chosenWindow, setChosenWindow] = useState<string | null>(null)
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ONLINE_GATEWAY')
   const [promotionCode, setPromotionCode] = useState('')
   // Kept so sign-out can hand the same token back. Without it the row stays
   // and the next order buzzes a phone nobody is signed into.
@@ -450,7 +448,6 @@ export default function App() {
         await api.createQuote(selectedAddressId, cart.version, idempotencyKey, {
           ...(trimmedCode && { promotionCode: trimmedCode }),
           ...(chosenWindow && { deliveryWindowStartsAt: chosenWindow }),
-          paymentMethod,
         }),
       )
       setOrder(null)
@@ -473,15 +470,6 @@ export default function App() {
       const placed = await api.createOrder(quote.id, idempotencyKey)
       setOrder(placed)
       setOrderCommandKey(undefined)
-
-      // A cash order has nothing for the customer to do next, so it does not
-      // get a button that says "pay". The payment is opened here instead — it
-      // is what the courier's collection lands on, and asking somebody to tap
-      // "pay" for money they will hand over at their door is a step that only
-      // exists because of how this screen is built.
-      if (placed.paymentMethod === 'CASH_ON_DELIVERY') {
-        setPayment(await api.startPayment(placed.id, `${idempotencyKey}-cash`))
-      }
 
       // Now, and not before. An app that asks to send notifications at first
       // launch is asking a stranger for permission to interrupt them; an app
@@ -612,17 +600,12 @@ export default function App() {
   /**
    * Discards the price when a choice that produced it changes.
    *
-   * A quote is priced against the window, the payment method and the code that
-   * were sent with it. Leaving the old total on screen after one of them moves
+   * A quote is priced against the window and the code that were sent with it. Leaving the old total on screen after one of them moves
    * shows a number that is no longer the number, and the customer only finds
    * out at the gateway.
    */
   const chooseWindow = (startsAt: string | null) => {
     setChosenWindow(startsAt)
-    setQuote(null)
-  }
-  const chooseMethod = (method: PaymentMethod) => {
-    setPaymentMethod(method)
     setQuote(null)
   }
   const changePromotionCode = (code: string) => {
@@ -921,8 +904,6 @@ export default function App() {
                   windows={windows}
                   chosenWindow={chosenWindow}
                   onChooseWindow={chooseWindow}
-                  method={paymentMethod}
-                  onChooseMethod={chooseMethod}
                   promotionCode={promotionCode}
                   onPromotionCode={changePromotionCode}
                   quote={quote}
@@ -1259,9 +1240,6 @@ function CartCard({
    */
   choices: ReactNode
 }) {
-  // The order's own method, not the one still selected on screen: once an order
-  // exists the choice is settled, and the server settled it.
-  const cashOrder = order?.paymentMethod === 'CASH_ON_DELIVERY'
   return (
     <View style={styles.cartCard}>
       <View style={styles.cartTitleRow}>
@@ -1346,11 +1324,6 @@ function CartCard({
 
           {payment?.state === 'CAPTURED' ? (
             <Text style={styles.quoteNotice}>پرداخت شما تأیید شد.</Text>
-          ) : cashOrder ? (
-            // Nothing to press. There is no gateway to open, and a "pay"
-            // button on an order that is paid at the door is an instruction to
-            // do something that cannot be done.
-            <Text style={styles.quoteNotice}>مبلغ سفارش را هنگام تحویل، نقدی به پیک بپردازید.</Text>
           ) : (
             <>
               {awaitingReturn && (

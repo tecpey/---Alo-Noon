@@ -1,5 +1,20 @@
 import { DomainError } from './errors'
 
+/**
+ * Where the money for an order comes from.
+ *
+ * One entry today, and that is the business rather than an oversight: money
+ * reaches the platform before an order is final, and the only route in is a
+ * bank gateway. Cash at the door used to be the second entry and was retired
+ * with the model that needed it — an order confirmed on a promise and settled
+ * at the step.
+ */
+export const PaymentMethod = {
+  /** A bank gateway, redirect and callback. */
+  ONLINE_GATEWAY: 'ONLINE_GATEWAY',
+} as const
+export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod]
+
 export const PaymentAggregateState = {
   CREATED: 'CREATED',
   PENDING: 'PENDING',

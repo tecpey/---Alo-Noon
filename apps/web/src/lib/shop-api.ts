@@ -219,7 +219,6 @@ export async function createQuote(input: {
   /** The chosen delivery window, named by the instant it starts. */
   deliveryWindowStartsAt?: string
   /** How the customer intends to pay. Checked server-side against the city. */
-  paymentMethod?: 'ONLINE_GATEWAY' | 'CASH_ON_DELIVERY'
 }): Promise<ApiResult<QuoteSummary>> {
   return request<QuoteSummary>('/api/v1/cart/quote', { method: 'POST', body: input })
 }
