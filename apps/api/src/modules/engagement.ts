@@ -3,6 +3,7 @@ import {
   assessBranchQuality,
   checkOrderRating,
   planReorder,
+  summariseBranchQuality,
   type BranchQualitySignal,
   type OrderRatingInput,
   type QualityPolicy,
@@ -75,6 +76,14 @@ export interface ReorderOutcome {
   }[]
 }
 
+export interface BranchQualityRow {
+  readonly bakeryBranchId: string
+  readonly branchNameFa: string
+  readonly bakeryNameFa: string
+  readonly qualityStatus: string
+  readonly signal: BranchQualitySignal
+}
+
 export interface FavouriteSummary {
   readonly offeringId: string
   readonly productVariantId: string
@@ -103,6 +112,18 @@ export interface EngagementService {
     now: Date,
     policy?: QualityPolicy,
   ): Promise<BranchQualitySignal>
+  /**
+   * Every branch's quality signal in one pass.
+   *
+   * Grouped in the database rather than by pulling every score across the wire:
+   * a report an operator opens every morning should cost one query however many
+   * bakeries the platform has grown to.
+   */
+  branchQualityReport(
+    tenantId: string,
+    now: Date,
+    policy?: QualityPolicy,
+  ): Promise<readonly BranchQualityRow[]>
   /** Rebuilds a basket from a past order, at today's prices. */
   reorder(
     tenantId: string,
@@ -220,6 +241,60 @@ export function createPrismaEngagementService(prisma: PrismaClient): EngagementS
           policy,
         )
       })
+    },
+
+    async branchQualityReport(tenantId, now, policy = DEFAULT_QUALITY_POLICY) {
+      const since = new Date(now.getTime() - QUALITY_WINDOW_DAYS * MILLISECONDS_PER_DAY)
+      const rows = await readCommitted(
+        prisma,
+        tenantId,
+        async (transaction) =>
+          transaction.$queryRaw<
+            Array<{
+              bakeryBranchId: string
+              branchNameFa: string
+              bakeryNameFa: string
+              qualityStatus: string
+              sampleSize: bigint
+              totalScore: bigint
+            }>
+          >`
+          SELECT branch."id" AS "bakeryBranchId",
+                 branch."nameFa" AS "branchNameFa",
+                 bakery."displayNameFa" AS "bakeryNameFa",
+                 branch."qualityStatus"::text AS "qualityStatus",
+                 COUNT(rating."id") AS "sampleSize",
+                 COALESCE(SUM(rating."breadScore"), 0) AS "totalScore"
+          FROM "BakeryBranch" branch
+          -- Every join carries the tenant, because the role this runs as
+          -- bypasses row-level security: the WHERE clause below is the only
+          -- thing keeping one city's report out of another's.
+          JOIN "Bakery" bakery
+            ON bakery."id" = branch."bakeryId" AND bakery."tenantId" = branch."tenantId"
+          -- A left join, so a branch nobody has rated still appears. An
+          -- operator needs to see the bakery with no feedback at all just as
+          -- much as the one with bad feedback.
+          LEFT JOIN "Order" o
+            ON o."bakeryBranchId" = branch."id" AND o."tenantId" = branch."tenantId"
+          LEFT JOIN "OrderRating" rating
+            ON rating."orderId" = o."id"
+           AND rating."tenantId" = branch."tenantId"
+           AND rating."createdAt" >= ${since}
+          WHERE branch."tenantId" = ${tenantId}::uuid
+          GROUP BY branch."id", branch."nameFa", bakery."displayNameFa", branch."qualityStatus"
+          ORDER BY bakery."displayNameFa", branch."nameFa"
+        `,
+      )
+      return rows.map((row) => ({
+        bakeryBranchId: row.bakeryBranchId,
+        branchNameFa: row.branchNameFa,
+        bakeryNameFa: row.bakeryNameFa,
+        qualityStatus: row.qualityStatus,
+        signal: summariseBranchQuality(
+          { sampleSize: Number(row.sampleSize), totalScore: Number(row.totalScore) },
+          policy,
+        ),
+      }))
     },
 
     async reorder(tenantId, customerId, orderId, now, correlationId) {

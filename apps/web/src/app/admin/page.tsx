@@ -11,7 +11,13 @@ import {
   PAYMENT_STATE_LABELS,
   recentRange,
 } from '../../lib/admin-format-display'
-import { isUnauthenticated, readSalesReport, type SalesReport } from '../../lib/admin-api'
+import {
+  isUnauthenticated,
+  listBranchQuality,
+  readSalesReport,
+  type BranchQuality,
+  type SalesReport,
+} from '../../lib/admin-api'
 import { AdminNav } from './admin-nav'
 import { readFailureMessage } from './failure-message'
 
@@ -33,7 +39,10 @@ export default async function AdminDashboardPage({
   const requested = Number(Array.isArray(params['days']) ? params['days'][0] : params['days'])
   const days = RANGES.some((range) => range.days === requested) ? requested : 7
   const range = recentRange(days)
-  const report = await readSalesReport(range.from, range.to)
+  const [report, quality] = await Promise.all([
+    readSalesReport(range.from, range.to),
+    listBranchQuality(),
+  ])
 
   if (!report.ok && isUnauthenticated(report.error)) redirect('/admin/login')
 
@@ -59,6 +68,8 @@ export default async function AdminDashboardPage({
       ) : (
         <p className="error-box">{readFailureMessage(report.error.code)}</p>
       )}
+
+      {quality.ok && quality.data.length > 0 && <BranchQualityPanel rows={quality.data} />}
     </main>
   )
 }
@@ -219,6 +230,93 @@ function StateBreakdown({
             ))}
           </tbody>
         </table>
+      )}
+    </section>
+  )
+}
+
+/**
+ * What customers are saying about each bakery's bread.
+ *
+ * A flag here means "go and look", never "this bakery is suspended". Ending a
+ * partnership on a handful of scores is a decision that has to have a person's
+ * name against it, so the panel points and the operator decides.
+ *
+ * Only branches customers have actually said something about get a row. A
+ * branch with no ratings is not news — it is the ordinary state of most of the
+ * list — and a panel that gives each of them a card is a panel where the one
+ * bakery worth looking at scrolls off the top. The count of silent branches is
+ * kept, as a line, because "nobody has rated forty of our bakeries" is worth
+ * knowing once and not forty times.
+ */
+const QUALITY_ROWS_SHOWN = 12
+
+function BranchQualityPanel({ rows }: Readonly<{ rows: readonly BranchQuality[] }>) {
+  const flagged = rows.filter((row) => row.flagForReview)
+  const silent = rows.filter((row) => row.sampleSize === 0 && !row.flagForReview).length
+  // Anything needing attention first, then the lowest scores — the point of the
+  // panel is to answer "whose bread should I go and taste this morning", and
+  // that is the bottom of the list, not the top.
+  const ordered = rows
+    .filter((row) => row.sampleSize > 0 || row.flagForReview)
+    .sort((left, right) => {
+      if (left.flagForReview !== right.flagForReview) return left.flagForReview ? -1 : 1
+      if (left.averageHundredths !== right.averageHundredths)
+        return left.averageHundredths - right.averageHundredths
+      return right.sampleSize - left.sampleSize
+    })
+  const shown = ordered.slice(0, QUALITY_ROWS_SHOWN)
+  const hidden = ordered.length - shown.length
+
+  return (
+    <section>
+      <h2>کیفیت نان نانوایی‌ها</h2>
+      <p className="muted">
+        میانگین امتیاز نان در ۹۰ روز گذشته. تا وقتی حداقل ۱۰ امتیاز ثبت نشده باشد، هیچ شعبه‌ای
+        علامت‌دار نمی‌شود — یک صبح بد و دو نظر، قضاوت دربارهٔ یک شریک نیست.
+      </p>
+
+      {flagged.length > 0 && (
+        <p className="error-box">
+          {flagged.length.toLocaleString('fa-IR')} شعبه به بررسی نیاز دارد:{' '}
+          {flagged.map((row) => `${row.bakeryNameFa} — ${row.branchNameFa}`).join('، ')}
+        </p>
+      )}
+
+      <ul className="rows">
+        {shown.map((row) => (
+          <li key={row.bakeryBranchId} className="row">
+            <div className="row-head">
+              <h3>
+                {row.bakeryNameFa} — {row.branchNameFa}
+              </h3>
+              <strong className={row.flagForReview ? 'bad' : undefined}>
+                {row.sampleSize === 0
+                  ? '—'
+                  : (row.averageHundredths / 100).toLocaleString('fa-IR', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+              </strong>
+            </div>
+            <p className="muted">
+              {row.sampleSize === 0
+                ? 'هنوز امتیازی ثبت نشده.'
+                : `${row.sampleSize.toLocaleString('fa-IR')} امتیاز`}
+              {row.flagForReview && ' · نیاز به بررسی'}
+            </p>
+          </li>
+        ))}
+      </ul>
+
+      {ordered.length === 0 && <p className="muted">هنوز هیچ مشتری‌ای به نان امتیاز نداده است.</p>}
+
+      {(hidden > 0 || silent > 0) && (
+        <p className="muted">
+          {hidden > 0 && `${hidden.toLocaleString('fa-IR')} شعبهٔ امتیازخورده در این فهرست نیامده`}
+          {hidden > 0 && silent > 0 && ' · '}
+          {silent > 0 && `${silent.toLocaleString('fa-IR')} شعبه هنوز هیچ امتیازی ندارد`}
+        </p>
       )}
     </section>
   )

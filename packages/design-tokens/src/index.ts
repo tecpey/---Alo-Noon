@@ -461,6 +461,10 @@ export function cssVariables(): string {
   push('error', colors.error)
   push('info', colors.info)
   push('font-body', typography.fontFamily.body.join(', '))
+  // Order codes, references and provider identifiers are always Latin and are
+  // read character by character, so they need the tabular face rather than the
+  // Persian body one. Emitted here so a panel does not have to name its own.
+  push('font-mono', typography.fontFamily.mono.join(', '))
 
   return `:root {\n${entries.join('\n')}\n}`
 }

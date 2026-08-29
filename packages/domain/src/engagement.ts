@@ -139,26 +139,58 @@ export function assessBranchQuality(
   scores: readonly number[],
   policy: QualityPolicy,
 ): BranchQualitySignal {
-  assertPolicy(policy)
-  if (scores.length === 0) {
-    return { sampleSize: 0, averageHundredths: 0, flagForReview: false }
-  }
-  let total = 0
+  let totalScore = 0
   for (const score of scores) {
     if (!isScore(score)) {
       throw new DomainError('INVALID_RATING', 'A rating score is out of range', { score })
     }
-    total += score
+    totalScore += score
+  }
+  return summariseBranchQuality({ sampleSize: scores.length, totalScore }, policy)
+}
+
+/**
+ * The same judgement, from a count and a sum somebody else added up.
+ *
+ * Exists so a report covering every branch can group in the database rather
+ * than pulling every score across the wire to count them again in JavaScript.
+ * The rule lives here either way — a threshold applied in two places is a
+ * threshold that will eventually be two different thresholds.
+ */
+export function summariseBranchQuality(
+  totals: { readonly sampleSize: number; readonly totalScore: number },
+  policy: QualityPolicy,
+): BranchQualitySignal {
+  assertPolicy(policy)
+  if (
+    !Number.isSafeInteger(totals.sampleSize) ||
+    totals.sampleSize < 0 ||
+    !Number.isSafeInteger(totals.totalScore) ||
+    totals.totalScore < 0
+  ) {
+    throw new DomainError('INVALID_RATING', 'Rating totals are not usable', totals)
+  }
+  if (totals.sampleSize === 0) {
+    return { sampleSize: 0, averageHundredths: 0, flagForReview: false }
+  }
+  // A sum that could not have come from scores in range means somebody counted
+  // the wrong thing, and a flag derived from it would accuse a real bakery.
+  if (
+    totals.totalScore < totals.sampleSize * RATING_MIN_SCORE ||
+    totals.totalScore > totals.sampleSize * RATING_MAX_SCORE
+  ) {
+    throw new DomainError('INVALID_RATING', 'Rating totals are out of range', totals)
   }
   // Rounded rather than truncated: this is a reading of the scores, not money,
   // and rounding down would report a branch a shade worse than it is every time
   // the mean is not exact.
-  const averageHundredths = Math.round((total * 100) / scores.length)
+  const averageHundredths = Math.round((totals.totalScore * 100) / totals.sampleSize)
   return {
-    sampleSize: scores.length,
+    sampleSize: totals.sampleSize,
     averageHundredths,
     flagForReview:
-      scores.length >= policy.minimumSampleSize && averageHundredths <= policy.flagBelowHundredths,
+      totals.sampleSize >= policy.minimumSampleSize &&
+      averageHundredths <= policy.flagBelowHundredths,
   }
 }
 

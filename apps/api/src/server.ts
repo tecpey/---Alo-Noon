@@ -283,6 +283,10 @@ const delivery = {
   service: createPrismaDeliveryService(prisma),
   cashOnDelivery: cashOnDeliveryService,
 }
+// One engagement service, shared: the customer surfaces read it and the
+// operator's quality report reads it, and two instances would be two pools
+// over the same rows for no reason.
+const engagementService = createPrismaEngagementService(prisma)
 // The planner uses road distances where a routing engine is configured and the
 // straight line where one is not. That is not cosmetic: two doors fifty metres
 // apart with a river between them are a good batch on a map and a bad one in
@@ -328,10 +332,10 @@ const app = await buildApp({
   delivery,
   deliveryTrips,
   courierAssignments,
-  cash: { service: cashOnDeliveryService },
+  cash: { service: cashOnDeliveryService, engagement: engagementService },
   // Coming back: ordering again, rating, favourites. Reorder is the one that
   // earns the second order, which for a daily staple is most of the business.
-  engagement: { service: createPrismaEngagementService(prisma) },
+  engagement: { service: engagementService },
 })
 
 if (env.SENTRY_DSN) {

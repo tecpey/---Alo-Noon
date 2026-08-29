@@ -50,6 +50,7 @@ describe('the bridge to CSS', () => {
       '--duration-base',
       '--easing-standard',
       '--font-body',
+      '--font-mono',
     ]) {
       expect(css).toContain(name)
     }

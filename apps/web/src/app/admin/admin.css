@@ -161,6 +161,11 @@
   flex-direction: column;
   gap: 0.9rem;
   margin-bottom: 1rem;
+  /* These are lists semantically — a screen reader should count them — but the
+     rows are bordered cards, and a browser bullet sitting outside the card is
+     just a smudge in the margin. */
+  list-style: none;
+  padding: 0;
 }
 
 .row {
@@ -559,4 +564,74 @@ td a {
   font: inherit;
   line-height: 1.7;
   resize: vertical;
+}
+
+/* The cash desk. One number the operator looks at first — how much of today's
+   money is still out on the road — then the counting, order by order. */
+.figure {
+  font-size: 1.9rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+/* Used where a number is the bad news itself, not a badge next to it. */
+.bad {
+  color: var(--bad);
+}
+
+.cash-orders {
+  border: 1px dashed var(--line);
+  border-radius: 0.7rem;
+  padding: 0.7rem 0.9rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.cash-orders > legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding-inline: 0.35rem;
+}
+
+/* A row per collection, aligned so the amounts form a column the operator can
+   run a finger down while counting notes. The code stays LTR because it is. */
+.cash-order {
+  display: grid;
+  grid-template-columns: auto minmax(6rem, auto) 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.35rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.cash-order:hover {
+  background: var(--surface-sunken);
+}
+.cash-order__code {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.cash-order__when {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+.cash-order__amount {
+  font-weight: 700;
+  justify-self: end;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 30rem) {
+  .cash-order {
+    grid-template-columns: auto 1fr auto;
+  }
+  .cash-order__when {
+    grid-column: 2 / -1;
+  }
 }

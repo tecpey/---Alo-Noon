@@ -8,6 +8,7 @@ const SECTIONS = [
   { href: '/admin/orders', label: 'سفارش‌ها' },
   { href: '/admin/deliveries', label: 'اعزام پیک' },
   { href: '/admin/finance', label: 'گزارش مالی' },
+  { href: '/admin/cash', label: 'صندوق' },
   { href: '/admin/catalog', label: 'کاتالوگ' },
   { href: '/admin/pricing', label: 'قیمت‌گذاری' },
   { href: '/admin/providers', label: 'سرویس‌دهنده‌ها' },

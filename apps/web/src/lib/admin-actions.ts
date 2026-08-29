@@ -659,6 +659,47 @@ export async function offerDeliveryAction(
   return success('سفارش به پیک پیشنهاد شد. تا وقتی نپذیرد، به مشتری چیزی گفته نمی‌شود.')
 }
 
+/**
+ * A courier hands the cash in.
+ *
+ * The orders are named one by one rather than "everything this courier has":
+ * that instruction is exactly the one that settles an order somebody did not
+ * actually hand over, and it cannot be checked against a count on a desk.
+ *
+ * The amount typed is what was counted. The server derives what it should be
+ * from the named orders and refuses the whole thing if the two disagree — a
+ * courier who is short has a dispute, and a dispute is a decision a person
+ * makes rather than a rounding the ledger absorbs.
+ */
+export async function recordCashRemittanceAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const courierId = field(form, 'courierId')
+  const orderIds = form
+    .getAll('orderIds')
+    .filter((value): value is string => typeof value === 'string')
+  if (orderIds.length === 0) {
+    return failure('هیچ سفارشی انتخاب نشده است.')
+  }
+  const declared = field(form, 'declaredAmount').replace(/[^0-9]/g, '')
+  if (!declared) return failure('مبلغ شمرده‌شده را وارد کنید.')
+
+  const result = await post('/api/v1/admin/cash/remittances', {
+    courierId,
+    orderIds,
+    declaredAmount: declared,
+    // Derived from what is being settled, so a double submission replays onto
+    // the same remittance rather than posting the cash twice.
+    idempotencyKey: `cash-remittance:${courierId}:${[...orderIds].sort().join(',')}`.slice(0, 128),
+  })
+  if (!result.ok) {
+    return failure(translateProviderError(result.error.code, 'ثبت تحویل وجه انجام نشد.'))
+  }
+  revalidatePath('/admin/cash')
+  return success('وجه تحویل گرفته شد و در دفاتر ثبت شد.')
+}
+
 export async function releaseDeliveryAction(
   _previous: ActionState,
   form: FormData,

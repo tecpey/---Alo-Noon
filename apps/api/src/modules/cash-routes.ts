@@ -12,6 +12,7 @@ import {
   type AdminAuthDependencies,
 } from './admin-auth.js'
 import { CashOnDeliveryError, type CashOnDeliveryService } from './cash-on-delivery.js'
+import type { EngagementService } from './engagement.js'
 
 /**
  * The cash desk.
@@ -28,6 +29,12 @@ import { CashOnDeliveryError, type CashOnDeliveryService } from './cash-on-deliv
 
 export interface CashRouteDependencies extends AdminAuthDependencies {
   service: CashOnDeliveryService
+  /**
+   * Branch quality rides along here rather than in its own module: it is the
+   * other number an operator checks at the same desk, and one more route file
+   * for one read would be ceremony without benefit.
+   */
+  engagement: EngagementService
   now?: () => Date
 }
 
@@ -69,6 +76,85 @@ export function registerCashRoutes(
       return cashFailure(request, reply, error)
     }
   })
+
+  /**
+   * How every bakery branch is doing on the bread it bakes.
+   *
+   * Read-only and behind the reporting permission: this is something an
+   * operator looks at, and the flag it carries is an invitation to go and look
+   * at a bakery rather than an action taken against one.
+   */
+  app.get('/api/v1/admin/quality/branches', CASH_LIMIT, async (request, reply) => {
+    const actor = await authenticatedStaff(
+      request,
+      reply,
+      dependencies,
+      ADMIN_PERMISSIONS.reportsRead,
+    )
+    if (!actor) return reply
+
+    try {
+      const rows = await dependencies.engagement.branchQualityReport(
+        actor.tenantId,
+        dependencies.now?.() ?? new Date(),
+      )
+      return reply.send({
+        success: true,
+        data: rows.map((row) => ({
+          bakeryBranchId: row.bakeryBranchId,
+          branchNameFa: row.branchNameFa,
+          bakeryNameFa: row.bakeryNameFa,
+          qualityStatus: row.qualityStatus,
+          sampleSize: row.signal.sampleSize,
+          averageHundredths: row.signal.averageHundredths,
+          flagForReview: row.signal.flagForReview,
+        })),
+        meta: adminResponseMeta(),
+      })
+    } catch (error) {
+      return cashFailure(request, reply, error)
+    }
+  })
+
+  /**
+   * The orders one courier is still carrying cash for.
+   *
+   * What somebody at a desk with a bag of notes actually needs: the orders to
+   * count against, named and priced, so the sum they type has something to be
+   * checked against.
+   */
+  app.get<{ Params: { courierId: string } }>(
+    '/api/v1/admin/cash/couriers/:courierId/orders',
+    CASH_LIMIT,
+    async (request, reply) => {
+      const actor = await authenticatedStaff(
+        request,
+        reply,
+        dependencies,
+        ADMIN_PERMISSIONS.ordersManage,
+      )
+      if (!actor) return reply
+
+      try {
+        const orders = await dependencies.service.outstandingOrdersFor(
+          actor.tenantId,
+          request.params.courierId,
+        )
+        return reply.send({
+          success: true,
+          data: orders.map((order) => ({
+            orderId: order.orderId,
+            publicId: order.publicId,
+            amount: { amount: order.amount.toString(), currency: 'IRR' as const },
+            collectedAt: order.collectedAt,
+          })),
+          meta: adminResponseMeta(),
+        })
+      } catch (error) {
+        return cashFailure(request, reply, error)
+      }
+    },
+  )
 
   /**
    * A courier hands the cash in.

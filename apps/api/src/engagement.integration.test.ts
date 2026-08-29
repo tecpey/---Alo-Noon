@@ -489,6 +489,53 @@ databaseDescribe('engagement against PostgreSQL', () => {
         flagForReview: false,
       })
     })
+
+    /**
+     * The report an operator opens every morning. Grouped in the database, so
+     * it stays one query however many bakeries the platform grows to — and it
+     * has to agree with the per-branch reading it summarises.
+     */
+    it('summarises every branch in one pass, agreeing with the single-branch read', async () => {
+      const rows = await service.branchQualityReport(fixture.tenantId, now)
+      const mine = rows.find((row) => row.bakeryBranchId === fixture.branchId)
+      expect(mine).toBeDefined()
+      expect(mine!.branchNameFa).toBe('شعبه')
+      expect(mine!.signal).toEqual(
+        await service.branchQuality(fixture.tenantId, fixture.branchId, now),
+      )
+    })
+
+    /**
+     * A left join, so a bakery nobody has rated still appears. An operator
+     * needs to see the branch with no feedback at all just as much as the one
+     * with bad feedback.
+     */
+    it('lists a branch nobody has rated rather than dropping it', async () => {
+      const unrated = await withTenant(fixture.tenantId, async (t) => {
+        const bakery = await t.bakery.findFirstOrThrow({ where: { tenantId: fixture.tenantId } })
+        const zone = await t.operationalZone.findFirstOrThrow({
+          where: { tenantId: fixture.tenantId },
+        })
+        return t.bakeryBranch.create({
+          data: {
+            tenantId: fixture.tenantId,
+            bakeryId: bakery.id,
+            cityId: fixture.cityId,
+            operationalZoneId: zone.id,
+            code: `QQ${suffix}`.slice(0, 16),
+            nameFa: 'شعبهٔ بی‌نظر',
+            addressLine: 'نشانی',
+            latitude: '36.5513',
+            longitude: '52.6790',
+            operationalStatus: 'ACTIVE',
+            qualityStatus: 'APPROVED',
+          },
+        })
+      })
+      const rows = await service.branchQualityReport(fixture.tenantId, now)
+      const row = rows.find((entry) => entry.bakeryBranchId === unrated.id)
+      expect(row?.signal).toEqual({ sampleSize: 0, averageHundredths: 0, flagForReview: false })
+    })
   })
 
   describe('favourites', () => {

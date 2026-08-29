@@ -6,6 +6,7 @@ import {
   ReorderDrop,
   assessBranchQuality,
   checkOrderRating,
+  summariseBranchQuality,
   planReorder,
   type OrderRatingContext,
   type OrderRatingInput,
@@ -256,5 +257,46 @@ describe('planReorder', () => {
       lines: [],
       adjustments: [{ offeringId: 'a', reason: ReorderDrop.UNAVAILABLE, quantity: 1 }],
     })
+  })
+})
+
+describe('summariseBranchQuality', () => {
+  const policy: QualityPolicy = { minimumSampleSize: 10, flagBelowHundredths: 300 }
+
+  /**
+   * The same rule from the other direction, so a report covering every branch
+   * can group in the database instead of counting scores again in JavaScript.
+   * A threshold applied in two places eventually becomes two thresholds.
+   */
+  it('agrees with the score-by-score reading', () => {
+    const scores = [4, 4, 5, 3, 2, 5, 4, 4, 3, 4]
+    const totalScore = scores.reduce((sum, score) => sum + score, 0)
+    expect(summariseBranchQuality({ sampleSize: scores.length, totalScore }, policy)).toEqual(
+      assessBranchQuality(scores, policy),
+    )
+  })
+
+  it('reports nothing for a branch nobody has rated', () => {
+    expect(summariseBranchQuality({ sampleSize: 0, totalScore: 0 }, policy)).toEqual({
+      sampleSize: 0,
+      averageHundredths: 0,
+      flagForReview: false,
+    })
+  })
+
+  /**
+   * A sum that could not have come from scores in range means somebody counted
+   * the wrong column, and a flag derived from it would accuse a real bakery.
+   */
+  it('refuses totals no set of scores could produce', () => {
+    expect(() => summariseBranchQuality({ sampleSize: 2, totalScore: 11 }, policy)).toThrow(
+      DomainError,
+    )
+    expect(() => summariseBranchQuality({ sampleSize: 3, totalScore: 2 }, policy)).toThrow(
+      DomainError,
+    )
+    expect(() => summariseBranchQuality({ sampleSize: -1, totalScore: 0 }, policy)).toThrow(
+      DomainError,
+    )
   })
 })

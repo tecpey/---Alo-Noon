@@ -11,6 +11,18 @@ export { sessionTokenFromSetCookie } from './api-envelope'
 
 /** Persian text for the API's error codes; anything unmapped keeps its code. */
 export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  // The cash desk. Each of these sends the operator somewhere different —
+  // recount, pick a different set, chase a courier — which is the whole reason
+  // they are separate codes rather than one refusal.
+  REMITTANCE_DOES_NOT_BALANCE:
+    'مبلغ شمرده‌شده با جمع سفارش‌های انتخاب‌شده نمی‌خواند. دوباره بشمارید یا سفارش‌های دیگری را انتخاب کنید. تا وقتی نخواند هیچ ثبتی انجام نمی‌شود.',
+  REMITTANCE_COURIER_MISMATCH: 'یکی از این سفارش‌ها را پیک دیگری برده است.',
+  REMITTANCE_ORDER_NOT_COLLECTIBLE:
+    'یکی از این سفارش‌ها سفارش نقدیِ وصول‌شده نیست، یا پولش قبلاً تحویل گرفته شده.',
+  REMITTANCE_EMPTY: 'هیچ سفارشی برای تسویه انتخاب نشده است.',
+  CASH_PAYMENT_MISSING: 'برای این سفارش پرداختی ثبت نشده که وجهش وصول شود.',
+  CASH_CONCURRENCY_CONFLICT: 'همزمان کس دیگری در حال شمردن بود. دوباره تلاش کنید.',
+  LEDGER_ACCOUNT_NOT_FOUND: 'حساب‌های صندوق برای این مجموعه ساخته نشده است.',
   API_UNREACHABLE: 'ارتباط با سرویس برقرار نشد.',
   SESSION_UNAUTHORIZED: 'نشست معتبر نیست. دوباره وارد شوید.',
   ADMIN_PERMISSION_DENIED: 'این حساب دسترسی لازم برای این کار را ندارد.',

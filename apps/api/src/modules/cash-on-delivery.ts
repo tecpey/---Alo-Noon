@@ -48,6 +48,13 @@ export interface CourierCashPosition {
   readonly outstandingAmount: bigint
 }
 
+export interface OutstandingCashOrder {
+  readonly orderId: string
+  readonly publicId: string
+  readonly amount: bigint
+  readonly collectedAt: string
+}
+
 export interface RemittanceCommand {
   readonly courierId: string
   /** The orders this courier is settling. Never "everything they have". */
@@ -97,6 +104,17 @@ export interface CashOnDeliveryService {
   sweep(tenantId: string, now: Date, correlationId: string): Promise<{ collected: number }>
   /** How much cash each courier is currently carrying. */
   outstandingByCourier(tenantId: string): Promise<readonly CourierCashPosition[]>
+  /**
+   * The individual orders one courier is still carrying cash for.
+   *
+   * A total is what a manager watches; this is what somebody at a desk with a
+   * bag of notes actually needs — the orders to count against, named and
+   * priced, so the sum they type has something to be checked against.
+   */
+  outstandingOrdersFor(
+    tenantId: string,
+    courierId: string,
+  ): Promise<readonly OutstandingCashOrder[]>
   /** Records a courier handing cash in, and posts it to the bank. */
   recordRemittance(
     tenantId: string,
@@ -275,6 +293,43 @@ export function createPrismaCashOnDeliveryService(
         courierName: row.courierName,
         orderCount: Number(row.orderCount),
         outstandingAmount: BigInt(row.outstanding),
+      }))
+    },
+
+    async outstandingOrdersFor(tenantId, courierId) {
+      const rows = await tenantTransaction(
+        prisma,
+        tenantId,
+        async (transaction) =>
+          transaction.$queryRaw<
+            Array<{ orderId: string; publicId: string; amount: bigint; collectedAt: Date }>
+          >`
+          SELECT o."id" AS "orderId",
+                 o."publicId" AS "publicId",
+                 payment."amount" AS "amount",
+                 payment."updatedAt" AS "collectedAt"
+          FROM "Payment" payment
+          JOIN "Order" o ON o."id" = payment."orderId"
+          JOIN "Fulfillment" f ON f."orderId" = o."id"
+          JOIN "DeliveryTask" task ON task."fulfillmentId" = f."id"
+          JOIN "DeliveryAssignment" assignment ON assignment."deliveryTaskId" = task."id"
+          WHERE payment."tenantId" = ${tenantId}::uuid
+            AND payment."method" = 'CASH_ON_DELIVERY'
+            AND payment."state" = 'CAPTURED'
+            AND assignment."courierId" = ${courierId}::uuid
+            AND assignment."state" = 'COMPLETED'
+            AND NOT EXISTS (
+              SELECT 1 FROM "CourierCashRemittanceItem" item
+              WHERE item."paymentId" = payment."id" AND item."tenantId" = payment."tenantId"
+            )
+          ORDER BY payment."updatedAt" ASC
+        `,
+      )
+      return rows.map((row) => ({
+        orderId: row.orderId,
+        publicId: row.publicId,
+        amount: BigInt(row.amount),
+        collectedAt: row.collectedAt.toISOString(),
       }))
     },
 

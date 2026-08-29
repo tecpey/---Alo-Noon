@@ -235,6 +235,52 @@ export async function listCouriers(): Promise<ApiResult<CourierSummary[]>> {
   return request<CourierSummary[]>('/api/v1/admin/couriers', { method: 'GET' })
 }
 
+/* ----------------------------------------------------------- the cash desk */
+
+export interface CourierCashPosition {
+  courierId: string
+  courierName: string
+  orderCount: number
+  outstanding: { amount: string; currency: string }
+}
+
+export interface OutstandingCashOrder {
+  orderId: string
+  publicId: string
+  amount: { amount: string; currency: string }
+  collectedAt: string
+}
+
+/** How much cash each courier is carrying right now. */
+export async function listCourierCashPositions(): Promise<ApiResult<CourierCashPosition[]>> {
+  return request<CourierCashPosition[]>('/api/v1/admin/cash/outstanding', { method: 'GET' })
+}
+
+/** The individual orders one courier is still carrying cash for. */
+export async function listCourierCashOrders(
+  courierId: string,
+): Promise<ApiResult<OutstandingCashOrder[]>> {
+  return request<OutstandingCashOrder[]>(`/api/v1/admin/cash/couriers/${courierId}/orders`, {
+    method: 'GET',
+  })
+}
+
+export interface BranchQuality {
+  bakeryBranchId: string
+  branchNameFa: string
+  bakeryNameFa: string
+  qualityStatus: string
+  sampleSize: number
+  /** Mean bread score in hundredths — 425 is 4.25. */
+  averageHundredths: number
+  flagForReview: boolean
+}
+
+/** How every bakery branch is doing on the bread it bakes. */
+export async function listBranchQuality(): Promise<ApiResult<BranchQuality[]>> {
+  return request<BranchQuality[]>('/api/v1/admin/quality/branches', { method: 'GET' })
+}
+
 export async function listMessageTemplates(): Promise<ApiResult<MessageTemplate[]>> {
   const result = await request<{ templates: MessageTemplate[] }>(
     '/api/v1/admin/messaging/templates/SMS',
