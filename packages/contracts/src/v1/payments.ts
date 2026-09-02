@@ -23,14 +23,23 @@ export const ledgerEntrySideSchema = z.enum(['DEBIT', 'CREDIT'])
 /**
  * Where the money for an order comes from.
  *
- * One entry, and that is the business rather than an oversight: money reaches
- * the platform before an order is final, and the only route in is a bank
- * gateway.
+ * Two routes, and money reaches the platform before an order is final on both.
+ * A gateway takes it from a card now; a wallet took it from a card earlier and
+ * has been holding it since. There is no third — nothing is settled at the
+ * door.
  */
-export const paymentMethodSchema = z.enum(['ONLINE_GATEWAY'])
+export const paymentMethodSchema = z.enum(['ONLINE_GATEWAY', 'WALLET'])
 export type PaymentMethod = z.infer<typeof paymentMethodSchema>
 
-export const financialTransactionTypeSchema = z.enum(['PAYMENT_CAPTURE', 'PAYMENT_REFUND'])
+export const financialTransactionTypeSchema = z.enum([
+  'PAYMENT_CAPTURE',
+  'PAYMENT_REFUND',
+  'WALLET_TOP_UP',
+])
+
+/** What a payment is for. A top-up has no order; an order payment must have one. */
+export const paymentPurposeSchema = z.enum(['ORDER', 'WALLET_TOP_UP'])
+export type PaymentPurpose = z.infer<typeof paymentPurposeSchema>
 
 export const ledgerAccountGovernanceActionSchema = z.enum([
   'PROVISIONED',
@@ -68,7 +77,9 @@ export type TenantFinancialBootstrapSummary = z.infer<typeof tenantFinancialBoot
 export const paymentSummarySchema = z.object({
   id: uuidSchema,
   publicId: z.string().min(8).max(32),
-  orderId: uuidSchema,
+  /** Absent on a wallet top-up, which is a payment with nothing to deliver. */
+  orderId: uuidSchema.optional(),
+  purpose: paymentPurposeSchema.default('ORDER'),
   customerId: uuidSchema,
   state: paymentAggregateStateSchema,
   amount: moneySchema,
@@ -113,7 +124,8 @@ export type LedgerEntrySummary = z.infer<typeof ledgerEntrySummarySchema>
 export const financialTransactionSummarySchema = z.object({
   id: uuidSchema,
   paymentId: uuidSchema,
-  orderId: uuidSchema,
+  /** Absent on a wallet top-up, the one posting with nothing to deliver. */
+  orderId: uuidSchema.optional(),
   type: financialTransactionTypeSchema,
   amount: moneySchema,
   correlationId: uuidSchema,

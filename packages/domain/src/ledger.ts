@@ -15,6 +15,8 @@ export type LedgerEntrySide = (typeof LedgerEntrySide)[keyof typeof LedgerEntryS
 export const FinancialTransactionType = {
   PAYMENT_CAPTURE: 'PAYMENT_CAPTURE',
   PAYMENT_REFUND: 'PAYMENT_REFUND',
+  /** Money arriving from a gateway into a customer's balance. */
+  WALLET_TOP_UP: 'WALLET_TOP_UP',
 } as const
 export type FinancialTransactionType =
   (typeof FinancialTransactionType)[keyof typeof FinancialTransactionType]
@@ -22,16 +24,18 @@ export type FinancialTransactionType =
 /**
  * The newest system chart version.
  *
- * Two exist. v1 laid out the fourteen accounts every tenant starts with. v2
- * added a courier cash receivable when the platform took money at doors, and
+ * Three exist. v1 laid out the fourteen accounts every tenant starts with. v2
+ * added a courier cash receivable when the platform took money at doors and
  * provisions nothing now that it does not — the account it introduced is no
- * longer created, though the tenants that received it keep it.
+ * longer created, though the tenants that received it keep it. v3 adds the
+ * customer wallet: what the platform owes people who have charged a balance and
+ * not spent it yet.
  *
- * The number stays at 2 rather than reverting. A version is a migration of the
+ * v2's number is retired rather than reused. A version is a migration of the
  * chart, and a chart that reached v2 reached it; renumbering would make an
  * existing tenant's history disagree with its own accounts.
  */
-export const SYSTEM_CHART_VERSION = 2 as const
+export const SYSTEM_CHART_VERSION = 3 as const
 
 export interface SystemLedgerAccountTemplate {
   key: string
@@ -87,6 +91,18 @@ export const SYSTEM_LEDGER_ACCOUNT_TEMPLATES = Object.freeze([
     key: 'COURIER_PAYABLE',
     code: 'L_2300_COURIER_PAYABLE',
     name: 'Courier payable',
+    type: 'LIABILITY',
+    parentKey: 'LIABILITIES',
+    isPostable: true,
+  },
+  {
+    // What the platform owes people who have charged a balance and not spent
+    // it. Separate from payment clearing because the two are owed to different
+    // people: clearing is what the bakery and courier are owed for work in
+    // progress, this is what the customer is owed for work not started.
+    key: 'CUSTOMER_WALLET',
+    code: 'L_2400_CUSTOMER_WALLET',
+    name: 'Customer wallet',
     type: 'LIABILITY',
     parentKey: 'LIABILITIES',
     isPostable: true,

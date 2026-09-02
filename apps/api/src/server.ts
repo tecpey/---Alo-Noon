@@ -33,6 +33,7 @@ import { createPrismaAdminAccessService } from './modules/admin-access.js'
 import { createPrismaAdminMessagingService } from './modules/admin-messaging.js'
 import { createPrismaCustomerNotificationService } from './modules/customer-notifications.js'
 import { createPrismaPushDeviceService } from './modules/push-devices.js'
+import { createPrismaWalletService } from './modules/wallet.js'
 import { createExpoPushAdapter } from './providers/expo-push.js'
 import { createPrismaOutboxPublisher } from './modules/outbox-publisher.js'
 import {
@@ -261,6 +262,12 @@ const adminAccess = { service: createPrismaAdminAccessService(prisma) }
 // an operator trusted with gateways is trusted with what those gateways say.
 const adminMessaging = { service: createPrismaAdminMessagingService(prisma) }
 
+// What each customer has charged and not yet spent. Shares the one ledger
+// service: a top-up and a wallet spend are double-entry postings like any
+// other, and a second posting path would be a second place to get the chart
+// wrong.
+const walletService = createPrismaWalletService(prisma, { ledger: paymentLedgerService })
+
 // The handsets a customer can be reached on without paying for a text message.
 const pushDeviceService = createPrismaPushDeviceService(prisma)
 
@@ -336,6 +343,7 @@ const app = await buildApp({
   commerceRepository: createPrismaCommerceRepository(prisma, { routingService }),
   addressRepository: createPrismaAddressRepository(prisma),
   pushDevices: { service: pushDeviceService },
+  wallet: { service: walletService },
   orderRepository: createPrismaOrderRepository(prisma),
   paymentExecutionService,
   paymentCheckout,

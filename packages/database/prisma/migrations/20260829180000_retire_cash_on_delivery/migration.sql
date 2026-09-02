@@ -37,6 +37,21 @@ BEGIN
       'Cannot retire cash on delivery: the courier cash account has % postings.',
       outstanding;
   END IF;
+
+  -- And nothing may still name the method. The enum rebuild below casts every
+  -- one of these columns through text, so such a row would fail the cast in the
+  -- middle of the rebuild — true, but as an error about a type rather than
+  -- about the business. Counting them here says what is actually wrong, before
+  -- a single table has been touched.
+  SELECT (SELECT count(*) FROM "Quote"   WHERE "paymentMethod"::text = 'CASH_ON_DELIVERY')
+       + (SELECT count(*) FROM "Order"   WHERE "paymentMethod"::text = 'CASH_ON_DELIVERY')
+       + (SELECT count(*) FROM "Payment" WHERE "method"::text        = 'CASH_ON_DELIVERY')
+  INTO outstanding;
+  IF outstanding > 0 THEN
+    RAISE EXCEPTION
+      'Cannot retire cash on delivery: % quotes, orders or payments still name it.',
+      outstanding;
+  END IF;
 END
 $$;
 

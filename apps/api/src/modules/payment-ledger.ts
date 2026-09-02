@@ -122,6 +122,32 @@ export interface PaymentLedgerService {
     correlationId: string,
   ): Promise<PaymentRefundResult>
   /**
+   * Posts a balanced journal that this service does not itself author.
+   *
+   * The wallet needs it: a top-up and a spend are double-entry postings against
+   * a payment, but neither is a capture or a refund, and neither belongs to the
+   * payment state machine above. Reimplementing the posting elsewhere would
+   * mean a second place that has to resolve accounts, respect tenant scoping
+   * and satisfy the database's balance guard — and the second place is the one
+   * that eventually posts into an inactive account.
+   *
+   * The caller owns the journal and its idempotency key. This owns getting it
+   * into the ledger correctly, or refusing.
+   */
+  post(
+    tenantId: string,
+    command: {
+      paymentId: string
+      orderId?: string
+      type: FinancialTransactionType
+      amount: bigint
+      lines: readonly { accountCode: string; side: 'DEBIT' | 'CREDIT'; amount: bigint }[]
+      idempotencyKey: string
+      correlationId: string
+      occurredAt: Date
+    },
+  ): Promise<void>
+  /**
    * Reads a payment back for the customer who owns it.
    *
    * The screen a gateway returns to needs this: the return redirect proves
@@ -144,6 +170,20 @@ export class PaymentLedgerError extends Error {
   constructor(readonly code: string) {
     super(code)
   }
+}
+
+/**
+ * The order a payment is for, or a refusal.
+ *
+ * Every operation below — transition, capture, refund — moves an order's
+ * payment state alongside the payment's own. A wallet top-up has no order to
+ * move, and reaching these paths with one would mean a top-up silently marking
+ * somebody's last order paid. Refusing here is what makes the assertions that
+ * follow honest rather than hopeful.
+ */
+function orderOf(payment: { orderId: string | null }): string {
+  if (!payment.orderId) throw new PaymentLedgerError('PAYMENT_NOT_FOR_ORDER')
+  return payment.orderId
 }
 
 export function createPrismaPaymentLedgerService(
@@ -326,7 +366,7 @@ export function createPrismaPaymentLedgerService(
             data: { state: command.to, version: nextVersion },
           }),
           transaction.order.update({
-            where: { id: payment.orderId },
+            where: { id: orderOf(payment) },
             data: { paymentState: orderPaymentStateFor(command.to) },
           }),
         ])
@@ -364,6 +404,79 @@ export function createPrismaPaymentLedgerService(
         },
         { isolationLevel: 'ReadCommitted' },
       )
+    },
+
+    async post(tenantId, command) {
+      if (command.amount <= 0n) {
+        throw new PaymentLedgerError('INVALID_LEDGER_POSTING')
+      }
+      const debits = command.lines
+        .filter((line) => line.side === 'DEBIT')
+        .reduce((total, line) => total + line.amount, 0n)
+      const credits = command.lines
+        .filter((line) => line.side === 'CREDIT')
+        .reduce((total, line) => total + line.amount, 0n)
+      // Checked here as well as by the database. The trigger is the guarantee;
+      // this is the error message somebody can act on, raised before a
+      // transaction is opened rather than as a constraint violation inside one.
+      if (debits !== credits || debits !== command.amount) {
+        throw new PaymentLedgerError('INVALID_LEDGER_POSTING')
+      }
+
+      await prisma.$transaction(async (transaction) => {
+        await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+        const replay = await transaction.financialTransaction.findFirst({
+          where: { tenantId, idempotencyKey: command.idempotencyKey },
+          select: { id: true },
+        })
+        if (replay) return
+
+        const codes = [...new Set(command.lines.map((line) => line.accountCode))]
+        const accounts = await transaction.ledgerAccount.findMany({
+          where: {
+            tenantId,
+            code: { in: codes },
+            isActive: true,
+            isPostable: true,
+            currency: 'IRR',
+          },
+        })
+        const accountsByCode = new Map(accounts.map((account) => [account.code, account]))
+        // An account that is missing, retired or not postable means the chart
+        // is not what this journal assumes. Refused rather than improvised: the
+        // alternative is money posted somewhere nobody expects.
+        if (accountsByCode.size !== codes.length) {
+          throw new PaymentLedgerError('LEDGER_ACCOUNT_NOT_FOUND')
+        }
+
+        await transaction.financialTransaction.create({
+          data: {
+            tenantId,
+            // Connected rather than assigned: the nested entry creates put
+            // Prisma in checked mode, where a relation is named by connect and
+            // a bare foreign key is rejected.
+            payment: { connect: { id: command.paymentId } },
+            ...(command.orderId && { order: { connect: { id: command.orderId } } }),
+            type: command.type,
+            amount: command.amount,
+            currency: 'IRR',
+            idempotencyKey: command.idempotencyKey,
+            correlationId: command.correlationId,
+            occurredAt: command.occurredAt,
+            postedAt: command.occurredAt,
+            entries: {
+              create: command.lines.map((line, index) => ({
+                tenantId,
+                ledgerAccountId: accountsByCode.get(line.accountCode)!.id,
+                sequence: index + 1,
+                side: line.side,
+                amount: line.amount,
+                currency: 'IRR' as const,
+              })),
+            },
+          },
+        })
+      })
     },
 
     async refund(tenantId, command, now, correlationId) {
@@ -419,7 +532,7 @@ export function createPrismaPaymentLedgerService(
         })
         postDoubleEntry({
           paymentId: payment.id,
-          orderId: payment.orderId,
+          orderId: orderOf(payment),
           type: FinancialTransactionType.PAYMENT_REFUND,
           amount,
           currency: payment.currency,
@@ -458,7 +571,7 @@ export function createPrismaPaymentLedgerService(
         })
         // ownership-established: the order backing that same staff-refunded payment.
         await transaction.order.update({
-          where: { id: payment.orderId },
+          where: { id: orderOf(payment) },
           data: { paymentState: 'REFUNDED' },
         })
 
@@ -466,7 +579,7 @@ export function createPrismaPaymentLedgerService(
           data: {
             tenantId,
             paymentId: payment.id,
-            orderId: payment.orderId,
+            orderId: orderOf(payment),
             type: 'PAYMENT_REFUND',
             amount,
             currency: payment.currency,
@@ -550,7 +663,7 @@ export function createPrismaPaymentLedgerService(
         }))
         postDoubleEntry({
           paymentId: payment.id,
-          orderId: payment.orderId,
+          orderId: orderOf(payment),
           type: FinancialTransactionType.PAYMENT_CAPTURE,
           amount: payment.amount,
           currency: payment.currency,
@@ -582,14 +695,14 @@ export function createPrismaPaymentLedgerService(
         })
         // ownership-established: the order backing that same staff/system-captured payment.
         await transaction.order.update({
-          where: { id: payment.orderId },
+          where: { id: orderOf(payment) },
           data: { paymentState: 'PAID' },
         })
         const financialTransaction = await transaction.financialTransaction.create({
           data: {
             tenantId,
             paymentId: payment.id,
-            orderId: payment.orderId,
+            orderId: orderOf(payment),
             type: 'PAYMENT_CAPTURE',
             amount: payment.amount,
             currency: payment.currency,
@@ -773,7 +886,8 @@ function mapPayment(payment: PaymentRecord): PaymentSummary {
   return {
     id: payment.id,
     publicId: payment.publicId,
-    orderId: payment.orderId,
+    ...(payment.orderId && { orderId: payment.orderId }),
+    purpose: payment.purpose,
     customerId: payment.customerId,
     state: payment.state,
     amount: { amount: payment.amount.toString(), currency: payment.currency },
@@ -789,7 +903,7 @@ function mapFinancialTransaction(
   return {
     id: transaction.id,
     paymentId: transaction.paymentId,
-    orderId: transaction.orderId,
+    ...(transaction.orderId && { orderId: transaction.orderId }),
     type: transaction.type,
     amount: { amount: transaction.amount.toString(), currency: transaction.currency },
     correlationId: transaction.correlationId,

@@ -698,13 +698,38 @@ function executionFingerprint(
     .digest('hex')
 }
 
+/**
+ * Whether this payment may be sent to a gateway.
+ *
+ * Two shapes, because a payment now has two purposes. Both must be a positive
+ * Rial amount that has not already succeeded or failed. An order payment must
+ * additionally still match its order — same total, order still unconfirmed and
+ * unpaid — because a gateway page opened against a stale total is a customer
+ * charged the wrong number.
+ *
+ * A top-up has no order to agree with, and the absence is checked rather than
+ * assumed: a payment marked as a top-up that somehow carries an order, or an
+ * order payment with none, is a row this code cannot reason about and must not
+ * send anybody to a bank with.
+ */
 function assertPaymentEligible(payment: AttemptRecord['payment']): void {
-  if (
+  const commonlyIneligible =
     payment.currency !== 'IRR' ||
     payment.amount <= 0n ||
-    payment.amount !== payment.order.totalAmount ||
     payment.state === 'CAPTURED' ||
-    payment.state === 'FAILED' ||
+    payment.state === 'FAILED'
+
+  if (payment.purpose === 'WALLET_TOP_UP') {
+    if (commonlyIneligible || payment.order !== null) {
+      throw new PaymentExecutionError('PAYMENT_NOT_ELIGIBLE_FOR_EXECUTION', 422)
+    }
+    return
+  }
+
+  if (
+    commonlyIneligible ||
+    payment.order === null ||
+    payment.amount !== payment.order.totalAmount ||
     payment.order.state !== 'PENDING_CONFIRMATION' ||
     payment.order.paymentState !== 'NOT_STARTED'
   ) {

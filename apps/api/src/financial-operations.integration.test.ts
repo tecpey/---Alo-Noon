@@ -90,9 +90,10 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
       include: { parent: { select: { systemKey: true } } },
       orderBy: { code: 'asc' },
     })
-    // The fourteen of chart v1. v2 added a courier cash receivable and stopped
-    // provisioning it when the platform stopped taking money at doors.
-    expect(accounts).toHaveLength(14)
+    // Chart v1's fourteen plus v3's customer wallet. v2 added a courier cash
+    // receivable and stopped provisioning it when the platform stopped taking
+    // money at doors.
+    expect(accounts).toHaveLength(15)
     expect(accounts.filter(({ parentId }) => parentId === null)).toHaveLength(5)
     expect(
       accounts.filter(({ parentId }) => parentId === null).every(({ isPostable }) => !isPostable),
@@ -121,7 +122,7 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
       await prisma.ledgerAccountGovernanceEvent.count({
         where: { tenantId: tenantA, action: 'PROVISIONED' },
       }),
-    ).toBe(14)
+    ).toBe(15)
 
     const service = createPrismaFinancialOperationsService(prisma)
     const first = await service.provision(
@@ -138,10 +139,11 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
     )
     expect(replay).toEqual(first)
     expect(first).toMatchObject({ tenantId: tenantA, templateVersion: 1, accountCount: 14 })
-    // One bootstrap row per chart version that provisioned something. v2 added
-    // a courier cash receivable and stopped adding it when the platform stopped
-    // taking money at doors, so a tenant created now records only v1.
-    expect(await prisma.tenantFinancialBootstrap.count({ where: { tenantId: tenantA } })).toBe(1)
+    // One bootstrap row per chart version that provisioned something: v1's
+    // fourteen and v3's customer wallet. v2 added a courier cash receivable and
+    // stopped adding it when the platform stopped taking money at doors, so a
+    // tenant created now records nothing for it.
+    expect(await prisma.tenantFinancialBootstrap.count({ where: { tenantId: tenantA } })).toBe(2)
     expect(
       await prisma.auditEvent.count({
         where: { tenantId: tenantA, action: 'financial.chart_provisioned' },
@@ -356,9 +358,9 @@ databaseDescribe('chart-of-accounts PostgreSQL foundation', () => {
         `,
       ])
     })
-    expect(visible[0]).toEqual([{ count: 14n }])
+    expect(visible[0]).toEqual([{ count: 15n }])
     // One bootstrap row per chart version provisioned. v2 no longer provisions
-    // anything, so a tenant created now has only v1's.
-    expect(visible[1]).toEqual([{ count: 1n }])
+    // anything, so a tenant created now has v1's and v3's.
+    expect(visible[1]).toEqual([{ count: 2n }])
   })
 })

@@ -399,11 +399,33 @@ enum LedgerEntrySide {
 enum FinancialTransactionType {
   PAYMENT_CAPTURE
   PAYMENT_REFUND
+  /// Money arriving from a gateway into a customer's balance.
+  ///
+  /// A balance *paying* for an order has no type of its own: it is a
+  /// PAYMENT_CAPTURE like any other, because `Payment.method` already records
+  /// that the money came from a balance rather than a card, and the paid-order
+  /// guard counts captures.
+  WALLET_TOP_UP
 }
 
 /// How an order is paid for.
 enum PaymentMethod {
   ONLINE_GATEWAY
+  WALLET
+}
+
+/// What a payment is for. A top-up has no order; an order payment must have one.
+enum PaymentPurpose {
+  ORDER
+  WALLET_TOP_UP
+}
+
+enum WalletEntryKind {
+  TOP_UP
+  ORDER_PAYMENT
+  REFUND
+  TRANSFER_IN
+  TRANSFER_OUT
 }
 
 enum LedgerAccountGovernanceAction {
@@ -514,6 +536,8 @@ model Tenant {
   messageTemplates                   MessageTemplate[]
   customerNotifications              CustomerNotification[]
   customerPushDevices                CustomerPushDevice[]
+  customerWallets                    CustomerWallet[]
+  walletEntries                      WalletEntry[]
   routingProviderConfigurations      RoutingProviderConfiguration[]
   emailProviderConfigurations        EmailProviderConfiguration[]
   operatorAlertRecipients            OperatorAlertRecipient[]
@@ -653,6 +677,7 @@ model Customer {
   ratings                OrderRating[]
   favourites             CustomerFavourite[]
   pushDevices            CustomerPushDevice[]
+  wallet                 CustomerWallet?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   promotionRedemptions   PromotionRedemption[]
@@ -1403,6 +1428,7 @@ model Order {
   supportCases                 SupportCase[]
   incidents                    OperationalIncident[]
   notifications                CustomerNotification[]
+  walletEntries                WalletEntry[]
   createdAt                    DateTime                    @default(now())
   updatedAt                    DateTime                    @updatedAt
 
@@ -1478,8 +1504,10 @@ model Payment {
   id                    String                      @id @default(uuid()) @db.Uuid
   tenantId              String                      @db.Uuid
   publicId              String                      @unique @default(cuid()) @db.VarChar(32)
-  orderId               String                      @unique @db.Uuid
-  order                 Order                       @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  /// Null for a wallet top-up, which is a payment with nothing to deliver.
+  orderId               String?                     @unique @db.Uuid
+  order                 Order?                      @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  purpose               PaymentPurpose              @default(ORDER)
   customerId            String                      @db.Uuid
   customer              Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
   state                 PaymentAggregateState       @default(CREATED)
@@ -1494,6 +1522,8 @@ model Payment {
   attempts              PaymentAttempt[]
   createdAt             DateTime                    @default(now())
   updatedAt             DateTime                    @updatedAt
+
+  walletEntries         WalletEntry[]
 
   @@unique([tenantId, customerId, idempotencyKey], map: "Payment_tenant_customer_idempotency_key")
   @@unique([id, tenantId], map: "g3b_Payment_id_tenant_key")
@@ -1759,8 +1789,9 @@ model FinancialTransaction {
   tenantId       String                   @db.Uuid
   paymentId      String                   @db.Uuid
   payment        Payment                  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  orderId        String                   @db.Uuid
-  order          Order                    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  /// Null for a wallet top-up, the one posting with nothing to deliver.
+  orderId        String?                  @db.Uuid
+  order          Order?                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   type           FinancialTransactionType
   amount         BigInt
   currency       Currency                 @default(IRR)
@@ -2249,6 +2280,67 @@ model CustomerPushDevice {
   @@unique([id, tenantId], map: "g3b_CustomerPushDevice_id_tenant_key")
   @@index([tenantId, customerId, enabled], map: "CustomerPushDevice_customer_enabled_idx")
   @@index([customerId, tenantId], map: "g3b_CustomerPushDevice_customerId_tenant_idx")
+}
+
+/// What the platform owes one customer, and every movement of it.
+///
+/// The balance lives on the row rather than being summed from entries on every
+/// read: a running total that has to be recomputed to be trusted is one that
+/// gets cached wrongly somewhere. It is written in the same transaction as the
+/// entry that moved it, and a check constraint guarantees no path can leave a
+/// customer owing the platform money.
+model CustomerWallet {
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @db.Uuid
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  customerId    String        @unique @db.Uuid
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  balanceAmount BigInt        @default(0)
+  currency      Currency      @default(IRR)
+  /// Raised by every movement, so a spend that read a balance and wrote it back
+  /// loses to a concurrent one rather than overwriting it.
+  version       Int           @default(1)
+  entries       WalletEntry[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([tenantId, customerId], map: "CustomerWallet_tenant_customer_key")
+  @@unique([id, tenantId], map: "g3b_CustomerWallet_id_tenant_key")
+  @@index([customerId, tenantId], map: "g3b_CustomerWallet_customerId_tenant_idx")
+}
+
+/// One movement of a wallet balance, and what the balance became.
+///
+/// Append-only by trigger. This is what answers "where did my money go", and a
+/// row that could be edited afterwards could not answer it.
+model WalletEntry {
+  id             String          @id @default(uuid()) @db.Uuid
+  tenantId       String          @db.Uuid
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  walletId       String          @db.Uuid
+  wallet         CustomerWallet  @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  kind           WalletEntryKind
+  /// Always positive. Which way it moved is the kind's business, not the sign's.
+  amount         BigInt
+  balanceAfter   BigInt
+  /// Which movement this was, counting from one. The statement's order, and a
+  /// gap where a lost entry would otherwise be invisible.
+  sequence       Int
+  currency       Currency        @default(IRR)
+  paymentId      String?         @db.Uuid
+  payment        Payment?        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  orderId        String?         @db.Uuid
+  order          Order?          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  idempotencyKey String          @db.VarChar(128)
+  correlationId  String          @db.Uuid
+  createdAt      DateTime        @default(now())
+
+  @@unique([tenantId, walletId, idempotencyKey], map: "WalletEntry_tenant_wallet_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_WalletEntry_id_tenant_key")
+  @@unique([walletId, sequence(sort: Desc)], map: "WalletEntry_wallet_sequence_key")
+  @@index([walletId, tenantId], map: "g3b_WalletEntry_walletId_tenant_idx")
+  @@index([paymentId, tenantId], map: "g3b_WalletEntry_paymentId_tenant_idx")
+  @@index([orderId, tenantId], map: "g3b_WalletEntry_orderId_tenant_idx")
 }
 
 enum RouteDistanceSource {

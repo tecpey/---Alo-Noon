@@ -1,47 +1,26 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const schemaUrl = new URL('../prisma/schema.prisma', import.meta.url)
+const migrationsUrl = new URL('../prisma/migrations/', import.meta.url)
 const g3bMigrationUrl = new URL(
-  '../prisma/migrations/20260801170000_tenant_relational_integrity_g3b/migration.sql',
-  import.meta.url,
+  '20260801170000_tenant_relational_integrity_g3b/migration.sql',
+  migrationsUrl,
 )
-const migrationUrls = [
-  g3bMigrationUrl,
-  new URL(
-    '../prisma/migrations/20260801234500_phase_2e_delivery_quote_foundation/migration.sql',
-    import.meta.url,
-  ),
-  new URL(
-    '../prisma/migrations/20260802120000_phase_2e_checkout_acceptance/migration.sql',
-    import.meta.url,
-  ),
-  new URL(
-    '../prisma/migrations/20260803100000_payment_ledger_foundation/migration.sql',
-    import.meta.url,
-  ),
-  new URL(
-    '../prisma/migrations/20260803160000_chart_of_accounts_provisioning/migration.sql',
-    import.meta.url,
-  ),
-  new URL(
-    '../prisma/migrations/20260803200000_payment_provider_foundation/migration.sql',
-    import.meta.url,
-  ),
-  new URL(
-    '../prisma/migrations/20260808150000_customer_notifications/migration.sql',
-    import.meta.url,
-  ),
-  new URL('../prisma/migrations/20260826150000_routing_estimates/migration.sql', import.meta.url),
-  new URL('../prisma/migrations/20260826190000_delivery_trips/migration.sql', import.meta.url),
-  new URL('../prisma/migrations/20260828090000_promotions/migration.sql', import.meta.url),
-  new URL('../prisma/migrations/20260828140000_delivery_windows/migration.sql', import.meta.url),
-  new URL('../prisma/migrations/20260828170000_cash_on_delivery/migration.sql', import.meta.url),
-  new URL('../prisma/migrations/20260828200000_engagement/migration.sql', import.meta.url),
-  new URL('../prisma/migrations/20260829080000_email_providers/migration.sql', import.meta.url),
-  new URL('../prisma/migrations/20260829120000_operator_alerts/migration.sql', import.meta.url),
-  new URL('../prisma/migrations/20260829160000_push_notifications/migration.sql', import.meta.url),
-]
+
+/**
+ * Every migration, read from the directory rather than from a list.
+ *
+ * A list would have to be appended to by whoever adds a table, and the one
+ * thing this guard exists to catch is somebody forgetting. A migration missing
+ * from a hand-kept list looks exactly like a migration that registered nothing,
+ * and the guard passes while the tenant boundary has a hole in it.
+ */
+const migrationUrls = readdirSync(migrationsUrl, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort()
+  .map((name) => new URL(`${name}/migration.sql`, migrationsUrl))
 
 type TenantRelation = {
   child: string
@@ -123,10 +102,7 @@ function registeredRelationsFromMigration(sql: string): TenantRelation[] {
 describe('tenant relational integrity G3B', () => {
   const schema = readFileSync(schemaUrl, 'utf8')
   const g3bSql = readFileSync(g3bMigrationUrl, 'utf8')
-  const sql = [
-    g3bSql,
-    ...migrationUrls.slice(1).map((migrationUrl) => readFileSync(migrationUrl, 'utf8')),
-  ].join('\n')
+  const sql = migrationUrls.map((migrationUrl) => readFileSync(migrationUrl, 'utf8')).join('\n')
   const schemaRelations = tenantRelationsFromSchema(schema)
   // Registrations accumulate across the whole migration history, so a relation
   // on a table a later migration dropped is still listed. The schema is the
@@ -139,7 +115,7 @@ describe('tenant relational integrity G3B', () => {
   )
 
   it('covers every implemented tenant-owned relation exactly once', () => {
-    expect(schemaRelations).toHaveLength(91)
+    expect(schemaRelations).toHaveLength(95)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
       new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,
