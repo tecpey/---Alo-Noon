@@ -20,6 +20,8 @@ import {
   type PaymentTransitionActor,
 } from '@alo-noon/domain'
 
+import { assertDeferredConstraints } from './deferred-constraints.js'
+
 // A payment carries at most two postings now: the capture, and the refund that
 // reverses it. Ordered so the capture reads first, which is the order they
 // happened in.
@@ -87,6 +89,18 @@ export interface PaymentRefundResult {
   transaction: FinancialTransactionSummary | null
 }
 
+/** A balanced journal somebody else authored, and what it is a posting of. */
+export interface LedgerPostingCommand {
+  paymentId: string
+  orderId?: string
+  type: FinancialTransactionType
+  amount: bigint
+  lines: readonly { accountCode: string; side: 'DEBIT' | 'CREDIT'; amount: bigint }[]
+  idempotencyKey: string
+  correlationId: string
+  occurredAt: Date
+}
+
 export interface PaymentLedgerService {
   initialize(
     tenantId: string,
@@ -134,18 +148,22 @@ export interface PaymentLedgerService {
    * The caller owns the journal and its idempotency key. This owns getting it
    * into the ledger correctly, or refusing.
    */
-  post(
+  post(tenantId: string, command: LedgerPostingCommand): Promise<void>
+  /**
+   * The same posting, inside a transaction the caller already holds.
+   *
+   * For a caller whose other write must not be separable from this one: the
+   * wallet credits a balance in the same breath as recording the money that
+   * funded it, and a balance credited without a posting is money the platform
+   * is holding that its books do not mention.
+   *
+   * The caller is responsible for having set `app.tenant_id` on that
+   * transaction, which is what row-level security reads.
+   */
+  postWithin(
+    transaction: Prisma.TransactionClient,
     tenantId: string,
-    command: {
-      paymentId: string
-      orderId?: string
-      type: FinancialTransactionType
-      amount: bigint
-      lines: readonly { accountCode: string; side: 'DEBIT' | 'CREDIT'; amount: bigint }[]
-      idempotencyKey: string
-      correlationId: string
-      occurredAt: Date
-    },
+    command: LedgerPostingCommand,
   ): Promise<void>
   /**
    * Reads a payment back for the customer who owns it.
@@ -184,6 +202,81 @@ export class PaymentLedgerError extends Error {
 function orderOf(payment: { orderId: string | null }): string {
   if (!payment.orderId) throw new PaymentLedgerError('PAYMENT_NOT_FOR_ORDER')
   return payment.orderId
+}
+
+/**
+ * The posting itself, inside whatever transaction the caller is already in.
+ *
+ * Separated from `post` so a caller with more to do in the same breath — the
+ * wallet, crediting a balance the moment it records the money that funded it —
+ * can have both writes commit or neither.
+ */
+async function postJournal(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  command: LedgerPostingCommand,
+): Promise<void> {
+  if (command.amount <= 0n) {
+    throw new PaymentLedgerError('INVALID_LEDGER_POSTING')
+  }
+  const debits = command.lines
+    .filter((line) => line.side === 'DEBIT')
+    .reduce((total, line) => total + line.amount, 0n)
+  const credits = command.lines
+    .filter((line) => line.side === 'CREDIT')
+    .reduce((total, line) => total + line.amount, 0n)
+  // Checked here as well as by the database. The trigger is the guarantee; this
+  // is the error message somebody can act on, raised before a row is written
+  // rather than as a constraint violation on the way out.
+  if (debits !== credits || debits !== command.amount) {
+    throw new PaymentLedgerError('INVALID_LEDGER_POSTING')
+  }
+
+  const replay = await transaction.financialTransaction.findFirst({
+    where: { tenantId, idempotencyKey: command.idempotencyKey },
+    select: { id: true },
+  })
+  if (replay) return
+
+  const codes = [...new Set(command.lines.map((line) => line.accountCode))]
+  const accounts = await transaction.ledgerAccount.findMany({
+    where: { tenantId, code: { in: codes }, isActive: true, isPostable: true, currency: 'IRR' },
+  })
+  const accountsByCode = new Map(accounts.map((account) => [account.code, account]))
+  // An account that is missing, retired or not postable means the chart is not
+  // what this journal assumes. Refused rather than improvised: the alternative
+  // is money posted somewhere nobody expects.
+  if (accountsByCode.size !== codes.length) {
+    throw new PaymentLedgerError('LEDGER_ACCOUNT_NOT_FOUND')
+  }
+
+  await transaction.financialTransaction.create({
+    data: {
+      tenantId,
+      // Connected rather than assigned: the nested entry creates put Prisma in
+      // checked mode, where a relation is named by connect and a bare foreign
+      // key is rejected.
+      payment: { connect: { id: command.paymentId } },
+      ...(command.orderId && { order: { connect: { id: command.orderId } } }),
+      type: command.type,
+      amount: command.amount,
+      currency: 'IRR',
+      idempotencyKey: command.idempotencyKey,
+      correlationId: command.correlationId,
+      occurredAt: command.occurredAt,
+      postedAt: command.occurredAt,
+      entries: {
+        create: command.lines.map((line, index) => ({
+          tenantId,
+          ledgerAccountId: accountsByCode.get(line.accountCode)!.id,
+          sequence: index + 1,
+          side: line.side,
+          amount: line.amount,
+          currency: 'IRR' as const,
+        })),
+      },
+    },
+  })
 }
 
 export function createPrismaPaymentLedgerService(
@@ -407,76 +500,15 @@ export function createPrismaPaymentLedgerService(
     },
 
     async post(tenantId, command) {
-      if (command.amount <= 0n) {
-        throw new PaymentLedgerError('INVALID_LEDGER_POSTING')
-      }
-      const debits = command.lines
-        .filter((line) => line.side === 'DEBIT')
-        .reduce((total, line) => total + line.amount, 0n)
-      const credits = command.lines
-        .filter((line) => line.side === 'CREDIT')
-        .reduce((total, line) => total + line.amount, 0n)
-      // Checked here as well as by the database. The trigger is the guarantee;
-      // this is the error message somebody can act on, raised before a
-      // transaction is opened rather than as a constraint violation inside one.
-      if (debits !== credits || debits !== command.amount) {
-        throw new PaymentLedgerError('INVALID_LEDGER_POSTING')
-      }
-
       await prisma.$transaction(async (transaction) => {
         await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
-        const replay = await transaction.financialTransaction.findFirst({
-          where: { tenantId, idempotencyKey: command.idempotencyKey },
-          select: { id: true },
-        })
-        if (replay) return
-
-        const codes = [...new Set(command.lines.map((line) => line.accountCode))]
-        const accounts = await transaction.ledgerAccount.findMany({
-          where: {
-            tenantId,
-            code: { in: codes },
-            isActive: true,
-            isPostable: true,
-            currency: 'IRR',
-          },
-        })
-        const accountsByCode = new Map(accounts.map((account) => [account.code, account]))
-        // An account that is missing, retired or not postable means the chart
-        // is not what this journal assumes. Refused rather than improvised: the
-        // alternative is money posted somewhere nobody expects.
-        if (accountsByCode.size !== codes.length) {
-          throw new PaymentLedgerError('LEDGER_ACCOUNT_NOT_FOUND')
-        }
-
-        await transaction.financialTransaction.create({
-          data: {
-            tenantId,
-            // Connected rather than assigned: the nested entry creates put
-            // Prisma in checked mode, where a relation is named by connect and
-            // a bare foreign key is rejected.
-            payment: { connect: { id: command.paymentId } },
-            ...(command.orderId && { order: { connect: { id: command.orderId } } }),
-            type: command.type,
-            amount: command.amount,
-            currency: 'IRR',
-            idempotencyKey: command.idempotencyKey,
-            correlationId: command.correlationId,
-            occurredAt: command.occurredAt,
-            postedAt: command.occurredAt,
-            entries: {
-              create: command.lines.map((line, index) => ({
-                tenantId,
-                ledgerAccountId: accountsByCode.get(line.accountCode)!.id,
-                sequence: index + 1,
-                side: line.side,
-                amount: line.amount,
-                currency: 'IRR' as const,
-              })),
-            },
-          },
-        })
+        await postJournal(transaction, tenantId, command)
+        await assertDeferredConstraints(transaction)
       })
+    },
+
+    async postWithin(transaction, tenantId, command) {
+      await postJournal(transaction, tenantId, command)
     },
 
     async refund(tenantId, command, now, correlationId) {
@@ -932,10 +964,7 @@ async function serializableWithRetry<T>(
         async (transaction) => {
           await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
           const result = await operation(transaction)
-          // Prisma 5 can resolve an interactive transaction callback even when a
-          // deferred PostgreSQL constraint subsequently rejects COMMIT. Evaluate
-          // all financial guards before returning a result to the caller.
-          await transaction.$executeRawUnsafe('SET CONSTRAINTS ALL IMMEDIATE')
+          await assertDeferredConstraints(transaction)
           return result
         },
         { isolationLevel: 'Serializable' },

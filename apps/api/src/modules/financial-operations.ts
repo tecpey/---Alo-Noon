@@ -7,6 +7,8 @@ import {
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import { governLedgerAccount } from '@alo-noon/domain'
 
+import { assertDeferredConstraints } from './deferred-constraints.js'
+
 export interface ProvisionFinancialChartCommand {
   idempotencyKey: string
 }
@@ -321,7 +323,7 @@ async function serializableWithRetry<T>(
         async (transaction) => {
           await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
           const result = await operation(transaction)
-          await transaction.$executeRawUnsafe('SET CONSTRAINTS ALL IMMEDIATE')
+          await assertDeferredConstraints(transaction)
           return result
         },
         { isolationLevel: 'Serializable' },

@@ -25,6 +25,8 @@ interface Fixture {
   tenantId: string
   customerId: string
   topUpPaymentIds: readonly string[]
+  /** A top-up the gateway has not confirmed. Nothing may be credited from it. */
+  uncapturedPaymentId: string
 }
 
 let fixture: Fixture
@@ -137,6 +139,39 @@ databaseDescribe('customer wallet over PostgreSQL', () => {
     expect(BigInt(after.balance.amount)).toBe(BigInt(before.balance.amount) + 2_000_000n)
   })
 
+  /**
+   * The credit and the posting are one transaction, and this is what that buys.
+   *
+   * The database refuses to post a top-up whose payment is not captured. If the
+   * balance had been raised in a transaction of its own, that refusal would
+   * arrive too late — the customer would be holding money the books do not
+   * mention, and no later run would know to take it back.
+   */
+  it('does not credit a balance it cannot post', async () => {
+    const before = await wallet.read(fixture.tenantId, fixture.customerId, now)
+
+    await expect(
+      wallet.creditTopUp(
+        fixture.tenantId,
+        {
+          customerId: fixture.customerId,
+          paymentId: fixture.uncapturedPaymentId,
+          amount: 1_000_000n,
+        },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toThrow()
+
+    const after = await wallet.read(fixture.tenantId, fixture.customerId, now)
+    expect(after.balance.amount).toBe(before.balance.amount)
+    expect(
+      await prisma.walletEntry.count({
+        where: { tenantId: fixture.tenantId, paymentId: fixture.uncapturedPaymentId },
+      }),
+    ).toBe(0)
+  })
+
   it('reads back as a statement, newest first, with the running balance', async () => {
     const entries = await wallet.listEntries(fixture.tenantId, fixture.customerId, 50)
     expect(entries).toHaveLength(3)
@@ -211,5 +246,25 @@ async function seedTenant(): Promise<Fixture> {
     topUpPaymentIds.push(payment.id)
   }
 
-  return { tenantId, customerId: customer.id, topUpPaymentIds }
+  // One the gateway has not answered for yet.
+  const uncaptured = await prisma.payment.create({
+    data: {
+      tenantId,
+      customerId: customer.id,
+      purpose: 'WALLET_TOP_UP',
+      method: 'ONLINE_GATEWAY',
+      state: 'CREATED',
+      amount: 1_000_000n,
+      currency: 'IRR',
+      idempotencyKey: `wallet-topup-open-${suffix}`,
+      correlationId: randomUUID(),
+    },
+  })
+
+  return {
+    tenantId,
+    customerId: customer.id,
+    topUpPaymentIds,
+    uncapturedPaymentId: uncaptured.id,
+  }
 }

@@ -19,6 +19,7 @@ import {
 } from '@alo-noon/domain'
 
 import { authenticatedCustomer } from './commerce.js'
+import { assertDeferredConstraints } from './deferred-constraints.js'
 import type { AuthDependencies } from './auth.js'
 import type { PaymentLedgerService } from './payment-ledger.js'
 
@@ -111,34 +112,40 @@ export function createPrismaWalletService(
     },
 
     async creditTopUp(tenantId, input, now, correlationId) {
-      const moved = await move(prisma, tenantId, {
-        customerId: input.customerId,
-        kind: 'TOP_UP',
-        amount: input.amount,
-        paymentId: input.paymentId,
-        // Keyed on the payment: the same capture arriving twice replays onto
-        // the entry it already wrote instead of crediting again.
-        idempotencyKey: `top-up:${input.paymentId}`,
-        now,
-        correlationId,
-      })
-      if (!moved.ok) {
-        // Unreachable — a credit cannot be short — but a silent `ok` here would
-        // be a lie about money.
-        throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
-      }
-      if (moved.created) {
-        await options.ledger.post(tenantId, {
-          paymentId: input.paymentId,
-          type: 'WALLET_TOP_UP',
+      return withTenant(prisma, tenantId, async (transaction) => {
+        const moved = await move(transaction, tenantId, {
+          customerId: input.customerId,
+          kind: 'TOP_UP',
           amount: input.amount,
-          lines: walletTopUpJournal(input.amount),
-          idempotencyKey: `wallet-top-up:${input.paymentId}`,
+          paymentId: input.paymentId,
+          // Keyed on the payment: the same capture arriving twice replays onto
+          // the entry it already wrote instead of crediting again.
+          idempotencyKey: `top-up:${input.paymentId}`,
+          now,
           correlationId,
-          occurredAt: now,
         })
-      }
-      return moved.wallet
+        if (!moved.ok) {
+          // Unreachable — a credit cannot be short — but a silent `ok` here
+          // would be a lie about money.
+          throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
+        }
+        // In the same transaction as the credit, deliberately. A balance raised
+        // by one transaction and posted by another is, for the window between
+        // them, money the platform is holding that its books do not mention —
+        // and if the posting is the half that fails, that window never closes.
+        if (moved.created) {
+          await options.ledger.postWithin(transaction, tenantId, {
+            paymentId: input.paymentId,
+            type: 'WALLET_TOP_UP',
+            amount: input.amount,
+            lines: walletTopUpJournal(input.amount),
+            idempotencyKey: `wallet-top-up:${input.paymentId}`,
+            correlationId,
+            occurredAt: now,
+          })
+        }
+        return moved.wallet
+      })
     },
   }
 }
@@ -155,7 +162,7 @@ type MoveResult =
  * balance it then acts on.
  */
 async function move(
-  prisma: PrismaClient,
+  transaction: Prisma.TransactionClient,
   tenantId: string,
   input: {
     customerId: string
@@ -168,78 +175,76 @@ async function move(
     correlationId: string
   },
 ): Promise<MoveResult> {
-  return withTenant(prisma, tenantId, async (transaction) => {
-    const wallet = await openWallet(transaction, tenantId, input.customerId, input.now)
+  const wallet = await openWallet(transaction, tenantId, input.customerId, input.now)
 
-    // The lock. Everything below reads a balance nobody else can be changing.
-    const locked = await transaction.$queryRaw<Array<{ balanceAmount: bigint; version: number }>>`
-      SELECT "balanceAmount", "version" FROM "CustomerWallet"
-      WHERE "id" = ${wallet.id}::uuid AND "tenantId" = ${tenantId}::uuid
-      FOR UPDATE
-    `
-    const current = locked[0]
-    if (!current) throw new WalletError('WALLET_NOT_FOUND', 404)
+  // The lock. Everything below reads a balance nobody else can be changing.
+  const locked = await transaction.$queryRaw<Array<{ balanceAmount: bigint; version: number }>>`
+    SELECT "balanceAmount", "version" FROM "CustomerWallet"
+    WHERE "id" = ${wallet.id}::uuid AND "tenantId" = ${tenantId}::uuid
+    FOR UPDATE
+  `
+  const current = locked[0]
+  if (!current) throw new WalletError('WALLET_NOT_FOUND', 404)
 
-    const replay = await transaction.walletEntry.findFirst({
-      where: { tenantId, walletId: wallet.id, idempotencyKey: input.idempotencyKey },
-      select: { balanceAfter: true },
-    })
-    if (replay) {
-      return {
-        ok: true as const,
-        created: false,
-        wallet: {
-          id: wallet.id,
-          balance: { amount: current.balanceAmount.toString(), currency: 'IRR' },
-          updatedAt: input.now.toISOString(),
-        },
-      }
-    }
-
-    const movement = applyWalletMovement({
-      balance: current.balanceAmount,
-      kind: input.kind,
-      amount: input.amount,
-    })
-    if (!movement.ok) return { ok: false as const, shortfall: movement.shortfall }
-
-    await transaction.walletEntry.create({
-      data: {
-        tenantId,
-        walletId: wallet.id,
-        kind: input.kind,
-        amount: input.amount,
-        balanceAfter: movement.balanceAfter,
-        // The wallet's version is the count of movements it has had, starting
-        // at one before any. Read under the same lock that produced the
-        // balance, so the number cannot be handed out twice.
-        sequence: current.version,
-        ...(input.paymentId && { paymentId: input.paymentId }),
-        ...(input.orderId && { orderId: input.orderId }),
-        idempotencyKey: input.idempotencyKey,
-        correlationId: input.correlationId,
-        createdAt: input.now,
-      },
-    })
-    await transaction.customerWallet.update({
-      where: { id: wallet.id },
-      data: {
-        balanceAmount: movement.balanceAfter,
-        version: { increment: 1 },
-        updatedAt: input.now,
-      },
-    })
-
+  const replay = await transaction.walletEntry.findFirst({
+    where: { tenantId, walletId: wallet.id, idempotencyKey: input.idempotencyKey },
+    select: { balanceAfter: true },
+  })
+  if (replay) {
     return {
       ok: true as const,
-      created: true,
+      created: false,
       wallet: {
         id: wallet.id,
-        balance: { amount: movement.balanceAfter.toString(), currency: 'IRR' },
+        balance: { amount: current.balanceAmount.toString(), currency: 'IRR' },
         updatedAt: input.now.toISOString(),
       },
     }
+  }
+
+  const movement = applyWalletMovement({
+    balance: current.balanceAmount,
+    kind: input.kind,
+    amount: input.amount,
   })
+  if (!movement.ok) return { ok: false as const, shortfall: movement.shortfall }
+
+  await transaction.walletEntry.create({
+    data: {
+      tenantId,
+      walletId: wallet.id,
+      kind: input.kind,
+      amount: input.amount,
+      balanceAfter: movement.balanceAfter,
+      // The wallet's version is the count of movements it has had, starting at
+      // one before any. Read under the same lock that produced the balance, so
+      // the number cannot be handed out twice.
+      sequence: current.version,
+      ...(input.paymentId && { paymentId: input.paymentId }),
+      ...(input.orderId && { orderId: input.orderId }),
+      idempotencyKey: input.idempotencyKey,
+      correlationId: input.correlationId,
+      createdAt: input.now,
+    },
+  })
+  await transaction.customerWallet.update({
+    where: { id: wallet.id },
+    data: {
+      balanceAmount: movement.balanceAfter,
+      version: { increment: 1 },
+      updatedAt: input.now,
+    },
+  })
+
+  return {
+    ok: true as const,
+    created: true,
+    wallet: {
+      id: wallet.id,
+      balance: { amount: movement.balanceAfter.toString(), currency: 'IRR' },
+      updatedAt: input.now.toISOString(),
+    },
+  }
 }
 
 /**
@@ -372,7 +377,9 @@ function withTenant<T>(
 ): Promise<T> {
   return prisma.$transaction(async (transaction) => {
     await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
-    return operation(transaction)
+    const result = await operation(transaction)
+    await assertDeferredConstraints(transaction)
+    return result
   })
 }
 
