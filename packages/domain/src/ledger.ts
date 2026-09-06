@@ -284,7 +284,13 @@ export interface JournalLine {
 
 export interface FinancialPosting {
   paymentId: string
-  orderId: string
+  /**
+   * The order this money is for, absent on a wallet top-up.
+   *
+   * A top-up is the one posting with nothing to deliver: money crosses the
+   * platform's edge and becomes a balance, and there is no order yet to name.
+   */
+  orderId?: string
   type: FinancialTransactionType
   amount: bigint
   currency: 'IRR'
@@ -297,9 +303,15 @@ export interface FinancialPosting {
 export function postDoubleEntry(
   posting: FinancialPosting,
 ): Readonly<FinancialPosting & { debitTotal: bigint; creditTotal: bigint }> {
+  // A top-up must name no order; everything else must name one. Stated as a
+  // rule rather than as a presence check, so neither shape can drift into the
+  // other unnoticed.
+  const namesOrder = posting.orderId !== undefined && posting.orderId.trim().length > 0
+  if (namesOrder === (posting.type === FinancialTransactionType.WALLET_TOP_UP)) {
+    throw new DomainError('INVALID_FINANCIAL_TRANSACTION', 'Financial posting is invalid')
+  }
   if (
     !posting.paymentId.trim() ||
-    !posting.orderId.trim() ||
     posting.idempotencyKey.trim().length < 16 ||
     posting.idempotencyKey.length > 128 ||
     !posting.correlationId.trim() ||

@@ -65,6 +65,30 @@ describe('double-entry ledger', () => {
     expect(() => postDoubleEntry({ ...posting, lines })).toThrow(message)
   })
 
+  /**
+   * The two shapes a posting can have, and neither may borrow the other's.
+   *
+   * A capture that lost its order would post cleanly and then be invisible to
+   * every report that reads the ledger by order; a top-up that named one would
+   * be claiming the money is for something the customer has not ordered.
+   */
+  it('requires an order on a capture and refuses one on a top-up', () => {
+    const { orderId, ...orderless } = posting
+    const topUp = {
+      ...orderless,
+      type: FinancialTransactionType.WALLET_TOP_UP,
+      lines: [
+        { accountId: 'cash', side: LedgerEntrySide.DEBIT, amount: 530_000n, currency: 'IRR' },
+        { accountId: 'wallet', side: LedgerEntrySide.CREDIT, amount: 530_000n, currency: 'IRR' },
+      ],
+    } satisfies FinancialPosting
+
+    expect(postDoubleEntry(topUp).creditTotal).toBe(530_000n)
+    expect(() => postDoubleEntry({ ...topUp, orderId: orderId! })).toThrow('invalid')
+    expect(() => postDoubleEntry(orderless)).toThrow('invalid')
+    expect(() => postDoubleEntry({ ...posting, orderId: '  ' })).toThrow('invalid')
+  })
+
   it('rejects zero and negative financial values', () => {
     expect(() => postDoubleEntry({ ...posting, amount: 0n })).toThrow('invalid')
     expect(() =>

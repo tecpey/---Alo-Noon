@@ -12,6 +12,7 @@ import { createPrismaFinancialOperationsService } from './modules/financial-oper
 
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
 import { createPrismaPaymentProviderService } from './modules/payment-provider'
+import { createPrismaWalletService } from './modules/wallet'
 import {
   createPrismaPaymentSettlementService,
   type PaymentSettlementService,
@@ -52,7 +53,7 @@ databaseDescribe('payment settlement over PostgreSQL', () => {
 
     const payment = await prisma.payment.findFirstOrThrow({ where: { id: scenario.paymentId } })
     expect(payment.state).toBe('CAPTURED')
-    const order = await prisma.order.findFirstOrThrow({ where: { id: scenario.orderId } })
+    const order = await prisma.order.findFirstOrThrow({ where: { id: scenario.orderId! } })
     expect(order.paymentState).toBe('PAID')
 
     // One balanced journal, debits equal to credits equal to the amount.
@@ -90,6 +91,90 @@ databaseDescribe('payment settlement over PostgreSQL', () => {
     ).toBe(1)
   })
 
+  /**
+   * The other thing money arrives for.
+   *
+   * A top-up has no order to mark paid; what it has is a balance to raise and a
+   * liability to record. Both happen in the capture's own transaction, so there
+   * is no moment where the gateway has confirmed the money and the customer
+   * cannot see it.
+   */
+  it('turns a confirmed top-up into a balance and a liability', async () => {
+    const scenario = await buildScenario('TOPUP', { topUp: true })
+    const service = settlementService(
+      scenario,
+      vi.fn().mockResolvedValue(verified(scenario.providerReference)),
+    )
+
+    const result = await service.settle(
+      scenario.tenantId,
+      { callbackReceiptId: scenario.receiptId },
+      new Date(),
+      randomUUID(),
+    )
+
+    expect(result.status).toBe('SETTLED')
+    expect(result.capturedAmount).toBe(AMOUNT)
+
+    const wallet = await prisma.customerWallet.findFirstOrThrow({
+      where: { tenantId: scenario.tenantId, customerId: scenario.customerId },
+    })
+    expect(wallet.balanceAmount).toBe(AMOUNT)
+
+    const entry = await prisma.walletEntry.findFirstOrThrow({
+      where: { tenantId: scenario.tenantId, paymentId: scenario.paymentId },
+    })
+    expect(entry.kind).toBe('TOP_UP')
+    expect(entry.balanceAfter).toBe(AMOUNT)
+
+    // Money the platform is holding and has not earned: cash in, and a debt to
+    // the customer out. Never payment clearing, which is what the bakery and
+    // the courier are owed.
+    const posting = await prisma.financialTransaction.findFirstOrThrow({
+      where: { paymentId: scenario.paymentId },
+      include: { entries: { include: { ledgerAccount: true } } },
+    })
+    expect(posting.type).toBe('WALLET_TOP_UP')
+    expect(posting.orderId).toBeNull()
+    const byAccount = Object.fromEntries(
+      posting.entries.map((line) => [line.ledgerAccount.code, line.side]),
+    )
+    expect(byAccount).toEqual({
+      A_1100_CASH_CLEARING: 'DEBIT',
+      L_2400_CUSTOMER_WALLET: 'CREDIT',
+    })
+  })
+
+  /**
+   * A deployment with no wallet must not capture a top-up.
+   *
+   * Capturing would put the customer's money in the ledger and nowhere they can
+   * reach it, and mark the receipt settled so no later run would revisit it.
+   */
+  it('refuses to capture a top-up it cannot credit', async () => {
+    const scenario = await buildScenario('NOWALLET', { topUp: true })
+    const service = settlementService(
+      scenario,
+      vi.fn().mockResolvedValue(verified(scenario.providerReference)),
+      { withWallet: false },
+    )
+
+    await expect(
+      service.settle(
+        scenario.tenantId,
+        { callbackReceiptId: scenario.receiptId },
+        new Date(),
+        randomUUID(),
+      ),
+    ).rejects.toThrow(/SETTLEMENT_WALLET_UNAVAILABLE/)
+
+    const payment = await prisma.payment.findFirstOrThrow({ where: { id: scenario.paymentId } })
+    expect(payment.state).not.toBe('CAPTURED')
+    expect(
+      await prisma.financialTransaction.count({ where: { paymentId: scenario.paymentId } }),
+    ).toBe(0)
+  })
+
   it('never captures when the gateway confirms a smaller amount', async () => {
     const scenario = await buildScenario('SHORT')
     const service = settlementService(
@@ -110,7 +195,7 @@ databaseDescribe('payment settlement over PostgreSQL', () => {
 
     const payment = await prisma.payment.findFirstOrThrow({ where: { id: scenario.paymentId } })
     expect(payment.state).toBe('CREATED')
-    const order = await prisma.order.findFirstOrThrow({ where: { id: scenario.orderId } })
+    const order = await prisma.order.findFirstOrThrow({ where: { id: scenario.orderId! } })
     expect(order.paymentState).toBe('NOT_STARTED')
     expect(
       await prisma.financialTransaction.count({ where: { paymentId: scenario.paymentId } }),
@@ -339,19 +424,26 @@ function providerServiceFor(providerCode: string) {
 function settlementService(
   scenario: Scenario,
   verify: (...args: never[]) => Promise<ProviderVerificationResult>,
+  options: { withWallet?: boolean } = {},
 ): PaymentSettlementService {
+  const ledgerService = ledger()
   return createPrismaPaymentSettlementService(prisma, {
     adapterRegistry: registryFor(scenario.providerCode, verify),
     secretResolver: stubResolver(),
-    ledgerService: ledger(),
+    ledgerService,
     providerService: providerServiceFor(scenario.providerCode),
+    ...(options.withWallet !== false && {
+      walletService: createPrismaWalletService(prisma, { ledger: ledgerService }),
+    }),
   })
 }
 
 interface Scenario {
   tenantId: string
   providerCode: string
-  orderId: string
+  customerId: string
+  /** Absent when the payment is a wallet top-up: there is nothing to deliver. */
+  orderId?: string
   paymentId: string
   attemptId: string
   receiptId: string
@@ -360,7 +452,7 @@ interface Scenario {
 
 async function buildScenario(
   label: string,
-  options: { orphanReceipt?: boolean } = {},
+  options: { orphanReceipt?: boolean; topUp?: boolean } = {},
 ): Promise<Scenario> {
   const suffix = `${label}${randomUUID().slice(0, 6)}`.toUpperCase().replace(/-/g, '')
   const now = new Date()
@@ -420,35 +512,45 @@ async function buildScenario(
       mobileE164: `+9891${randomUUID().replace(/\D/g, '').padEnd(8, '4').slice(0, 8)}`,
     },
   })
-  const order = await prisma.order.create({
-    data: {
-      tenantId,
-      idempotencyKey: `settle-order-${suffix}`,
-      customerId: customer.id,
-      cityId: city.id,
-      operationalZoneId: zone.id,
-      bakeryBranchId: branch.id,
-      state: 'PENDING_CONFIRMATION',
-      recipientNameSnapshot: 'گیرنده',
-      recipientPhoneSnapshot: '+989121234567',
-      deliveryAddressSnapshot: 'نشانی تحویل',
-      deliveryLatitudeSnapshot: '36.5442',
-      deliveryLongitudeSnapshot: '52.6781',
-      bakeryNameSnapshot: 'نانوایی',
-      subtotalAmount: AMOUNT,
-      totalAmount: AMOUNT,
-    },
-  })
+  const order = options.topUp
+    ? null
+    : await prisma.order.create({
+        data: {
+          tenantId,
+          idempotencyKey: `settle-order-${suffix}`,
+          customerId: customer.id,
+          cityId: city.id,
+          operationalZoneId: zone.id,
+          bakeryBranchId: branch.id,
+          state: 'PENDING_CONFIRMATION',
+          recipientNameSnapshot: 'گیرنده',
+          recipientPhoneSnapshot: '+989121234567',
+          deliveryAddressSnapshot: 'نشانی تحویل',
+          deliveryLatitudeSnapshot: '36.5442',
+          deliveryLongitudeSnapshot: '52.6781',
+          bakeryNameSnapshot: 'نانوایی',
+          subtotalAmount: AMOUNT,
+          totalAmount: AMOUNT,
+        },
+      })
   // Created through the ledger service: a database trigger requires the payment's
   // state to match a contiguous transition history, so a hand-inserted row is
   // rejected outright.
-  const payment = await createPrismaPaymentLedgerService(prisma).initialize(
-    tenantId,
-    customer.id,
-    { orderId: order.id, idempotencyKey: `settle-payment-${suffix}` },
-    now,
-    randomUUID(),
-  )
+  const payment = order
+    ? await createPrismaPaymentLedgerService(prisma).initialize(
+        tenantId,
+        customer.id,
+        { orderId: order.id, idempotencyKey: `settle-payment-${suffix}` },
+        now,
+        randomUUID(),
+      )
+    : await createPrismaPaymentLedgerService(prisma).openTopUp(
+        tenantId,
+        customer.id,
+        { amount: AMOUNT, idempotencyKey: `settle-topup-${suffix}` },
+        now,
+        randomUUID(),
+      )
 
   // Provider credential, configuration and attempt all go through the real
   // provider service. Database triggers require each to be accompanied by
@@ -570,7 +672,8 @@ async function buildScenario(
   return {
     tenantId,
     providerCode,
-    orderId: order.id,
+    customerId: customer.id,
+    ...(order && { orderId: order.id }),
     paymentId: payment.id,
     attemptId: attempt.id,
     receiptId: receipt.id,

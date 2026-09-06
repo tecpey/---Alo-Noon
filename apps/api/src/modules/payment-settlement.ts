@@ -12,10 +12,12 @@ import {
   type PaymentProviderAdapterSpiVersion,
   type ProviderSecretResolver,
   type ProviderVerificationResult,
+  walletTopUpJournal,
 } from '@alo-noon/domain'
 
 import type { PaymentLedgerService } from './payment-ledger.js'
 import type { PaymentProviderService } from './payment-provider.js'
+import type { WalletService } from './wallet.js'
 
 /**
  * Turns a recorded gateway callback into money, or refuses to.
@@ -90,6 +92,15 @@ export interface PrismaPaymentSettlementOptions {
    * service is where that pairing is already implemented correctly.
    */
   providerService: PaymentProviderService
+  /**
+   * Credits a customer's balance when the captured payment was a top-up.
+   *
+   * Optional so a deployment without wallets still settles orders. Absent, a
+   * top-up captures and posts but credits nothing — which is why the settle
+   * path refuses one rather than leaving the customer's money in the ledger and
+   * nowhere else.
+   */
+  walletService?: WalletService
   verificationTimeoutMs?: number
   /** Test seam for asserting that a crash between steps stays recoverable. */
   afterVerification?: (result: ProviderVerificationResult) => Promise<void>
@@ -188,7 +199,15 @@ export function createPrismaPaymentSettlementService(
 
     if (evaluation.decision === SettlementDecision.SETTLE) {
       const amount = evaluation.settledAmount!
-      await capturePayment(options.ledgerService, tenantId, context, amount, now, correlationId)
+      await capturePayment(
+        options.ledgerService,
+        options.walletService,
+        tenantId,
+        context,
+        amount,
+        now,
+        correlationId,
+      )
       await settleAttempt(
         options.providerService,
         tenantId,
@@ -266,7 +285,13 @@ interface SettlementContext {
     version: number
     providerReference: string | null
   } | null
-  payment: { id: string; amount: bigint; state: PaymentAggregateState } | null
+  payment: {
+    id: string
+    amount: bigint
+    state: PaymentAggregateState
+    purpose: 'ORDER' | 'WALLET_TOP_UP'
+    customerId: string
+  } | null
   /** Set when this receipt already carries a verdict from an earlier run. */
   settled: SettlementResult | null
 }
@@ -313,6 +338,8 @@ async function loadContext(
           id: attemptRecord.payment.id,
           amount: attemptRecord.payment.amount,
           state: attemptRecord.payment.state as PaymentAggregateState,
+          purpose: attemptRecord.payment.purpose,
+          customerId: attemptRecord.payment.customerId,
         }
       : null
 
@@ -370,6 +397,7 @@ function priorVerdict(
  */
 async function capturePayment(
   ledger: PaymentLedgerService,
+  wallet: WalletService | undefined,
   tenantId: string,
   context: SettlementContext,
   amount: bigint,
@@ -378,6 +406,17 @@ async function capturePayment(
 ): Promise<void> {
   const paymentId = context.payment!.id
   const key = (step: string) => settlementKey(context.receipt.id, step)
+  const topUp = context.payment!.purpose === 'WALLET_TOP_UP'
+  const customerId = context.payment!.customerId
+
+  // Refused before the first transition, not after. Capturing a top-up with
+  // nothing to credit would put the customer's money in the ledger and nowhere
+  // they can reach it, and the receipt would be marked settled so no later run
+  // would revisit it. Walking the payment halfway first would leave it stranded
+  // between states for the same non-reason.
+  if (topUp && !wallet) {
+    throw new PaymentSettlementError('SETTLEMENT_WALLET_UNAVAILABLE')
+  }
 
   for (const target of [PaymentAggregateState.PENDING, PaymentAggregateState.AUTHORIZED] as const) {
     await ledger.transition(
@@ -388,9 +427,30 @@ async function capturePayment(
     )
   }
 
+  // Two shapes of capture, because there are two things money arrives for.
+  // An order's payment moves cash into clearing, where it waits to be paid out
+  // to the bakery and the courier. A top-up moves it into the customer's own
+  // balance, which the platform now owes back — and the balance itself is
+  // raised in the capture's transaction, so the posting and the number the
+  // customer sees can never disagree.
   await ledger.capture(
     tenantId,
-    { paymentId, idempotencyKey: key('capture'), entries: captureJournal(amount) },
+    {
+      paymentId,
+      idempotencyKey: key('capture'),
+      entries: topUp ? walletTopUpJournal(amount) : captureJournal(amount),
+      ...(topUp &&
+        wallet && {
+          within: (transaction) =>
+            wallet.creditTopUpWithin(
+              transaction,
+              tenantId,
+              { customerId, paymentId, amount },
+              now,
+              correlationId,
+            ),
+        }),
+    },
     now,
     correlationId,
   )

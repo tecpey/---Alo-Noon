@@ -212,11 +212,19 @@ const systemProviderService = createPrismaPaymentProviderService(prisma, {
 // two retry budgets over the same rows for no reason.
 const paymentLedgerService = createPrismaPaymentLedgerService(prisma)
 
+// What each customer has charged and not yet spent. Shares the one ledger
+// service: a top-up is a double-entry posting like any other, and a second
+// posting path would be a second place to get the chart wrong.
+const walletService = createPrismaWalletService(prisma, { ledger: paymentLedgerService })
+
 const paymentSettlementService = createPrismaPaymentSettlementService(prisma, {
   adapterRegistry: paymentProviderAdapterRegistry,
   secretResolver: createPaymentSecretResolver(process.env, env.PAYMENT_SECRET_ENCRYPTION_KEY),
   ledgerService: paymentLedgerService,
   providerService: systemProviderService,
+  // Settlement is where a top-up becomes a balance: the gateway's confirmation
+  // is the first moment the money is the customer's.
+  walletService,
 })
 
 const paymentCheckout = { service: paymentLedgerService }
@@ -261,12 +269,6 @@ const adminAccess = { service: createPrismaAdminAccessService(prisma) }
 // Message wording is governed by notification-provider.configuration.govern, so
 // an operator trusted with gateways is trusted with what those gateways say.
 const adminMessaging = { service: createPrismaAdminMessagingService(prisma) }
-
-// What each customer has charged and not yet spent. Shares the one ledger
-// service: a top-up and a wallet spend are double-entry postings like any
-// other, and a second posting path would be a second place to get the chart
-// wrong.
-const walletService = createPrismaWalletService(prisma, { ledger: paymentLedgerService })
 
 // The handsets a customer can be reached on without paying for a text message.
 const pushDeviceService = createPrismaPushDeviceService(prisma)
@@ -343,7 +345,21 @@ const app = await buildApp({
   commerceRepository: createPrismaCommerceRepository(prisma, { routingService }),
   addressRepository: createPrismaAddressRepository(prisma),
   pushDevices: { service: pushDeviceService },
-  wallet: { service: walletService },
+  wallet: {
+    service: walletService,
+    // A top-up is an ordinary payment from here on — the same gateway
+    // selection, redirect, callback and recovery sweep an order's payment gets.
+    startTopUp: async (input) => {
+      const payment = await paymentLedgerService.openTopUp(
+        input.tenantId,
+        input.customerId,
+        { amount: input.amount, idempotencyKey: input.idempotencyKey },
+        input.now,
+        randomUUID(),
+      )
+      return { paymentId: payment.id }
+    },
+  },
   orderRepository: createPrismaOrderRepository(prisma),
   paymentExecutionService,
   paymentCheckout,

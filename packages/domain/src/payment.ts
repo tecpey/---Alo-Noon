@@ -34,7 +34,13 @@ export type PaymentTransitionActor =
   (typeof PaymentTransitionActor)[keyof typeof PaymentTransitionActor]
 
 export interface PaymentInitialization {
-  orderId: string
+  /**
+   * What this payment buys, absent when it buys nothing yet.
+   *
+   * A wallet top-up is a payment with nothing to deliver: the money becomes a
+   * balance, and the order it eventually pays for has not been placed.
+   */
+  orderId?: string
   customerId: string
   amount: bigint
   currency: 'IRR'
@@ -92,7 +98,15 @@ const rules: Readonly<Record<PaymentAggregateState, readonly TransitionRule[]>> 
 
 export function initializePayment(input: PaymentInitialization): Readonly<PaymentInitialization> {
   assertPaymentCommand(input.idempotencyKey, input.correlationId, input.occurredAt)
-  if (!input.orderId.trim() || !input.customerId.trim() || input.amount <= 0n) {
+  // An order id that is present must mean something. Absent is a top-up; blank
+  // is a caller that lost one on the way here, and the two must not look alike.
+  if (input.orderId !== undefined && !input.orderId.trim()) {
+    throw new DomainError(
+      'INVALID_PAYMENT_INITIALIZATION',
+      'Payment initialization requires an order, customer, and positive amount',
+    )
+  }
+  if (!input.customerId.trim() || input.amount <= 0n) {
     throw new DomainError(
       'INVALID_PAYMENT_INITIALIZATION',
       'Payment initialization requires an order, customer, and positive amount',

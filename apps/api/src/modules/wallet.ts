@@ -61,6 +61,21 @@ export interface WalletService {
     now: Date,
     correlationId: string,
   ): Promise<WalletSummary>
+  /**
+   * The same credit, inside a transaction the caller already holds.
+   *
+   * Settlement uses this: the payment reaching CAPTURED, the posting that says
+   * the platform is holding the money, and the balance that says whose it is
+   * all commit together. It does not post — the capture it rides along with
+   * already did, as a WALLET_TOP_UP journal.
+   */
+  creditTopUpWithin(
+    transaction: Prisma.TransactionClient,
+    tenantId: string,
+    input: { customerId: string; paymentId: string; amount: bigint },
+    now: Date,
+    correlationId: string,
+  ): Promise<void>
 }
 
 export class WalletError extends Error {
@@ -146,6 +161,19 @@ export function createPrismaWalletService(
         }
         return moved.wallet
       })
+    },
+
+    async creditTopUpWithin(transaction, tenantId, input, now, correlationId) {
+      const moved = await move(transaction, tenantId, {
+        customerId: input.customerId,
+        kind: 'TOP_UP',
+        amount: input.amount,
+        paymentId: input.paymentId,
+        idempotencyKey: `top-up:${input.paymentId}`,
+        now,
+        correlationId,
+      })
+      if (!moved.ok) throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
     },
   }
 }

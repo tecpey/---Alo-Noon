@@ -36,13 +36,18 @@ type FinancialTransactionRecord = PaymentRecord['financialTransactions'][number]
 
 function postingOf(
   payment: PaymentRecord,
-  type: 'PAYMENT_CAPTURE' | 'PAYMENT_REFUND',
+  type: 'PAYMENT_CAPTURE' | 'PAYMENT_REFUND' | 'WALLET_TOP_UP',
 ): FinancialTransactionRecord | undefined {
   return payment.financialTransactions.find((posting) => posting.type === type)
 }
 
 export interface InitializePaymentCommand {
   orderId: string
+  idempotencyKey: string
+}
+
+export interface OpenTopUpCommand {
+  amount: bigint
   idempotencyKey: string
 }
 
@@ -62,6 +67,15 @@ export interface CapturePaymentCommand {
     side: LedgerEntrySide
     amount: bigint
   }[]
+  /**
+   * Work that must commit with the capture or not at all.
+   *
+   * A wallet top-up is captured and credited together: the posting that says
+   * the platform is holding the money and the balance that says whose it is are
+   * one fact, and a window where only one of them exists is a window where the
+   * books and the customer disagree.
+   */
+  within?: (transaction: Prisma.TransactionClient) => Promise<void>
 }
 
 export interface PaymentCaptureResult {
@@ -106,6 +120,26 @@ export interface PaymentLedgerService {
     tenantId: string,
     customerId: string,
     command: InitializePaymentCommand,
+    now: Date,
+    correlationId: string,
+  ): Promise<PaymentSummary>
+  /**
+   * Creates the payment a customer charges their balance with.
+   *
+   * Deliberately the same aggregate as an order's payment rather than a second
+   * one beside it: a top-up needs the gateway selection, the callback route,
+   * the settlement sweep, the retry semantics and the idempotency this one
+   * already has, and a parallel implementation would be the one that quietly
+   * lacks the recovery sweep.
+   *
+   * The amount comes from the customer here, unlike an order's, which is read
+   * from the order. There is nothing else it could come from — and the limits
+   * on it are the domain's, checked before this is reached.
+   */
+  openTopUp(
+    tenantId: string,
+    customerId: string,
+    command: OpenTopUpCommand,
     now: Date,
     correlationId: string,
   ): Promise<PaymentSummary>
@@ -193,11 +227,10 @@ export class PaymentLedgerError extends Error {
 /**
  * The order a payment is for, or a refusal.
  *
- * Every operation below — transition, capture, refund — moves an order's
- * payment state alongside the payment's own. A wallet top-up has no order to
- * move, and reaching these paths with one would mean a top-up silently marking
- * somebody's last order paid. Refusing here is what makes the assertions that
- * follow honest rather than hopeful.
+ * A refund reverses money that was taken for something. Sending a wallet
+ * top-up back is a different act with a different journal — it has to take the
+ * balance down too, or the customer keeps money the platform has returned — so
+ * this path refuses one rather than improvising.
  */
 function orderOf(payment: { orderId: string | null }): string {
   if (!payment.orderId) throw new PaymentLedgerError('PAYMENT_NOT_FOR_ORDER')
@@ -399,6 +432,98 @@ export function createPrismaPaymentLedgerService(
       })
     },
 
+    async openTopUp(tenantId, customerId, command, now, correlationId) {
+      if (command.amount <= 0n) throw new PaymentLedgerError('INVALID_TOP_UP_AMOUNT')
+      return serializableWithRetry(prisma, tenantId, maxAttempts, async (transaction) => {
+        const replay = await transaction.payment.findFirst({
+          where: { tenantId, customerId, idempotencyKey: command.idempotencyKey },
+          include: paymentInclude,
+        })
+        if (replay) {
+          // A retry of the same request replays. A different amount under the
+          // same key is a different request wearing its name.
+          if (replay.purpose !== 'WALLET_TOP_UP' || replay.amount !== command.amount) {
+            throw new PaymentLedgerError('IDEMPOTENCY_KEY_CONFLICT')
+          }
+          return mapPayment(replay)
+        }
+
+        initializePayment({
+          customerId,
+          amount: command.amount,
+          currency: 'IRR',
+          idempotencyKey: command.idempotencyKey,
+          correlationId,
+          occurredAt: now,
+        })
+        const payment = await transaction.payment.create({
+          data: {
+            tenantId,
+            customerId,
+            purpose: 'WALLET_TOP_UP',
+            // A balance is charged from a bank, never from itself.
+            method: 'ONLINE_GATEWAY',
+            amount: command.amount,
+            currency: 'IRR',
+            idempotencyKey: command.idempotencyKey,
+            correlationId,
+            transitions: {
+              create: {
+                tenantId,
+                fromState: null,
+                toState: 'CREATED',
+                actorType: 'SYSTEM',
+                version: 1,
+                idempotencyKey: command.idempotencyKey,
+                correlationId,
+                occurredAt: now,
+              },
+            },
+          },
+          include: paymentInclude,
+        })
+        const eventPayload = paymentCreatedEventPayloadSchema.parse({
+          paymentId: payment.id,
+          customerId,
+          state: 'CREATED',
+          amount: command.amount.toString(),
+          currency: 'IRR',
+        })
+        await Promise.all([
+          transaction.auditEvent.create({
+            data: {
+              tenantId,
+              actorType: 'CUSTOMER',
+              actorId: customerId,
+              action: 'payment.created',
+              entityType: 'payment',
+              entityId: payment.id,
+              summary: 'Wallet top-up payment opened',
+              correlationId,
+              metadata: { purpose: 'WALLET_TOP_UP' },
+              occurredAt: now,
+            },
+          }),
+          transaction.domainEventOutbox.create({
+            data: {
+              tenantId,
+              eventId: payment.id,
+              name: 'payment.created',
+              aggregateType: 'payment',
+              aggregateId: payment.id,
+              actorType: 'CUSTOMER',
+              correlationId,
+              consentBasis: 'TRANSACTIONAL',
+              payload: eventPayload,
+              occurredAt: now,
+            },
+          }),
+        ])
+        await options.beforeCommit?.(transaction)
+        return mapPayment(payment)
+      })
+    },
+
     async transition(tenantId, command, now, correlationId) {
       if (command.to === PaymentAggregateState.CAPTURED) {
         throw new PaymentLedgerError('CAPTURE_REQUIRES_LEDGER_POSTING')
@@ -453,16 +578,20 @@ export function createPrismaPaymentLedgerService(
         // ownership-established: staff/system financial operation on a payment
         // already loaded tenant-scoped; authority is the actor check at the
         // service entry, not customer scoping.
-        await Promise.all([
-          transaction.payment.update({
-            where: { id: payment.id },
-            data: { state: command.to, version: nextVersion },
-          }),
-          transaction.order.update({
-            where: { id: orderOf(payment) },
+        await transaction.payment.update({
+          where: { id: payment.id },
+          data: { state: command.to, version: nextVersion },
+        })
+        // The order's payment state mirrors the payment's. A top-up has no
+        // order and so has nothing to mirror.
+        if (payment.orderId) {
+          // ownership-established: the order backing that same staff/system
+          // transitioned payment.
+          await transaction.order.update({
+            where: { id: payment.orderId },
             data: { paymentState: orderPaymentStateFor(command.to) },
-          }),
-        ])
+          })
+        }
         await writeStateChangeRecords(
           transaction,
           tenantId,
@@ -660,7 +789,13 @@ export function createPrismaPaymentLedgerService(
 
         await lockPayment(transaction, tenantId, command.paymentId)
         const payment = await loadPayment(transaction, tenantId, command.paymentId)
-        if (postingOf(payment, 'PAYMENT_CAPTURE')) {
+        // A wallet paying for an order is still a PAYMENT_CAPTURE — `method`
+        // records where the money came from. This is the other axis: what the
+        // payment was *for*. A top-up delivers nothing, so it names no order
+        // and its posting is the arm of the balance guard that expects none.
+        const postingType =
+          payment.purpose === 'WALLET_TOP_UP' ? 'WALLET_TOP_UP' : 'PAYMENT_CAPTURE'
+        if (postingOf(payment, postingType)) {
           throw new PaymentLedgerError('PAYMENT_ALREADY_CAPTURED')
         }
         transitionPayment({
@@ -695,8 +830,8 @@ export function createPrismaPaymentLedgerService(
         }))
         postDoubleEntry({
           paymentId: payment.id,
-          orderId: orderOf(payment),
-          type: FinancialTransactionType.PAYMENT_CAPTURE,
+          ...(payment.orderId && { orderId: payment.orderId }),
+          type: postingType,
           amount: payment.amount,
           currency: payment.currency,
           idempotencyKey: command.idempotencyKey,
@@ -725,17 +860,21 @@ export function createPrismaPaymentLedgerService(
           where: { id: payment.id },
           data: { state: 'CAPTURED', version: nextVersion },
         })
-        // ownership-established: the order backing that same staff/system-captured payment.
-        await transaction.order.update({
-          where: { id: orderOf(payment) },
-          data: { paymentState: 'PAID' },
-        })
+        // A top-up has no order, and marking somebody's last order paid because
+        // they charged their balance is exactly the confusion to avoid.
+        if (payment.orderId) {
+          // ownership-established: the order backing that same staff/system-captured payment.
+          await transaction.order.update({
+            where: { id: payment.orderId },
+            data: { paymentState: 'PAID' },
+          })
+        }
         const financialTransaction = await transaction.financialTransaction.create({
           data: {
             tenantId,
             paymentId: payment.id,
-            orderId: orderOf(payment),
-            type: 'PAYMENT_CAPTURE',
+            orderId: payment.orderId,
+            type: postingType,
             amount: payment.amount,
             currency: payment.currency,
             idempotencyKey: command.idempotencyKey,
@@ -770,7 +909,7 @@ export function createPrismaPaymentLedgerService(
         const postingPayload = financialTransactionPostedEventPayloadSchema.parse({
           financialTransactionId: financialTransaction.id,
           paymentId: payment.id,
-          orderId: payment.orderId,
+          ...(payment.orderId && { orderId: payment.orderId }),
           type: financialTransaction.type,
           amount: financialTransaction.amount.toString(),
           currency: financialTransaction.currency,
@@ -805,6 +944,7 @@ export function createPrismaPaymentLedgerService(
             },
           }),
         ])
+        await command.within?.(transaction)
         await options.beforeCommit?.(transaction)
         return {
           payment: mapPayment(await loadPayment(transaction, tenantId, payment.id)),
@@ -829,7 +969,7 @@ async function writeStateChangeRecords(
 ): Promise<void> {
   const payload = paymentStateChangedEventPayloadSchema.parse({
     paymentId: payment.id,
-    orderId: payment.orderId,
+    ...(payment.orderId && { orderId: payment.orderId }),
     fromState: payment.state,
     toState,
     version,
