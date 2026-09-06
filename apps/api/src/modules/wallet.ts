@@ -96,6 +96,19 @@ export interface WalletService {
    * the same contract the gateway path has.
    */
   /**
+   * Gives an order's money back as a balance, inside the refund's transaction.
+   *
+   * Idempotent on the order, so a cancellation retried by an operator or by the
+   * caller's own retry credits once.
+   */
+  creditRefundWithin(
+    transaction: Prisma.TransactionClient,
+    tenantId: string,
+    input: { customerId: string; paymentId: string; orderId: string; amount: bigint },
+    now: Date,
+    correlationId: string,
+  ): Promise<void>
+  /**
    * Moves money between two balances, inside a transaction the caller holds.
    *
    * Both halves under one lock apiece and one commit: a debit that lands
@@ -302,6 +315,22 @@ export function createPrismaWalletService(
         now,
         correlationId,
       })
+      if (!moved.ok) throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
+    },
+
+    async creditRefundWithin(transaction, tenantId, input, now, correlationId) {
+      const moved = await move(transaction, tenantId, {
+        customerId: input.customerId,
+        kind: 'REFUND',
+        amount: input.amount,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        idempotencyKey: `refund:${input.orderId}`,
+        now,
+        correlationId,
+      })
+      // Unreachable — a credit cannot be short — but a silent success here
+      // would be the books saying money was handed back that was not.
       if (!moved.ok) throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
     },
 

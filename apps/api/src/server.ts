@@ -211,7 +211,12 @@ const systemProviderService = createPrismaPaymentProviderService(prisma, {
 // One ledger service, shared: settlement walks a payment to captured, and the
 // customer-facing checkout opens it in the first place. Two instances would be
 // two retry budgets over the same rows for no reason.
-const paymentLedgerService = createPrismaPaymentLedgerService(prisma)
+const paymentLedgerService = createPrismaPaymentLedgerService(prisma, {
+  // A refund gives the money back as a balance rather than as a bank reversal,
+  // so the ledger needs the wallet. Resolved on use, not on construction: the
+  // wallet is built from this service, and a thunk is what lets both be true.
+  refundDestination: () => walletService,
+})
 
 // What each customer has charged and not yet spent. Shares the one ledger
 // service: a top-up is a double-entry posting like any other, and a second

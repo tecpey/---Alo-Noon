@@ -76,11 +76,25 @@ describe('refund evaluation', () => {
 })
 
 describe('refund journal', () => {
-  it('mirrors the capture exactly', () => {
+  /**
+   * One obligation becomes another. The platform stops owing a bakery for an
+   * order that will not happen and starts owing the customer their money.
+   */
+  it('moves the debt from the order to the customer', () => {
     expect(refundJournal(250_000n)).toEqual([
       { accountCode: 'L_2100_PAYMENT_CLEARING', side: 'DEBIT', amount: 250_000n },
-      { accountCode: 'A_1100_CASH_CLEARING', side: 'CREDIT', amount: 250_000n },
+      { accountCode: 'L_2400_CUSTOMER_WALLET', side: 'CREDIT', amount: 250_000n },
     ])
+  })
+
+  /**
+   * No cash moves. It arrived when the order was paid for and it is still here
+   * — touching cash clearing would say the platform sent money to a bank it
+   * never sent.
+   */
+  it('never touches cash', () => {
+    const codes = refundJournal(250_000n).map((line) => line.accountCode)
+    expect(codes).not.toContain('A_1100_CASH_CLEARING')
   })
 
   it('balances', () => {

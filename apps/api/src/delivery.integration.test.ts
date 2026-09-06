@@ -8,6 +8,7 @@ import { createPrismaDeliveryService, type DeliveryService } from './modules/del
 import { createPrismaFinancialOperationsService } from './modules/financial-operations'
 import { createPrismaOrderOperationsService } from './modules/order-operations'
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
+import { createPrismaWalletService } from './modules/wallet'
 
 /**
  * A delivery from acceptance to doorstep, against PostgreSQL.
@@ -20,7 +21,13 @@ import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
  */
 const databaseDescribe = process.env['DATABASE_URL'] ? describe : describe.skip
 const prisma = new PrismaClient()
-const ledger = createPrismaPaymentLedgerService(prisma)
+// A refund gives the money back as a balance, so the ledger needs somewhere to
+// put it. Resolved on use rather than on construction, because the wallet is
+// built from the ledger.
+const ledger: ReturnType<typeof createPrismaPaymentLedgerService> =
+  createPrismaPaymentLedgerService(prisma, {
+    refundDestination: () => createPrismaWalletService(prisma, { ledger }),
+  })
 const orders = createPrismaOrderOperationsService(prisma, { ledgerService: ledger })
 const service: DeliveryService = createPrismaDeliveryService(prisma)
 

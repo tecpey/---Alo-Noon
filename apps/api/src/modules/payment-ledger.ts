@@ -226,9 +226,35 @@ export interface PaymentLedgerService {
   ): Promise<PaymentSummary | null>
 }
 
+/**
+ * Where a refund's money goes.
+ *
+ * Declared here structurally rather than imported, because the wallet already
+ * depends on this service and an import back would be a cycle. It is a narrow
+ * shape on purpose: this module knows a refund raises a balance, and nothing
+ * else about balances.
+ */
+export interface RefundDestination {
+  creditRefundWithin(
+    transaction: Prisma.TransactionClient,
+    tenantId: string,
+    input: { customerId: string; paymentId: string; orderId: string; amount: bigint },
+    now: Date,
+    correlationId: string,
+  ): Promise<void>
+}
+
 export interface PrismaPaymentLedgerOptions {
   maxSerializationAttempts?: number
   beforeCommit?: (transaction: Prisma.TransactionClient) => Promise<void>
+  /**
+   * Resolved when a refund runs, not when this service is built.
+   *
+   * The wallet is constructed with this service, so it cannot also be an
+   * argument to it. A thunk breaks the cycle without either side pretending the
+   * other is optional.
+   */
+  refundDestination?: () => RefundDestination | undefined
 }
 
 export class PaymentLedgerError extends Error {
@@ -680,6 +706,12 @@ export function createPrismaPaymentLedgerService(
         }
 
         const amount = evaluation.amount
+        // A refund is a balance now, not a bank reversal. Without somewhere to
+        // put it the journal would credit the customer-wallet liability and
+        // raise no balance behind it — the books saying a customer has money
+        // that no screen of theirs shows. Refused rather than posted half.
+        const destination = options.refundDestination?.()
+        if (!destination) throw new PaymentLedgerError('REFUND_DESTINATION_UNAVAILABLE')
         const lines = refundJournal(amount)
         const codes = [...new Set(lines.map((line) => line.accountCode))]
         const accounts = await transaction.ledgerAccount.findMany({
@@ -778,6 +810,25 @@ export function createPrismaPaymentLedgerService(
           },
           include: { entries: { include: { ledgerAccount: true }, orderBy: { sequence: 'asc' } } },
         })
+
+        // The balance rises in the same transaction as the posting that says
+        // the platform now owes it. Separated, there would be a window where
+        // the books have handed the money back and the customer's screen has
+        // not — and if the credit is the half that fails, that window is
+        // permanent.
+        await destination.creditRefundWithin(
+          transaction,
+          tenantId,
+          {
+            customerId: payment.customerId,
+            paymentId: payment.id,
+            orderId: orderOf(payment),
+            amount,
+          },
+          now,
+          correlationId,
+        )
+        await options.beforeCommit?.(transaction)
 
         return {
           decision: evaluation.decision,

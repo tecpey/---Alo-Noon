@@ -10,6 +10,7 @@ import {
 } from './modules/order-operations'
 import { createPrismaFinancialOperationsService } from './modules/financial-operations'
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
+import { createPrismaWalletService } from './modules/wallet'
 
 /**
  * An order's life after payment, against PostgreSQL.
@@ -21,7 +22,13 @@ import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
  */
 const databaseDescribe = process.env['DATABASE_URL'] ? describe : describe.skip
 const prisma = new PrismaClient()
-const ledger = createPrismaPaymentLedgerService(prisma)
+// A refund gives the money back as a balance, so the ledger needs somewhere to
+// put it. Resolved on use rather than on construction, because the wallet is
+// built from the ledger.
+const ledger: ReturnType<typeof createPrismaPaymentLedgerService> =
+  createPrismaPaymentLedgerService(prisma, {
+    refundDestination: () => createPrismaWalletService(prisma, { ledger }),
+  })
 const service: OrderOperationsService = createPrismaOrderOperationsService(prisma, {
   ledgerService: ledger,
 })
@@ -33,6 +40,7 @@ interface Fixture {
   tenantId: string
   operatorId: string
   outsiderId: string
+  customerId: string
   paidOrderId: string
   unpaidOrderId: string
 }
@@ -332,6 +340,7 @@ async function seedTenant(label = suffix): Promise<Fixture> {
     tenantId,
     operatorId,
     outsiderId,
+    customerId: customer.id,
     paidOrderId: await order(`ops-${label}-paid`, true),
     unpaidOrderId: await order(`ops-${label}-unpaid`, false),
   }
@@ -386,12 +395,18 @@ async function createAccount(
  * liability, so the ledger assertions matter as much as the state ones.
  */
 databaseDescribe('cancellation and refund over PostgreSQL', () => {
-  let refundFixture: { tenantId: string; paidOrderId: string; unpaidOrderId: string }
+  let refundFixture: {
+    tenantId: string
+    customerId: string
+    paidOrderId: string
+    unpaidOrderId: string
+  }
 
   beforeAll(async () => {
     const seeded = await seedTenant(`${suffix}R`)
     refundFixture = {
       tenantId: seeded.tenantId,
+      customerId: seeded.customerId,
       paidOrderId: seeded.paidOrderId,
       unpaidOrderId: seeded.unpaidOrderId,
     }
@@ -441,9 +456,13 @@ databaseDescribe('cancellation and refund over PostgreSQL', () => {
     expect(refund.amount).toBe(250_000n)
     expect(
       refund.entries.map((entry) => [entry.ledgerAccount.code, entry.side, entry.amount]),
+      // One obligation becomes another: the platform stops owing the bakery for
+      // an order that will not happen and starts owing the customer their money.
+      // Cash is untouched, because none moved — it arrived when the order was
+      // paid for and it is still here.
     ).toEqual([
       ['L_2100_PAYMENT_CLEARING', 'DEBIT', 250_000n],
-      ['A_1100_CASH_CLEARING', 'CREDIT', 250_000n],
+      ['L_2400_CUSTOMER_WALLET', 'CREDIT', 250_000n],
     ])
 
     // And the ledger still balances across both.
@@ -465,7 +484,54 @@ databaseDescribe('cancellation and refund over PostgreSQL', () => {
       0n,
     )
     expect(clearingBalance).toBe(0n)
+
+    // And the customer can see it. A refund the books have handed back and the
+    // customer's screen has not is the failure this whole path exists to avoid.
+    const wallet = await prisma.customerWallet.findFirstOrThrow({
+      where: { tenantId: refundFixture.tenantId, customerId: refundFixture.customerId },
+    })
+    expect(wallet.balanceAmount).toBe(250_000n)
+    const entry = await prisma.walletEntry.findFirstOrThrow({
+      where: { tenantId: refundFixture.tenantId, orderId: refundFixture.paidOrderId },
+    })
+    expect(entry.kind).toBe('REFUND')
+    expect(entry.amount).toBe(250_000n)
   })
+
+  /**
+   * A refund with nowhere to go is not a refund.
+   *
+   * The journal credits the customer-wallet liability, so posting it without
+   * raising a balance behind it would leave the books saying a customer has
+   * money that no screen of theirs shows — and the order cancelled on top of
+   * it, so nothing would ever come back to fix it.
+   */
+  it('refuses to refund when there is nowhere to put the money', async () => {
+    const homeless = createPrismaOrderOperationsService(prisma, {
+      ledgerService: createPrismaPaymentLedgerService(prisma),
+    })
+    const seeded = await seedTenant(`${suffix}H`)
+
+    await expect(
+      homeless.cancelWithRefund(
+        seeded.tenantId,
+        { accountId: seeded.operatorId },
+        { orderId: seeded.paidOrderId, reason: 'بدون مقصد' },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'REFUND_DESTINATION_UNAVAILABLE' })
+
+    // Nothing posted, and the order is still standing where it was.
+    expect(
+      await prisma.financialTransaction.count({
+        where: { orderId: seeded.paidOrderId, type: 'PAYMENT_REFUND' },
+      }),
+    ).toBe(0)
+    const order = await prisma.order.findFirstOrThrow({ where: { id: seeded.paidOrderId } })
+    expect(order.state).not.toBe('CANCELLED')
+    expect(order.paymentState).toBe('PAID')
+  }, 60_000)
 
   it('is idempotent, so a retried cancellation cannot pay twice', async () => {
     // The order is already cancelled, so the step itself is refused — but the
@@ -479,6 +545,12 @@ databaseDescribe('cancellation and refund over PostgreSQL', () => {
         randomUUID(),
       ),
     ).rejects.toMatchObject({ code: 'TRANSITION_NOT_ALLOWED' })
+
+    // The balance moved once, not twice.
+    const wallet = await prisma.customerWallet.findFirstOrThrow({
+      where: { tenantId: refundFixture.tenantId, customerId: refundFixture.customerId },
+    })
+    expect(wallet.balanceAmount).toBe(250_000n)
 
     const refunds = await prisma.financialTransaction.count({
       where: { orderId: refundFixture.paidOrderId, type: 'PAYMENT_REFUND' },
