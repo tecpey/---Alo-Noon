@@ -43,8 +43,12 @@ export type QuoteResult = { ok: true; quote: QuoteSummary } | CheckoutFailure
 export type AddressResult = { ok: true; address: AddressSummary } | CheckoutFailure
 export type PayResult =
   | { ok: true; kind: 'redirect'; url: string; order: OrderSummary }
+  /** Paid from the balance. There is no bank to wait for and nothing to poll. */
+  | { ok: true; kind: 'paid'; order: OrderSummary }
   /** The order exists and is placed, but the gateway would not open a payment. */
   | { ok: true; kind: 'unpaid'; order: OrderSummary; message: string }
+  /** The balance does not cover it, and this is how much is missing. */
+  | { ok: true; kind: 'short'; order: OrderSummary; shortfallRial: string }
   | CheckoutFailure
 
 function fail(code: string, fallback: string, retryable = false): CheckoutFailure {
@@ -154,7 +158,10 @@ export async function quoteAction(
  * order the kitchen may already be able to see; instead the order comes back
  * unpaid and the customer is told they can pay it from their orders.
  */
-export async function payAction(quoteId: string): Promise<PayResult> {
+export async function payAction(
+  quoteId: string,
+  source: 'GATEWAY' | 'BALANCE' = 'GATEWAY',
+): Promise<PayResult> {
   const order = await placeOrder({
     quoteId,
     idempotencyKey: derivedIdempotencyKey('order', quoteId),
@@ -165,7 +172,27 @@ export async function payAction(quoteId: string): Promise<PayResult> {
   const payment = await createPayment({
     orderId: order.data.id,
     idempotencyKey: derivedIdempotencyKey('payment', order.data.id),
+    source,
   })
+
+  // A balance has no bank to wait for: the same call that opened the payment
+  // captured it, so there is nothing to initialise and nothing to poll.
+  if (source === 'BALANCE') {
+    if (payment.ok) {
+      revalidatePath('/wallet')
+      return { ok: true, kind: 'paid', order: order.data }
+    }
+    const shortfall = shortfallFrom(payment.error.details)
+    if (shortfall) {
+      return { ok: true, kind: 'short', order: order.data, shortfallRial: shortfall }
+    }
+    return {
+      ok: true,
+      kind: 'unpaid',
+      order: order.data,
+      message: translateProviderError(payment.error.code, 'پرداخت از کیف پول انجام نشد.'),
+    }
+  }
   if (!payment.ok) {
     return {
       ok: true,
@@ -203,4 +230,18 @@ export async function payAction(quoteId: string): Promise<PayResult> {
       ? translateProviderError(execution.data.failure.code, 'درگاه پرداخت را نپذیرفت.')
       : 'درگاه پرداخت در دسترس نیست. می‌توانید از بخش سفارش‌ها دوباره تلاش کنید.',
   }
+}
+
+/**
+ * The missing amount inside a refusal, in Rial.
+ *
+ * Returned rather than phrased, because the caller shows it two ways: as a
+ * sentence, and as the amount a top-up button pre-fills.
+ */
+function shortfallFrom(details: unknown): string | null {
+  if (!details || typeof details !== 'object') return null
+  const shortfall = (details as Record<string, unknown>)['shortfall']
+  if (!shortfall || typeof shortfall !== 'object') return null
+  const amount = (shortfall as { amount?: unknown }).amount
+  return typeof amount === 'string' && /^\d+$/.test(amount) ? amount : null
 }

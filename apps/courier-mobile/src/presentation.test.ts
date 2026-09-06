@@ -5,7 +5,7 @@ import {
   courierStepFor,
   FAILURE_REASONS,
   formatDeadline,
-  formatRials,
+  formatMoney,
   TASK_STATE_LABELS,
   telHref,
 } from './presentation'
@@ -81,8 +81,8 @@ describe('failure reasons', () => {
 
 describe('presentation helpers', () => {
   it('formats money without precision loss', () => {
-    expect(formatRials('90071992547409930000')).toContain('ریال')
-    expect(formatRials('not-money')).toBe('not-money')
+    expect(formatMoney('90071992547409930000')).toContain('تومان')
+    expect(formatMoney('not-money')).toBe('not-money')
   })
 
   it('shows a deadline as a time of day, not a date the courier already knows', () => {

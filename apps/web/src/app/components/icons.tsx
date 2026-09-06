@@ -165,6 +165,33 @@ export function ReceiptIcon(props: IconProps) {
   )
 }
 
+/**
+ * A purse, not a card.
+ *
+ * A card glyph would promise a card, and there is no card here — the balance is
+ * money the customer already handed over and the platform is holding. A purse
+ * with a clasp is the object that actually describes it, and it is a shape that
+ * survives at sixteen pixels.
+ */
+export function WalletIcon(props: IconProps) {
+  return (
+    <Icon {...props} accent={<rect x="3" y="6.4" width="18" height="12.2" rx="2.6" />}>
+      <rect x="3" y="6.4" width="18" height="12.2" rx="2.6" />
+      <path d="M3 10.2h13.4a2 2 0 0 1 0 4H3" />
+      <circle cx="16.4" cy="12.2" r="0.9" fill="currentColor" stroke="none" />
+    </Icon>
+  )
+}
+
+/** Money leaving one purse for another. */
+export function TransferIcon(props: IconProps) {
+  return (
+    <Icon {...props} accent={<circle cx="12" cy="12" r="9" />}>
+      <path d="M4.2 9.4h13.2l-3-3M19.8 14.6H6.6l3 3" />
+    </Icon>
+  )
+}
+
 export function UserIcon(props: IconProps) {
   return (
     <Icon {...props} accent={<circle cx="12" cy="8.4" r="3.6" />}>

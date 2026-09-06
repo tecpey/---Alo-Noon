@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  formatRials,
+  formatMoney,
   normalizeIranianMobile,
   normalizeOtpCode,
   productPromiseLabel,
@@ -23,8 +23,8 @@ describe('customer presentation rules', () => {
   })
 
   it('formats integer-string money without precision loss', () => {
-    expect(formatRials('90071992547409930000')).toContain('ریال')
-    expect(formatRials('not-money')).toBe('not-money')
+    expect(formatMoney('90071992547409930000')).toContain('تومان')
+    expect(formatMoney('not-money')).toBe('not-money')
   })
 
   it('reserves fresh-production language for validated signature products', () => {

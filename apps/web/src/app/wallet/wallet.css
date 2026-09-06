@@ -1,0 +1,338 @@
+/*
+ * The wallet.
+ *
+ * One number the whole page is about, and three blocks that explain or change
+ * it. The balance is the only thing here allowed to be loud; everything else is
+ * the same quiet card the rest of the account uses, so the eye lands on the
+ * figure first and reads the reasons second.
+ */
+
+.wallet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.wallet__failure {
+  margin-block-start: 1.25rem;
+  padding: 1rem 1.1rem;
+  background: color-mix(in srgb, var(--error) 8%, var(--surface-card));
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-radius: var(--radius-lg);
+  color: var(--ink-strong);
+}
+
+/* ---------------------------------------------------------------- balance */
+
+/*
+ * The figure, on the brand's own warm ground rather than in a card like
+ * everything else. It is the answer to the question that brought somebody here,
+ * and it should be readable from arm's length.
+ */
+.wallet__balance {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-block-start: 1.5rem;
+  padding: 1.5rem 1.4rem;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary-600) 12%, var(--surface-card)),
+    var(--surface-card) 70%
+  );
+  border: 1px solid color-mix(in srgb, var(--primary-600) 22%, var(--line-subtle));
+  border-radius: var(--radius-xl, var(--radius-lg));
+  box-shadow: var(--shadow-sm);
+}
+
+.wallet__balance-glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-base);
+  color: var(--primary-600);
+}
+
+.wallet__balance-label {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.wallet__balance-amount {
+  margin-block-start: 0.25rem;
+  color: var(--ink-strong);
+  font-size: clamp(1.6rem, 5vw, 2.2rem);
+  font-weight: 800;
+  /* Tabular so a balance that changes does not shift the layout under a thumb. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------- sections */
+
+.wallet__section {
+  margin-block-start: 2rem;
+}
+.wallet__section h2 {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+.wallet__hint {
+  margin-block-start: 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  line-height: 1.9;
+}
+.wallet__empty {
+  margin-block-start: 0.9rem;
+  padding: 1.25rem;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-lg);
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- top-up */
+
+.wallet__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block-start: 0.9rem;
+}
+
+/*
+ * A preset is a choice, so it looks chosen. `aria-pressed` carries the same
+ * fact to a screen reader — the ring alone would be a colour a screen reader
+ * cannot see.
+ */
+.wallet__preset {
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--ink-base);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  transition:
+    border-color var(--duration-fast) var(--easing-standard),
+    background var(--duration-fast) var(--easing-standard);
+}
+.wallet__preset:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+.wallet__preset.is-chosen {
+  border-color: var(--primary-600);
+  background: color-mix(in srgb, var(--primary-600) 12%, var(--surface-card));
+  color: var(--ink-strong);
+}
+.wallet__preset:disabled {
+  opacity: 0.6;
+}
+
+.wallet__amount-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-block-start: 0.9rem;
+}
+.wallet__amount-row .an-button {
+  flex: none;
+}
+
+.wallet__amount {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--ink-strong);
+  font: inherit;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  /* Numbers read left to right even inside a right-to-left page. */
+  direction: ltr;
+  text-align: center;
+}
+.wallet__code {
+  letter-spacing: 0.5em;
+  font-weight: 800;
+}
+
+/* -------------------------------------------------------------- transfer */
+
+.wallet__transfer-fields {
+  display: grid;
+  gap: 0.9rem;
+  margin-block-start: 0.9rem;
+}
+.wallet__transfer-fields label {
+  display: block;
+  margin-block-end: 0.4rem;
+  color: var(--ink-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.wallet__transfer-fields .wallet__amount {
+  width: 100%;
+}
+
+/*
+ * Who is about to be paid, restated at the size of a decision. This line is the
+ * last chance anybody has to notice a mistyped digit, so it is not a caption.
+ */
+.wallet__confirm {
+  margin-block-start: 1rem;
+  padding: 1rem 1.1rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--ink-base);
+  font-size: 1.05rem;
+  line-height: 2;
+}
+.wallet__confirm strong {
+  color: var(--ink-strong);
+  font-weight: 800;
+}
+
+.wallet__link {
+  margin-block-start: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 0.9rem;
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------- statement */
+
+.wallet__entries,
+.wallet__transfers {
+  display: grid;
+  gap: 0.5rem;
+  margin-block-start: 0.9rem;
+  padding: 0;
+  list-style: none;
+}
+
+.wallet-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  /* Direction carried by an edge as well as by the sign, so a glance down the
+     list separates money in from money out without reading any of it. */
+  border-inline-start: 3px solid var(--line-subtle);
+}
+.wallet-entry--in {
+  border-inline-start-color: var(--success);
+}
+.wallet-entry--out {
+  border-inline-start-color: var(--primary-600);
+}
+
+.wallet-entry__label {
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+.wallet-entry__when,
+.wallet-entry__after {
+  margin-block-start: 0.2rem;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}
+.wallet-entry__money {
+  text-align: end;
+}
+.wallet-entry__amount {
+  color: var(--ink-strong);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wallet-entry--in .wallet-entry__amount {
+  color: var(--success);
+}
+
+.wallet-transfer {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+}
+.wallet-transfer__glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+}
+.wallet-transfer.is-completed .wallet-transfer__glyph {
+  color: var(--success);
+}
+.wallet-transfer.is-pending .wallet-transfer__glyph {
+  color: var(--primary-600);
+}
+.wallet-transfer__who {
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+.wallet-transfer__when {
+  margin-block-start: 0.2rem;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}
+.wallet-transfer__amount {
+  margin-inline-start: auto;
+  color: var(--ink-base);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ notes */
+
+.wallet__note {
+  margin-block-start: 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.9;
+}
+.wallet__note--error {
+  color: var(--error);
+}
+.wallet__note--ok {
+  color: var(--success);
+}
+
+.wallet__reassure {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-block-start: 1rem;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  line-height: 1.9;
+}
+.wallet__reassure svg {
+  flex: none;
+  margin-block-start: 0.35rem;
+  color: var(--success);
+}

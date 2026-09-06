@@ -6,7 +6,7 @@ import '../storefront.css'
 import './account.css'
 
 import { BrandMark } from '../components/brand-mark'
-import { CourierIcon, ReceiptIcon, ShieldIcon, UserIcon } from '../components/icons'
+import { CourierIcon, ReceiptIcon, ShieldIcon, UserIcon, WalletIcon } from '../components/icons'
 import { SignInForm } from './sign-in-form'
 import { signOutShopAction } from '../../lib/shop-actions'
 import { currentSession } from '../../lib/shop-api'
@@ -89,6 +89,17 @@ function SignedOut({ next }: { next: string }) {
             </p>
           </div>
         </li>
+        <li>
+          <span className="trust__glyph">
+            <WalletIcon duotone width={22} height={22} />
+          </span>
+          <div>
+            <p className="trust__title">کیف پول</p>
+            <p className="trust__body">
+              یک‌بار شارژ کنید و سفارش‌های بعدی را بدون رفتن به درگاه بانکی پرداخت کنید.
+            </p>
+          </div>
+        </li>
       </ul>
     </>
   )
@@ -118,6 +129,10 @@ function SignedIn() {
       <div className="account__actions">
         <Link className="an-button" href="/orders">
           سفارش‌های من
+        </Link>
+        <Link className="an-button an-button--quiet" href="/wallet">
+          <WalletIcon width={18} height={18} />
+          کیف پول
         </Link>
         <Link className="an-button an-button--quiet" href="/">
           ادامهٔ خرید

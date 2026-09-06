@@ -1,5 +1,5 @@
 import type { ProductSummary } from '@alo-noon/contracts'
-import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
+import { formatToman, parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
 
 // The keyboard-facing normalisers live in the domain package because the
 // courier app takes the same two inputs from the same keyboards. Re-exported
@@ -7,9 +7,26 @@ import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
 export const normalizeIranianMobile = parseIranianMobile
 export const normalizeOtpCode = parseOtpCode
 
-export function formatRials(amount: string): string {
+/**
+ * A price, in the unit customers speak.
+ *
+ * Toman, like every price on the website. It used to be Rial here and Toman
+ * there, which meant the same loaf read as ten times dearer in the app than on
+ * the site — the kind of difference somebody notices once, mistrusts, and does
+ * not come back from.
+ *
+ * The arithmetic lives in the domain so a message the API texts and a label the
+ * app draws cannot disagree. Anything that is not a whole Toman amount is
+ * returned untouched rather than rounded: a malformed price should be visible,
+ * not plausible.
+ */
+export function formatMoney(amount: string): string {
   if (!/^\d+$/.test(amount)) return amount
-  return `${new Intl.NumberFormat('fa-IR').format(BigInt(amount))} ریال`
+  try {
+    return formatToman(BigInt(amount))
+  } catch {
+    return amount
+  }
 }
 
 export function productPromiseLabel(

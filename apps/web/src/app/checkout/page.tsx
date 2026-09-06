@@ -9,7 +9,7 @@ import { BasketMerge } from '../components/basket-merge'
 import { BrandMark } from '../components/brand-mark'
 import { CheckoutFlow } from './checkout-flow'
 import { EmptyBasketArt } from '../components/brand-art'
-import { listAddresses, listDeliveryWindows, readCart } from '../../lib/shop-api'
+import { listAddresses, listDeliveryWindows, readCart, readWallet } from '../../lib/shop-api'
 import { isUnauthenticated } from '../../lib/api-core'
 
 export const metadata: Metadata = {
@@ -75,7 +75,15 @@ export default async function CheckoutPage() {
   // not recorded its opening hours offers none, and checkout then works exactly
   // as it did before windows existed — the customer orders for as soon as the
   // branch can manage.
-  const [addresses, windows] = await Promise.all([listAddresses(), listDeliveryWindows()])
+  //
+  // The balance is read the same way once more. A wallet that cannot be read is
+  // a choice this page does not offer, rather than one it offers and then
+  // cannot honour.
+  const [addresses, windows, wallet] = await Promise.all([
+    listAddresses(),
+    listDeliveryWindows(),
+    readWallet(),
+  ])
 
   return (
     <Shell>
@@ -83,6 +91,7 @@ export default async function CheckoutPage() {
         cart={cart.data}
         addresses={addresses.ok ? addresses.data : []}
         windows={windows.ok ? windows.data : []}
+        walletBalance={wallet.ok ? wallet.data.balance.amount : null}
       />
     </Shell>
   )

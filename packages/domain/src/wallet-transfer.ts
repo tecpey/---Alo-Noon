@@ -1,4 +1,5 @@
 import { DomainError } from './errors'
+import { formatToman } from './toman'
 
 /**
  * Sending part of a balance to somebody else's.
@@ -71,10 +72,14 @@ export function validateTransferAmount(amount: bigint): TransferRefusal | undefi
   return undefined
 }
 
+/**
+ * In Toman, like every price on the site. The ledger keeps Rial and nobody says
+ * Rial out loud; a limit quoted in the wrong unit is off by a factor of ten.
+ */
 const REFUSAL_MESSAGES: Readonly<Record<TransferRefusal, string>> = {
   NOT_A_WHOLE_RIAL: 'مبلغ انتقال معتبر نیست.',
-  BELOW_MINIMUM: 'کمترین مبلغ انتقال ۱۰٬۰۰۰ ریال است.',
-  ABOVE_MAXIMUM: 'بیشترین مبلغ انتقال در هر بار ۲۰٬۰۰۰٬۰۰۰ ریال است.',
+  BELOW_MINIMUM: `کمترین مبلغ انتقال ${formatToman(MINIMUM_TRANSFER)} است.`,
+  ABOVE_MAXIMUM: `بیشترین مبلغ انتقال در هر بار ${formatToman(MAXIMUM_TRANSFER)} است.`,
   SELF_TRANSFER: 'نمی‌توانید به کیف پول خودتان انتقال دهید.',
 }
 

@@ -10,6 +10,19 @@
 export interface ApiFailure {
   code: string
   message: string
+  /**
+   * What the refusal knows beyond its code.
+   *
+   * Some refusals carry more than a code: a balance short by exactly this much
+   * is the amount to charge, and a rejected message template is a list of what
+   * is wrong with it. Dropping it would leave the shop able to say "not enough"
+   * and unable to say how much to add.
+   *
+   * Deliberately `unknown`. The shape belongs to the code beside it, and every
+   * reader narrows it for the one code it handles — a shared type here would be
+   * a union that grows every time any route learns to explain itself.
+   */
+  details?: unknown
 }
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiFailure }

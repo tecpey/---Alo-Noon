@@ -1,3 +1,5 @@
+import { formatToman } from '@alo-noon/domain'
+
 import type { CourierReport } from './api'
 
 /**
@@ -84,9 +86,20 @@ export const FAILURE_REASONS: ReadonlyArray<{ readonly code: string; readonly la
     { code: 'OTHER', label: 'دلیل دیگر' },
   ])
 
-export function formatRials(amount: string): string {
+/**
+ * An amount, in the unit everybody speaks.
+ *
+ * Toman, matching the customer app and the website. A courier reading a
+ * cash-on-hand or order figure in a different unit from the customer who
+ * ordered it is a conversation at a door that neither of them can win.
+ */
+export function formatMoney(amount: string): string {
   if (!/^\d+$/.test(amount)) return amount
-  return `${new Intl.NumberFormat('fa-IR').format(BigInt(amount))} ریال`
+  try {
+    return formatToman(BigInt(amount))
+  } catch {
+    return amount
+  }
 }
 
 /**

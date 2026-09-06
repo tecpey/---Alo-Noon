@@ -1,5 +1,6 @@
 import { DomainError } from './errors'
 import type { CaptureJournalLine } from './payment-settlement'
+import { formatToman } from './toman'
 
 /**
  * A balance the customer charged, and what may move it.
@@ -131,18 +132,20 @@ export function validateTopUpAmount(amount: bigint): TopUpRefusal | undefined {
   return undefined
 }
 
-/** Why a top-up was refused, in words a customer can act on. */
+/**
+ * Why a top-up was refused, in words a customer can act on.
+ *
+ * In Toman, like every price on the site. The ledger keeps Rial and nobody says
+ * Rial out loud; a limit quoted in the wrong unit is off by a factor of ten on
+ * a screen asking somebody to hand over money.
+ */
 export function topUpRefusalMessage(refusal: TopUpRefusal): string {
   switch (refusal) {
     case 'BELOW_MINIMUM':
-      return `کمترین مبلغ شارژ ${format(MINIMUM_TOP_UP)} ریال است.`
+      return `کمترین مبلغ شارژ ${formatToman(MINIMUM_TOP_UP)} است.`
     case 'ABOVE_MAXIMUM':
-      return `بیشترین مبلغ شارژ در هر بار ${format(MAXIMUM_TOP_UP)} ریال است.`
+      return `بیشترین مبلغ شارژ در هر بار ${formatToman(MAXIMUM_TOP_UP)} است.`
   }
-}
-
-function format(amount: bigint): string {
-  return new Intl.NumberFormat('fa-IR').format(amount)
 }
 
 function assertPositive(amount: bigint, message: string): void {

@@ -42,7 +42,7 @@ import { CheckoutChoices } from './src/screens/checkout-choices'
 import { OrderDetailScreen, OrdersScreen } from './src/screens/orders'
 import { TabBar, type Tab } from './src/screens/tabs'
 import {
-  formatRials,
+  formatMoney,
   normalizeIranianMobile,
   normalizeOtpCode,
   productPromiseLabel,
@@ -1114,7 +1114,7 @@ function ProductCard({
           <Text style={[styles.promiseText, isFresh && styles.freshText]}>{promise}</Text>
         </View>
       </View>
-      <Text style={styles.price}>{formatRials(product.price.amount)}</Text>
+      <Text style={styles.price}>{formatMoney(product.price.amount)}</Text>
       <PrimaryButton
         label="افزودن به سبد"
         busy={busy}
@@ -1261,14 +1261,14 @@ function CartCard({
             <View style={styles.cartItemCopy}>
               <Text style={styles.cartItemName}>{item.nameFa}</Text>
               <Text style={styles.cartItemMeta}>
-                {item.quantity.toLocaleString('fa-IR')} عدد · {formatRials(item.lineTotal.amount)}
+                {item.quantity.toLocaleString('fa-IR')} عدد · {formatMoney(item.lineTotal.amount)}
               </Text>
             </View>
           </View>
         ))
       )}
       <View style={styles.totalRow}>
-        <Text style={styles.price}>{formatRials(cart.subtotal.amount)}</Text>
+        <Text style={styles.price}>{formatMoney(cart.subtotal.amount)}</Text>
         <Text style={styles.totalLabel}>جمع سبد</Text>
       </View>
       {/* Above the price, because each of these changes it. Hidden once an
@@ -1286,11 +1286,11 @@ function CartCard({
           <Text style={styles.quoteMeta}>
             انقضا: {new Date(quote.expiresAt).toLocaleTimeString('fa-IR')}
           </Text>
-          <Text style={styles.quoteMeta}>هزینه ارسال: {formatRials(quote.deliveryFee.amount)}</Text>
+          <Text style={styles.quoteMeta}>هزینه ارسال: {formatMoney(quote.deliveryFee.amount)}</Text>
           {/* Only when there is one. A zero discount line invites the question
               "why is my discount nothing". */}
           {quote.discount.amount !== '0' && (
-            <Text style={styles.quoteMeta}>تخفیف: {formatRials(quote.discount.amount)}</Text>
+            <Text style={styles.quoteMeta}>تخفیف: {formatMoney(quote.discount.amount)}</Text>
           )}
           {quote.deliveryWindow && (
             <Text style={styles.quoteMeta}>
@@ -1302,7 +1302,7 @@ function CartCard({
               )}
             </Text>
           )}
-          <Text style={styles.quoteTotal}>{formatRials(quote.total.amount)}</Text>
+          <Text style={styles.quoteTotal}>{formatMoney(quote.total.amount)}</Text>
           <Text style={styles.quoteNotice}>
             مبلغ و نشانی این قیمت در سرور ثبت شده‌اند. پرداخت هنوز آغاز نمی‌شود.
           </Text>
@@ -1320,7 +1320,7 @@ function CartCard({
               تولید: {PRODUCTION_STATE_FA[order.productionState] ?? order.productionState}
             </Text>
           )}
-          <Text style={styles.quoteTotal}>{formatRials(order.total.amount)}</Text>
+          <Text style={styles.quoteTotal}>{formatMoney(order.total.amount)}</Text>
 
           {payment?.state === 'CAPTURED' ? (
             <Text style={styles.quoteNotice}>پرداخت شما تأیید شد.</Text>

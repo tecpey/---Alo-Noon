@@ -4,7 +4,7 @@ import type { OrderSummary } from '@alo-noon/contracts'
 import { ink, line } from '@alo-noon/design-tokens'
 import { orderProgress } from '@alo-noon/domain'
 
-import { formatRials } from '../presentation'
+import { formatMoney } from '../presentation'
 import { sharedStyles } from '../theme'
 
 /**
@@ -97,7 +97,7 @@ function OrderRow({
         <Text style={sharedStyles.value} numberOfLines={1}>
           {progress.headline}
         </Text>
-        <Text style={sharedStyles.value}>{formatRials(order.total.amount)}</Text>
+        <Text style={sharedStyles.value}>{formatMoney(order.total.amount)}</Text>
       </View>
       <View style={sharedStyles.rowBetween}>
         <Text style={sharedStyles.label}>{orderDateLabel(order.createdAt)}</Text>
@@ -157,7 +157,7 @@ export function OrderDetailScreen({
               {item.nameFaSnapshot}
             </Text>
             <Text style={sharedStyles.label}>
-              {item.quantity.toLocaleString('fa-IR')} × {formatRials(item.unitPrice.amount)}
+              {item.quantity.toLocaleString('fa-IR')} × {formatMoney(item.unitPrice.amount)}
             </Text>
           </View>
         ))}
@@ -172,7 +172,7 @@ export function OrderDetailScreen({
         <View style={sharedStyles.rowBetween}>
           <Text style={sharedStyles.value}>مجموع</Text>
           <Text style={[sharedStyles.value, { color: ink.strong, fontSize: 17 }]}>
-            {formatRials(order.total.amount)}
+            {formatMoney(order.total.amount)}
           </Text>
         </View>
       </View>
@@ -195,7 +195,7 @@ function Money({ label, amount }: { label: string; amount: string }) {
   return (
     <View style={sharedStyles.rowBetween}>
       <Text style={sharedStyles.label}>{label}</Text>
-      <Text style={sharedStyles.label}>{formatRials(amount)}</Text>
+      <Text style={sharedStyles.label}>{formatMoney(amount)}</Text>
     </View>
   )
 }

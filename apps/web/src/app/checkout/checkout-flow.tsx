@@ -7,10 +7,18 @@ import type { AddressSummary, CartSummary, DeliveryWindow, QuoteSummary } from '
 import { formatDeliveryWindow } from '@alo-noon/domain'
 
 import { AddressForm } from './address-form'
-import { CheckIcon, ChevronIcon, CourierIcon, PinIcon, ShieldIcon } from '../components/icons'
+import {
+  CheckIcon,
+  ChevronIcon,
+  CourierIcon,
+  PinIcon,
+  ShieldIcon,
+  WalletIcon,
+} from '../components/icons'
 import { formatToman, toPersianDigits } from '../../lib/persian'
 import { payAction, quoteAction } from '../../lib/checkout-actions'
 import { translateProviderError } from '../../lib/admin-format'
+import { balanceCovers, shortfallRial, suggestedTopUpRial } from '../../lib/wallet-view'
 
 /**
  * The three questions checkout asks, in the order they can be answered.
@@ -30,10 +38,19 @@ export function CheckoutFlow({
   cart,
   addresses,
   windows,
+  walletBalance,
 }: {
   cart: CartSummary
   addresses: readonly AddressSummary[]
   windows: readonly DeliveryWindow[]
+  /**
+   * The balance, in Rial, or null when it could not be read.
+   *
+   * Null means the choice is not offered rather than offered and broken. A
+   * customer told "pay from balance" and then told the balance is unknown has
+   * been asked a question nobody can answer.
+   */
+  walletBalance: string | null
 }) {
   const [saved, setSaved] = useState<readonly AddressSummary[]>(addresses)
   const [selected, setSelected] = useState<string | null>(addresses[0]?.id ?? null)
@@ -44,6 +61,8 @@ export function CheckoutFlow({
   // Null is "as soon as you can", which is what every order was before windows
   // existed and what a branch with no recorded hours still offers.
   const [chosenWindow, setChosenWindow] = useState<string | null>(null)
+  const [source, setSource] = useState<'GATEWAY' | 'BALANCE'>('GATEWAY')
+  const [shortBy, setShortBy] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
   // Fixed for the life of the page. Recomputing it per render would make
@@ -69,10 +88,25 @@ export function CheckoutFlow({
   function pay() {
     if (!quote) return
     setError(null)
+    setShortBy(null)
     startTransition(async () => {
-      const result = await payAction(quote.id)
+      const result = await payAction(quote.id, source)
       if (!result.ok) {
         setError(result.message)
+        return
+      }
+      if (result.kind === 'paid') {
+        // Nothing to wait for. The order is placed and paid in one call, so the
+        // customer goes where a paid order lives rather than to a result page
+        // that would poll a gateway nobody called.
+        router.push('/orders')
+        return
+      }
+      if (result.kind === 'short') {
+        // The order is real and unpaid, and the number it is short by is what
+        // the top-up link carries. Staying here would strand them: the basket
+        // has been consumed, so this page has nothing left to show.
+        setShortBy(result.shortfallRial)
         return
       }
       if (result.kind === 'redirect') {
@@ -95,6 +129,14 @@ export function CheckoutFlow({
   }
 
   const chosen = saved.find((address) => address.id === selected) ?? null
+  // Recomputed from the quote rather than remembered, so a re-priced basket
+  // cannot leave a "pay from balance" button enabled against an old total.
+  const enoughBalance =
+    walletBalance !== null && quote !== null && balanceCovers(walletBalance, quote.total.amount)
+  const missing =
+    walletBalance !== null && quote !== null
+      ? shortfallRial(walletBalance, quote.total.amount)
+      : null
 
   return (
     <div className="checkout__grid">
@@ -332,24 +374,90 @@ export function CheckoutFlow({
           </p>
         )}
 
+        {walletBalance !== null && quote && (
+          <fieldset className="paysource">
+            <legend className="paysource__legend">پرداخت از</legend>
+
+            <label className={`paysource__option${source === 'GATEWAY' ? ' is-chosen' : ''}`}>
+              <input
+                type="radio"
+                name="paysource"
+                value="GATEWAY"
+                checked={source === 'GATEWAY'}
+                onChange={() => setSource('GATEWAY')}
+                disabled={pending}
+              />
+              <ShieldIcon width={18} height={18} />
+              <span className="paysource__label">درگاه بانکی</span>
+            </label>
+
+            <label
+              className={`paysource__option${source === 'BALANCE' ? ' is-chosen' : ''}${
+                enoughBalance ? '' : ' is-short'
+              }`}
+            >
+              <input
+                type="radio"
+                name="paysource"
+                value="BALANCE"
+                checked={source === 'BALANCE'}
+                onChange={() => setSource('BALANCE')}
+                disabled={pending}
+              />
+              <WalletIcon width={18} height={18} />
+              <span className="paysource__label">
+                کیف پول
+                <span className="paysource__balance">موجودی {formatToman(walletBalance)}</span>
+              </span>
+            </label>
+
+            {/* Said before they choose, not after they are refused. The number
+                is what to add, not what they lack — that is the sentence a
+                top-up button can act on. */}
+            {!enoughBalance && missing !== null && (
+              <p className="paysource__short">
+                برای پرداخت از کیف پول {formatToman(missing.toString())} کم دارید.{' '}
+                <a href={`/wallet?need=${suggestedTopUpRial(missing).toString()}`}>شارژ کیف پول</a>
+              </p>
+            )}
+          </fieldset>
+        )}
+
         {error && (
           <p className="checkout__error" role="alert">
             {error}
           </p>
         )}
 
+        {/* The order was placed and the balance turned out not to cover it. The
+            basket is gone, so the only useful thing left on this page is the
+            way to finish paying. */}
+        {shortBy && (
+          <p className="checkout__error" role="alert">
+            سفارش ثبت شد اما موجودی کیف پول کافی نبود.{' '}
+            <a href={`/wallet?need=${suggestedTopUpRial(BigInt(shortBy)).toString()}`}>
+              کیف پول را شارژ کنید
+            </a>{' '}
+            و از بخش سفارش‌ها پرداخت را کامل کنید.
+          </p>
+        )}
+
         <button
           type="button"
           className="an-button checkout__pay"
-          disabled={!quote || pending}
+          disabled={!quote || pending || (source === 'BALANCE' && !enoughBalance)}
           onClick={pay}
         >
           {pending && quote ? (
-            'در حال اتصال به درگاه…'
+            source === 'BALANCE' ? (
+              'در حال پرداخت…'
+            ) : (
+              'در حال اتصال به درگاه…'
+            )
           ) : (
             <>
               <CheckIcon width={18} height={18} />
-              پرداخت
+              {source === 'BALANCE' ? 'پرداخت از کیف پول' : 'پرداخت'}
               <ChevronIcon width={18} height={18} />
             </>
           )}
@@ -357,7 +465,9 @@ export function CheckoutFlow({
 
         <p className="checkout__trust">
           <ShieldIcon width={16} height={16} />
-          پرداخت در درگاه بانکی انجام می‌شود و تأیید نهایی با پاسخ خود درگاه است.
+          {source === 'BALANCE'
+            ? 'مبلغ از موجودی کیف پول شما کم می‌شود و سفارش بی‌درنگ قطعی می‌شود.'
+            : 'پرداخت در درگاه بانکی انجام می‌شود و تأیید نهایی با پاسخ خود درگاه است.'}
         </p>
       </aside>
     </div>

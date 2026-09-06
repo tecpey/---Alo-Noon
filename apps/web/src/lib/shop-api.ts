@@ -16,6 +16,9 @@ import type {
   QuoteSummary,
   ServiceabilityResponse,
   SessionContext,
+  WalletEntrySummary,
+  WalletSummary,
+  WalletTransferSummary,
 } from '@alo-noon/contracts'
 
 import {
@@ -293,6 +296,8 @@ export async function readOrder(orderId: string): Promise<ApiResult<OrderSummary
 export async function createPayment(input: {
   orderId: string
   idempotencyKey: string
+  /** Which of the customer's own money pays. Omitted means the gateway. */
+  source?: 'GATEWAY' | 'BALANCE'
 }): Promise<ApiResult<PaymentSummary>> {
   return request<PaymentSummary>('/api/v1/payments', { method: 'POST', body: input })
 }
@@ -324,4 +329,53 @@ export async function readPayment(paymentId: string): Promise<ApiResult<PaymentS
     return { ok: false, error: { code: 'PAYMENT_NOT_FOUND', message: 'پرداخت یافت نشد.' } }
   }
   return request<PaymentSummary>(`/api/v1/payments/${paymentId}`, { method: 'GET' })
+}
+
+/* ----------------------------------------------------------------- wallet */
+
+export async function readWallet(): Promise<ApiResult<WalletSummary>> {
+  return request<WalletSummary>('/api/v1/wallet', { method: 'GET' })
+}
+
+export async function listWalletEntries(): Promise<ApiResult<WalletEntrySummary[]>> {
+  return request<WalletEntrySummary[]>('/api/v1/wallet/entries', { method: 'GET' })
+}
+
+/**
+ * Opens a payment that will charge the balance.
+ *
+ * Answers with a payment id and nothing else: from there it is an ordinary
+ * gateway payment, initialised and redirected exactly like an order's, which is
+ * the point of a top-up reusing the payment aggregate.
+ */
+export async function startWalletTopUp(input: {
+  amount: string
+  idempotencyKey: string
+}): Promise<ApiResult<{ paymentId: string }>> {
+  return request<{ paymentId: string }>('/api/v1/wallet/top-ups', { method: 'POST', body: input })
+}
+
+export async function listWalletTransfers(): Promise<ApiResult<WalletTransferSummary[]>> {
+  return request<WalletTransferSummary[]>('/api/v1/wallet/transfers', { method: 'GET' })
+}
+
+export async function openWalletTransfer(input: {
+  recipientMobile: string
+  amount: string
+  idempotencyKey: string
+}): Promise<ApiResult<WalletTransferSummary>> {
+  return request<WalletTransferSummary>('/api/v1/wallet/transfers', { method: 'POST', body: input })
+}
+
+export async function confirmWalletTransfer(
+  transferId: string,
+  code: string,
+): Promise<ApiResult<WalletTransferSummary>> {
+  if (!isUuid(transferId)) {
+    return { ok: false, error: { code: 'TRANSFER_NOT_FOUND', message: 'انتقال یافت نشد.' } }
+  }
+  return request<WalletTransferSummary>(`/api/v1/wallet/transfers/${transferId}/confirm`, {
+    method: 'POST',
+    body: { code },
+  })
 }

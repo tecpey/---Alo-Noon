@@ -24,7 +24,7 @@ import {
   courierStepFor,
   FAILURE_REASONS,
   formatDeadline,
-  formatRials,
+  formatMoney,
   TASK_STATE_LABELS,
   telHref,
 } from './src/presentation'
@@ -417,7 +417,7 @@ function DeliveryCard({
       {/* Prepaid, always: an order cannot be accepted before its payment is
           captured, so a courier must never be asked for money at the door. */}
       <Text style={styles.paidNote}>
-        {formatRials(task.totalAmount)} — پرداخت‌شده. از مشتری پول نگیرید.
+        {formatMoney(task.totalAmount)} — پرداخت‌شده. از مشتری پول نگیرید.
       </Text>
 
       {call && (

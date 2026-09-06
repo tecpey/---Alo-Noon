@@ -571,3 +571,77 @@
   background: color-mix(in srgb, var(--primary-600) 12%, transparent);
   font-weight: 600;
 }
+
+/* ------------------------------------------------------- paying from what */
+
+/*
+ * Two ways money reaches an order, as a choice rather than a setting.
+ *
+ * Radios rather than a toggle: a toggle implies a default and an exception, and
+ * these are two equal answers to "which of your own money". The balance option
+ * carries its own figure, because a customer choosing it is choosing against a
+ * number they need to see.
+ */
+.paysource {
+  margin-block-start: 1.25rem;
+  padding: 0;
+  border: 0;
+}
+.paysource__legend {
+  padding: 0;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.paysource__option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-block-start: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--ink-base);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--easing-standard),
+    background var(--duration-fast) var(--easing-standard);
+}
+.paysource__option.is-chosen {
+  border-color: var(--primary-600);
+  background: color-mix(in srgb, var(--primary-600) 10%, var(--surface-card));
+}
+/* Dimmed, not hidden. A customer whose balance is short needs to see that the
+   option exists and why it is not available, or the shortfall line below has
+   nothing to refer to. */
+.paysource__option.is-short {
+  opacity: 0.7;
+}
+.paysource__option svg {
+  flex: none;
+  color: var(--primary-600);
+}
+.paysource__label {
+  display: grid;
+  gap: 0.15rem;
+  font-weight: 700;
+}
+.paysource__balance {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.paysource__short {
+  margin-block-start: 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  line-height: 1.9;
+}
+.paysource__short a {
+  color: var(--primary-600);
+  font-weight: 700;
+}

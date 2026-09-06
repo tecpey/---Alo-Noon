@@ -145,8 +145,14 @@ describe('validateTopUpAmount', () => {
     expect(validateTopUpAmount(MAXIMUM_TOP_UP + 1n)).toBe('ABOVE_MAXIMUM')
   })
 
-  it('says the actual limit rather than that there is one', () => {
-    expect(topUpRefusalMessage('BELOW_MINIMUM')).toContain('۱۰۰٬۰۰۰')
-    expect(topUpRefusalMessage('ABOVE_MAXIMUM')).toContain('۵۰٬۰۰۰٬۰۰۰')
+  /**
+   * In Toman, because that is what the customer reading it says out loud. The
+   * ledger's Rial figure divided by ten, and the unit named — a bare number
+   * beside a money field is a number the reader has to guess the unit of.
+   */
+  it('says the actual limit, in the unit the customer thinks in', () => {
+    expect(topUpRefusalMessage('BELOW_MINIMUM')).toContain('۱۰٬۰۰۰ تومان')
+    expect(topUpRefusalMessage('ABOVE_MAXIMUM')).toContain('۵٬۰۰۰٬۰۰۰ تومان')
+    expect(topUpRefusalMessage('BELOW_MINIMUM')).not.toContain('ریال')
   })
 })
