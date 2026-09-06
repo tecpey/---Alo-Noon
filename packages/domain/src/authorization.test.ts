@@ -57,6 +57,19 @@ describe('admin permission catalogue', () => {
       ADMIN_PERMISSIONS.accessManage,
     )
   })
+
+  it('keeps paying partners out of every role that only runs the shop', () => {
+    // Money leaving the platform's bank is not something an order operator, a
+    // catalogue manager or an analyst does, however much else they are trusted
+    // with. Only FINANCE_ADMIN and TENANT_ADMIN carry it.
+    const carriers = ADMIN_ROLES.filter((role) =>
+      role.permissions.includes(ADMIN_PERMISSIONS.financeSettle),
+    ).map((role) => role.code)
+    expect(carriers).toEqual(['FINANCE_ADMIN', 'TENANT_ADMIN'])
+    expect(findAdminRole('FINANCE_ADMIN')?.permissions).not.toContain(
+      ADMIN_PERMISSIONS.ordersManage,
+    )
+  })
 })
 
 describe('privilege escalation guard', () => {

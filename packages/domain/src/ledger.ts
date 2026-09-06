@@ -17,6 +17,13 @@ export const FinancialTransactionType = {
   PAYMENT_REFUND: 'PAYMENT_REFUND',
   /** Money arriving from a gateway into a customer's balance. */
   WALLET_TOP_UP: 'WALLET_TOP_UP',
+  /**
+   * A delivered order divided between the bakery, the courier partner and the
+   * platform. Belongs to an order and to no payment.
+   */
+  ORDER_SETTLEMENT: 'ORDER_SETTLEMENT',
+  /** Money leaving for a partner's bank account. Belongs to neither. */
+  PARTNER_PAYOUT: 'PARTNER_PAYOUT',
 } as const
 export type FinancialTransactionType =
   (typeof FinancialTransactionType)[keyof typeof FinancialTransactionType]
@@ -24,18 +31,19 @@ export type FinancialTransactionType =
 /**
  * The newest system chart version.
  *
- * Three exist. v1 laid out the fourteen accounts every tenant starts with. v2
+ * Four exist. v1 laid out the fourteen accounts every tenant starts with. v2
  * added a courier cash receivable when the platform took money at doors and
  * provisions nothing now that it does not — the account it introduced is no
  * longer created, though the tenants that received it keep it. v3 adds the
  * customer wallet: what the platform owes people who have charged a balance and
- * not spent it yet.
+ * not spent it yet. v4 adds the cost of a promotion, which is the platform's
+ * and nobody else's.
  *
  * v2's number is retired rather than reused. A version is a migration of the
  * chart, and a chart that reached v2 reached it; renumbering would make an
  * existing tenant's history disagree with its own accounts.
  */
-export const SYSTEM_CHART_VERSION = 3 as const
+export const SYSTEM_CHART_VERSION = 4 as const
 
 export interface SystemLedgerAccountTemplate {
   key: string
@@ -167,6 +175,18 @@ export const SYSTEM_LEDGER_ACCOUNT_TEMPLATES = Object.freeze([
     key: 'PAYMENT_PROCESSING_EXPENSE',
     code: 'X_5200_PAYMENT_PROCESSING',
     name: 'Payment processing expense',
+    type: 'EXPENSE',
+    parentKey: 'EXPENSES',
+    isPostable: true,
+  },
+  {
+    // A discount reduces what the customer pays and does not reduce what the
+    // bakery is owed. That difference is money the platform chose to spend on
+    // demand, which is what an expense is — and it makes "what did promotions
+    // cost us this month" one balance rather than a query nobody will write.
+    key: 'PROMOTION_COST',
+    code: 'X_5300_PROMOTION',
+    name: 'Promotion cost',
     type: 'EXPENSE',
     parentKey: 'EXPENSES',
     isPostable: true,

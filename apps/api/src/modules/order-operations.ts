@@ -15,6 +15,7 @@ import {
 import { holdsPermissionInTransaction } from './admin-auth.js'
 import { cancelDeliveryForOrder, openDeliveryForOrder } from './delivery.js'
 import { releaseDeliveryWindow } from './delivery-windows.js'
+import type { PartnerSettlementService } from './partner-settlement.js'
 import type { PaymentLedgerService } from './payment-ledger.js'
 
 /**
@@ -141,6 +142,17 @@ export interface OrderOperationOutcome {
 export interface OrderOperationsDependencies {
   /** Only used to give money back; the rest of an order's life never touches it. */
   ledgerService: PaymentLedgerService
+  /**
+   * Divides a completed order between the bakery, the courier partner and the
+   * platform.
+   *
+   * Optional so a deployment can run without it and behave exactly as it did
+   * before settlement existed — orders complete, and nobody is credited. That
+   * is a worse business and a working one; refusing to complete an order for
+   * want of a settlement service would stop bread reaching people over a
+   * bookkeeping step.
+   */
+  settlementService?: PartnerSettlementService
 }
 
 export function createPrismaOrderOperationsService(
@@ -210,6 +222,19 @@ export function createPrismaOrderOperationsService(
         // board that hides the ones nobody has.
         if (step.to === OrderState.CONFIRMED) {
           await openDeliveryForOrder(transaction, tenantId, order)
+        }
+        // Delivered is the moment there is something to divide. Not at
+        // payment: a platform that recognised revenue when a customer paid
+        // would book earnings on bread still in the oven and owe a bakery for
+        // an order it might yet refund.
+        if (step.to === OrderState.COMPLETED && dependencies.settlementService) {
+          await dependencies.settlementService.settleCompletedOrderWithin(
+            transaction,
+            tenantId,
+            order.id,
+            now,
+            correlationId,
+          )
         }
         if (step.to === OrderState.CANCELLED) {
           await cancelDeliveryForOrder(transaction, tenantId, order.id, now)

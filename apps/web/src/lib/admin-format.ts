@@ -25,6 +25,15 @@ export const PROVIDER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   CASH_PAYMENT_MISSING: 'برای این سفارش پرداختی ثبت نشده که وجهش وصول شود.',
   CASH_CONCURRENCY_CONFLICT: 'همزمان کس دیگری در حال شمردن بود. دوباره تلاش کنید.',
   LEDGER_ACCOUNT_NOT_FOUND: 'حساب‌های صندوق برای این مجموعه ساخته نشده است.',
+  // The payout desk. A refusal here is about money leaving the platform, so
+  // each one says exactly what stopped it rather than "try again".
+  SETTLEMENT_FORBIDDEN:
+    'این حساب اجازهٔ آماده‌سازی یا ثبت تسویهٔ شرکا را ندارد. این دسترسی عمداً از بقیه جداست.',
+  PAYOUT_NOT_FOUND: 'چنین برگهٔ تسویه‌ای وجود ندارد.',
+  PAYOUT_NOT_DRAFT: 'این برگه دیگر در انتظار واریز نیست.',
+  INVALID_BANK_REFERENCE: 'شمارهٔ پیگیری بانک را وارد کنید؛ بدون آن تطبیق با صورتحساب ممکن نیست.',
+  INVALID_PAYOUT_COMMAND: 'طرف حساب و شناسهٔ شریک را مشخص کنید.',
+  SETTLEMENT_UNAVAILABLE: 'میز تسویه موقتاً در دسترس نیست. کمی بعد دوباره تلاش کنید.',
   API_UNREACHABLE: 'ارتباط با سرویس برقرار نشد.',
   SESSION_UNAUTHORIZED: 'نشست معتبر نیست. دوباره وارد شوید.',
   ADMIN_PERMISSION_DENIED: 'این حساب دسترسی لازم برای این کار را ندارد.',

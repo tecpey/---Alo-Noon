@@ -46,6 +46,7 @@ import { createPrismaDeliveryService } from './modules/delivery.js'
 import { createPrismaCourierAssignmentService } from './modules/courier-assignment.js'
 import { createPrismaDeliveryTripService } from './modules/delivery-trips.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
+import { createPrismaPartnerSettlementService } from './modules/partner-settlement.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaRoutingProviderService } from './modules/routing-provider.js'
 import { createPrismaEmailProviderService } from './modules/email-provider.js'
@@ -319,11 +320,25 @@ const walletTransferService = createPrismaWalletTransferService(prisma, {
   otpPepper,
 })
 
+// One settlement service, shared between the order pipeline and the payout
+// desk. Completion calls it with no actor at all — dividing a delivered order
+// is an act of the system, not of whoever pressed the button — while every
+// route that moves money out re-checks admin.finance.settle against live grant
+// rows inside its own transaction.
+const partnerSettlementService = createPrismaPartnerSettlementService(prisma, {
+  ledger: paymentLedgerService,
+})
+
 // Order operations re-check admin.orders.manage inside their own write
 // transaction, so this instance carries no ambient authority of its own.
 const orderOperations = {
-  service: createPrismaOrderOperationsService(prisma, { ledgerService: paymentLedgerService }),
+  service: createPrismaOrderOperationsService(prisma, {
+    ledgerService: paymentLedgerService,
+    settlementService: partnerSettlementService,
+  }),
 }
+
+const partnerSettlement = { service: partnerSettlementService }
 
 // Dispatch and the courier app share one service. A courier holds no admin
 // grant at all — their authority is the assignment offered to them, which the
@@ -394,6 +409,7 @@ const app = await buildApp({
   adminAccess,
   adminMessaging,
   orderOperations,
+  partnerSettlement,
   delivery,
   deliveryTrips,
   courierAssignments,

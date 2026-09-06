@@ -35,6 +35,8 @@ export const financialTransactionTypeSchema = z.enum([
   'PAYMENT_CAPTURE',
   'PAYMENT_REFUND',
   'WALLET_TOP_UP',
+  'ORDER_SETTLEMENT',
+  'PARTNER_PAYOUT',
 ])
 
 /** What a payment is for. A top-up has no order; an order payment must have one. */
@@ -136,8 +138,9 @@ export type LedgerEntrySummary = z.infer<typeof ledgerEntrySummarySchema>
 
 export const financialTransactionSummarySchema = z.object({
   id: uuidSchema,
-  paymentId: uuidSchema,
-  /** Absent on a wallet top-up, the one posting with nothing to deliver. */
+  /** Absent on a settlement or a payout: neither is about a payment. */
+  paymentId: uuidSchema.optional(),
+  /** Absent on a wallet top-up and on a payout. */
   orderId: uuidSchema.optional(),
   type: financialTransactionTypeSchema,
   amount: moneySchema,

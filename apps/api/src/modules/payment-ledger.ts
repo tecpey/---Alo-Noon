@@ -118,7 +118,14 @@ export interface PaymentRefundResult {
 
 /** A balanced journal somebody else authored, and what it is a posting of. */
 export interface LedgerPostingCommand {
-  paymentId: string
+  /**
+   * The payment this posts for, when there is one.
+   *
+   * A settlement and a payout have none: the first divides an order that was
+   * paid for long ago, and the second moves money to a bank. The database
+   * states the same rule as a check constraint per type.
+   */
+  paymentId?: string
   orderId?: string
   type: FinancialTransactionType
   amount: bigint
@@ -328,7 +335,7 @@ async function postJournal(
       // Connected rather than assigned: the nested entry creates put Prisma in
       // checked mode, where a relation is named by connect and a bare foreign
       // key is rejected.
-      payment: { connect: { id: command.paymentId } },
+      ...(command.paymentId && { payment: { connect: { id: command.paymentId } } }),
       ...(command.orderId && { order: { connect: { id: command.orderId } } }),
       type: command.type,
       amount: command.amount,
@@ -849,8 +856,10 @@ export function createPrismaPaymentLedgerService(
           if (!samePosting(replay, command)) {
             throw new PaymentLedgerError('IDEMPOTENCY_KEY_CONFLICT')
           }
+          // A replay reached through `capture` always has a payment: the
+          // idempotency key it matched was one this method wrote.
           return {
-            payment: mapPayment(await loadPayment(transaction, tenantId, replay.paymentId)),
+            payment: mapPayment(await loadPayment(transaction, tenantId, command.paymentId)),
             transaction: mapFinancialTransaction(replay),
           }
         }
@@ -1142,7 +1151,7 @@ function mapFinancialTransaction(
 ): FinancialTransactionSummary {
   return {
     id: transaction.id,
-    paymentId: transaction.paymentId,
+    ...(transaction.paymentId && { paymentId: transaction.paymentId }),
     ...(transaction.orderId && { orderId: transaction.orderId }),
     type: transaction.type,
     amount: { amount: transaction.amount.toString(), currency: transaction.currency },

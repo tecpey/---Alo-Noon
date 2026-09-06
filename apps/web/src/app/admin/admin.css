@@ -635,3 +635,10 @@ td a {
     grid-column: 2 / -1;
   }
 }
+
+/* A partner who has been waiting past the point where they start asking. Marked
+ * in the row rather than sorted to the top: the operator reads the list by
+ * partner, and re-ordering it under them would hide who else is owed. */
+.overdue {
+  color: var(--warn);
+}

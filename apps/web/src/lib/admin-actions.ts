@@ -833,3 +833,61 @@ export async function setCourierStatusAction(
   revalidatePath('/admin/deliveries')
   return success('وضعیت پیک ثبت شد.')
 }
+
+/**
+ * Prepares a payout run for one partner.
+ *
+ * No amount crosses this boundary. The operator names the partner; the API sums
+ * what that partner has earned and not been paid inside the transaction that
+ * claims it. An amount typed into a form would be an amount somebody typed, and
+ * the one number a payout must not be is that.
+ *
+ * The idempotency key is derived from the partner and the hour, not from a
+ * random value: a double-submitted form within the hour replays onto the run it
+ * already made, while a second, deliberate run later in the day — the first one
+ * cancelled, say — is a different act and gets its own.
+ */
+export async function preparePayoutAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const party = field(form, 'party')
+  const partnerId = field(form, 'partnerId')
+  if (party !== 'BAKERY' && party !== 'COURIER') return failure('این طرف حساب شناخته نشد.')
+
+  const result = await post<{ id: string } | null>('/api/v1/admin/settlement/payouts', {
+    party,
+    partnerId,
+    idempotencyKey: derivedIdempotencyKey('payout', party, partnerId, hourStamp()),
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'آماده‌سازی تسویه انجام نشد.'))
+  revalidatePath('/admin/settlement')
+  // A 204 means nothing was owing — not a failure, and not a payout either.
+  if (!result.data) return success('در این لحظه چیزی برای پرداخت به این طرف حساب نمانده است.')
+  return success('برگهٔ تسویه ساخته شد. پس از واریز، شمارهٔ پیگیری بانک را همین‌جا ثبت کنید.')
+}
+
+export async function markPayoutPaidAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const payoutId = field(form, 'payoutId')
+  const bankReference = field(form, 'bankReference')
+  if (!bankReference) return failure('شمارهٔ پیگیری بانک را وارد کنید.')
+
+  const result = await post(`/api/v1/admin/settlement/payouts/${payoutId}/paid`, {
+    bankReference,
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت واریز انجام نشد.'))
+  revalidatePath('/admin/settlement')
+  return success('واریز ثبت شد.')
+}
+
+/**
+ * The current hour, as a key fragment. Two presses of the same button a second
+ * apart are one intent; two an afternoon apart are two.
+ */
+function hourStamp(): string {
+  return new Date().toISOString().slice(0, 13)
+}

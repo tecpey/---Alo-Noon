@@ -83,6 +83,10 @@ import {
   registerOrderOperationsRoutes,
   type OrderOperationsDependencies,
 } from './modules/order-operations-routes.js'
+import {
+  registerPartnerSettlementRoutes,
+  type PartnerSettlementDependencies,
+} from './modules/partner-settlement-routes.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -107,6 +111,7 @@ export interface AppOptions {
   adminAccess?: Omit<AdminAccessDependencies, 'auth'>
   adminMessaging?: Omit<AdminMessagingDependencies, 'auth'>
   orderOperations?: Omit<OrderOperationsDependencies, 'auth'>
+  partnerSettlement?: Omit<PartnerSettlementDependencies, 'auth'>
   delivery?: Omit<DeliveryDependencies, 'auth'>
   deliveryTrips?: Omit<DeliveryTripDependencies, 'auth'>
   courierAssignments?: Omit<CourierAssignmentDependencies, 'auth'>
@@ -258,6 +263,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.orderOperations) {
     registerOrderOperationsRoutes(app, { ...options.orderOperations, auth: options.auth })
+  }
+  if (options.auth && options.partnerSettlement) {
+    registerPartnerSettlementRoutes(app, { ...options.partnerSettlement, auth: options.auth })
   }
   if (options.auth && options.delivery) {
     registerDeliveryRoutes(app, { ...options.delivery, auth: options.auth })

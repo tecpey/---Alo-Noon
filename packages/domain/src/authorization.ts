@@ -22,6 +22,7 @@ export const ADMIN_PERMISSIONS = {
   ordersManage: 'admin.orders.manage',
   catalogManage: 'admin.catalog.manage',
   accessManage: 'admin.access.manage',
+  financeSettle: 'admin.finance.settle',
 } as const
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[keyof typeof ADMIN_PERMISSIONS]
@@ -59,6 +60,10 @@ export const ADMIN_PERMISSION_DEFINITIONS: readonly AdminPermissionDefinition[] 
   {
     code: ADMIN_PERMISSIONS.accessManage,
     description: 'Grant and revoke staff roles within the tenant',
+  },
+  {
+    code: ADMIN_PERMISSIONS.financeSettle,
+    description: 'Prepare partner payouts and record that they were paid',
   },
 ])
 
@@ -112,6 +117,16 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     permissions: [ADMIN_PERMISSIONS.accessManage],
   },
   {
+    // Paying partners is not reading a report about them. Separated for the same
+    // reason ACCESS_ADMIN is: money leaving the platform's bank is the other
+    // capability an operator can be trusted with everything else and still not
+    // hold. Reports come with it because deciding a payout without seeing the
+    // ledger it discharges is deciding blind.
+    code: 'FINANCE_ADMIN',
+    name: 'Finance administrator',
+    permissions: [ADMIN_PERMISSIONS.financeSettle, ADMIN_PERMISSIONS.reportsRead],
+  },
+  {
     code: 'TENANT_ADMIN',
     name: 'Tenant administrator',
     permissions: [
@@ -124,6 +139,7 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
       ADMIN_PERMISSIONS.ordersManage,
       ADMIN_PERMISSIONS.catalogManage,
       ADMIN_PERMISSIONS.accessManage,
+      ADMIN_PERMISSIONS.financeSettle,
     ],
   },
 ])

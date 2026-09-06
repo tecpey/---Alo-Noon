@@ -523,6 +523,46 @@ export async function readFinancialReport(
 }
 
 // ---------------------------------------------------------------------------
+// Partner settlement
+// ---------------------------------------------------------------------------
+
+export interface PartnerBalanceSummary {
+  party: 'BAKERY' | 'COURIER'
+  partnerId: string
+  partnerName: string
+  amount: Money
+  orderCount: number
+  oldestAt: string | null
+}
+
+export interface PartnerPayoutSummary {
+  id: string
+  party: 'BAKERY' | 'COURIER'
+  partnerId: string
+  partnerName: string
+  state: 'DRAFT' | 'PAID' | 'CANCELLED'
+  amount: Money
+  orderCount: number
+  periodStart: string
+  periodEnd: string
+  bankReference?: string
+  createdAt: string
+  paidAt?: string
+}
+
+export async function readOutstandingBalances(): Promise<ApiResult<PartnerBalanceSummary[]>> {
+  return request<PartnerBalanceSummary[]>('/api/v1/admin/settlement/outstanding', {
+    method: 'GET',
+  })
+}
+
+export async function readPartnerPayouts(limit = 50): Promise<ApiResult<PartnerPayoutSummary[]>> {
+  return request<PartnerPayoutSummary[]>(`/api/v1/admin/settlement/payouts?limit=${limit}`, {
+    method: 'GET',
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Order operations
 // ---------------------------------------------------------------------------
 

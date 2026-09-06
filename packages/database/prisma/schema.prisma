@@ -408,6 +408,11 @@ enum FinancialTransactionType {
   /// that the money came from a balance rather than a card, and the paid-order
   /// guard counts captures.
   WALLET_TOP_UP
+  /// A delivered order divided between the bakery, the courier partner and the
+  /// platform. Belongs to an order and to no payment.
+  ORDER_SETTLEMENT
+  /// Money leaving for a partner's bank account. Belongs to neither.
+  PARTNER_PAYOUT
 }
 
 /// How an order is paid for.
@@ -541,6 +546,8 @@ model Tenant {
   customerWallets                    CustomerWallet[]
   walletEntries                      WalletEntry[]
   walletTransfers                    WalletTransfer[]
+  orderEarnings                      OrderEarning[]
+  partnerPayouts                     PartnerPayout[]
   routingProviderConfigurations      RoutingProviderConfiguration[]
   emailProviderConfigurations        EmailProviderConfiguration[]
   operatorAlertRecipients            OperatorAlertRecipient[]
@@ -973,7 +980,11 @@ model Bakery {
   displayNameFa String
   partnerStatus BakeryPartnerStatus @default(PROSPECT)
   agreementRef  String?             @unique @db.VarChar(128)
+  /// The platform's cut of the bread, in basis points. 1500 is fifteen percent.
+  commissionBasisPoints Int         @default(1500)
   branches      BakeryBranch[]
+  earnings      OrderEarning[]
+  payouts       PartnerPayout[]
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
@@ -1422,6 +1433,7 @@ model Order {
   /// The window this order was promised for, and whose capacity it claimed.
   deliveryWindowId             String?                     @db.Uuid
   deliveryWindow               BakeryDeliveryWindow?       @relation(fields: [deliveryWindowId], references: [id], onDelete: Restrict)
+  earning                      OrderEarning?
   paymentMethod                PaymentMethod               @default(ONLINE_GATEWAY)
   rating                       OrderRating?
   promotionRedemption          PromotionRedemption?
@@ -1792,8 +1804,9 @@ model LedgerAccountGovernanceEvent {
 model FinancialTransaction {
   id             String                   @id @default(uuid()) @db.Uuid
   tenantId       String                   @db.Uuid
-  paymentId      String                   @db.Uuid
-  payment        Payment                  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  /// Null for a settlement or a payout: neither is about a payment.
+  paymentId      String?                  @db.Uuid
+  payment        Payment?                 @relation(fields: [paymentId], references: [id], onDelete: Restrict)
   /// Null for a wallet top-up, the one posting with nothing to deliver.
   orderId        String?                  @db.Uuid
   order          Order?                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
@@ -1873,8 +1886,12 @@ model CourierPartner {
   code        String    @unique @db.VarChar(32)
   displayName String
   isActive    Boolean   @default(false)
+  /// The partner's cut of the delivery fee, in basis points. 10000 is all of it.
+  deliveryShareBasisPoints Int @default(10000)
   couriers    Courier[]
   vehicles    Vehicle[]
+  earnings    OrderEarning[]
+  payouts     PartnerPayout[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -2716,4 +2733,97 @@ model PromotionRedemption {
   @@index([customerId, tenantId], map: "g3b_PromotionRedemption_customerId_tenant_idx")
   @@index([quoteId, tenantId], map: "g3b_PromotionRedemption_quoteId_tenant_idx")
   @@index([orderId, tenantId], map: "g3b_PromotionRedemption_orderId_tenant_idx")
+}
+
+/// What one delivered order was worth to each party.
+///
+/// One row per order, written when it completes, never rewritten. Not a cache
+/// of the ledger — the ledger is the authority — but the record of *which rates
+/// applied on the day*, so a bakery whose commission changes in March cannot
+/// make February's payout recompute itself into a different number.
+model OrderEarning {
+  id                    String          @id @default(uuid()) @db.Uuid
+  tenantId              String          @db.Uuid
+  tenant                Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orderId               String          @unique @db.Uuid
+  order                 Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  bakeryId              String          @db.Uuid
+  bakery                Bakery          @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
+  /// Null when nobody rode: a collected order, or one no courier took.
+  courierPartnerId      String?         @db.Uuid
+  courierPartner        CourierPartner? @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
+  currency              Currency        @default(IRR)
+  subtotalAmount        BigInt
+  deliveryFeeAmount     BigInt
+  discountAmount        BigInt
+  totalAmount           BigInt
+  commissionBasisPoints Int
+  courierBasisPoints    Int
+  commissionAmount      BigInt
+  bakeryShareAmount     BigInt
+  courierShareAmount    BigInt
+  promotionCostAmount   BigInt
+  bakeryPayoutId        String?         @db.Uuid
+  bakeryPayout          PartnerPayout?  @relation("BakeryPayoutEarnings", fields: [bakeryPayoutId], references: [id], onDelete: Restrict)
+  courierPayoutId       String?         @db.Uuid
+  courierPayout         PartnerPayout?  @relation("CourierPayoutEarnings", fields: [courierPayoutId], references: [id], onDelete: Restrict)
+  correlationId         String          @db.Uuid
+  occurredAt            DateTime
+  createdAt             DateTime        @default(now())
+
+  @@unique([id, tenantId], map: "g3b_OrderEarning_id_tenant_key")
+  @@index([orderId, tenantId], map: "g3b_OrderEarning_orderId_tenant_idx")
+  @@index([bakeryId, tenantId], map: "g3b_OrderEarning_bakeryId_tenant_idx")
+  @@index([courierPartnerId, tenantId], map: "g3b_OrderEarning_courierPartnerId_tenant_idx")
+  @@index([bakeryPayoutId, tenantId], map: "g3b_OrderEarning_bakeryPayoutId_tenant_idx")
+  @@index([courierPayoutId, tenantId], map: "g3b_OrderEarning_courierPayoutId_tenant_idx")
+}
+
+/// One transfer to one partner, covering a set of earnings.
+///
+/// The money leaves the platform's account outside this system — an Iranian
+/// interbank transfer is a person at a keyboard — so what is stored is the
+/// decision and its evidence, not a pretence of having moved it.
+model PartnerPayout {
+  id                  String             @id @default(uuid()) @db.Uuid
+  tenantId            String             @db.Uuid
+  tenant              Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  party               PartnerPayoutParty
+  bakeryId            String?            @db.Uuid
+  bakery              Bakery?            @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
+  courierPartnerId    String?            @db.Uuid
+  courierPartner      CourierPartner?    @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
+  state               PartnerPayoutState @default(DRAFT)
+  currency            Currency           @default(IRR)
+  amount              BigInt
+  orderCount          Int
+  periodStart         DateTime
+  periodEnd           DateTime
+  /// The bank's own reference, once somebody has actually made the transfer.
+  bankReference       String?            @db.VarChar(128)
+  preparedByAccountId String             @db.Uuid
+  paidByAccountId     String?            @db.Uuid
+  idempotencyKey      String             @db.VarChar(128)
+  correlationId       String             @db.Uuid
+  bakeryEarnings      OrderEarning[]     @relation("BakeryPayoutEarnings")
+  courierEarnings     OrderEarning[]     @relation("CourierPayoutEarnings")
+  createdAt           DateTime           @default(now())
+  paidAt              DateTime?
+
+  @@unique([tenantId, idempotencyKey], map: "PartnerPayout_tenant_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_PartnerPayout_id_tenant_key")
+  @@index([bakeryId, tenantId], map: "g3b_PartnerPayout_bakeryId_tenant_idx")
+  @@index([courierPartnerId, tenantId], map: "g3b_PartnerPayout_courierPartnerId_tenant_idx")
+  @@index([tenantId, state, createdAt(sort: Desc)], map: "PartnerPayout_tenant_state_created_idx")
+}
+
+enum PartnerPayoutParty {
+  BAKERY
+  COURIER
+}
+
+enum PartnerPayoutState {
+  DRAFT
+  PAID
+  CANCELLED
 }
