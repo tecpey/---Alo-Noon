@@ -40,6 +40,18 @@ ruleTester.run('require-tenant-resolution', plugin.rules['require-tenant-resolut
       `,
     },
     {
+      // The bakery partner's counter. It resolves the tenant from the session
+      // like the others, and additionally confines itself to the branches that
+      // session's own grants name.
+      code: `
+        function register(app) {
+          app.get('/x', async (request, reply) => {
+            const actor = await authenticatedBranchStaff(request, reply, deps, permission)
+          })
+        }
+      `,
+    },
+    {
       code: `
         function register(app) {
           app.post(

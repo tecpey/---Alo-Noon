@@ -25,6 +25,18 @@ import {
  */
 const SESSION_COOKIE = 'alo_session'
 
+/**
+ * Where signing in lands, chosen by which panel asked.
+ *
+ * An allow-list rather than a path from the form. A destination the browser
+ * supplies is an open redirect, and an open redirect on a sign-in page is how a
+ * phishing link borrows a real domain to land somewhere else.
+ */
+const SIGN_IN_DESTINATIONS: Readonly<Record<string, string>> = {
+  admin: '/admin',
+  bakery: '/bakery',
+}
+
 function field(form: FormData, name: string): string {
   return String(form.get(name) ?? '').trim()
 }
@@ -67,7 +79,9 @@ export async function requestOtpAction(
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
-    path: '/admin',
+    // Readable by both panels' sign-in pages, which share this one flow. It is
+    // not a credential — it only names which challenge the next step verifies.
+    path: '/',
     maxAge: 10 * 60,
   })
   return success('کد تأیید ارسال شد. اگر پیامکی نرسید، سرویس پیامک هنوز پیکربندی نشده است.')
@@ -108,7 +122,7 @@ export async function verifyOtpAction(
     path: '/',
   })
   cookieStore.delete('alo_admin_challenge')
-  redirect('/admin')
+  redirect(SIGN_IN_DESTINATIONS[field(form, 'destination')] ?? '/admin')
 }
 
 export async function signOutAction(): Promise<void> {
@@ -118,6 +132,14 @@ export async function signOutAction(): Promise<void> {
   await revokeSession()
   cookieStore.delete(SESSION_COOKIE)
   redirect('/admin/login')
+}
+
+/** The same sign-out, landing a bakery's staff back at their own door. */
+export async function branchSignOutAction(): Promise<void> {
+  const cookieStore = await cookies()
+  await revokeSession()
+  cookieStore.delete(SESSION_COOKIE)
+  redirect('/bakery/login')
 }
 
 export async function createPaymentCredentialAction(
@@ -890,4 +912,56 @@ export async function markPayoutPaidAction(
  */
 function hourStamp(): string {
   return new Date().toISOString().slice(0, 13)
+}
+
+/**
+ * The counter's own steps.
+ *
+ * The order id is the only thing these send. Which branch the caller may act on
+ * is decided by the API from the session's grants — a branch a form could name
+ * is a branch any form could name.
+ */
+export async function branchOrderStepAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const orderId = field(form, 'orderId')
+  const step = BRANCH_STEPS[field(form, 'step')]
+  if (!step) return failure('این مرحله شناخته نشد.')
+
+  const result = await post(`/api/v1/branch/orders/${orderId}/${step}`, {
+    ...(field(form, 'reason') && { reason: field(form, 'reason') }),
+  })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'این مرحله انجام نشد.'))
+  revalidatePath('/bakery')
+  return success(BRANCH_STEP_SUCCESS[step] ?? 'انجام شد.')
+}
+
+export async function branchProductionAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const orderId = field(form, 'orderId')
+  const result = await post(`/api/v1/branch/orders/${orderId}/production`, {
+    to: field(form, 'to'),
+    ...(field(form, 'reason') && { reason: field(form, 'reason') }),
+  })
+  if (!result.ok)
+    return failure(translateProviderError(result.error.code, 'تغییر وضعیت تولید انجام نشد.'))
+  revalidatePath('/bakery')
+  return success('وضعیت تولید ثبت شد.')
+}
+
+// An allow-list, not a path from the form: a step name the browser supplies is
+// a URL the browser supplies.
+const BRANCH_STEPS: Readonly<Record<string, string>> = {
+  accept: 'accept',
+  reject: 'reject',
+  'start-fulfillment': 'start-fulfillment',
+}
+
+const BRANCH_STEP_SUCCESS: Readonly<Record<string, string>> = {
+  accept: 'سفارش پذیرفته شد. حالا در صف تولید است.',
+  reject: 'سفارش رد شد. عودت وجه به مشتری با پلتفرم است.',
+  'start-fulfillment': 'تحویل به پیک ثبت شد.',
 }

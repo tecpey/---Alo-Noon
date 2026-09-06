@@ -575,3 +575,66 @@ export interface OrderOperationOutcome {
   deliveryState: string
   updatedAt: string
 }
+
+// ---------------------------------------------------------------------------
+// The bakery partner's own counter
+// ---------------------------------------------------------------------------
+
+export interface BranchContextSummary {
+  branchId: string
+  branchNameFa: string
+  bakeryId: string
+  bakeryNameFa: string
+  cityNameFa: string
+  operationalStatus: string
+  commissionBasisPoints: number
+}
+
+export interface BranchOrderSummary {
+  id: string
+  publicId: string
+  branchId: string
+  state: string
+  paymentState: string
+  productionState: string
+  deliveryState: string
+  recipientNameSnapshot: string
+  itemCount: number
+  subtotalAmount: Money
+  totalAmount: Money
+  requestedDeliveryAt: string | null
+  createdAt: string
+  items: Array<{ productNameFa: string; variantNameFa: string; quantity: number }>
+}
+
+export interface BranchEarningsSummary {
+  unpaid: Money
+  unpaidOrderCount: number
+  paid: Money
+  paidOrderCount: number
+  commission: Money
+  oldestUnpaidAt: string | null
+  recent: Array<{
+    orderId: string
+    publicId: string
+    occurredAt: string
+    total: Money
+    commission: Money
+    share: Money
+    paid: boolean
+  }>
+}
+
+export async function readBranchContext(): Promise<ApiResult<BranchContextSummary[]>> {
+  return request<BranchContextSummary[]>('/api/v1/branch/context', { method: 'GET' })
+}
+
+export async function readBranchQueue(
+  scope: 'LIVE' | 'ALL' = 'LIVE',
+): Promise<ApiResult<BranchOrderSummary[]>> {
+  return request<BranchOrderSummary[]>(`/api/v1/branch/orders?scope=${scope}`, { method: 'GET' })
+}
+
+export async function readBranchEarnings(): Promise<ApiResult<BranchEarningsSummary>> {
+  return request<BranchEarningsSummary>('/api/v1/branch/earnings', { method: 'GET' })
+}

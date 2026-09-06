@@ -1,12 +1,14 @@
 const ROUTE_METHODS = new Set(['get', 'post', 'put', 'delete', 'patch'])
 const REQUIRED_CALL_PATTERN =
-  /\b(?:resolveTenantId|authenticatedCustomer|authenticatedStaff|authenticateRequest)\s*\(/
+  /\b(?:resolveTenantId|authenticatedCustomer|authenticatedStaff|authenticatedBranchStaff|authenticateRequest)\s*\(/
 
 /**
  * Every route registered on the Fastify `app` instance in apps/api/src/modules
  * must derive tenant identity from resolveTenantId (host-based),
  * authenticateRequest (session-based, any account type), or
- * authenticatedCustomer (session-based, customer-only) inside its own handler
+ * authenticatedCustomer (session-based, customer-only), or
+ * authenticatedBranchStaff (session-based, confined to the branches the
+ * session's own grants name) inside its own handler
  * body — tenant enforcement here is by convention, not a shared runtime hook,
  * so a route that forgets this call has no other guard before it touches
  * tenant-owned data. This is a plain source-text check on the handler body

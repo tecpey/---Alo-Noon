@@ -47,6 +47,7 @@ import { createPrismaCourierAssignmentService } from './modules/courier-assignme
 import { createPrismaDeliveryTripService } from './modules/delivery-trips.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaPartnerSettlementService } from './modules/partner-settlement.js'
+import { createPrismaBranchOperationsService } from './modules/branch-operations.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaRoutingProviderService } from './modules/routing-provider.js'
 import { createPrismaEmailProviderService } from './modules/email-provider.js'
@@ -340,6 +341,14 @@ const orderOperations = {
 
 const partnerSettlement = { service: partnerSettlementService }
 
+// The bakery partner's own counter. It shares the order pipeline with the admin
+// panel — one place decides what a step means — and differs only in the actor it
+// hands down: one confined to the branches the session's grants name.
+const branch = {
+  service: createPrismaBranchOperationsService(prisma),
+  orders: orderOperations.service,
+}
+
 // Dispatch and the courier app share one service. A courier holds no admin
 // grant at all — their authority is the assignment offered to them, which the
 // service checks against the row on every write.
@@ -410,6 +419,7 @@ const app = await buildApp({
   adminMessaging,
   orderOperations,
   partnerSettlement,
+  branch,
   delivery,
   deliveryTrips,
   courierAssignments,

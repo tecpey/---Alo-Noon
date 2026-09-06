@@ -43,6 +43,19 @@ import type { PaymentLedgerService } from './payment-ledger.js'
  */
 export interface OrderOperationsActor {
   accountId: string
+  /**
+   * The branches this actor's authority is confined to, or absent for an actor
+   * whose grant is tenant-wide.
+   *
+   * Set by the bakery-facing surface, where the operator is a partner's own
+   * counter staff rather than the platform's. An order outside these branches is
+   * reported as absent rather than forbidden: telling a rival bakery's clerk
+   * "that order exists but is not yours" is telling them it exists.
+   *
+   * Never derived from anything the client sent — the routes resolve it from the
+   * session's own grants.
+   */
+  branchIds?: readonly string[]
 }
 
 export class OrderOperationsError extends Error {
@@ -173,6 +186,7 @@ export function createPrismaOrderOperationsService(
     ): Promise<OrderOperationOutcome> {
       return writeTransaction(prisma, tenantId, actor, now, async (transaction) => {
         const order = await lockOrder(transaction, tenantId, command.orderId)
+        assertWithinBranchScope(actor, order.bakeryBranchId)
         if (requirePaid && order.paymentState !== 'PAID') {
           throw new OrderOperationsError('ORDER_NOT_PAID', 409)
         }
@@ -281,12 +295,20 @@ export function createPrismaOrderOperationsService(
           // restated in the filter.
           return transaction.order.findFirst({
             where: { id: command.orderId, tenantId },
-            select: { id: true, payment: { select: { id: true, amount: true } } },
+            select: {
+              id: true,
+              bakeryBranchId: true,
+              payment: { select: { id: true, amount: true } },
+            },
           })
         },
         { isolationLevel: 'ReadCommitted' },
       )
       if (!target) throw new OrderOperationsError('ORDER_NOT_FOUND', 404)
+      // Confined before the money moves, not only inside the cancel below: the
+      // refund runs first, and a branch operator must not be able to reverse a
+      // payment on another bakery's order even if the cancel would then refuse.
+      assertWithinBranchScope(actor, target.bakeryBranchId)
 
       // Permission is checked here as well as inside the cancel below, because
       // the refund happens first and must not run for someone who could not
@@ -299,6 +321,7 @@ export function createPrismaOrderOperationsService(
           actor.accountId,
           ADMIN_PERMISSIONS.ordersManage,
           now,
+          actor.branchIds,
         )
       })
       if (!permitted) throw new OrderOperationsError('ORDER_OPERATION_FORBIDDEN', 403)
@@ -336,6 +359,7 @@ export function createPrismaOrderOperationsService(
     async advanceProduction(tenantId, actor, command, now, correlationId) {
       return writeTransaction(prisma, tenantId, actor, now, async (transaction) => {
         const order = await lockOrder(transaction, tenantId, command.orderId)
+        assertWithinBranchScope(actor, order.bakeryBranchId)
         if (!productionApplies(order.state as OrderState)) {
           throw new OrderOperationsError('PRODUCTION_NOT_APPLICABLE', 409)
         }
@@ -369,6 +393,22 @@ export function createPrismaOrderOperationsService(
         return outcome(updated)
       })
     },
+  }
+}
+
+/**
+ * Refuses an order outside the branches this actor operates.
+ *
+ * Reported as absent, not as forbidden. "That order exists but is not yours" is
+ * still telling a rival bakery's counter that it exists, and the order ids are
+ * guessable enough for that to matter. A tenant-wide actor carries no branch
+ * list and passes untouched — operating an order that is not one's own is the
+ * platform operator's entire job.
+ */
+function assertWithinBranchScope(actor: OrderOperationsActor, bakeryBranchId: string): void {
+  if (!actor.branchIds) return
+  if (!actor.branchIds.includes(bakeryBranchId)) {
+    throw new OrderOperationsError('ORDER_NOT_FOUND', 404)
   }
 }
 
@@ -524,6 +564,7 @@ async function writeTransaction<T>(
           actor.accountId,
           ADMIN_PERMISSIONS.ordersManage,
           now,
+          actor.branchIds,
         )
         if (!permitted) throw new OrderOperationsError('ORDER_OPERATION_FORBIDDEN', 403)
         return operation(transaction)

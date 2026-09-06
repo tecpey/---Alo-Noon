@@ -27,6 +27,12 @@ export const adminRoleSummarySchema = z.object({
   name: z.string().min(1).max(120),
   permissions: z.array(z.string().min(1).max(100)),
   /**
+   * How far the role reaches. `TENANT` roles are granted once and see the whole
+   * tenant; `BAKERY_BRANCH` roles are granted against one branch and see that
+   * branch. The panel needs this to know whether to ask which branch.
+   */
+  scope: z.enum(['TENANT', 'BAKERY_BRANCH']),
+  /**
    * Whether the account asking may grant this role. False means the role
    * carries a permission the caller does not itself hold — the panel shows it
    * greyed rather than hiding it, so an operator can see what they would need.
@@ -45,6 +51,9 @@ export const staffMemberSchema = z.object({
       name: z.string().min(1).max(120),
       grantedAt: isoDateTimeSchema,
       expiresAt: isoDateTimeSchema.nullable(),
+      /** Present on a branch-scoped grant, naming the counter it reaches. */
+      bakeryBranchId: uuidSchema.optional(),
+      bakeryBranchNameFa: z.string().min(1).optional(),
     }),
   ),
   /** Union of every permission the account's live grants carry. */
@@ -57,6 +66,14 @@ export const grantRoleCommandSchema = z
   .object({
     mobileE164: mobileE164Schema,
     roleCode: roleCodeSchema,
+    /**
+     * Required for a branch-scoped role, refused for a tenant one.
+     *
+     * Not defaulted either way. A branch role that quietly fell back to the
+     * whole tenant would hand a bakery's counter every competitor's queue, and
+     * that is not a mistake worth being convenient about.
+     */
+    bakeryBranchId: uuidSchema.optional(),
     reason: reasonSchema,
   })
   .strict()

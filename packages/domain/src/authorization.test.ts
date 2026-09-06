@@ -5,7 +5,9 @@ import {
   ADMIN_PERMISSION_DEFINITIONS,
   ADMIN_ROLES,
   adminRoleCodes,
+  branchRoleCodes,
   findAdminRole,
+  grantScopeMatchesRole,
   permissionsBeyond,
 } from './authorization'
 
@@ -69,6 +71,48 @@ describe('admin permission catalogue', () => {
     expect(findAdminRole('FINANCE_ADMIN')?.permissions).not.toContain(
       ADMIN_PERMISSIONS.ordersManage,
     )
+  })
+})
+
+describe('how far a role reaches', () => {
+  it('keeps the bakery partner roles branch-scoped and everything else tenant-wide', () => {
+    expect(branchRoleCodes()).toEqual(['BRANCH_OPERATOR', 'BRANCH_OWNER'])
+    for (const role of ADMIN_ROLES) {
+      expect(role.scope).toBe(branchRoleCodes().includes(role.code) ? 'BAKERY_BRANCH' : 'TENANT')
+    }
+  })
+
+  it('never lets a partner role carry a platform-wide capability', () => {
+    // A bakery's own staff seeing the catalogue, the providers, the access
+    // list or the payout desk would be the platform handing a partner the
+    // platform. The queue and their own numbers is the whole of it.
+    const forbidden = [
+      ADMIN_PERMISSIONS.catalogManage,
+      ADMIN_PERMISSIONS.accessManage,
+      ADMIN_PERMISSIONS.financeSettle,
+      ADMIN_PERMISSIONS.paymentProviderGovern,
+    ]
+    for (const code of branchRoleCodes()) {
+      for (const permission of forbidden) {
+        expect(findAdminRole(code)?.permissions).not.toContain(permission)
+      }
+    }
+  })
+
+  it('refuses a grant whose scope does not match the role', () => {
+    const branch = findAdminRole('BRANCH_OPERATOR')!
+    const tenant = findAdminRole('ORDER_OPERATOR')!
+
+    expect(grantScopeMatchesRole(branch, 'BAKERY_BRANCH', 'branch-1')).toBe(true)
+    expect(grantScopeMatchesRole(tenant, 'GLOBAL', null)).toBe(true)
+
+    // The dangerous one: a counter clerk handed every order in the city.
+    expect(grantScopeMatchesRole(branch, 'GLOBAL', null)).toBe(false)
+    // And the silent one: an operator who signs in and can do nothing.
+    expect(grantScopeMatchesRole(tenant, 'BAKERY_BRANCH', 'branch-1')).toBe(false)
+    // A branch grant naming no branch is not a branch grant.
+    expect(grantScopeMatchesRole(branch, 'BAKERY_BRANCH', null)).toBe(false)
+    expect(grantScopeMatchesRole(branch, 'BAKERY_BRANCH', '')).toBe(false)
   })
 })
 

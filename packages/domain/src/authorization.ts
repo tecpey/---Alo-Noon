@@ -7,10 +7,16 @@
  * would ever accept, and the operator would see a permission denial with nothing
  * to act on.
  *
- * Every permission here is checked at GLOBAL scope. Narrower scopes (city,
- * branch, courier partner) are modelled in the database and honoured by
- * `authorizeGrants`, but no admin surface uses them yet: a half-scoped operator
- * seeing tenant-wide totals would be worse than no report at all.
+ * A permission means the same thing wherever it is held; what changes is how far
+ * it reaches. The platform's own staff hold their roles at GLOBAL scope and see
+ * the tenant. A bakery partner's staff hold theirs against one branch and see
+ * that branch — the same `admin.orders.manage`, confined by the grant rather
+ * than by a second permission that would have to be kept in step with the first.
+ * `AdminRoleDefinition.scope` says which a role is for, and
+ * `grantScopeMatchesRole` refuses the mismatch.
+ *
+ * City, operational-zone and courier-partner scopes are modelled in the database
+ * and honoured by `authorizeGrants`, but no surface issues them yet.
  */
 export const ADMIN_PERMISSIONS = {
   paymentProviderGovern: 'payment-provider.configuration.govern',
@@ -67,9 +73,26 @@ export const ADMIN_PERMISSION_DEFINITIONS: readonly AdminPermissionDefinition[] 
   },
 ])
 
+/**
+ * How far a role reaches.
+ *
+ * `TENANT` roles are granted once, at GLOBAL scope, and see everything the
+ * tenant has. `BAKERY_BRANCH` roles are granted against one branch and see that
+ * branch and nothing else — the bakery partner's own staff, who are not the
+ * platform's staff and must never be handed a tenant-wide grant by accident.
+ *
+ * Stated on the role rather than left to whoever creates the grant, because the
+ * dangerous mistake is silent in both directions: a branch role granted at
+ * GLOBAL scope hands a shop counter every order in the city, and a tenant role
+ * granted against a branch produces an operator who can sign in and do nothing,
+ * with no error to act on.
+ */
+export type AdminRoleScope = 'TENANT' | 'BAKERY_BRANCH'
+
 export interface AdminRoleDefinition {
   code: string
   name: string
+  scope: AdminRoleScope
   permissions: readonly AdminPermission[]
 }
 
@@ -85,6 +108,7 @@ export interface AdminRoleDefinition {
 export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
   {
     code: 'PROVIDER_GOVERNOR',
+    scope: 'TENANT',
     name: 'Provider governor',
     permissions: [
       ADMIN_PERMISSIONS.paymentProviderGovern,
@@ -95,11 +119,13 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
   },
   {
     code: 'OPERATIONS_ANALYST',
+    scope: 'TENANT',
     name: 'Operations analyst',
     permissions: [ADMIN_PERMISSIONS.reportsRead, ADMIN_PERMISSIONS.ordersRead],
   },
   {
     code: 'ORDER_OPERATOR',
+    scope: 'TENANT',
     name: 'Order operator',
     // The person in the shop: they see the queue and move it. Deliberately
     // without reports — accepting orders and reading revenue are different
@@ -108,11 +134,13 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
   },
   {
     code: 'CATALOG_MANAGER',
+    scope: 'TENANT',
     name: 'Catalog manager',
     permissions: [ADMIN_PERMISSIONS.catalogManage, ADMIN_PERMISSIONS.reportsRead],
   },
   {
     code: 'ACCESS_ADMIN',
+    scope: 'TENANT',
     name: 'Access administrator',
     permissions: [ADMIN_PERMISSIONS.accessManage],
   },
@@ -123,11 +151,13 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     // hold. Reports come with it because deciding a payout without seeing the
     // ledger it discharges is deciding blind.
     code: 'FINANCE_ADMIN',
+    scope: 'TENANT',
     name: 'Finance administrator',
     permissions: [ADMIN_PERMISSIONS.financeSettle, ADMIN_PERMISSIONS.reportsRead],
   },
   {
     code: 'TENANT_ADMIN',
+    scope: 'TENANT',
     name: 'Tenant administrator',
     permissions: [
       ADMIN_PERMISSIONS.paymentProviderGovern,
@@ -142,6 +172,37 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
       ADMIN_PERMISSIONS.financeSettle,
     ],
   },
+  /**
+   * The bakery's own people, at one branch.
+   *
+   * They are not the platform's staff and the difference is not a formality:
+   * a partner's counter clerk holding a tenant-wide grant would see every
+   * competitor's orders in the city. Both roles below are granted against a
+   * branch, and every surface that honours them confines itself to it.
+   */
+  {
+    code: 'BRANCH_OPERATOR',
+    scope: 'BAKERY_BRANCH',
+    name: 'Branch operator',
+    // The counter: see the queue, accept it, bake it, hand it over. No reports,
+    // for the same reason ORDER_OPERATOR has none — taking orders and reading
+    // revenue are different jobs.
+    permissions: [ADMIN_PERMISSIONS.ordersRead, ADMIN_PERMISSIONS.ordersManage],
+  },
+  {
+    code: 'BRANCH_OWNER',
+    scope: 'BAKERY_BRANCH',
+    name: 'Branch owner',
+    // The person whose money it is: everything the counter can do, plus what
+    // the branch has earned and what has been paid out against it. Never
+    // financeSettle — reading what one is owed and deciding to pay it are
+    // opposite ends of the same transaction, and a partner does not hold both.
+    permissions: [
+      ADMIN_PERMISSIONS.ordersRead,
+      ADMIN_PERMISSIONS.ordersManage,
+      ADMIN_PERMISSIONS.reportsRead,
+    ],
+  },
 ])
 
 export function findAdminRole(code: string): AdminRoleDefinition | undefined {
@@ -150,6 +211,29 @@ export function findAdminRole(code: string): AdminRoleDefinition | undefined {
 
 export function adminRoleCodes(): readonly string[] {
   return ADMIN_ROLES.map((role) => role.code)
+}
+
+/** The roles a bakery partner's own staff hold, each against one branch. */
+export function branchRoleCodes(): readonly string[] {
+  return ADMIN_ROLES.filter((role) => role.scope === 'BAKERY_BRANCH').map((role) => role.code)
+}
+
+/**
+ * Whether a role may be granted at the scope somebody chose for it.
+ *
+ * A branch role at GLOBAL scope hands a shop counter the whole city; a tenant
+ * role against a branch produces an operator who signs in successfully and can
+ * do nothing, with no error anywhere that says why. Both are refused here, at
+ * the one place a grant is created.
+ */
+export function grantScopeMatchesRole(
+  role: AdminRoleDefinition,
+  scopeType: string,
+  scopeId: string | null,
+): boolean {
+  return role.scope === 'BAKERY_BRANCH'
+    ? scopeType === 'BAKERY_BRANCH' && typeof scopeId === 'string' && scopeId.length > 0
+    : scopeType === 'GLOBAL' && scopeId === null
 }
 
 /**

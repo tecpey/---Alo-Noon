@@ -15,6 +15,8 @@ import { PrismaClient } from '@alo-noon/database'
 import {
   ADMIN_PERMISSION_DEFINITIONS,
   ADMIN_ROLES,
+  branchRoleCodes,
+  grantScopeMatchesRole,
   adminRoleCodes,
   createPaymentProviderAdapterRegistry,
   findAdminRole,
@@ -124,7 +126,8 @@ async function main(): Promise<void> {
   // before a tenant exists.
   if (command === 'list-roles') {
     for (const role of ADMIN_ROLES) {
-      process.stdout.write(`${role.code}  ${role.name}\n`)
+      const scope = role.scope === 'BAKERY_BRANCH' ? '  (needs --branch)' : ''
+      process.stdout.write(`${role.code}  ${role.name}${scope}\n`)
       for (const permission of role.permissions) process.stdout.write(`    ${permission}\n`)
     }
     return
@@ -140,7 +143,10 @@ async function main(): Promise<void> {
       const grants = await prisma.accessGrant.findMany({
         where: {
           revokedAt: null,
-          scopeType: 'GLOBAL',
+          // Branch grants are listed too: an operator auditing who can touch
+          // what has to see the bakery counters, and a grant this command hides
+          // is a grant that survives every review.
+          scopeType: { in: ['GLOBAL', 'BAKERY_BRANCH'] },
           role: { code: { in: [...adminRoleCodes()] } },
           account: { tenantMemberships: { some: { tenantId, status: 'ACTIVE', revokedAt: null } } },
         },
@@ -153,7 +159,8 @@ async function main(): Promise<void> {
       }
       for (const grant of grants) {
         const expiry = grant.expiresAt ? ` expires=${grant.expiresAt.toISOString()}` : ''
-        process.stdout.write(`${grant.account.mobileE164}  ${grant.role.code}${expiry}\n`)
+        const scope = grant.scopeId ? ` branch=${grant.scopeId}` : ''
+        process.stdout.write(`${grant.account.mobileE164}  ${grant.role.code}${scope}${expiry}\n`)
       }
       return
     }
@@ -180,17 +187,27 @@ async function main(): Promise<void> {
         throw new Error(`${mobileE164} is not an active member of tenant ${tenantId}`)
       }
 
+      // Where the grant reaches is decided by the role, not by the flag. A
+      // branch role granted tenant-wide would hand a bakery's counter every
+      // order in the city, so the branch is required rather than defaulted.
+      const scopeType = definition.scope === 'BAKERY_BRANCH' ? 'BAKERY_BRANCH' : 'GLOBAL'
+      const scopeId = definition.scope === 'BAKERY_BRANCH' ? (flags['branch'] ?? null) : null
+      if (!grantScopeMatchesRole(definition, scopeType, scopeId)) {
+        throw new Error(
+          `${roleCode} is a branch role: pass --branch <bakeryBranchId>. Branch roles are ${branchRoleCodes().join(', ')}`,
+        )
+      }
+      if (scopeId) {
+        const branch = await prisma.bakeryBranch.findFirst({
+          where: { id: scopeId, tenantId },
+          select: { id: true, nameFa: true },
+        })
+        if (!branch) throw new Error(`No bakery branch ${scopeId} in tenant ${tenantId}`)
+      }
+
       const role = await ensureRole(prisma, definition)
-      // Admin capabilities are tenant-wide, so the grant is GLOBAL. The services
-      // accept nothing narrower.
       const existing = await prisma.accessGrant.findFirst({
-        where: {
-          accountId: account.id,
-          roleId: role.id,
-          scopeType: 'GLOBAL',
-          scopeId: null,
-          revokedAt: null,
-        },
+        where: { accountId: account.id, roleId: role.id, scopeType, scopeId, revokedAt: null },
       })
 
       if (command === 'revoke-role') {
@@ -217,7 +234,7 @@ async function main(): Promise<void> {
         return
       }
       const grant = await prisma.accessGrant.create({
-        data: { accountId: account.id, roleId: role.id, scopeType: 'GLOBAL', activeAt: now },
+        data: { accountId: account.id, roleId: role.id, scopeType, scopeId, activeAt: now },
       })
       await writeGrantAudit(prisma, {
         tenantId,

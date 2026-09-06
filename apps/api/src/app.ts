@@ -87,6 +87,7 @@ import {
   registerPartnerSettlementRoutes,
   type PartnerSettlementDependencies,
 } from './modules/partner-settlement-routes.js'
+import { registerBranchRoutes, type BranchDependencies } from './modules/branch-routes.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -112,6 +113,7 @@ export interface AppOptions {
   adminMessaging?: Omit<AdminMessagingDependencies, 'auth'>
   orderOperations?: Omit<OrderOperationsDependencies, 'auth'>
   partnerSettlement?: Omit<PartnerSettlementDependencies, 'auth'>
+  branch?: Omit<BranchDependencies, 'auth'>
   delivery?: Omit<DeliveryDependencies, 'auth'>
   deliveryTrips?: Omit<DeliveryTripDependencies, 'auth'>
   courierAssignments?: Omit<CourierAssignmentDependencies, 'auth'>
@@ -266,6 +268,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.partnerSettlement) {
     registerPartnerSettlementRoutes(app, { ...options.partnerSettlement, auth: options.auth })
+  }
+  if (options.auth && options.branch) {
+    registerBranchRoutes(app, { ...options.branch, auth: options.auth })
   }
   if (options.auth && options.delivery) {
     registerDeliveryRoutes(app, { ...options.delivery, auth: options.auth })

@@ -12,6 +12,7 @@ import {
   ADMIN_ROLES,
   adminRoleCodes,
   findAdminRole,
+  grantScopeMatchesRole,
   permissionsBeyond,
   type AdminRoleDefinition,
 } from '@alo-noon/domain'
@@ -80,6 +81,7 @@ export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAcces
       return ADMIN_ROLES.map((role) => ({
         code: role.code,
         name: role.name,
+        scope: role.scope,
         permissions: [...role.permissions],
         grantable: permissionsBeyond(role, actor.permissions).length === 0,
       }))
@@ -102,6 +104,26 @@ export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAcces
         const beyond = permissionsBeyond(definition, live)
         if (beyond.length > 0) throw new AdminAccessError('ROLE_EXCEEDS_GRANTER', 403)
 
+        // Where this grant reaches, decided by the role rather than by whoever
+        // filled in the form. A branch role that fell back to GLOBAL would hand
+        // a bakery's counter every order in the city.
+        const scopeType = definition.scope === 'BAKERY_BRANCH' ? 'BAKERY_BRANCH' : 'GLOBAL'
+        const scopeId =
+          definition.scope === 'BAKERY_BRANCH' ? (command.bakeryBranchId ?? null) : null
+        if (!grantScopeMatchesRole(definition, scopeType, scopeId)) {
+          throw new AdminAccessError('ROLE_SCOPE_MISMATCH', 400)
+        }
+        if (scopeId) {
+          // The branch has to be this tenant's. Without this check a grant could
+          // name a branch in another tenant, and the session it produced would
+          // read rows RLS was meant to keep apart.
+          const branch = await transaction.bakeryBranch.findFirst({
+            where: { id: scopeId, tenantId },
+            select: { id: true },
+          })
+          if (!branch) throw new AdminAccessError('BAKERY_BRANCH_NOT_FOUND', 404)
+        }
+
         const account = await transaction.identityAccount.findFirst({
           where: { mobileE164: command.mobileE164 },
           select: { id: true, status: true },
@@ -119,13 +141,7 @@ export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAcces
 
         const role = await ensureRole(transaction, definition, now)
         const existing = await transaction.accessGrant.findFirst({
-          where: {
-            accountId: account.id,
-            roleId: role.id,
-            scopeType: 'GLOBAL',
-            scopeId: null,
-            revokedAt: null,
-          },
+          where: { accountId: account.id, roleId: role.id, scopeType, scopeId, revokedAt: null },
           select: { id: true },
         })
         // Idempotent: re-granting what someone already holds is a no-op, not an
@@ -136,9 +152,8 @@ export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAcces
             data: {
               accountId: account.id,
               roleId: role.id,
-              // Admin capabilities are tenant-wide; the routes accept nothing
-              // narrower, so a city- or branch-scoped grant would be dead weight.
-              scopeType: 'GLOBAL',
+              scopeType,
+              scopeId,
               activeAt: now,
               createdAt: now,
               updatedAt: now,
@@ -152,6 +167,8 @@ export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAcces
               roleCode: definition.code,
               targetAccountId: account.id,
               permissions: [...definition.permissions],
+              scopeType,
+              scopeId,
               reason: command.reason,
             },
             correlationId,
@@ -333,12 +350,21 @@ async function loadStaffAccounts(
       mobileE164: true,
       status: true,
       accessGrants: {
-        where: { revokedAt: null, scopeType: 'GLOBAL', role: { code: { in: roleCodes } } },
+        // Branch grants are listed alongside tenant-wide ones. An operator
+        // auditing who can touch what has to see the bakery counters too;
+        // hiding them here is how a forgotten grant survives a review.
+        where: {
+          revokedAt: null,
+          scopeType: { in: ['GLOBAL', 'BAKERY_BRANCH'] },
+          role: { code: { in: roleCodes } },
+        },
         orderBy: { activeAt: 'asc' },
         select: {
           id: true,
           activeAt: true,
           expiresAt: true,
+          scopeType: true,
+          scopeId: true,
           role: {
             select: { code: true, name: true, permissions: { select: { permission: true } } },
           },
@@ -348,9 +374,33 @@ async function loadStaffAccounts(
     orderBy: { createdAt: 'asc' },
   })
 
+  // Named once, so a branch grant reads as a place rather than as a uuid.
+  const branchIds = [
+    ...new Set(
+      accounts.flatMap((account) =>
+        account.accessGrants
+          .filter((grant) => grant.scopeType === 'BAKERY_BRANCH' && grant.scopeId)
+          .map((grant) => grant.scopeId as string),
+      ),
+    ),
+  ]
+  const branchNames = new Map<string, string>()
+  if (branchIds.length > 0) {
+    const branches = await transaction.bakeryBranch.findMany({
+      where: { tenantId, id: { in: branchIds } },
+      select: { id: true, nameFa: true },
+    })
+    for (const branch of branches) branchNames.set(branch.id, branch.nameFa)
+  }
+
   return accounts.map((account) => {
+    // Only tenant-wide grants feed the flat permission list. A branch
+    // operator's admin.orders.manage is real but reaches one counter, and
+    // reporting it here would make them look like a tenant operator to every
+    // reader of this list — including the escalation guard's own display.
     const permissions = new Set<string>()
     for (const grant of account.accessGrants) {
+      if (grant.scopeType !== 'GLOBAL') continue
       for (const entry of grant.role.permissions) permissions.add(entry.permission.code)
     }
     return {
@@ -363,6 +413,11 @@ async function loadStaffAccounts(
         name: grant.role.name,
         grantedAt: grant.activeAt.toISOString(),
         expiresAt: grant.expiresAt?.toISOString() ?? null,
+        ...(grant.scopeType === 'BAKERY_BRANCH' &&
+          grant.scopeId && {
+            bakeryBranchId: grant.scopeId,
+            bakeryBranchNameFa: branchNames.get(grant.scopeId) ?? grant.scopeId,
+          }),
       })),
       permissions: [...permissions],
       isSelf: account.id === actor.accountId,
