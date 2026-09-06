@@ -3,15 +3,21 @@ import { DomainError } from './errors'
 /**
  * Where the money for an order comes from.
  *
- * One entry today, and that is the business rather than an oversight: money
- * reaches the platform before an order is final, and the only route in is a
- * bank gateway. Cash at the door used to be the second entry and was retired
- * with the model that needed it — an order confirmed on a promise and settled
- * at the step.
+ * Two entries, and they are the whole business: money reaches the platform
+ * before an order is final, either straight from a bank gateway or out of a
+ * balance the customer charged from one earlier. Cash at the door was a third
+ * and was retired with the model that needed it — an order confirmed on a
+ * promise and settled at the step.
+ *
+ * Both routes are prepaid, which is why there are only two. A method that let
+ * an order be placed without the money already here would be a different
+ * business, not a third option.
  */
 export const PaymentMethod = {
   /** A bank gateway, redirect and callback. */
   ONLINE_GATEWAY: 'ONLINE_GATEWAY',
+  /** A balance the customer already charged. No gateway, no waiting. */
+  WALLET: 'WALLET',
 } as const
 export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod]
 

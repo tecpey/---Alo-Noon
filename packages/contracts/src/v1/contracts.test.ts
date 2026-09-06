@@ -16,6 +16,7 @@ import {
   orderDraftInputSchema,
   orderCreateSchema,
   orderEnvelopeSchema,
+  paymentCheckoutStartSchema,
   paymentCreatedEventPayloadSchema,
   paymentStateChangedEventPayloadSchema,
   financialTransactionPostedEventPayloadSchema,
@@ -241,6 +242,30 @@ describe('v1 payment and ledger foundation contracts', () => {
     expect(() =>
       paymentSummarySchema.parse({ ...invalid, amount: { amount: '1', currency: 'USD' } }),
     ).toThrow()
+  })
+})
+
+describe('v1 payment checkout contract', () => {
+  const base = {
+    orderId: '719f89ae-84bf-4f57-83a6-573ffe0ac9c6',
+    idempotencyKey: 'checkout-idempotency-0001',
+  }
+
+  /**
+   * A client written before balances existed still works, and still means the
+   * gateway. Defaulting the other way would silently spend somebody's balance
+   * because their app had not been updated.
+   */
+  it('treats an unstated source as the gateway', () => {
+    expect(paymentCheckoutStartSchema.parse(base).source).toBe('GATEWAY')
+    expect(paymentCheckoutStartSchema.parse({ ...base, source: 'BALANCE' }).source).toBe('BALANCE')
+  })
+
+  it('refuses a source it does not have, and an amount it was never given', () => {
+    expect(() => paymentCheckoutStartSchema.parse({ ...base, source: 'CASH' })).toThrow()
+    // The price comes from the order. A request that carries one is a request
+    // to choose one.
+    expect(() => paymentCheckoutStartSchema.parse({ ...base, amount: '1' })).toThrow()
   })
 })
 

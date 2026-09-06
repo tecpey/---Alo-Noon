@@ -12,6 +12,7 @@ import {
   initializePayment,
   orderPaymentStateFor,
   PaymentAggregateState,
+  type PaymentMethod,
   postDoubleEntry,
   RefundDecision,
   refundJournal,
@@ -44,6 +45,18 @@ function postingOf(
 export interface InitializePaymentCommand {
   orderId: string
   idempotencyKey: string
+  /**
+   * Where the money will come from, when the customer has said.
+   *
+   * Read from the order when absent. It used to be read from the order always,
+   * because the method decided what the order cost — a city that allowed cash
+   * priced it differently, so letting a payment declare its own would have let
+   * anyone opt out of the gateway by asking. That is no longer true: both
+   * remaining routes are prepaid and identical in price, and the only thing a
+   * customer chooses is which of their own money to use. The balance itself is
+   * the guard, and it cannot be talked into being larger.
+   */
+  method?: PaymentMethod
 }
 
 export interface OpenTopUpCommand {
@@ -366,11 +379,7 @@ export function createPrismaPaymentLedgerService(
             tenantId,
             orderId: order.id,
             customerId,
-            // Read from the order, never from the request. How an order is paid
-            // for is settled when the customer priced their basket against a
-            // city that allows cash; letting a payment declare its own method
-            // would let anyone opt out of the gateway by asking.
-            method: order.paymentMethod,
+            method: command.method ?? order.paymentMethod,
             amount: order.totalAmount,
             currency: order.currency,
             idempotencyKey: command.idempotencyKey,
@@ -390,6 +399,14 @@ export function createPrismaPaymentLedgerService(
           },
           include: paymentInclude,
         })
+        if (command.method && command.method !== order.paymentMethod) {
+          // ownership-established: the order was just resolved under this
+          // session's customerId, a line above.
+          await transaction.order.update({
+            where: { id: order.id },
+            data: { paymentMethod: command.method },
+          })
+        }
         const eventPayload = paymentCreatedEventPayloadSchema.parse({
           paymentId: payment.id,
           orderId: order.id,

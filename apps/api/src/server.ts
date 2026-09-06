@@ -227,7 +227,9 @@ const paymentSettlementService = createPrismaPaymentSettlementService(prisma, {
   walletService,
 })
 
-const paymentCheckout = { service: paymentLedgerService }
+// Both routes money can take into an order, behind one call: the gateway, and
+// the balance a customer charged from a gateway earlier.
+const paymentCheckout = { service: paymentLedgerService, wallet: walletService }
 
 const paymentCallback = env.PAYMENT_RESULT_REDIRECT_URL
   ? {

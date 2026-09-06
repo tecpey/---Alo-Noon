@@ -11,6 +11,7 @@ import {
 import type { AuthDependencies } from './auth.js'
 import { authenticatedCustomer } from './commerce.js'
 import { PaymentLedgerError, type PaymentLedgerService } from './payment-ledger.js'
+import { WalletError, type WalletService } from './wallet.js'
 
 /**
  * The customer's half of the payment cycle.
@@ -36,6 +37,13 @@ import { PaymentLedgerError, type PaymentLedgerService } from './payment-ledger.
 export interface PaymentCheckoutDependencies {
   service: PaymentLedgerService
   auth: AuthDependencies
+  /**
+   * Pays an order out of the customer's balance. Absent, `source: 'BALANCE'` is
+   * refused rather than quietly falling back to the gateway — a customer who
+   * asked to spend a balance and was sent to a bank instead would reasonably
+   * think they had been charged twice.
+   */
+  wallet?: WalletService
   now?: () => Date
 }
 
@@ -62,7 +70,42 @@ export function registerPaymentCheckoutRoutes(
         .send(errorEnvelope('INVALID_PAYMENT_CHECKOUT_REQUEST', 'The request is invalid.'))
     }
 
+    const now = dependencies.now?.() ?? new Date()
     try {
+      if (parsed.data.source === 'BALANCE') {
+        if (!dependencies.wallet) {
+          return reply
+            .code(503)
+            .send(errorEnvelope('WALLET_UNAVAILABLE', 'پرداخت از کیف پول در دسترس نیست.'))
+        }
+        // ownership-established: the wallet service resolves the order under
+        // this session's customerId and refuses anything that is not theirs.
+        const paid = await dependencies.wallet.payForOrder(
+          customer.tenantId,
+          customer.customerId,
+          { orderId: parsed.data.orderId, idempotencyKey: parsed.data.idempotencyKey },
+          now,
+          randomUUID(),
+        )
+        if (!paid.ok) {
+          // The shortfall, not just the refusal: this is the number the app
+          // puts in front of the customer as an amount to charge.
+          return reply.code(422).send({
+            success: false,
+            error: {
+              code: 'WALLET_INSUFFICIENT_BALANCE',
+              message: 'موجودی کیف پول کافی نیست. ابتدا کیف پول را شارژ کنید.',
+              details: {
+                shortfall: { amount: paid.shortfall.toString(), currency: 'IRR' },
+                balance: { amount: paid.balance.toString(), currency: 'IRR' },
+              },
+            },
+            meta: responseMeta(),
+          })
+        }
+        return reply.code(201).send({ success: true, data: paid.payment, meta: responseMeta() })
+      }
+
       // ownership-established: the service resolves the order under this
       // session's customerId and refuses anything that is not theirs, so an
       // order id from the request body can only ever reach its owner's order.
@@ -70,7 +113,7 @@ export function registerPaymentCheckoutRoutes(
         customer.tenantId,
         customer.customerId,
         { orderId: parsed.data.orderId, idempotencyKey: parsed.data.idempotencyKey },
-        dependencies.now?.() ?? new Date(),
+        now,
         randomUUID(),
       )
       return reply.code(201).send({ success: true, data: payment, meta: responseMeta() })
@@ -133,6 +176,9 @@ const CHECKOUT_MESSAGES: Readonly<Record<string, string>> = {
 }
 
 function checkoutFailure(request: FastifyRequest, reply: FastifyReply, error: unknown): unknown {
+  if (error instanceof WalletError) {
+    return reply.code(error.status).send(errorEnvelope(error.code, 'پرداخت از کیف پول انجام نشد.'))
+  }
   if (error instanceof PaymentLedgerError) {
     const status = CHECKOUT_STATUS[error.code]
     if (status) {

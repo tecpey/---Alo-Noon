@@ -100,6 +100,19 @@ export const paymentCheckoutStartSchema = z
   .object({
     orderId: uuidSchema,
     idempotencyKey: z.string().min(16).max(128),
+    /**
+     * Which of the customer's own money pays for this.
+     *
+     * `GATEWAY` opens a payment and hands the customer to a bank, which is what
+     * the rest of the pipeline settles. `BALANCE` finishes here: there is
+     * nobody to ask, so the payment is captured in the same call.
+     *
+     * There is no third value and no mixing the two. A balance that does not
+     * cover the order is answered with what is missing, so the customer tops up
+     * and comes back — splitting one order across two sources would double the
+     * ways a half-paid order can exist for no gain a customer asked for.
+     */
+    source: z.enum(['GATEWAY', 'BALANCE']).default('GATEWAY'),
   })
   .strict()
 export type PaymentCheckoutStart = z.infer<typeof paymentCheckoutStartSchema>

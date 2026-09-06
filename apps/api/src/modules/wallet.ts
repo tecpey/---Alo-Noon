@@ -6,14 +6,17 @@ import {
   walletTopUpCreateSchema,
   type ErrorEnvelope,
   type ResponseMeta,
+  type PaymentSummary,
   type WalletEntrySummary,
   type WalletSummary,
 } from '@alo-noon/contracts'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   applyWalletMovement,
+  PaymentAggregateState,
   topUpRefusalMessage,
   validateTopUpAmount,
+  walletSpendJournal,
   walletTopUpJournal,
   type WalletEntryKind,
 } from '@alo-noon/domain'
@@ -76,6 +79,32 @@ export interface WalletService {
     now: Date,
     correlationId: string,
   ): Promise<void>
+  /**
+   * Pays for an order out of the balance, start to finish.
+   *
+   * The gateway path exists because a bank has to be asked and can take its
+   * time. A balance has nobody to ask: the money is already here, and the only
+   * question is whether there is enough. So this walks the payment the whole
+   * way in one call rather than leaving it for a callback that will never
+   * arrive.
+   *
+   * Refuses rather than throws when the balance is short, and says by how much.
+   * That is not an error — it is a sentence the checkout has to show, and
+   * "you need another ۴۰٬۰۰۰ ریال" is one a customer can act on.
+   *
+   * Idempotent on the key, and resumable: a crash between steps leaves a
+   * half-walked payment that the next call with the same key finishes, which is
+   * the same contract the gateway path has.
+   */
+  payForOrder(
+    tenantId: string,
+    customerId: string,
+    input: { orderId: string; idempotencyKey: string },
+    now: Date,
+    correlationId: string,
+  ): Promise<
+    { ok: true; payment: PaymentSummary } | { ok: false; shortfall: bigint; balance: bigint }
+  >
 }
 
 export class WalletError extends Error {
@@ -163,6 +192,82 @@ export function createPrismaWalletService(
       })
     },
 
+    async payForOrder(tenantId, customerId, input, now, correlationId) {
+      // ownership-established: scoped to the authenticated customer, so an
+      // order id from a request body can only ever reach its owner's order.
+      const order = await prisma.order.findFirst({
+        where: { id: input.orderId, tenantId, customerId },
+        select: { id: true, totalAmount: true, paymentState: true },
+      })
+      if (!order) throw new WalletError('ORDER_NOT_FOUND', 404)
+
+      // Asked before anything is written, so a customer who cannot afford the
+      // order is told what to do instead of watching a payment be opened and
+      // then stranded. The authoritative check is under the row lock below;
+      // this one is the answer, not the guard.
+      const balance = await withTenant(
+        prisma,
+        tenantId,
+        async (transaction) =>
+          (await openWallet(transaction, tenantId, customerId, now)).balanceAmount,
+      )
+      if (balance < order.totalAmount && order.paymentState !== 'PAID') {
+        return { ok: false as const, shortfall: order.totalAmount - balance, balance }
+      }
+
+      const step = (name: string) => `${input.idempotencyKey}:${name}`.slice(0, 128)
+      const payment = await options.ledger.initialize(
+        tenantId,
+        customerId,
+        { orderId: input.orderId, idempotencyKey: input.idempotencyKey, method: 'WALLET' },
+        now,
+        correlationId,
+      )
+
+      // A balance needs no authorization from anyone, but the aggregate's
+      // history does: the database refuses a state that no contiguous chain of
+      // transitions reaches. These two hops are that chain, keyed so a resumed
+      // call replays them rather than repeating them.
+      for (const to of [PaymentAggregateState.PENDING, PaymentAggregateState.AUTHORIZED] as const) {
+        if (statesBefore(payment.state, to)) {
+          await options.ledger.transition(
+            tenantId,
+            { paymentId: payment.id, to, actor: 'SYSTEM', idempotencyKey: step(to.toLowerCase()) },
+            now,
+            correlationId,
+          )
+        }
+      }
+
+      const captured = await options.ledger.capture(
+        tenantId,
+        {
+          paymentId: payment.id,
+          idempotencyKey: step('capture'),
+          entries: walletSpendJournal(order.totalAmount),
+          // The debit rides inside the capture. An order marked paid whose
+          // balance was never taken is the platform giving bread away; a
+          // balance taken for an order never marked paid is the reverse.
+          within: (transaction) =>
+            spendWithin(
+              transaction,
+              tenantId,
+              {
+                customerId,
+                orderId: input.orderId,
+                paymentId: payment.id,
+                amount: order.totalAmount,
+              },
+              now,
+              correlationId,
+            ),
+        },
+        now,
+        correlationId,
+      )
+      return { ok: true as const, payment: captured.payment }
+    },
+
     async creditTopUpWithin(transaction, tenantId, input, now, correlationId) {
       const moved = await move(transaction, tenantId, {
         customerId: input.customerId,
@@ -176,6 +281,40 @@ export function createPrismaWalletService(
       if (!moved.ok) throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
     },
   }
+}
+
+/**
+ * Takes the money for an order, inside the capture's own transaction.
+ *
+ * Throws rather than returning a refusal, unlike everything else that spends a
+ * balance: by here the capture is half written, and the only correct answer to
+ * a balance that turned out to be short is to undo all of it. The friendly
+ * refusal happened before any of this started.
+ */
+async function spendWithin(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  input: { customerId: string; orderId: string; paymentId: string; amount: bigint },
+  now: Date,
+  correlationId: string,
+): Promise<void> {
+  const moved = await move(transaction, tenantId, {
+    customerId: input.customerId,
+    kind: 'ORDER_PAYMENT',
+    amount: input.amount,
+    orderId: input.orderId,
+    paymentId: input.paymentId,
+    idempotencyKey: `order-payment:${input.orderId}`,
+    now,
+    correlationId,
+  })
+  if (!moved.ok) throw new WalletError('WALLET_INSUFFICIENT_BALANCE', 422)
+}
+
+/** Whether the aggregate still has to make this hop. */
+function statesBefore(current: string, target: PaymentAggregateState): boolean {
+  const order = ['CREATED', 'PENDING', 'AUTHORIZED', 'CAPTURED']
+  return order.indexOf(current) < order.indexOf(target)
 }
 
 type MoveResult =

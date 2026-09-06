@@ -24,6 +24,9 @@ const now = new Date('2026-08-29T09:00:00.000Z')
 interface Fixture {
   tenantId: string
   customerId: string
+  cityId: string
+  zoneId: string
+  branchId: string
   topUpPaymentIds: readonly string[]
   /** A top-up the gateway has not confirmed. Nothing may be credited from it. */
   uncapturedPaymentId: string
@@ -182,6 +185,140 @@ databaseDescribe('customer wallet over PostgreSQL', () => {
     expect(new Set(entries.map((entry) => entry.kind))).toEqual(new Set(['TOP_UP']))
   })
 
+  /**
+   * The whole point of a balance.
+   *
+   * A gateway payment is a conversation with a bank that takes as long as it
+   * takes. This is not: the money is already here, so one call opens the
+   * payment, walks it, posts the journal, takes the balance down and marks the
+   * order paid — all of it, or none of it.
+   */
+  it('pays for an order out of the balance in one call', async () => {
+    const before = await wallet.read(fixture.tenantId, fixture.customerId, now)
+    const order = await placeOrder(400_000n)
+
+    const result = await wallet.payForOrder(
+      fixture.tenantId,
+      fixture.customerId,
+      { orderId: order.id, idempotencyKey: `wallet-pay-${order.id}` },
+      now,
+      randomUUID(),
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.payment.state).toBe('CAPTURED')
+
+    const paid = await prisma.order.findFirstOrThrow({ where: { id: order.id } })
+    expect(paid.paymentState).toBe('PAID')
+    expect(paid.paymentMethod).toBe('WALLET')
+
+    const after = await wallet.read(fixture.tenantId, fixture.customerId, now)
+    expect(BigInt(after.balance.amount)).toBe(BigInt(before.balance.amount) - 400_000n)
+
+    // One obligation becomes another. No cash moved, because it moved when the
+    // wallet was charged — touching cash clearing again would count it twice.
+    const posting = await prisma.financialTransaction.findFirstOrThrow({
+      where: { tenantId: fixture.tenantId, orderId: order.id },
+      include: { entries: { include: { ledgerAccount: true } } },
+    })
+    expect(posting.type).toBe('PAYMENT_CAPTURE')
+    const byAccount = Object.fromEntries(
+      posting.entries.map((entry) => [entry.ledgerAccount.code, entry.side]),
+    )
+    expect(byAccount).toEqual({
+      L_2400_CUSTOMER_WALLET: 'DEBIT',
+      L_2100_PAYMENT_CLEARING: 'CREDIT',
+    })
+  })
+
+  /**
+   * Not an error — an answer.
+   *
+   * The customer is told what is missing so the app can send them to top up
+   * exactly that much, and nothing is written: no opened payment, no statement
+   * line, no order half-paid.
+   */
+  it('refuses an order it cannot cover, and says by how much', async () => {
+    const balance = await wallet.read(fixture.tenantId, fixture.customerId, now)
+    const order = await placeOrder(BigInt(balance.balance.amount) + 250_000n)
+
+    const result = await wallet.payForOrder(
+      fixture.tenantId,
+      fixture.customerId,
+      { orderId: order.id, idempotencyKey: `wallet-short-${order.id}` },
+      now,
+      randomUUID(),
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      shortfall: 250_000n,
+      balance: BigInt(balance.balance.amount),
+    })
+    expect(await prisma.payment.count({ where: { orderId: order.id } })).toBe(0)
+    expect(await prisma.walletEntry.count({ where: { orderId: order.id } })).toBe(0)
+    const untouched = await prisma.order.findFirstOrThrow({ where: { id: order.id } })
+    expect(untouched.paymentState).toBe('NOT_STARTED')
+  })
+
+  /** A customer double-tapping pays once. */
+  it('pays for the same order only once', async () => {
+    const order = await placeOrder(300_000n)
+    const command = { orderId: order.id, idempotencyKey: `wallet-twice-${order.id}` }
+
+    await wallet.payForOrder(fixture.tenantId, fixture.customerId, command, now, randomUUID())
+    const between = await wallet.read(fixture.tenantId, fixture.customerId, now)
+    await wallet.payForOrder(fixture.tenantId, fixture.customerId, command, now, randomUUID())
+
+    const after = await wallet.read(fixture.tenantId, fixture.customerId, now)
+    expect(after.balance.amount).toBe(between.balance.amount)
+    expect(
+      await prisma.walletEntry.count({
+        where: { tenantId: fixture.tenantId, orderId: order.id },
+      }),
+    ).toBe(1)
+    expect(
+      await prisma.financialTransaction.count({
+        where: { tenantId: fixture.tenantId, orderId: order.id },
+      }),
+    ).toBe(1)
+  })
+
+  /**
+   * The property the row lock exists for, from the spending side.
+   *
+   * Two orders reaching for one balance that covers only one of them. Without
+   * the lock both read the same number, both decide they can afford it, and the
+   * check constraint rejects the loser as a violation nobody can explain rather
+   * than as a refusal somebody can act on.
+   */
+  it('never lets two concurrent orders overdraw one balance', async () => {
+    const balance = BigInt(
+      (await wallet.read(fixture.tenantId, fixture.customerId, now)).balance.amount,
+    )
+    const amount = balance - 1n
+    const [first, second] = await Promise.all([placeOrder(amount), placeOrder(amount)])
+
+    const results = await Promise.all(
+      [first, second].map((order) =>
+        wallet
+          .payForOrder(
+            fixture.tenantId,
+            fixture.customerId,
+            { orderId: order.id, idempotencyKey: `wallet-race-${order.id}` },
+            now,
+            randomUUID(),
+          )
+          .catch(() => ({ ok: false as const })),
+      ),
+    )
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    const after = await wallet.read(fixture.tenantId, fixture.customerId, now)
+    expect(BigInt(after.balance.amount)).toBe(1n)
+  })
+
   /** A statement line is a fact about money that already moved. */
   it('refuses to rewrite an entry', async () => {
     const entry = await prisma.walletEntry.findFirstOrThrow({
@@ -215,11 +352,75 @@ databaseDescribe('customer wallet over PostgreSQL', () => {
   })
 })
 
+/** An order waiting to be paid for, priced at exactly what the test needs. */
+async function placeOrder(total: bigint) {
+  return prisma.order.create({
+    data: {
+      tenantId: fixture.tenantId,
+      idempotencyKey: `wallet-order-${randomUUID()}`,
+      customerId: fixture.customerId,
+      bakeryBranchId: fixture.branchId,
+      cityId: fixture.cityId,
+      operationalZoneId: fixture.zoneId,
+      state: 'PENDING_CONFIRMATION',
+      paymentState: 'NOT_STARTED',
+      recipientNameSnapshot: 'زهرا محمدی',
+      recipientPhoneSnapshot: '+989120000000',
+      bakeryNameSnapshot: 'نانوایی',
+      deliveryAddressSnapshot: 'نشانی',
+      deliveryLatitudeSnapshot: '36.5442',
+      deliveryLongitudeSnapshot: '52.6781',
+      subtotalAmount: total,
+      deliveryFeeAmount: 0n,
+      discountAmount: 0n,
+      totalAmount: total,
+      createdAt: now,
+      updatedAt: now,
+    },
+  })
+}
+
 async function seedTenant(): Promise<Fixture> {
   const tenant = await prisma.tenant.create({
     data: { slug: `wallet-${suffix.toLowerCase()}`, name: `Wallet ${suffix}` },
   })
   const tenantId = tenant.id
+
+  const city = await prisma.city.create({
+    data: { tenantId, code: `WLT${suffix}`.slice(0, 16), nameFa: 'شهر', isActive: true },
+  })
+  const zone = await prisma.operationalZone.create({
+    data: {
+      tenantId,
+      cityId: city.id,
+      code: `WLZ${suffix}`.slice(0, 16),
+      nameFa: 'ناحیه',
+      isActive: true,
+    },
+  })
+  const bakery = await prisma.bakery.create({
+    data: {
+      tenantId,
+      legalName: `Wallet Bakery ${suffix}`,
+      displayNameFa: 'نانوایی',
+      partnerStatus: 'ACTIVE',
+    },
+  })
+  const branch = await prisma.bakeryBranch.create({
+    data: {
+      tenantId,
+      bakeryId: bakery.id,
+      cityId: city.id,
+      operationalZoneId: zone.id,
+      code: `WLB${suffix}`.slice(0, 16),
+      nameFa: 'شعبه',
+      addressLine: 'نشانی',
+      latitude: '36.5442',
+      longitude: '52.6781',
+      operationalStatus: 'ACTIVE',
+      qualityStatus: 'APPROVED',
+    },
+  })
 
   const customer = await prisma.customer.create({
     data: { tenantId, mobileE164: `+9893${suffix.slice(0, 7)}` },
@@ -264,6 +465,9 @@ async function seedTenant(): Promise<Fixture> {
   return {
     tenantId,
     customerId: customer.id,
+    cityId: city.id,
+    zoneId: zone.id,
+    branchId: branch.id,
     topUpPaymentIds,
     uncapturedPaymentId: uncaptured.id,
   }
