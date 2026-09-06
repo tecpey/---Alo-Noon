@@ -34,6 +34,7 @@ import { createPrismaAdminMessagingService } from './modules/admin-messaging.js'
 import { createPrismaCustomerNotificationService } from './modules/customer-notifications.js'
 import { createPrismaPushDeviceService } from './modules/push-devices.js'
 import { createPrismaWalletService } from './modules/wallet.js'
+import { createPrismaWalletTransferService } from './modules/wallet-transfer.js'
 import { createExpoPushAdapter } from './providers/expo-push.js'
 import { createPrismaOutboxPublisher } from './modules/outbox-publisher.js'
 import {
@@ -299,6 +300,20 @@ const outboxPublisher = createPrismaOutboxPublisher(prisma, {
   notificationService: customerNotificationService,
 })
 
+// Balance to balance. The code goes to the sender by SMS and never by push:
+// push lands in the app the session is already inside, which is the one place
+// a stolen session already reaches.
+const walletTransferService = createPrismaWalletTransferService(prisma, {
+  wallet: walletService,
+  messagingService: adminMessaging.service,
+  text: {
+    providers: [limoSmsAdapter],
+    credentialResolver: createEnvironmentAuthenticationCredentialResolver(process.env),
+    environment: authenticationDeliveryPolicy.environment,
+  },
+  otpPepper,
+})
+
 // Order operations re-check admin.orders.manage inside their own write
 // transaction, so this instance carries no ambient authority of its own.
 const orderOperations = {
@@ -347,6 +362,7 @@ const app = await buildApp({
   commerceRepository: createPrismaCommerceRepository(prisma, { routingService }),
   addressRepository: createPrismaAddressRepository(prisma),
   pushDevices: { service: pushDeviceService },
+  walletTransfers: { service: walletTransferService },
   wallet: {
     service: walletService,
     // A top-up is an ordinary payment from here on — the same gateway

@@ -38,6 +38,7 @@ export const walletEntrySummarySchema = z.object({
   amount: moneySchema,
   balanceAfter: moneySchema,
   orderId: uuidSchema.optional(),
+  transferId: uuidSchema.optional(),
   createdAt: isoDateTimeSchema,
 })
 export type WalletEntrySummary = z.infer<typeof walletEntrySummarySchema>
@@ -60,3 +61,57 @@ export const walletTopUpCreateSchema = z.object({
   idempotencyKey: z.string().trim().min(16).max(128),
 })
 export type WalletTopUpCreate = z.infer<typeof walletTopUpCreateSchema>
+
+/**
+ * Asking to send part of a balance to somebody else.
+ *
+ * The recipient is named by phone number because that is the only handle a
+ * customer has for another customer. Nothing is moved by this request — it
+ * opens a transfer and sends the sender a code, and the money waits for that
+ * code.
+ */
+export const walletTransferCreateSchema = z
+  .object({
+    recipientMobile: z.string().trim().min(10).max(20),
+    amount: z.string().regex(/^[1-9][0-9]{0,18}$/),
+    idempotencyKey: z.string().trim().min(16).max(128),
+  })
+  .strict()
+export type WalletTransferCreate = z.infer<typeof walletTransferCreateSchema>
+
+export const walletTransferConfirmSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{4,8}$/),
+  })
+  .strict()
+export type WalletTransferConfirm = z.infer<typeof walletTransferConfirmSchema>
+
+export const walletTransferStateSchema = z.enum(['PENDING', 'COMPLETED', 'EXPIRED', 'CANCELLED'])
+
+/**
+ * A transfer as its sender sees it.
+ *
+ * The recipient is masked. Enough for the sender to recognise the person they
+ * meant and catch the one they did not; not enough to turn a phone keypad into
+ * a directory lookup on strangers.
+ */
+export const walletTransferSummarySchema = z.object({
+  id: uuidSchema,
+  state: walletTransferStateSchema,
+  amount: moneySchema,
+  recipientMobileMasked: z.string().min(4),
+  recipientName: z.string().min(1).optional(),
+  codeExpiresAt: isoDateTimeSchema.optional(),
+  createdAt: isoDateTimeSchema,
+  settledAt: isoDateTimeSchema.optional(),
+})
+export type WalletTransferSummary = z.infer<typeof walletTransferSummarySchema>
+
+export const walletTransferEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: walletTransferSummarySchema,
+  meta: responseMetaSchema,
+})

@@ -302,6 +302,8 @@ enum MessageTemplatePurpose {
   ORDER_OUT_FOR_DELIVERY
   ORDER_COMPLETED
   ORDER_CANCELLED
+  /// Confirming a wallet transfer, sent to the sender's own handset.
+  WALLET_TRANSFER_CODE
 }
 
 enum AuthProviderHealthStatus {
@@ -538,6 +540,7 @@ model Tenant {
   customerPushDevices                CustomerPushDevice[]
   customerWallets                    CustomerWallet[]
   walletEntries                      WalletEntry[]
+  walletTransfers                    WalletTransfer[]
   routingProviderConfigurations      RoutingProviderConfiguration[]
   emailProviderConfigurations        EmailProviderConfiguration[]
   operatorAlertRecipients            OperatorAlertRecipient[]
@@ -678,6 +681,8 @@ model Customer {
   favourites             CustomerFavourite[]
   pushDevices            CustomerPushDevice[]
   wallet                 CustomerWallet?
+  transfersSent          WalletTransfer[] @relation("WalletTransferSender")
+  transfersReceived      WalletTransfer[] @relation("WalletTransferRecipient")
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   promotionRedemptions   PromotionRedemption[]
@@ -2331,6 +2336,9 @@ model WalletEntry {
   payment        Payment?        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
   orderId        String?         @db.Uuid
   order          Order?          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  /// The transfer this line is one side of, or null for everything else.
+  transferId     String?         @db.Uuid
+  transfer       WalletTransfer? @relation(fields: [transferId], references: [id], onDelete: Restrict)
   idempotencyKey String          @db.VarChar(128)
   correlationId  String          @db.Uuid
   createdAt      DateTime        @default(now())
@@ -2341,6 +2349,47 @@ model WalletEntry {
   @@index([walletId, tenantId], map: "g3b_WalletEntry_walletId_tenant_idx")
   @@index([paymentId, tenantId], map: "g3b_WalletEntry_paymentId_tenant_idx")
   @@index([orderId, tenantId], map: "g3b_WalletEntry_orderId_tenant_idx")
+  @@index([transferId, tenantId], map: "g3b_WalletEntry_transferId_tenant_idx")
+}
+
+/// Money moving from one customer's balance to another's.
+///
+/// Never posted to the general ledger: both balances sit under the same control
+/// account, so the platform owes exactly what it owed before. The per-customer
+/// detail is WalletEntry, which is the subsidiary ledger.
+model WalletTransfer {
+  id                  String              @id @default(uuid()) @db.Uuid
+  tenantId            String              @db.Uuid
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  senderCustomerId    String              @db.Uuid
+  sender              Customer            @relation("WalletTransferSender", fields: [senderCustomerId], references: [id], onDelete: Restrict)
+  recipientCustomerId String              @db.Uuid
+  recipient           Customer            @relation("WalletTransferRecipient", fields: [recipientCustomerId], references: [id], onDelete: Restrict)
+  amount              BigInt
+  currency            Currency            @default(IRR)
+  state               WalletTransferState @default(PENDING)
+  /// Peppered, never the code itself. A dump cannot be read back into a text message.
+  codeDigest          String              @db.VarChar(128)
+  codeExpiresAt       DateTime
+  failedAttempts      Int                 @default(0)
+  idempotencyKey      String              @db.VarChar(128)
+  correlationId       String              @db.Uuid
+  entries             WalletEntry[]
+  createdAt           DateTime            @default(now())
+  settledAt           DateTime?
+
+  @@unique([tenantId, senderCustomerId, idempotencyKey], map: "WalletTransfer_tenant_sender_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_WalletTransfer_id_tenant_key")
+  @@index([senderCustomerId, tenantId], map: "g3b_WalletTransfer_senderCustomerId_tenant_idx")
+  @@index([recipientCustomerId, tenantId], map: "g3b_WalletTransfer_recipientCustomerId_tenant_idx")
+  @@index([tenantId, state, createdAt(sort: Desc)], map: "WalletTransfer_tenant_state_created_idx")
+}
+
+enum WalletTransferState {
+  PENDING
+  COMPLETED
+  EXPIRED
+  CANCELLED
 }
 
 enum RouteDistanceSource {

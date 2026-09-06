@@ -3,7 +3,6 @@ import {
   composePushMessage,
   notificationPurposeForEvent,
   renderMessageTemplate,
-  selectAuthenticationProvider,
   selectPushDevices,
   type AuthenticationCredentialResolver,
   type AuthenticationDeliveryEnvironment,
@@ -13,6 +12,7 @@ import {
 } from '@alo-noon/domain'
 
 import type { AdminMessagingService } from './admin-messaging.js'
+import { sendTextMessage } from './text-messages.js'
 import type { PushDeviceService } from './push-devices.js'
 
 /**
@@ -143,7 +143,7 @@ export function createPrismaCustomerNotificationService(
         return 'SENT'
       }
 
-      const result = await send(prisma, options, tenantId, {
+      const result = await sendTextMessage(prisma, options, tenantId, {
         mobileE164: order.recipientPhoneSnapshot,
         body,
         idempotencyKey: claimed.id,
@@ -322,94 +322,6 @@ async function tryPush(
   }
 
   return null
-}
-
-interface SendInput {
-  mobileE164: string
-  body: string
-  idempotencyKey: string
-  timeoutMs: number
-  now: Date
-}
-
-async function send(
-  prisma: PrismaClient,
-  options: CustomerNotificationOptions,
-  tenantId: string,
-  input: SendInput,
-): Promise<{ outcome: string; providerReference?: string | undefined; code: string }> {
-  const configurations = await readTransaction(prisma, tenantId, (transaction) =>
-    transaction.authDeliveryProviderConfiguration.findMany({ where: { tenantId } }),
-  )
-
-  let selected
-  try {
-    // The same gateway that carries sign-in codes. A tenant running two SMS
-    // accounts, one for codes and one for notifications, is not a thing anyone
-    // has asked for, and inventing a second selection path would double the
-    // ways a message can fail to be sent at all.
-    selected = selectAuthenticationProvider(
-      configurations.map((configuration) => ({
-        id: configuration.id,
-        tenantId: configuration.tenantId,
-        providerCode: configuration.providerCode,
-        adapterVersion: configuration.adapterVersion,
-        adapterSpiVersion: configuration.adapterSpiVersion,
-        environment: configuration.environment,
-        enabled: configuration.enabled,
-        isDefault: configuration.isDefault,
-        priority: configuration.priority,
-        healthStatus: configuration.healthStatus,
-        circuitOpenedUntil: configuration.circuitOpenedUntil,
-      })),
-      tenantId,
-      options.environment,
-      input.now,
-    )
-  } catch {
-    return { outcome: 'TRANSIENT_FAILURE', code: 'PROVIDER_MISSING' }
-  }
-
-  const adapter = options.providers.find((provider) => provider.code === selected.providerCode)
-  const configuration = configurations.find((entry) => entry.id === selected.id)
-  if (!adapter || !configuration) {
-    return { outcome: 'TRANSIENT_FAILURE', code: 'ADAPTER_UNAVAILABLE' }
-  }
-
-  let credential
-  try {
-    credential = await options.credentialResolver.resolve(
-      configuration.credentialReference,
-      tenantId,
-      configuration.providerCode,
-    )
-  } catch {
-    return { outcome: 'PERMANENT_FAILURE', code: 'CREDENTIAL_UNAVAILABLE' }
-  }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), input.timeoutMs)
-  try {
-    const result = await adapter.sendText({
-      mobileE164: input.mobileE164,
-      body: input.body,
-      senderReference: configuration.senderReference,
-      idempotencyKey: input.idempotencyKey,
-      timeoutMs: input.timeoutMs,
-      signal: controller.signal,
-      credential,
-    })
-    return {
-      outcome: result.outcome,
-      providerReference: result.providerReference,
-      code: result.normalizedCode ?? 'UNSPECIFIED',
-    }
-  } catch {
-    return { outcome: 'UNKNOWN', code: 'PROVIDER_OUTCOME_UNKNOWN' }
-  } finally {
-    clearTimeout(timeout)
-    controller.abort()
-  }
 }
 
 async function settle(

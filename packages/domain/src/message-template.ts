@@ -27,6 +27,7 @@ export const MESSAGE_TEMPLATE_PURPOSES = [
   'ORDER_OUT_FOR_DELIVERY',
   'ORDER_COMPLETED',
   'ORDER_CANCELLED',
+  'WALLET_TRANSFER_CODE',
 ] as const
 export type MessageTemplatePurpose = (typeof MESSAGE_TEMPLATE_PURPOSES)[number]
 
@@ -95,6 +96,22 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: readonly MessageTemplateDefinition[] 
       { name: 'minutes', required: false, labelFa: 'مدت اعتبار (دقیقه)', example: '۵' },
     ],
     defaultBody: 'کد ورود شما به الو نون: {code}',
+  },
+  {
+    purpose: 'WALLET_TRANSFER_CODE',
+    labelFa: 'کد تأیید انتقال کیف پول',
+    descriptionFa: 'پیش از انتقال موجودی به کیف پول شخص دیگر، برای خودِ فرستنده فرستاده می‌شود.',
+    variables: [
+      { name: 'code', required: true, labelFa: 'کد تأیید', example: '۰۰۴۲۳۱' },
+      { name: 'amount', required: true, labelFa: 'مبلغ انتقال (ریال)', example: '۵۰۰٬۰۰۰' },
+      { name: 'recipient', required: false, labelFa: 'گیرنده', example: 'زهرا م.' },
+      { name: 'minutes', required: false, labelFa: 'مدت اعتبار (دقیقه)', example: '۵' },
+    ],
+    // Names the amount and the recipient on purpose. A code with nothing around
+    // it confirms an act the sender cannot see; this one lets somebody who did
+    // not start a transfer know exactly what is being attempted with their
+    // balance.
+    defaultBody: 'انتقال {amount} ریال از کیف پول شما. کد تأیید: {code}',
   },
   {
     purpose: 'ORDER_ACCEPTED',

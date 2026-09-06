@@ -26,6 +26,7 @@ export const messageTemplatePurposeSchema = z.enum([
   'ORDER_OUT_FOR_DELIVERY',
   'ORDER_COMPLETED',
   'ORDER_CANCELLED',
+  'WALLET_TRANSFER_CODE',
 ])
 
 export const messageTemplateVariableSchema = z.object({

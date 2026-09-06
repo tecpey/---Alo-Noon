@@ -40,11 +40,10 @@ import type { PaymentLedgerService } from './payment-ledger.js'
  * that both eventually succeed. Waiting is the behaviour that matches what a
  * person meant.
  *
- * Spending a balance on an order is deliberately not here yet. It has to move
- * the payment state machine and the order's paid flag in the same transaction
- * as the balance — the database refuses a paid order that has no capture
- * posting, and refuses a capture posting whose order is not paid — so it is a
- * change to the capture path rather than a method beside it.
+ * Four things move a balance and they are all here: money arriving from a
+ * gateway, money leaving for an order, and the two halves of a transfer. Each
+ * one either commits with whatever else it belongs to — a ledger posting, a
+ * capture, the other half of a transfer — or does not happen.
  */
 export interface WalletService {
   /** The customer's balance, opening a wallet the first time they look. */
@@ -96,6 +95,30 @@ export interface WalletService {
    * half-walked payment that the next call with the same key finishes, which is
    * the same contract the gateway path has.
    */
+  /**
+   * Moves money between two balances, inside a transaction the caller holds.
+   *
+   * Both halves under one lock apiece and one commit: a debit that lands
+   * without its credit is money that left one customer and reached nobody.
+   *
+   * Nothing is posted to the general ledger, and that is correct rather than an
+   * omission. Both balances sit under one control account — what the platform
+   * owes its customers — and moving money between two of them does not change
+   * that total. A journal whose debit and credit named the same account would
+   * record nothing, and the double-entry guard would refuse it.
+   */
+  transferWithin(
+    transaction: Prisma.TransactionClient,
+    tenantId: string,
+    input: {
+      transferId: string
+      senderCustomerId: string
+      recipientCustomerId: string
+      amount: bigint
+    },
+    now: Date,
+    correlationId: string,
+  ): Promise<{ ok: true } | { ok: false; shortfall: bigint }>
   payForOrder(
     tenantId: string,
     customerId: string,
@@ -150,6 +173,7 @@ export function createPrismaWalletService(
           amount: { amount: entry.amount.toString(), currency: entry.currency },
           balanceAfter: { amount: entry.balanceAfter.toString(), currency: entry.currency },
           ...(entry.orderId && { orderId: entry.orderId }),
+          ...(entry.transferId && { transferId: entry.transferId }),
           createdAt: entry.createdAt.toISOString(),
         }))
       })
@@ -280,6 +304,35 @@ export function createPrismaWalletService(
       })
       if (!moved.ok) throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
     },
+
+    async transferWithin(transaction, tenantId, input, now, correlationId) {
+      const sent = await move(transaction, tenantId, {
+        customerId: input.senderCustomerId,
+        kind: 'TRANSFER_OUT',
+        amount: input.amount,
+        transferId: input.transferId,
+        idempotencyKey: `transfer-out:${input.transferId}`,
+        now,
+        correlationId,
+      })
+      if (!sent.ok) return { ok: false as const, shortfall: sent.shortfall }
+
+      const received = await move(transaction, tenantId, {
+        customerId: input.recipientCustomerId,
+        kind: 'TRANSFER_IN',
+        amount: input.amount,
+        transferId: input.transferId,
+        idempotencyKey: `transfer-in:${input.transferId}`,
+        now,
+        correlationId,
+      })
+      if (!received.ok) {
+        // Unreachable — a credit cannot be short — but returning `ok` here
+        // would be the caller believing money arrived somewhere it did not.
+        throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
+      }
+      return { ok: true as const }
+    },
   }
 }
 
@@ -337,6 +390,7 @@ async function move(
     amount: bigint
     orderId?: string
     paymentId?: string
+    transferId?: string
     idempotencyKey: string
     now: Date
     correlationId: string
@@ -389,6 +443,7 @@ async function move(
       sequence: current.version,
       ...(input.paymentId && { paymentId: input.paymentId }),
       ...(input.orderId && { orderId: input.orderId }),
+      ...(input.transferId && { transferId: input.transferId }),
       idempotencyKey: input.idempotencyKey,
       correlationId: input.correlationId,
       createdAt: input.now,

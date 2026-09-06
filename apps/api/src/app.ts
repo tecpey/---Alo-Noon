@@ -25,6 +25,10 @@ import {
 import { registerAddressRoutes, type AddressRepository } from './modules/addresses.js'
 import { registerPushDeviceRoutes, type PushDeviceDependencies } from './modules/push-devices.js'
 import { registerWalletRoutes, type WalletDependencies } from './modules/wallet.js'
+import {
+  registerWalletTransferRoutes,
+  type WalletTransferDependencies,
+} from './modules/wallet-transfer.js'
 import { registerOrderRoutes, type OrderRepository } from './modules/orders.js'
 import {
   registerPaymentExecutionRoutes,
@@ -91,6 +95,7 @@ export interface AppOptions {
   addressRepository?: AddressRepository
   pushDevices?: Omit<PushDeviceDependencies, 'auth'>
   wallet?: Omit<WalletDependencies, 'auth'>
+  walletTransfers?: Omit<WalletTransferDependencies, 'auth'>
   orderRepository?: OrderRepository
   paymentExecutionService?: PaymentExecutionService
   paymentCallback?: Omit<PaymentCallbackDependencies, 'auth'>
@@ -268,6 +273,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.pushDevices) {
     registerPushDeviceRoutes(app, { ...options.pushDevices, auth: options.auth })
+  }
+  if (options.auth && options.walletTransfers) {
+    registerWalletTransferRoutes(app, { ...options.walletTransfers, auth: options.auth })
   }
   if (options.auth && options.wallet) {
     registerWalletRoutes(app, { ...options.wallet, auth: options.auth })
