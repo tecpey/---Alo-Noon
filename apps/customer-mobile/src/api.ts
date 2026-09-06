@@ -16,6 +16,11 @@ import {
   pushDeviceEnvelopeSchema,
   serviceabilityEnvelopeSchema,
   sessionEnvelopeSchema,
+  walletEntryListEnvelopeSchema,
+  walletEnvelopeSchema,
+  walletTopUpStartedEnvelopeSchema,
+  walletTransferEnvelopeSchema,
+  walletTransferListEnvelopeSchema,
   type ActiveCitySummary,
   type AddressCreate,
   type AddressSummary,
@@ -33,6 +38,9 @@ import {
   type PushDeviceSummary,
   type ServiceabilityResponse,
   type SessionContext,
+  type WalletEntrySummary,
+  type WalletSummary,
+  type WalletTransferSummary,
 } from '@alo-noon/contracts'
 
 interface RuntimeSchema<T> {
@@ -46,6 +54,14 @@ export class CustomerApiError extends Error {
     readonly code: string,
     readonly status: number,
     readonly retryAfterSeconds?: number,
+    /**
+     * What the refusal knows beyond its code.
+     *
+     * A balance short by exactly this much is the amount to top up, and the
+     * attempts left on a transfer code is a number a customer needs to see.
+     * Carried as `unknown` because the shape belongs to the code beside it.
+     */
+    readonly details?: unknown,
   ) {
     super(code)
   }
@@ -108,7 +124,12 @@ export interface CustomerApiClient {
    * from the order's own total, because a client-supplied amount would be a
    * client-chosen price.
    */
-  startPayment(orderId: string, idempotencyKey: string): Promise<PaymentSummary>
+  startPayment(
+    orderId: string,
+    idempotencyKey: string,
+    /** Which of the customer's own money pays. Omitted means the gateway. */
+    source?: 'GATEWAY' | 'BALANCE',
+  ): Promise<PaymentSummary>
   /**
    * Asks the gateway for a page to send the customer to. `customerAction.url`
    * is where they go; a result without one means the gateway refused before the
@@ -149,6 +170,33 @@ export interface CustomerApiClient {
   registerPushDevice(input: PushDeviceRegister): Promise<PushDeviceSummary>
   /** On sign-out, so the next order does not buzz a phone nobody is signed into. */
   forgetPushDevice(expoPushToken: string): Promise<void>
+
+  /* ---------------------------------------------------------------- wallet */
+
+  /** The balance, opening an empty wallet the first time it is asked for. */
+  readWallet(): Promise<WalletSummary>
+  /** The statement, newest first. */
+  listWalletEntries(): Promise<WalletEntrySummary[]>
+  /**
+   * Opens a payment that will charge the balance.
+   *
+   * Answers with a payment id, which is then initialised and redirected to
+   * exactly like an order's — a top-up is an ordinary payment, and that is what
+   * buys it the callback route and the recovery sweep for free.
+   */
+  startWalletTopUp(amountRial: string, idempotencyKey: string): Promise<{ paymentId: string }>
+  /** Transfers this customer started, newest first. */
+  listWalletTransfers(): Promise<WalletTransferSummary[]>
+  /**
+   * Names a recipient and an amount, and asks for a code. Moves no money.
+   */
+  openWalletTransfer(input: {
+    recipientMobile: string
+    amountRial: string
+    idempotencyKey: string
+  }): Promise<WalletTransferSummary>
+  /** Types the code back. This is the call that moves the money. */
+  confirmWalletTransfer(transferId: string, code: string): Promise<WalletTransferSummary>
 }
 
 export function createCustomerApiClient(
@@ -267,10 +315,10 @@ export function createCustomerApiClient(
         method: 'POST',
         body: JSON.stringify({ quoteId, idempotencyKey }),
       }),
-    startPayment: async (orderId, idempotencyKey) =>
+    startPayment: async (orderId, idempotencyKey, source) =>
       request('/api/v1/payments', paymentEnvelopeSchema, {
         method: 'POST',
-        body: JSON.stringify({ orderId, idempotencyKey }),
+        body: JSON.stringify({ orderId, idempotencyKey, ...(source && { source }) }),
       }),
     initializePayment: async (paymentId, idempotencyKey) =>
       request('/api/v1/payments/initialize', paymentExecutionEnvelopeSchema, {
@@ -279,6 +327,30 @@ export function createCustomerApiClient(
       }),
     readPayment: async (paymentId) =>
       request(`/api/v1/payments/${encodeURIComponent(paymentId)}`, paymentEnvelopeSchema),
+    readWallet: async () => request('/api/v1/wallet', walletEnvelopeSchema),
+    listWalletEntries: async () => request('/api/v1/wallet/entries', walletEntryListEnvelopeSchema),
+    startWalletTopUp: async (amountRial, idempotencyKey) =>
+      request('/api/v1/wallet/top-ups', walletTopUpStartedEnvelopeSchema, {
+        method: 'POST',
+        body: JSON.stringify({ amount: amountRial, idempotencyKey }),
+      }),
+    listWalletTransfers: async () =>
+      request('/api/v1/wallet/transfers', walletTransferListEnvelopeSchema),
+    openWalletTransfer: async (input) =>
+      request('/api/v1/wallet/transfers', walletTransferEnvelopeSchema, {
+        method: 'POST',
+        body: JSON.stringify({
+          recipientMobile: input.recipientMobile,
+          amount: input.amountRial,
+          idempotencyKey: input.idempotencyKey,
+        }),
+      }),
+    confirmWalletTransfer: async (transferId, code) =>
+      request(
+        `/api/v1/wallet/transfers/${encodeURIComponent(transferId)}/confirm`,
+        walletTransferEnvelopeSchema,
+        { method: 'POST', body: JSON.stringify({ code }) },
+      ),
     listOrders: async () => request('/api/v1/orders', orderListEnvelopeSchema),
     readOrder: async (orderId) =>
       request(`/api/v1/orders/${encodeURIComponent(orderId)}`, orderEnvelopeSchema),
@@ -336,6 +408,7 @@ async function apiError(response: Response): Promise<CustomerApiError> {
         parsed.data.error.code,
         response.status,
         Number.isFinite(retryAfter) ? retryAfter : undefined,
+        parsed.data.error.details,
       )
     }
   } catch {

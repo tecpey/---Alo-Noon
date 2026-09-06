@@ -115,3 +115,22 @@ export const walletTransferEnvelopeSchema = z.object({
   data: walletTransferSummarySchema,
   meta: responseMetaSchema,
 })
+
+export const walletTransferListEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.array(walletTransferSummarySchema),
+  meta: responseMetaSchema,
+})
+
+/**
+ * What opening a top-up answers with.
+ *
+ * A payment id and nothing else. From there it is an ordinary gateway payment —
+ * initialised, redirected to and settled by exactly the code an order's payment
+ * uses, which is the whole reason a top-up reuses the payment aggregate.
+ */
+export const walletTopUpStartedEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.object({ paymentId: uuidSchema }),
+  meta: responseMetaSchema,
+})

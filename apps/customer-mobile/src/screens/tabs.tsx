@@ -3,13 +3,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
 
 /**
- * Three tabs, hand-rolled.
+ * Four tabs, hand-rolled.
  *
  * A navigation library earns its keep with deep links, a back stack, gestures
- * and screens that must survive being pushed and popped. This app has three
- * flat destinations and exactly one level below one of them, which a piece of
- * state and a back affordance handle. Adding react-navigation here would mean
- * four packages and native modules for a bar with three buttons in it.
+ * and screens that must survive being pushed and popped. This app has four flat
+ * destinations and exactly one level below one of them, which a piece of state
+ * and a back affordance handle. Adding react-navigation here would mean four
+ * packages and native modules for a bar with four buttons in it.
  *
  * That calculation changes the moment a screen needs its own history, or a
  * notification has to open one directly. When it does, this is the file to
@@ -19,11 +19,12 @@ import { colors, ink, line, surface } from '@alo-noon/design-tokens'
  * is one a customer has to hunt for, and reaching the bottom of a long order
  * list is exactly when somebody wants to leave it.
  */
-export type Tab = 'shop' | 'orders' | 'account'
+export type Tab = 'shop' | 'orders' | 'wallet' | 'account'
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'shop', label: 'نان' },
   { id: 'orders', label: 'سفارش‌ها' },
+  { id: 'wallet', label: 'کیف پول' },
   { id: 'account', label: 'حساب' },
 ]
 

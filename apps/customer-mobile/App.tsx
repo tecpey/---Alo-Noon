@@ -28,9 +28,20 @@ import type {
   ProductSummary,
   QuoteSummary,
   SessionContext,
+  WalletEntrySummary,
+  WalletSummary,
+  WalletTransferSummary,
 } from '@alo-noon/contracts'
 import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
-import { formatDeliveryWindow, orderProgress } from '@alo-noon/domain'
+import {
+  formatDeliveryWindow,
+  orderProgress,
+  parseTomanToRial,
+  topUpRefusalMessage,
+  transferRefusalMessage,
+  validateTopUpAmount,
+  validateTransferAmount,
+} from '@alo-noon/domain'
 import { GlassSurface, OvenIcon, PlusIcon, PressScale, SteamIcon } from '@alo-noon/mobile-ui'
 
 import brandMark from './assets/logo-mark.png'
@@ -41,6 +52,7 @@ import { AccountScreen } from './src/screens/account'
 import { CheckoutChoices } from './src/screens/checkout-choices'
 import { OrderDetailScreen, OrdersScreen } from './src/screens/orders'
 import { TabBar, type Tab } from './src/screens/tabs'
+import { WalletScreen, type WalletTransferStage } from './src/screens/wallet'
 import {
   formatMoney,
   normalizeIranianMobile,
@@ -78,6 +90,15 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('shop')
   const [orders, setOrders] = useState<OrderSummary[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
+  const [wallet, setWallet] = useState<WalletSummary | null>(null)
+  const [walletEntries, setWalletEntries] = useState<WalletEntrySummary[]>([])
+  const [walletTransfers, setWalletTransfers] = useState<WalletTransferSummary[]>([])
+  const [walletLoading, setWalletLoading] = useState(false)
+  const [walletBusy, setWalletBusy] = useState(false)
+  const [walletNotice, setWalletNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(
+    null,
+  )
+  const [transferStage, setTransferStage] = useState<WalletTransferStage>({ step: 'idle' })
   const [openOrderId, setOpenOrderId] = useState<string>()
   const [reordering, setReordering] = useState(false)
   const [session, setSession] = useState<SessionContext | null>(null)
@@ -143,6 +164,7 @@ export default function App() {
             loadCities(api, active),
             loadCart(api, active),
             loadAddresses(api, active),
+            loadBalance(api, active),
           ])
         } catch (error) {
           if (active) setMessage(errorMessage(error))
@@ -171,6 +193,18 @@ export default function App() {
       if (!stillActive) return
       setAddresses(saved)
       setSelectedAddressId(saved[0]?.id)
+    }
+
+    /**
+     * The balance alone, at sign-in.
+     *
+     * Checkout needs it to decide whether to offer paying from it, and that
+     * decision happens long before anybody opens the wallet tab. Only the
+     * balance: the statement is three more rows nobody has asked to see yet.
+     */
+    async function loadBalance(client: CustomerApiClient, stillActive: boolean) {
+      const balance = await client.readWallet()
+      if (stillActive) setWallet(balance)
     }
 
     return () => {
@@ -497,12 +531,31 @@ export default function App() {
    * key is only cleared once a URL is in hand: if the second call fails, the
    * retry must reuse it.
    */
-  const startPayment = async () => {
+  const startPayment = async (source: 'GATEWAY' | 'BALANCE' = 'GATEWAY') => {
     if (!api || !order || busy) return
     const idempotencyKey = paymentCommandKey ?? commandKey('mobile-payment')
     setPaymentCommandKey(idempotencyKey)
     setBusy(true)
     setMessage(undefined)
+
+    // A balance has no bank to wait for: the same call that opens the payment
+    // captures it, so there is nothing to initialise and nothing to come back
+    // from.
+    if (source === 'BALANCE') {
+      try {
+        setPayment(await api.startPayment(order.id, idempotencyKey, 'BALANCE'))
+        setPaymentCommandKey(undefined)
+        setOrder(await api.readOrder(order.id))
+        void loadWallet()
+      } catch (error) {
+        setMessage(walletErrorText(error))
+        handleAuthenticatedError(error)
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
     try {
       const opened = payment ?? (await api.startPayment(order.id, idempotencyKey))
       setPayment(opened)
@@ -631,6 +684,144 @@ export default function App() {
     }
   }
 
+  /**
+   * Everything the wallet screen shows, in one pass.
+   *
+   * Three reads rather than one, because they are three resources — and all
+   * three together, because a balance without its statement is a number a
+   * customer cannot check.
+   */
+  const loadWallet = async () => {
+    if (!api) return
+    setWalletLoading(true)
+    try {
+      const [balance, entries, transfers] = await Promise.all([
+        api.readWallet(),
+        api.listWalletEntries(),
+        api.listWalletTransfers(),
+      ])
+      setWallet(balance)
+      setWalletEntries(entries)
+      setWalletTransfers(transfers)
+      // A transfer already waiting for its code is resumed rather than
+      // restarted: a customer who closed the app comes back to the code field,
+      // not to a form that would charge a second text to reach the same place.
+      const pending = transfers.find((transfer) => transfer.state === 'PENDING')
+      setTransferStage(pending ? { step: 'confirming', transfer: pending } : { step: 'idle' })
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletLoading(false)
+    }
+  }
+
+  /**
+   * Charges the balance through the bank.
+   *
+   * The same two calls an order's payment makes, because a top-up is an
+   * ordinary payment — which is what buys it the callback route, the settlement
+   * sweep and the retry semantics without any of it being written twice.
+   */
+  const topUpWallet = async (amountToman: string) => {
+    if (!api || walletBusy) return
+    const amount = parseTomanToRial(amountToman)
+    if (amount === null) {
+      setWalletNotice({ tone: 'error', text: 'مبلغ شارژ را درست وارد کنید.' })
+      return
+    }
+    const refusal = validateTopUpAmount(amount)
+    if (refusal) {
+      setWalletNotice({ tone: 'error', text: topUpRefusalMessage(refusal) })
+      return
+    }
+
+    setWalletBusy(true)
+    setWalletNotice(null)
+    try {
+      const started = await api.startWalletTopUp(amount.toString(), commandKey('mobile-top-up'))
+      const result = await api.initializePayment(started.paymentId, commandKey('mobile-top-up-go'))
+      if (result.customerAction) {
+        await Linking.openURL(result.customerAction.url)
+      } else {
+        setWalletNotice({ tone: 'error', text: customerCopy.paymentUnavailable })
+      }
+    } catch (error) {
+      setWalletNotice({ tone: 'error', text: walletErrorText(error) })
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
+  /** Names a recipient and an amount, and asks for the code. Moves nothing. */
+  const openTransfer = async (input: { recipientMobile: string; amountToman: string }) => {
+    if (!api || walletBusy) return
+    const recipientMobile = normalizeIranianMobile(input.recipientMobile)
+    if (!recipientMobile) {
+      setWalletNotice({ tone: 'error', text: 'شمارهٔ گیرنده معتبر نیست.' })
+      return
+    }
+    const amount = parseTomanToRial(input.amountToman)
+    if (amount === null) {
+      setWalletNotice({ tone: 'error', text: 'مبلغ انتقال را درست وارد کنید.' })
+      return
+    }
+    const refusal = validateTransferAmount(amount)
+    if (refusal) {
+      setWalletNotice({
+        tone: 'error',
+        text: transferRefusalMessage(refusal) ?? 'مبلغ انتقال معتبر نیست.',
+      })
+      return
+    }
+
+    setWalletBusy(true)
+    setWalletNotice(null)
+    try {
+      const transfer = await api.openWalletTransfer({
+        recipientMobile,
+        amountRial: amount.toString(),
+        idempotencyKey: commandKey('mobile-transfer'),
+      })
+      setTransferStage({ step: 'confirming', transfer })
+    } catch (error) {
+      setWalletNotice({ tone: 'error', text: walletErrorText(error) })
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
+  /** Types the code back. This is the call that moves the money. */
+  const confirmTransfer = async (transferId: string, code: string) => {
+    if (!api || walletBusy) return
+    const normalized = normalizeOtpCode(code)
+    if (!normalized) {
+      setWalletNotice({ tone: 'error', text: 'کد تأیید را کامل وارد کنید.' })
+      return
+    }
+
+    setWalletBusy(true)
+    setWalletNotice(null)
+    try {
+      const transfer = await api.confirmWalletTransfer(transferId, normalized)
+      setTransferStage({ step: 'done', transfer })
+      setWalletNotice({ tone: 'ok', text: 'انتقال انجام شد.' })
+      await loadWallet()
+    } catch (error) {
+      setWalletNotice({ tone: 'error', text: walletErrorText(error) })
+      // A dead transfer must not keep a code field on screen promising a second
+      // chance that does not exist.
+      if (error instanceof CustomerApiError && error.code !== 'INVALID_CODE') {
+        setTransferStage({ step: 'idle' })
+        await loadWallet()
+      }
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
   const reorderFrom = async (orderId: string) => {
     if (!api || reordering) return
     setReordering(true)
@@ -714,6 +905,7 @@ export default function App() {
               setOpenOrderId(undefined)
               setTab(next)
               if (next === 'orders') void loadOrders()
+              if (next === 'wallet') void loadWallet()
             }}
           />
         ) : undefined
@@ -824,6 +1016,27 @@ export default function App() {
         </View>
       )}
 
+      {screen === 'catalog' && tab === 'wallet' && (
+        <View style={styles.catalogPanel}>
+          <WalletScreen
+            wallet={wallet}
+            entries={walletEntries}
+            transfers={walletTransfers}
+            loading={walletLoading}
+            busy={walletBusy}
+            notice={walletNotice}
+            transferStage={transferStage}
+            onTopUp={(amount) => void topUpWallet(amount)}
+            onOpenTransfer={(input) => void openTransfer(input)}
+            onConfirmTransfer={(transferId, code) => void confirmTransfer(transferId, code)}
+            onCancelTransfer={() => {
+              setTransferStage({ step: 'idle' })
+              setWalletNotice(null)
+            }}
+          />
+        </View>
+      )}
+
       {screen === 'catalog' && tab === 'account' && (
         <View style={styles.catalogPanel}>
           <AccountScreen
@@ -897,7 +1110,8 @@ export default function App() {
               onRemove={(offeringId) => void removeCartItem(offeringId)}
               onQuote={() => void createQuote()}
               onOrder={() => void createOrder()}
-              onPay={() => void startPayment()}
+              onPay={(source) => void startPayment(source)}
+              walletBalance={wallet?.balance.amount ?? null}
               onRefreshPayment={() => void refreshPayment()}
               choices={
                 <CheckoutChoices
@@ -1219,6 +1433,7 @@ function CartCard({
   onOrder,
   onPay,
   onRefreshPayment,
+  walletBalance,
   choices,
 }: {
   cart: CartSummary
@@ -1232,14 +1447,31 @@ function CartCard({
   onRemove: (offeringId: string) => void
   onQuote: () => void
   onOrder: () => void
-  onPay: () => void
+  onPay: (source: 'GATEWAY' | 'BALANCE') => void
   onRefreshPayment: () => void
+  /**
+   * The balance, in Rial, or null when it has not been read.
+   *
+   * Null means the choice is not offered rather than offered and broken. A
+   * customer told "pay from balance" and then told the balance is unknown has
+   * been asked a question nobody can answer.
+   */
+  walletBalance: string | null
   /**
    * When, how and with what code — passed in rather than built here so this
    * component keeps knowing only about the basket it was already about.
    */
   choices: ReactNode
 }) {
+  // Recomputed from the order rather than remembered, so a re-priced basket
+  // cannot leave a balance button standing against a total it no longer covers.
+  const balanceCovers =
+    walletBalance !== null &&
+    order !== null &&
+    /^\d+$/.test(walletBalance) &&
+    /^\d+$/.test(order.total.amount) &&
+    BigInt(walletBalance) >= BigInt(order.total.amount)
+
   return (
     <View style={styles.cartCard}>
       <View style={styles.cartTitleRow}>
@@ -1329,11 +1561,29 @@ function CartCard({
               {awaitingReturn && (
                 <Text style={styles.quoteNotice}>{customerCopy.paymentReturn}</Text>
               )}
+              {/*
+                Two ways money reaches an order, and the balance goes first when
+                it covers the total — it is the faster one, and the one that
+                does not leave the app. Offered only when it can actually pay:
+                a button that refuses is worse than a button that is absent.
+              */}
+              {balanceCovers && (
+                <PrimaryButton
+                  label="پرداخت از کیف پول"
+                  busy={busy}
+                  onPress={() => onPay('BALANCE')}
+                />
+              )}
               <PrimaryButton
-                label={awaitingReturn ? 'پرداخت دوباره' : 'پرداخت'}
+                label={awaitingReturn ? 'پرداخت دوباره' : 'پرداخت با درگاه بانکی'}
                 busy={busy}
-                onPress={onPay}
+                onPress={() => onPay('GATEWAY')}
               />
+              {walletBalance !== null && !balanceCovers && (
+                <Text style={styles.quoteNotice}>
+                  موجودی کیف پول ({formatMoney(walletBalance)}) برای این سفارش کافی نیست.
+                </Text>
+              )}
               {payment && (
                 <PrimaryButton label="بررسی وضعیت پرداخت" busy={busy} onPress={onRefreshPayment} />
               )}
@@ -1461,6 +1711,58 @@ function errorMessage(error: unknown): string {
     default:
       return 'درخواست انجام نشد؛ اطلاعات را بررسی و دوباره تلاش کنید.'
   }
+}
+
+/**
+ * Why a wallet request was refused, in words a customer can act on.
+ *
+ * Separate from `errorMessage` because the API already writes these sentences —
+ * the shortfall, the attempts left, the minimum — and rewriting them here would
+ * be a second place for the same limit to be quoted, eventually differently.
+ * The generic table is the fallback for the transport failures it does cover.
+ */
+function walletErrorText(error: unknown): string {
+  if (!(error instanceof CustomerApiError)) return errorMessage(error)
+
+  const shortfall = walletShortfall(error.details)
+  if (shortfall) return `موجودی کافی نیست. ${formatMoney(shortfall)} کم دارید.`
+
+  switch (error.code) {
+    case 'INVALID_CODE':
+      return `کد تأیید درست نیست.${attemptsSuffix(error.details)}`
+    case 'EXHAUSTED':
+      return 'این انتقال منقضی شده است. دوباره شروع کنید.'
+    case 'NOT_PENDING':
+      return 'این انتقال قبلاً بسته شده است.'
+    case 'RECIPIENT_NOT_FOUND':
+      return 'شماره‌ای که وارد کردید در الو نون ثبت نشده است.'
+    case 'SELF_TRANSFER':
+      return 'نمی‌توانید به کیف پول خودتان انتقال دهید.'
+    case 'CODE_NOT_SENT':
+      return 'ارسال کد تأیید ممکن نشد. کمی بعد دوباره تلاش کنید.'
+    case 'TOP_UP_UNAVAILABLE':
+    case 'WALLET_UNAVAILABLE':
+      return 'کیف پول موقتاً در دسترس نیست؛ دوباره تلاش کنید.'
+    default:
+      return errorMessage(error)
+  }
+}
+
+/** The Rial figure inside a refusal's `details.shortfall`, when there is one. */
+function walletShortfall(details: unknown): string | null {
+  if (!details || typeof details !== 'object') return null
+  const shortfall = (details as Record<string, unknown>)['shortfall']
+  if (!shortfall || typeof shortfall !== 'object') return null
+  const amount = (shortfall as { amount?: unknown }).amount
+  return typeof amount === 'string' && /^\d+$/.test(amount) ? amount : null
+}
+
+/** " ۴ تلاش دیگر باقی است." when the refusal counted, and nothing when it did not. */
+function attemptsSuffix(details: unknown): string {
+  if (!details || typeof details !== 'object') return ''
+  const left = (details as Record<string, unknown>)['attemptsLeft']
+  if (typeof left !== 'number' || !Number.isInteger(left) || left < 0) return ''
+  return ` ${left.toLocaleString('fa-IR')} تلاش دیگر باقی است.`
 }
 
 const styles = StyleSheet.create({
