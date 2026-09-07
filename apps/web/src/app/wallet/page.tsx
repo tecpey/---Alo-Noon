@@ -6,20 +6,32 @@ import '../storefront.css'
 import '../account/account.css'
 import './wallet.css'
 
-import type { WalletEntrySummary, WalletTransferSummary } from '@alo-noon/contracts'
+import type {
+  WalletEntrySummary,
+  WalletTransferSummary,
+  WalletWithdrawalSummary,
+} from '@alo-noon/contracts'
 
 import { BrandMark } from '../components/brand-mark'
 import { ShieldIcon, TransferIcon, WalletIcon } from '../components/icons'
 import { TopUpForm } from './top-up-form'
 import { TransferForm } from './transfer-form'
+import { WithdrawalForm } from './withdrawal-form'
 import { formatToman, toPersianDigits } from '../../lib/persian'
 import {
   currentSession,
   listWalletEntries,
   listWalletTransfers,
+  listWalletWithdrawals,
   readWallet,
 } from '../../lib/shop-api'
-import { transferStateLabel, walletEntryLabel, walletEntrySign } from '../../lib/wallet-view'
+import {
+  maskedCard,
+  transferStateLabel,
+  walletEntryLabel,
+  walletEntrySign,
+  withdrawalStateLabel,
+} from '../../lib/wallet-view'
 
 export const metadata: Metadata = {
   title: 'کیف پول | الو نون',
@@ -45,10 +57,11 @@ export default async function WalletPage({
   const session = await currentSession()
   if (!session) redirect('/account?next=/wallet')
 
-  const [wallet, entries, transfers, params] = await Promise.all([
+  const [wallet, entries, transfers, withdrawals, params] = await Promise.all([
     readWallet(),
     listWalletEntries(),
     listWalletTransfers(),
+    listWalletWithdrawals(),
     searchParams,
   ])
 
@@ -92,15 +105,22 @@ export default async function WalletPage({
 
             <TransferForm pending={pending} />
 
+            <WithdrawalForm balanceRial={wallet.data.balance.amount} />
+
             <Statement entries={entries.ok ? entries.data : []} />
 
             {transfers.ok && transfers.data.length > 0 && <Transfers transfers={transfers.data} />}
+
+            {withdrawals.ok && withdrawals.data.length > 0 && (
+              <Withdrawals withdrawals={withdrawals.data} />
+            )}
           </>
         )}
 
         <p className="wallet__reassure">
           <ShieldIcon width={16} height={16} />
-          موجودی کیف پول برای پرداخت سفارش و انتقال به دیگران است؛ برداشت به حساب بانکی ندارد.
+          موجودی کیف پول پول خودتان است: با آن سفارش می‌دهید، به دیگران می‌فرستید، یا به کارت
+          بانکی‌تان پس می‌گیرید. <Link href="/legal/refunds">شرایط بازگشت وجه</Link>
         </p>
       </main>
     </div>
@@ -184,6 +204,53 @@ function Transfers({ transfers }: { transfers: readonly WalletTransferSummary[] 
               </p>
             </div>
             <p className="wallet-transfer__amount">{formatToman(transfer.amount.amount)}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+/**
+ * Withdrawals the customer asked for.
+ *
+ * Separate from the statement for the same reason transfers are: a refused
+ * request moved money twice and nets to nothing, and the statement will show
+ * both halves without ever saying *why*. The reason lives here.
+ */
+function Withdrawals({ withdrawals }: { withdrawals: readonly WalletWithdrawalSummary[] }) {
+  return (
+    <section className="wallet__section">
+      <h2>برداشت‌های شما</h2>
+      <ol className="wallet__transfers">
+        {withdrawals.map((withdrawal) => (
+          <li
+            key={withdrawal.id}
+            className={`wallet-transfer is-${withdrawal.state.toLowerCase()}`}
+          >
+            <span className="wallet-transfer__glyph">
+              <WalletIcon width={18} height={18} />
+            </span>
+            <div>
+              <p className="wallet-transfer__who" dir="ltr">
+                {maskedCard(withdrawal.cardLastFour)}
+              </p>
+              <p className="wallet-transfer__when">
+                {withdrawalStateLabel(withdrawal.state)} — {persianDate(withdrawal.requestedAt)}
+              </p>
+              {/* The reason a request was refused, in the operator's own words.
+                  A rejection with no reason is a phone call the customer has to
+                  make to find out anything. */}
+              {withdrawal.rejectionReason && (
+                <p className="wallet-transfer__reason">{withdrawal.rejectionReason}</p>
+              )}
+              {withdrawal.bankReference && (
+                <p className="wallet-transfer__reason" dir="ltr">
+                  {withdrawal.bankReference}
+                </p>
+              )}
+            </div>
+            <p className="wallet-transfer__amount">{formatToman(withdrawal.amount.amount)}</p>
           </li>
         ))}
       </ol>

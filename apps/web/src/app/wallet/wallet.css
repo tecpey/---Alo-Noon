@@ -336,3 +336,45 @@
   margin-block-start: 0.35rem;
   color: var(--success);
 }
+
+/* ------------------------------------------------------------- withdrawal */
+
+/*
+ * Asking for the money back.
+ *
+ * Deliberately the plainest block on the page. Everything above it is trying to
+ * be inviting; this one is a form somebody fills in carefully once, and every
+ * flourish would be a distraction at the moment they are typing a card number.
+ */
+.wallet__withdraw-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-block-start: 0.75rem;
+}
+.wallet__withdraw-form label {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+.wallet__withdraw-form .wallet__amount {
+  inline-size: 100%;
+}
+.wallet__withdraw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+}
+.wallet__done {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--success) 10%, var(--surface-card));
+  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--surface-card));
+  font-size: 0.9rem;
+}
+.wallet-transfer__reason {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}

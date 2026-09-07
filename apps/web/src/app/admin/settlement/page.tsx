@@ -2,12 +2,19 @@ import { redirect } from 'next/navigation'
 
 import {
   isUnauthenticated,
+  readOpenWithdrawals,
   readOutstandingBalances,
   readPartnerPayouts,
   type PartnerBalanceSummary,
   type PartnerPayoutSummary,
+  type StaffWithdrawalSummary,
 } from '../../../lib/admin-api'
-import { markPayoutPaidAction, preparePayoutAction } from '../../../lib/admin-actions'
+import {
+  markPayoutPaidAction,
+  payWithdrawalAction,
+  preparePayoutAction,
+  rejectWithdrawalAction,
+} from '../../../lib/admin-actions'
 import { formatCount, formatDateTime, formatMoney } from '../../../lib/admin-format-display'
 import { ActionForm, Field } from '../action-form'
 import { AdminNav } from '../admin-nav'
@@ -37,7 +44,11 @@ const PAYOUT_STATE_LABELS: Readonly<Record<string, string>> = {
 const OVERDUE_DAYS = 14
 
 export default async function AdminSettlementPage() {
-  const [balances, payouts] = await Promise.all([readOutstandingBalances(), readPartnerPayouts(50)])
+  const [balances, payouts, withdrawals] = await Promise.all([
+    readOutstandingBalances(),
+    readPartnerPayouts(50),
+    readOpenWithdrawals(),
+  ])
   if (!balances.ok && isUnauthenticated(balances.error)) redirect('/admin/login')
 
   return (
@@ -74,6 +85,21 @@ export default async function AdminSettlementPage() {
           <PayoutTable payouts={payouts.data} />
         ) : (
           <p className="error-box">{readFailureMessage(payouts.error.code)}</p>
+        )}
+      </section>
+
+      <section>
+        <h2>برداشت مشتری‌ها</h2>
+        <p className="muted">
+          مبلغ در همان لحظهٔ درخواست از کیف پول مشتری کم شده است، پس تا وقتی این‌جا تعیین تکلیف نشود
+          پول در دست هیچ‌کس نیست. واریز را خودتان در بانک انجام می‌دهید و شمارهٔ پیگیری را این‌جا
+          ثبت می‌کنید؛ اگر رد کنید، مبلغ همان لحظه به کیف پول مشتری برمی‌گردد و دلیلی که می‌نویسید
+          را خودِ مشتری می‌خواند.
+        </p>
+        {withdrawals.ok ? (
+          <WithdrawalTable withdrawals={withdrawals.data} />
+        ) : (
+          <p className="error-box">{readFailureMessage(withdrawals.error.code)}</p>
         )}
       </section>
     </main>
@@ -174,6 +200,78 @@ function PayoutTable({ payouts }: Readonly<{ payouts: PartnerPayoutSummary[] }>)
               </td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function WithdrawalTable({ withdrawals }: Readonly<{ withdrawals: StaffWithdrawalSummary[] }>) {
+  if (withdrawals.length === 0) {
+    return <p className="muted">هیچ درخواست برداشتی در انتظار بررسی نیست.</p>
+  }
+
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>مشتری</th>
+            <th>مبلغ</th>
+            <th>کارت</th>
+            <th>شبا</th>
+            <th>درخواست</th>
+            <th>ثبت واریز</th>
+            <th>رد درخواست</th>
+          </tr>
+        </thead>
+        <tbody>
+          {withdrawals.map((withdrawal) => {
+            const waiting = waitingDays(withdrawal.requestedAt)
+            return (
+              <tr key={withdrawal.id}>
+                <td dir="ltr">{withdrawal.customerMobileE164}</td>
+                <td>{formatMoney(withdrawal.amount)}</td>
+                <td>
+                  {/* Four digits and the holder's name: everything a bank
+                      transfer form needs, and nothing a leak could use. */}
+                  <span dir="ltr">**** {withdrawal.cardLastFour}</span>
+                  <br />
+                  <small>{withdrawal.cardHolderName}</small>
+                </td>
+                <td dir="ltr">{withdrawal.iban ?? '—'}</td>
+                <td>
+                  {formatDateTime(withdrawal.requestedAt)}
+                  {waiting >= 3 && (
+                    <strong className="overdue"> — {formatCount(waiting)} روز</strong>
+                  )}
+                </td>
+                <td>
+                  <ActionForm action={payWithdrawalAction} submitLabel="ثبت واریز">
+                    <input type="hidden" name="withdrawalId" value={withdrawal.id} />
+                    <Field
+                      label="شمارهٔ پیگیری بانک"
+                      name="bankReference"
+                      required
+                      dir="ltr"
+                      hint="همان چیزی که در صورتحساب بانک می‌بینید."
+                    />
+                  </ActionForm>
+                </td>
+                <td>
+                  <ActionForm action={rejectWithdrawalAction} submitLabel="رد درخواست">
+                    <input type="hidden" name="withdrawalId" value={withdrawal.id} />
+                    <Field
+                      label="دلیل رد"
+                      name="reason"
+                      required
+                      hint="مشتری همین متن را می‌بیند."
+                    />
+                  </ActionForm>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

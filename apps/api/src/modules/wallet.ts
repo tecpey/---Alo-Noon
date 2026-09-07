@@ -40,10 +40,12 @@ import type { PaymentLedgerService } from './payment-ledger.js'
  * that both eventually succeed. Waiting is the behaviour that matches what a
  * person meant.
  *
- * Four things move a balance and they are all here: money arriving from a
- * gateway, money leaving for an order, and the two halves of a transfer. Each
- * one either commits with whatever else it belongs to — a ledger posting, a
- * capture, the other half of a transfer — or does not happen.
+ * Six things move a balance and they are all here: money arriving from a
+ * gateway, money leaving for an order, the two halves of a transfer, and a
+ * withdrawal with the credit that puts it back if it is refused. Each one
+ * either commits with whatever else it belongs to — a ledger posting, a
+ * capture, the other half of a transfer, the withdrawal row — or does not
+ * happen.
  */
 export interface WalletService {
   /** The customer's balance, opening a wallet the first time they look. */
@@ -141,6 +143,33 @@ export interface WalletService {
   ): Promise<
     { ok: true; payment: PaymentSummary } | { ok: false; shortfall: bigint; balance: bigint }
   >
+
+  /**
+   * Takes the money out of the balance when a withdrawal is asked for.
+   *
+   * Debited now, not when somebody sends the transfer at a bank. A request that
+   * only recorded an intention would leave the amount spendable while the money
+   * was already on its way, and the customer would be paid twice.
+   *
+   * Returns the shortfall rather than throwing when the balance will not cover
+   * it, because that is a sentence to show the customer and not an exception.
+   */
+  withdrawWithin(
+    transaction: Prisma.TransactionClient,
+    tenantId: string,
+    input: { customerId: string; withdrawalId: string; amount: bigint },
+    now: Date,
+    correlationId: string,
+  ): Promise<{ ok: true } | { ok: false; shortfall: bigint }>
+
+  /** Puts it back when a withdrawal is refused, visibly, as its own line. */
+  reverseWithdrawalWithin(
+    transaction: Prisma.TransactionClient,
+    tenantId: string,
+    input: { customerId: string; withdrawalId: string; amount: bigint },
+    now: Date,
+    correlationId: string,
+  ): Promise<void>
 }
 
 export class WalletError extends Error {
@@ -187,6 +216,7 @@ export function createPrismaWalletService(
           balanceAfter: { amount: entry.balanceAfter.toString(), currency: entry.currency },
           ...(entry.orderId && { orderId: entry.orderId }),
           ...(entry.transferId && { transferId: entry.transferId }),
+          ...(entry.withdrawalId && { withdrawalId: entry.withdrawalId }),
           createdAt: entry.createdAt.toISOString(),
         }))
       })
@@ -334,6 +364,34 @@ export function createPrismaWalletService(
       if (!moved.ok) throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
     },
 
+    async withdrawWithin(transaction, tenantId, input, now, correlationId) {
+      const moved = await move(transaction, tenantId, {
+        customerId: input.customerId,
+        kind: 'WITHDRAWAL',
+        amount: input.amount,
+        withdrawalId: input.withdrawalId,
+        idempotencyKey: `withdrawal:${input.withdrawalId}`,
+        now,
+        correlationId,
+      })
+      return moved.ok ? { ok: true as const } : { ok: false as const, shortfall: moved.shortfall }
+    },
+
+    async reverseWithdrawalWithin(transaction, tenantId, input, now, correlationId) {
+      const moved = await move(transaction, tenantId, {
+        customerId: input.customerId,
+        kind: 'WITHDRAWAL_REVERSAL',
+        amount: input.amount,
+        withdrawalId: input.withdrawalId,
+        idempotencyKey: `withdrawal-reversal:${input.withdrawalId}`,
+        now,
+        correlationId,
+      })
+      // Unreachable — a credit cannot be short — but a silent success here
+      // would be the books saying money was handed back that was not.
+      if (!moved.ok) throw new WalletError('WALLET_MOVEMENT_REFUSED', 409)
+    },
+
     async transferWithin(transaction, tenantId, input, now, correlationId) {
       const sent = await move(transaction, tenantId, {
         customerId: input.senderCustomerId,
@@ -420,6 +478,7 @@ async function move(
     orderId?: string
     paymentId?: string
     transferId?: string
+    withdrawalId?: string
     idempotencyKey: string
     now: Date
     correlationId: string
@@ -473,6 +532,7 @@ async function move(
       ...(input.paymentId && { paymentId: input.paymentId }),
       ...(input.orderId && { orderId: input.orderId }),
       ...(input.transferId && { transferId: input.transferId }),
+      ...(input.withdrawalId && { withdrawalId: input.withdrawalId }),
       idempotencyKey: input.idempotencyKey,
       correlationId: input.correlationId,
       createdAt: input.now,

@@ -115,7 +115,7 @@ describe('tenant relational integrity G3B', () => {
   )
 
   it('covers every implemented tenant-owned relation exactly once', () => {
-    expect(schemaRelations).toHaveLength(105)
+    expect(schemaRelations).toHaveLength(107)
     expect(registeredRelations).toEqual(schemaRelations)
     expect(
       new Set(registeredRelations.map(({ child, foreignKey }) => `${child}.${foreignKey}`)).size,

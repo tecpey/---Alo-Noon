@@ -62,6 +62,7 @@ const DELIVERY_REVENUE = 'R_4200_DELIVERY'
 const DELIVERY_EXPENSE = 'X_5100_DELIVERY'
 const PROMOTION_COST = 'X_5300_PROMOTION'
 const CASH_CLEARING = 'A_1100_CASH_CLEARING'
+const CUSTOMER_WALLET = 'L_2400_CUSTOMER_WALLET'
 
 /**
  * Splits one delivered order.
@@ -161,8 +162,8 @@ export function journalTotal(lines: readonly SettlementJournalLine[]): bigint {
  *
  * The mirror of the credit above: the platform stops owing a partner and the
  * money leaves the bank. Cash clearing is the account the gateway's money
- * landed in, which is the same money going out — a payout is the only thing in
- * this system that reduces it.
+ * landed in, which is the same money going out — this and a customer's
+ * withdrawal below are the only two things in this system that reduce it.
  */
 export function payoutJournal(input: {
   readonly party: 'BAKERY' | 'COURIER'
@@ -179,6 +180,28 @@ export function payoutJournal(input: {
       amount: input.amount,
     },
     { accountCode: CASH_CLEARING, side: 'CREDIT' as const, amount: input.amount },
+  ])
+}
+
+/**
+ * The journal that pays a customer's balance back to their card.
+ *
+ * The mirror of a top-up. A top-up moved money from the bank into what the
+ * platform owes the customer; this moves it back out. Cash clearing is the same
+ * account both times, because it is the same bank.
+ *
+ * Nothing here is about an order. A balance is what is left after a dozen of
+ * them, or a top-up nobody spent, and by the time it goes out it is one number
+ * owed to one person.
+ */
+export function withdrawalJournal(amount: bigint): readonly SettlementJournalLine[] {
+  assertWhole(amount, 'withdrawal')
+  if (amount <= 0n) {
+    throw new DomainError('INVALID_SETTLEMENT', 'A withdrawal must be for a positive amount')
+  }
+  return Object.freeze([
+    { accountCode: CUSTOMER_WALLET, side: 'DEBIT' as const, amount },
+    { accountCode: CASH_CLEARING, side: 'CREDIT' as const, amount },
   ])
 }
 

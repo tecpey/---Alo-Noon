@@ -24,6 +24,13 @@ export const FinancialTransactionType = {
   ORDER_SETTLEMENT: 'ORDER_SETTLEMENT',
   /** Money leaving for a partner's bank account. Belongs to neither. */
   PARTNER_PAYOUT: 'PARTNER_PAYOUT',
+  /**
+   * A customer's balance paid back to their card. Belongs to neither an order
+   * nor a payment: a balance can come from a dozen orders, or from a top-up
+   * that was never spent, and by the time it goes out it is simply money the
+   * platform owes one person.
+   */
+  WALLET_WITHDRAWAL: 'WALLET_WITHDRAWAL',
 } as const
 export type FinancialTransactionType =
   (typeof FinancialTransactionType)[keyof typeof FinancialTransactionType]

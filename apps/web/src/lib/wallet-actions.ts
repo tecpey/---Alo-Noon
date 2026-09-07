@@ -2,14 +2,16 @@
 
 import { revalidatePath } from 'next/cache'
 
-import type { WalletTransferSummary } from '@alo-noon/contracts'
+import type { WalletTransferSummary, WalletWithdrawalSummary } from '@alo-noon/contracts'
 import {
   formatToman,
+  MINIMUM_WITHDRAWAL,
   parseTomanToRial,
   topUpRefusalMessage,
   transferRefusalMessage,
   validateTopUpAmount,
   validateTransferAmount,
+  withdrawalRefusalMessage,
 } from '@alo-noon/domain'
 
 import { derivedIdempotencyKey, translateProviderError } from './admin-format'
@@ -18,6 +20,7 @@ import {
   confirmWalletTransfer,
   initializePayment,
   openWalletTransfer,
+  requestWalletWithdrawal,
   startWalletTopUp,
 } from './shop-api'
 
@@ -203,4 +206,77 @@ function attemptsFrom(details: unknown): number | null {
  */
 function hourStamp(): string {
   return new Date().toISOString().slice(0, 13)
+}
+
+export type WithdrawalResult = { ok: true; withdrawal: WalletWithdrawalSummary } | WalletFailure
+
+/**
+ * Asking for the balance back, in money.
+ *
+ * The card number is typed here and never comes back: the API keeps four digits
+ * and forgets the rest before the row is written. Nothing on this side stores
+ * it, logs it, or puts it in an idempotency key — a key is a value that survives
+ * in the database, and a card number that survives anywhere is the one mistake
+ * this whole flow cannot afford.
+ *
+ * Keyed on the amount and the hour rather than on a random value: a
+ * double-submitted form replays onto the request it already made, while a
+ * customer who deliberately asks for a second withdrawal later in the day gets
+ * a second one.
+ */
+export async function requestWithdrawalAction(input: {
+  amountToman: string
+  cardNumber: string
+  cardHolderName: string
+  iban?: string
+}): Promise<WithdrawalResult> {
+  const amount = parseTomanToRial(input.amountToman)
+  if (amount === null) return fail('مبلغ برداشت را درست وارد کنید.')
+  if (amount < MINIMUM_WITHDRAWAL) {
+    return fail(withdrawalRefusalMessage('BELOW_MINIMUM'))
+  }
+
+  // Digits only, and exactly sixteen. Iranian debit cards are printed in groups
+  // of four, so a customer pasting one arrives with spaces or dashes and should
+  // not be told their own card is invalid.
+  const cardNumber = toLatinDigits(input.cardNumber).replace(/\D/g, '')
+  if (!/^\d{16}$/.test(cardNumber)) return fail('شمارهٔ کارت باید ۱۶ رقم باشد.')
+
+  const holder = input.cardHolderName.trim()
+  if (holder.length < 2) return fail('نام صاحب کارت را وارد کنید.')
+
+  const iban = input.iban ? toLatinDigits(input.iban).replace(/[\s-]/g, '').toUpperCase() : ''
+  if (iban && !/^IR\d{24}$/.test(iban)) return fail('شبا باید با IR و ۲۴ رقم باشد.')
+
+  const result = await requestWalletWithdrawal({
+    amount: amount.toString(),
+    cardNumber,
+    cardHolderName: holder,
+    ...(iban && { iban }),
+    // The card is deliberately absent from the key: it would put the number in
+    // a column that is kept forever.
+    idempotencyKey: derivedIdempotencyKey('withdrawal', amount.toString(), hourStamp()),
+  })
+  if (!result.ok) {
+    return fail(
+      translateProviderError(result.error.code, result.error.message),
+      result.error.code === 'WITHDRAWAL_UNAVAILABLE',
+    )
+  }
+  revalidatePath('/wallet')
+  return { ok: true, withdrawal: result.data }
+}
+
+/**
+ * Persian and Arabic-Indic digits folded to Latin.
+ *
+ * A customer typing a card number on a Persian keyboard produces ۶۰۳۷…, and
+ * refusing that as "not sixteen digits" would be the site failing to read its
+ * own language.
+ */
+function toLatinDigits(value: string): string {
+  return value.replace(/[۰-۹٠-٩]/g, (digit) => {
+    const persian = '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)
+    return String(persian >= 0 ? persian : '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
+  })
 }

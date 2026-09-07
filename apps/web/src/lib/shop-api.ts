@@ -19,6 +19,7 @@ import type {
   WalletEntrySummary,
   WalletSummary,
   WalletTransferSummary,
+  WalletWithdrawalSummary,
 } from '@alo-noon/contracts'
 
 import {
@@ -377,5 +378,22 @@ export async function confirmWalletTransfer(
   return request<WalletTransferSummary>(`/api/v1/wallet/transfers/${transferId}/confirm`, {
     method: 'POST',
     body: { code },
+  })
+}
+
+export async function listWalletWithdrawals(): Promise<ApiResult<WalletWithdrawalSummary[]>> {
+  return request<WalletWithdrawalSummary[]>('/api/v1/wallet/withdrawals', { method: 'GET' })
+}
+
+export async function requestWalletWithdrawal(input: {
+  amount: string
+  cardNumber: string
+  cardHolderName: string
+  iban?: string
+  idempotencyKey: string
+}): Promise<ApiResult<WalletWithdrawalSummary>> {
+  return request<WalletWithdrawalSummary>('/api/v1/wallet/withdrawals', {
+    method: 'POST',
+    body: input,
   })
 }

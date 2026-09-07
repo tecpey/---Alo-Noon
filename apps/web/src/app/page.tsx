@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import Link from 'next/link'
 
 import './storefront.css'
 
@@ -25,6 +26,7 @@ import {
   WheatIcon,
 } from './components/icons'
 import { toPersianDigits } from '../lib/persian'
+import { enamadSeal } from '../lib/legal-identity'
 import { loadServerBasket, loadStorefront, type StorefrontData } from '../lib/storefront-data'
 import {
   foundationStatus,
@@ -224,6 +226,18 @@ export default async function HomePage() {
           <ArchTexture className="site-footer__texture" />
           <div className="site-footer__inner">
             <BrandMark tone="light" />
+            {/* The trust links, not decoration. A shop that a customer cannot
+                identify is a shop they are right not to pay, and these are the
+                pages that answer "who is this and what happens if it goes
+                wrong". The seal renders only once it has actually been
+                issued. */}
+            <nav className="site-footer__links" aria-label="قوانین و راهنما">
+              <Link href="/legal/terms">قوانین و مقررات</Link>
+              <Link href="/legal/refunds">بازگشت وجه</Link>
+              <Link href="/legal/privacy">حریم خصوصی</Link>
+              <Link href="/legal/contact">تماس با ما</Link>
+            </nav>
+            <FooterSeal />
             <p>{foundationStatus}</p>
           </div>
         </footer>
@@ -291,5 +305,32 @@ function Catalog({ storefront }: { storefront: StorefrontData }) {
         <Shelf key={shelf.id} shelf={shelf} />
       ))}
     </>
+  )
+}
+
+/**
+ * The trust seal, on every page of the shop.
+ *
+ * Renders only once the registrar has actually issued one. A badge drawn from a
+ * placeholder would be a claim that a regulator verified this business when it
+ * has not — the one kind of "coming soon" that is a forgery rather than a gap —
+ * so an unconfigured deployment shows nothing here at all.
+ */
+function FooterSeal() {
+  const seal = enamadSeal()
+  if (!seal) return null
+  return (
+    <a
+      href={seal.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      referrerPolicy="origin"
+      className="site-footer__seal"
+    >
+      {/* A plain <img>, not next/image: the badge is served by the registrar
+          from its own host, and proxying it would break the verification the
+          seal performs on its own request. */}
+      <img src={seal.src} alt="نماد اعتماد الکترونیکی" width={90} height={90} />
+    </a>
   )
 }

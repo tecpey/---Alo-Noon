@@ -88,6 +88,10 @@ import {
   type PartnerSettlementDependencies,
 } from './modules/partner-settlement-routes.js'
 import { registerBranchRoutes, type BranchDependencies } from './modules/branch-routes.js'
+import {
+  registerWalletWithdrawalRoutes,
+  type WalletWithdrawalDependencies,
+} from './modules/wallet-withdrawal-routes.js'
 
 export interface AppOptions {
   readinessCheck?: () => Promise<boolean>
@@ -114,6 +118,7 @@ export interface AppOptions {
   orderOperations?: Omit<OrderOperationsDependencies, 'auth'>
   partnerSettlement?: Omit<PartnerSettlementDependencies, 'auth'>
   branch?: Omit<BranchDependencies, 'auth'>
+  walletWithdrawals?: Omit<WalletWithdrawalDependencies, 'auth'>
   delivery?: Omit<DeliveryDependencies, 'auth'>
   deliveryTrips?: Omit<DeliveryTripDependencies, 'auth'>
   courierAssignments?: Omit<CourierAssignmentDependencies, 'auth'>
@@ -289,6 +294,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   if (options.auth && options.walletTransfers) {
     registerWalletTransferRoutes(app, { ...options.walletTransfers, auth: options.auth })
+  }
+  if (options.auth && options.walletWithdrawals) {
+    registerWalletWithdrawalRoutes(app, { ...options.walletWithdrawals, auth: options.auth })
   }
   if (options.auth && options.wallet) {
     registerWalletRoutes(app, { ...options.wallet, auth: options.auth })

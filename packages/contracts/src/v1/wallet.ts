@@ -8,6 +8,8 @@ export const walletEntryKindSchema = z.enum([
   'REFUND',
   'TRANSFER_IN',
   'TRANSFER_OUT',
+  'WITHDRAWAL',
+  'WITHDRAWAL_REVERSAL',
 ])
 export type WalletEntryKind = z.infer<typeof walletEntryKindSchema>
 
@@ -39,9 +41,73 @@ export const walletEntrySummarySchema = z.object({
   balanceAfter: moneySchema,
   orderId: uuidSchema.optional(),
   transferId: uuidSchema.optional(),
+  /** The withdrawal this line belongs to: the debit, or the credit back. */
+  withdrawalId: uuidSchema.optional(),
   createdAt: isoDateTimeSchema,
 })
 export type WalletEntrySummary = z.infer<typeof walletEntrySummarySchema>
+
+export const walletWithdrawalStateSchema = z.enum(['REQUESTED', 'PAID', 'REJECTED'])
+
+/**
+ * A customer asking for their balance back, in money.
+ *
+ * The card is masked in both directions. The customer types a full number and
+ * the API keeps four digits: the platform needs to know which card they meant
+ * and has no business holding a complete one.
+ */
+export const walletWithdrawalSummarySchema = z.object({
+  id: uuidSchema,
+  amount: moneySchema,
+  state: walletWithdrawalStateSchema,
+  cardLastFour: z.string().regex(/^[0-9]{4}$/),
+  cardHolderName: z.string().min(1).max(120),
+  iban: z
+    .string()
+    .regex(/^IR[0-9]{24}$/)
+    .optional(),
+  bankReference: z.string().min(1).max(128).optional(),
+  rejectionReason: z.string().min(1).max(500).optional(),
+  requestedAt: isoDateTimeSchema,
+  settledAt: isoDateTimeSchema.optional(),
+})
+export type WalletWithdrawalSummary = z.infer<typeof walletWithdrawalSummarySchema>
+
+export const walletWithdrawalCreateSchema = z
+  .object({
+    amount: z.string().regex(/^[1-9][0-9]{0,18}$/),
+    /**
+     * The full card number, sent once and never stored. Sixteen digits is what
+     * every Iranian debit card has; the API keeps the last four and forgets the
+     * rest before the row is written.
+     */
+    cardNumber: z.string().regex(/^[0-9]{16}$/),
+    cardHolderName: z.string().min(2).max(120),
+    /** Optional, and what a real transfer is actually made against. */
+    iban: z
+      .string()
+      .regex(/^IR[0-9]{24}$/)
+      .optional(),
+    idempotencyKey: z.string().min(16).max(128),
+  })
+  .strict()
+export type WalletWithdrawalCreate = z.infer<typeof walletWithdrawalCreateSchema>
+
+/** Recording that somebody actually sent the money, and what the bank called it. */
+export const walletWithdrawalPayCommandSchema = z
+  .object({ bankReference: z.string().min(1).max(128) })
+  .strict()
+
+/**
+ * Refusing one, with a reason the customer will read.
+ *
+ * Required, not optional: a rejection with no reason is a support call the
+ * customer has to make to find out anything, and the money is already back on
+ * their balance by the time they make it.
+ */
+export const walletWithdrawalRejectCommandSchema = z
+  .object({ reason: z.string().min(3).max(500) })
+  .strict()
 
 export const walletEntryListEnvelopeSchema = z.object({
   success: z.literal(true),

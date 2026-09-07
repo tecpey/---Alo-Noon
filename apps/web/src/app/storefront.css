@@ -1337,3 +1337,31 @@
   font-size: 0.85rem;
   line-height: 1.7;
 }
+
+/* The footer's trust links. Muted against the dark ground rather than styled as
+ * calls to action: somebody looking for them will find them, and nobody should
+ * be pulled out of the shop toward a policy page. */
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  font-size: 0.85rem;
+}
+.site-footer__links a {
+  color: var(--neutral-300);
+  text-decoration: none;
+}
+.site-footer__links a:hover,
+.site-footer__links a:focus-visible {
+  color: var(--ink-onAction);
+  text-decoration: underline;
+}
+.site-footer__seal {
+  display: inline-block;
+  line-height: 0;
+  /* The registrar's badge is drawn for a light ground; a white plate keeps it
+     legible without altering the mark itself, which may not be recoloured. */
+  background: var(--surface-card);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem;
+}

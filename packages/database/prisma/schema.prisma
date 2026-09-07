@@ -413,6 +413,9 @@ enum FinancialTransactionType {
   ORDER_SETTLEMENT
   /// Money leaving for a partner's bank account. Belongs to neither.
   PARTNER_PAYOUT
+  /// A customer's balance paid back to their card. Belongs to neither: a
+  /// balance can come from a dozen orders, or from a top-up nobody spent.
+  WALLET_WITHDRAWAL
 }
 
 /// How an order is paid for.
@@ -433,6 +436,8 @@ enum WalletEntryKind {
   REFUND
   TRANSFER_IN
   TRANSFER_OUT
+  WITHDRAWAL
+  WITHDRAWAL_REVERSAL
 }
 
 enum LedgerAccountGovernanceAction {
@@ -546,6 +551,7 @@ model Tenant {
   customerWallets                    CustomerWallet[]
   walletEntries                      WalletEntry[]
   walletTransfers                    WalletTransfer[]
+  walletWithdrawals                  WalletWithdrawal[]
   orderEarnings                      OrderEarning[]
   partnerPayouts                     PartnerPayout[]
   routingProviderConfigurations      RoutingProviderConfiguration[]
@@ -690,6 +696,7 @@ model Customer {
   wallet                 CustomerWallet?
   transfersSent          WalletTransfer[] @relation("WalletTransferSender")
   transfersReceived      WalletTransfer[] @relation("WalletTransferRecipient")
+  walletWithdrawals      WalletWithdrawal[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   promotionRedemptions   PromotionRedemption[]
@@ -2354,8 +2361,12 @@ model WalletEntry {
   orderId        String?         @db.Uuid
   order          Order?          @relation(fields: [orderId], references: [id], onDelete: Restrict)
   /// The transfer this line is one side of, or null for everything else.
-  transferId     String?         @db.Uuid
-  transfer       WalletTransfer? @relation(fields: [transferId], references: [id], onDelete: Restrict)
+  transferId     String?           @db.Uuid
+  transfer       WalletTransfer?   @relation(fields: [transferId], references: [id], onDelete: Restrict)
+  /// The withdrawal this line belongs to: the debit when it was asked for, or
+  /// the credit back if it was refused.
+  withdrawalId   String?           @db.Uuid
+  withdrawal     WalletWithdrawal? @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
   idempotencyKey String          @db.VarChar(128)
   correlationId  String          @db.Uuid
   createdAt      DateTime        @default(now())
@@ -2367,6 +2378,51 @@ model WalletEntry {
   @@index([paymentId, tenantId], map: "g3b_WalletEntry_paymentId_tenant_idx")
   @@index([orderId, tenantId], map: "g3b_WalletEntry_orderId_tenant_idx")
   @@index([transferId, tenantId], map: "g3b_WalletEntry_transferId_tenant_idx")
+  @@index([withdrawalId, tenantId], map: "g3b_WalletEntry_withdrawalId_tenant_idx")
+}
+
+/// A customer asking for their balance back, in money.
+///
+/// The balance is debited when this row is created, not when the transfer is
+/// made: a request that only recorded an intention would leave the amount
+/// spendable while somebody at a bank was already sending it. A rejection puts
+/// it back as its own statement line.
+///
+/// The card is stored masked. The platform needs to know which card the
+/// customer meant and has no business holding a complete number.
+model WalletWithdrawal {
+  id                 String                @id @default(uuid()) @db.Uuid
+  tenantId           String                @db.Uuid
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  customerId         String                @db.Uuid
+  customer           Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  amount             BigInt
+  currency           Currency              @default(IRR)
+  state              WalletWithdrawalState @default(REQUESTED)
+  cardLastFour       String                @db.VarChar(4)
+  cardHolderName     String                @db.VarChar(120)
+  iban               String?               @db.VarChar(26)
+  bankReference      String?               @db.VarChar(128)
+  rejectionReason    String?               @db.VarChar(500)
+  requestedAt        DateTime              @default(now())
+  settledAt          DateTime?
+  /// Who settled it. Held as an id without a Prisma relation, like the payout
+  /// rows: it names an actor for the audit trail, not a graph to traverse.
+  settledByAccountId String?               @db.Uuid
+  idempotencyKey     String                @db.VarChar(128)
+  correlationId      String                @db.Uuid
+  entries            WalletEntry[]
+
+  @@unique([tenantId, customerId, idempotencyKey], map: "WalletWithdrawal_tenant_customer_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_WalletWithdrawal_id_tenant_key")
+  @@index([customerId, tenantId], map: "g3b_WalletWithdrawal_customerId_tenant_idx")
+  @@index([tenantId, state, requestedAt], map: "WalletWithdrawal_tenant_state_requested_idx")
+}
+
+enum WalletWithdrawalState {
+  REQUESTED
+  PAID
+  REJECTED
 }
 
 /// Money moving from one customer's balance to another's.

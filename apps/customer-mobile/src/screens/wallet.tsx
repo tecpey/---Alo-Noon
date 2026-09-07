@@ -38,12 +38,15 @@ const ENTRY_LABELS: Readonly<Record<WalletEntrySummary['kind'], string>> = {
   REFUND: 'بازگشت وجه سفارش',
   TRANSFER_IN: 'دریافت از کیف پول دیگر',
   TRANSFER_OUT: 'انتقال به کیف پول دیگر',
+  WITHDRAWAL: 'برداشت به کارت بانکی',
+  WITHDRAWAL_REVERSAL: 'بازگشت برداشت رد‌شده',
 }
 
 const INCOMING: ReadonlySet<WalletEntrySummary['kind']> = new Set([
   'TOP_UP',
   'REFUND',
   'TRANSFER_IN',
+  'WITHDRAWAL_REVERSAL',
 ])
 
 const TRANSFER_STATES: Readonly<Record<WalletTransferSummary['state'], string>> = {

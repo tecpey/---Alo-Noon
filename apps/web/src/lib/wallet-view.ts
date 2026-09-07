@@ -1,4 +1,8 @@
-import type { WalletEntrySummary, WalletTransferSummary } from '@alo-noon/contracts'
+import type {
+  WalletEntrySummary,
+  WalletTransferSummary,
+  WalletWithdrawalSummary,
+} from '@alo-noon/contracts'
 
 /**
  * What a statement line says, and which way it points.
@@ -19,6 +23,8 @@ const ENTRY_KINDS: Readonly<
   REFUND: { label: 'بازگشت وجه سفارش', direction: 'IN' },
   TRANSFER_IN: { label: 'دریافت از کیف پول دیگر', direction: 'IN' },
   TRANSFER_OUT: { label: 'انتقال به کیف پول دیگر', direction: 'OUT' },
+  WITHDRAWAL: { label: 'برداشت به کارت بانکی', direction: 'OUT' },
+  WITHDRAWAL_REVERSAL: { label: 'بازگشت برداشت رد‌شده', direction: 'IN' },
 }
 
 export function walletEntryLabel(kind: WalletEntrySummary['kind']): string {
@@ -48,6 +54,27 @@ const TRANSFER_STATES: Readonly<Record<WalletTransferSummary['state'], string>> 
 
 export function transferStateLabel(state: WalletTransferSummary['state']): string {
   return TRANSFER_STATES[state]
+}
+
+const WITHDRAWAL_STATES: Readonly<Record<WalletWithdrawalSummary['state'], string>> = {
+  REQUESTED: 'در انتظار واریز',
+  PAID: 'واریز شد',
+  REJECTED: 'رد شد',
+}
+
+export function withdrawalStateLabel(state: WalletWithdrawalSummary['state']): string {
+  return WITHDRAWAL_STATES[state]
+}
+
+/**
+ * A card number as the customer should see it back.
+ *
+ * Only four digits ever leave the server, and they are shown with a mask rather
+ * than alone: "۴۵۶۷" on its own reads like an amount, and a customer checking
+ * which of two cards they used needs the shape as well as the digits.
+ */
+export function maskedCard(lastFour: string): string {
+  return `**** **** **** ${lastFour}`
 }
 
 /**

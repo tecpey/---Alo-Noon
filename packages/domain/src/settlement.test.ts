@@ -7,6 +7,7 @@ import {
   payoutJournal,
   settleOrder,
   settlementJournal,
+  withdrawalJournal,
   type OrderEconomics,
 } from './settlement'
 
@@ -164,6 +165,21 @@ describe('the settlement journal', () => {
     expect(journalTotal(payoutJournal({ party: 'BAKERY', amount: 850_000n }))).toBe(850_000n)
   })
 
+  it('pays a balance back out of the same bank a top-up paid into', () => {
+    // The mirror of a top-up, and the reason the refund policy can promise a
+    // customer their money rather than only store credit.
+    expect(withdrawalJournal(500_000n)).toEqual([
+      { accountCode: 'L_2400_CUSTOMER_WALLET', side: 'DEBIT', amount: 500_000n },
+      { accountCode: 'A_1100_CASH_CLEARING', side: 'CREDIT', amount: 500_000n },
+    ])
+    expect(journalTotal(withdrawalJournal(500_000n))).toBe(500_000n)
+  })
+
+  it('refuses a withdrawal of nothing or of a negative amount', () => {
+    expect(() => withdrawalJournal(0n)).toThrow(DomainError)
+    expect(() => withdrawalJournal(-1n)).toThrow(DomainError)
+  })
+
   it('never touches the customer wallet or cash', () => {
     const codes = settlementJournal(settleOrder(order), order.total).map((line) => line.accountCode)
     expect(codes).not.toContain('L_2400_CUSTOMER_WALLET')
@@ -174,7 +190,8 @@ describe('the settlement journal', () => {
 describe('paying a partner', () => {
   /**
    * The mirror of the credit: the platform stops owing, and the money leaves
-   * the bank. A payout is the only thing in this system that reduces cash.
+   * the bank. This and a customer's withdrawal are the only two things in this
+   * system that reduce cash.
    */
   it('discharges the payable against cash', () => {
     expect(payoutJournal({ party: 'BAKERY', amount: 850_000n })).toEqual([

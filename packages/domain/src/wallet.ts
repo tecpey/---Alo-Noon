@@ -25,6 +25,23 @@ export const WalletEntryKind = {
   TRANSFER_IN: 'TRANSFER_IN',
   /** This balance going to somebody else. */
   TRANSFER_OUT: 'TRANSFER_OUT',
+  /**
+   * The customer asking for their money back, in money.
+   *
+   * Debited when the request is made, not when the transfer is sent. A request
+   * that only recorded an intention would leave the amount spendable while
+   * somebody at a bank was already sending it, and the two would race.
+   */
+  WITHDRAWAL: 'WITHDRAWAL',
+  /**
+   * A refused withdrawal, put back.
+   *
+   * Its own kind rather than a second WITHDRAWAL with the sign flipped: the
+   * amount on an entry is always positive by design, and a statement showing
+   * two identical lines for "we took it" and "we gave it back" would be
+   * unreadable at exactly the moment a customer is worried.
+   */
+  WITHDRAWAL_REVERSAL: 'WITHDRAWAL_REVERSAL',
 } as const
 export type WalletEntryKind = (typeof WalletEntryKind)[keyof typeof WalletEntryKind]
 
@@ -35,6 +52,8 @@ const DIRECTIONS: Readonly<Record<WalletEntryKind, 'CREDIT' | 'DEBIT'>> = {
   REFUND: 'CREDIT',
   TRANSFER_IN: 'CREDIT',
   TRANSFER_OUT: 'DEBIT',
+  WITHDRAWAL: 'DEBIT',
+  WITHDRAWAL_REVERSAL: 'CREDIT',
 }
 
 export function walletEntryDirection(kind: WalletEntryKind): 'CREDIT' | 'DEBIT' {
@@ -124,6 +143,19 @@ export function walletSpendJournal(amount: bigint): readonly CaptureJournalLine[
 export const MINIMUM_TOP_UP = 100_000n
 export const MAXIMUM_TOP_UP = 50_000_000n
 
+/**
+ * The floor on taking money back out.
+ *
+ * A bank transfer costs a person's time whoever makes it, and a request for a
+ * few hundred Toman costs more to honour than it returns. Set to the same floor
+ * as a top-up so the two read as one rule: this is the smallest amount the
+ * platform moves in either direction.
+ *
+ * There is no ceiling. A customer asking for all of their own money back is not
+ * a case to refuse.
+ */
+export const MINIMUM_WITHDRAWAL = MINIMUM_TOP_UP
+
 export type TopUpRefusal = 'BELOW_MINIMUM' | 'ABOVE_MAXIMUM'
 
 export function validateTopUpAmount(amount: bigint): TopUpRefusal | undefined {
@@ -146,6 +178,19 @@ export function topUpRefusalMessage(refusal: TopUpRefusal): string {
     case 'ABOVE_MAXIMUM':
       return `بیشترین مبلغ شارژ در هر بار ${formatToman(MAXIMUM_TOP_UP)} است.`
   }
+}
+
+/** Why a withdrawal was refused, in words a customer can act on. */
+export function withdrawalRefusalMessage(
+  refusal: 'BELOW_MINIMUM' | 'INSUFFICIENT_BALANCE',
+  shortfall?: bigint,
+): string {
+  if (refusal === 'BELOW_MINIMUM') {
+    return `کمترین مبلغ برداشت ${formatToman(MINIMUM_WITHDRAWAL)} است.`
+  }
+  return shortfall === undefined
+    ? 'موجودی کیف پول برای این برداشت کافی نیست.'
+    : `موجودی کیف پول ${formatToman(shortfall)} کم دارد.`
 }
 
 function assertPositive(amount: bigint, message: string): void {

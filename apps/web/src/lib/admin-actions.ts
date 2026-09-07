@@ -965,3 +965,44 @@ const BRANCH_STEP_SUCCESS: Readonly<Record<string, string>> = {
   reject: 'سفارش رد شد. عودت وجه به مشتری با پلتفرم است.',
   'start-fulfillment': 'تحویل به پیک ثبت شد.',
 }
+
+/**
+ * Recording that a customer's withdrawal was actually sent.
+ *
+ * The transfer itself happens at a bank, by a person. This only records what
+ * the bank called it, which is the one thing that lets the payment be found
+ * again on a statement.
+ */
+export async function payWithdrawalAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const withdrawalId = field(form, 'withdrawalId')
+  const bankReference = field(form, 'bankReference')
+  if (!bankReference) return failure('شمارهٔ پیگیری بانک را وارد کنید.')
+
+  const result = await post(`/api/v1/admin/withdrawals/${withdrawalId}/paid`, { bankReference })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'ثبت واریز انجام نشد.'))
+  revalidatePath('/admin/settlement')
+  return success('واریز ثبت شد.')
+}
+
+/**
+ * Refusing one, which puts the money straight back on the customer's balance.
+ *
+ * The reason is required and the customer reads it verbatim, so it is written
+ * for them and not for a log.
+ */
+export async function rejectWithdrawalAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const withdrawalId = field(form, 'withdrawalId')
+  const reason = field(form, 'reason')
+  if (reason.length < 3) return failure('دلیل رد را بنویسید؛ مشتری همین متن را می‌بیند.')
+
+  const result = await post(`/api/v1/admin/withdrawals/${withdrawalId}/reject`, { reason })
+  if (!result.ok) return failure(translateProviderError(result.error.code, 'رد درخواست انجام نشد.'))
+  revalidatePath('/admin/settlement')
+  return success('درخواست رد شد و مبلغ به کیف پول مشتری برگشت.')
+}

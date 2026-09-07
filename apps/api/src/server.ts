@@ -48,6 +48,7 @@ import { createPrismaDeliveryTripService } from './modules/delivery-trips.js'
 import { createPrismaOrderOperationsService } from './modules/order-operations.js'
 import { createPrismaPartnerSettlementService } from './modules/partner-settlement.js'
 import { createPrismaBranchOperationsService } from './modules/branch-operations.js'
+import { createPrismaWalletWithdrawalService } from './modules/wallet-withdrawal.js'
 import { createPrismaAuthDeliveryProviderService } from './modules/auth-delivery-provider.js'
 import { createPrismaRoutingProviderService } from './modules/routing-provider.js'
 import { createPrismaEmailProviderService } from './modules/email-provider.js'
@@ -349,6 +350,16 @@ const branch = {
   orders: orderOperations.service,
 }
 
+// The way out of the wallet. Nothing here reaches a bank: a person makes the
+// transfer by hand and comes back to record what the bank called it, the same
+// shape as a partner payout and for the same reason.
+const walletWithdrawals = {
+  service: createPrismaWalletWithdrawalService(prisma, {
+    wallet: walletService,
+    ledger: paymentLedgerService,
+  }),
+}
+
 // Dispatch and the courier app share one service. A courier holds no admin
 // grant at all — their authority is the assignment offered to them, which the
 // service checks against the row on every write.
@@ -420,6 +431,7 @@ const app = await buildApp({
   orderOperations,
   partnerSettlement,
   branch,
+  walletWithdrawals,
   delivery,
   deliveryTrips,
   courierAssignments,

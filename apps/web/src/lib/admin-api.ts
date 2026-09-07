@@ -638,3 +638,22 @@ export async function readBranchQueue(
 export async function readBranchEarnings(): Promise<ApiResult<BranchEarningsSummary>> {
   return request<BranchEarningsSummary>('/api/v1/branch/earnings', { method: 'GET' })
 }
+
+export interface StaffWithdrawalSummary {
+  id: string
+  amount: Money
+  state: 'REQUESTED' | 'PAID' | 'REJECTED'
+  cardLastFour: string
+  cardHolderName: string
+  iban?: string
+  bankReference?: string
+  rejectionReason?: string
+  requestedAt: string
+  settledAt?: string
+  customerId: string
+  customerMobileE164: string
+}
+
+export async function readOpenWithdrawals(): Promise<ApiResult<StaffWithdrawalSummary[]>> {
+  return request<StaffWithdrawalSummary[]>('/api/v1/admin/withdrawals', { method: 'GET' })
+}
