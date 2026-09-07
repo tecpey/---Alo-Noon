@@ -73,8 +73,9 @@ but none is an approved transparent, slogan-free horizontal hero export.
 پیک و پیک نیز موجودیت‌های مستقل عملیاتی‌اند. چشم‌انداز آینده شامل ناوگان
 موتورسیکلت برقی و برنامهٔ فراگیر اشتغال بانوان است؛ این برنامه‌ها هنوز runtime
 نیستند و جنسیت نباید وارد منطق dispatch شود. CRM به‌عنوان حافظهٔ مشتری، سفارش،
-پشتیبانی و رضایت یک قابلیت محوریِ پلتفرم است، اما UI و automation آن deferred
-است. اتصال فروشگاه‌ها و providerهای تجارت بیرونی نیز فقط ظرفیت آینده است.
+پشتیبانی و رضایت یک قابلیت محوریِ پلتفرم است؛ داده و رویدادهایش موجود است و UI و
+automation آن هنوز ساخته نشده. اتصال فروشگاه‌ها و providerهای تجارت بیرونی نیز
+فقط ظرفیت آینده است.
 
 <a id="why-alo-noon"></a>
 
@@ -103,28 +104,28 @@ but none is an approved transparent, slogan-free horizontal hero export.
 می‌دهد. «بنیاد» یعنی invariant و persistence وجود دارد، اما جریان production
 کامل یا UI عملیاتی هنوز موجود نیست.
 
-| حوزه                                | وضعیت                                        | شواهد و مرز دقیق                                                                                                    |
-| ----------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Multi-tenancy و forced RLS          | **تأیید و merge شده**                        | tenant context سمت سرور، composite tenant FK، `ENABLE/FORCE RLS` و تست منفی cross-tenant                            |
-| Address و serviceability            | **تأیید و merge شده**                        | ایجاد/فهرست نشانی مشتری، مشتق‌سازی service area و zone سمت سرور                                                     |
-| قیمت‌گذاری ارسال                    | **تأیید و merge شده**                        | rule شهر/zone، precedence، ambiguity rejection و محاسبهٔ bigint IRR                                                 |
-| Quote-to-Order                      | **تأیید و merge شده**                        | snapshot immutable، cart version، تراکنش `SERIALIZABLE` و پذیرش اتمیک Quote                                         |
-| رزرو ظرفیت نانوایی                  | **تأیید و merge شده**                        | رزرو پایدار slot هم‌تراکنش با Order؛ release/cancellation هنوز deferred                                             |
-| اپ مشتری                            | **جریان حداقلی تأییدشده**                    | تجربهٔ فارسی/RTL برای session، کاتالوگ، cart، address، quote و confirmation سفارش                                   |
-| هویت و مجوز                         | **بنیاد تحویل امن؛ provider واقعی Deferred** | OTP امن، session، RBAC، RLS، abuse control و orchestrator تحویل موجود؛ SMS provider تأییدشدهٔ production وجود ندارد |
-| Payment aggregate                   | **بنیاد تأییدشده**                           | state machine مستقل و تاریخچهٔ immutable؛ client وضعیت پرداخت را تعیین نمی‌کند                                      |
-| Double-entry Ledger                 | **بنیاد تأییدشده**                           | journal متوازن، entryهای append-only و مبلغ صحیح IRR؛ balance مشتق‌شده است                                          |
-| Chart of Accounts                   | **بنیاد تأییدشده**                           | chart سیستمی ۱۴ حسابی، bootstrap idempotent و governance حساب                                                       |
-| Provider foundation                 | **بنیاد تأییدشده**                           | configuration، credential reference، attempt، registry/SPI و replay guard؛ بدون adapter واقعی                       |
-| Payment Execution Orchestrator      | **بنیاد initialization-only**                | دو تراکنش پیرامون boundary خارجی؛ production server adapter/resolver واقعی inject نمی‌کند                           |
-| Callback، inquiry و capture         | **Deferred**                                 | callback receipt foundation وجود دارد؛ verification processing، inquiry و capture اجرایی نیست                       |
-| Settlement، reconciliation و refund | **Deferred**                                 | هیچ job/provider flow یا endpoint production وجود ندارد                                                             |
-| عملیات نانوایی                      | **مدل/ظرفیت موجود؛ workflow planned**        | مدل branch/offering/capacity موجود؛ onboarding، production queue، printing و portal کامل نیست                       |
-| عملیات پیک                          | **مدل و surface اولیه؛ planned**             | entityهای partner/courier/task و shell اپ وجود دارد؛ dispatch، tracking و proof flow اجرا نشده                      |
-| اعلان و چاپ                         | **معماری planned**                           | outbox وجود دارد؛ delivery provider، worker و print agent عملیاتی نیست                                              |
-| CRM و پشتیبانی                      | **بنیاد داده**                               | customer event، support case و incident موجود؛ CRM UI، segmentation و automation deferred                           |
-| Admin/operations panel              | **Planned**                                  | UI مدیریت production وجود ندارد                                                                                     |
-| External store integrations         | **Planned**                                  | adapter یا همگام‌سازی فروشگاه بیرونی وجود ندارد                                                                     |
+| حوزه                           | وضعیت                                | شواهد و مرز دقیق                                                                                                               |
+| ------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Multi-tenancy و forced RLS     | **تأیید و merge شده**                | tenant context سمت سرور، composite tenant FK، `ENABLE/FORCE RLS` و تست منفی cross-tenant                                       |
+| Address و serviceability       | **تأیید و merge شده**                | ایجاد/فهرست نشانی مشتری، مشتق‌سازی service area و zone سمت سرور                                                                |
+| قیمت‌گذاری ارسال               | **تأیید و merge شده**                | rule شهر/zone، precedence، ambiguity rejection و محاسبهٔ bigint IRR                                                            |
+| Quote-to-Order                 | **تأیید و merge شده**                | snapshot immutable، cart version، تراکنش `SERIALIZABLE` و پذیرش اتمیک Quote                                                    |
+| رزرو ظرفیت نانوایی             | **تأیید و merge شده**                | رزرو پایدار slot هم‌تراکنش با Order؛ لغو سفارش، جای رزروشده را آزاد می‌کند                                                     |
+| اپ مشتری                       | **کامل**                             | تجربهٔ فارسی/RTL برای session، کاتالوگ، cart، address، quote، پرداخت، کیف پول و پیگیری سفارش — هم وب و هم اپ موبایل            |
+| هویت و مجوز                    | **کامل؛ کلید production تنظیم نشده** | OTP امن، session، RBAC با scope شعبه‌ای، RLS، abuse control و adapter واقعی LimoSMS؛ کلید production هنوز روی سروری تنظیم نشده |
+| Payment aggregate              | **کامل**                             | state machine مستقل و تاریخچهٔ immutable؛ client وضعیت پرداخت را تعیین نمی‌کند                                                 |
+| Double-entry Ledger            | **کامل**                             | journal متوازن با trigger پایگاه داده، entryهای append-only و مبلغ صحیح IRR؛ balance مشتق‌شده است                              |
+| Chart of Accounts              | **کامل**                             | chart سیستمی نسخهٔ ۴ با ۱۶ حساب، bootstrap idempotent و governance حساب                                                        |
+| Provider foundation            | **کامل**                             | configuration، credential reference، attempt، registry/SPI و replay guard؛ پنج adapter درگاه ایرانی + پیامک + ایمیل + مسیریاب  |
+| Payment Execution Orchestrator | **کامل**                             | دو تراکنش پیرامون boundary خارجی؛ server، adapter و resolver واقعی را inject می‌کند                                            |
+| Callback، inquiry و capture    | **کامل**                             | callback receipt، verification، capture و جاروب بازیابی برای پرداخت‌های سرگردان                                                |
+| Settlement، refund و کیف پول   | **کامل**                             | تسویه با شرکا در لحظهٔ تحویل، payout، عودت وجه به کیف پول، انتقال بین کیف‌ها و برداشت به کارت بانکی                            |
+| عملیات نانوایی                 | **پنل شعبه موجود؛ چاپ planned**      | پنل `/bakery` با صف سفارش، پذیرش/رد، تولید و درآمد شعبه؛ onboarding و چاپ خودکار هنوز نیست                                     |
+| عملیات پیک                     | **کامل**                             | dispatch، تخصیص پیک، برنامه‌ریزی سفر با فاصلهٔ جاده‌ای و اپ موبایل پیک                                                         |
+| اعلان و چاپ                    | **اعلان کامل؛ چاپ planned**          | outbox، قالب پیام، پیامک، ایمیل و push عملیاتی؛ print agent هنوز نیست                                                          |
+| CRM و پشتیبانی                 | **بنیاد داده**                       | customer event، support case و incident موجود؛ CRM UI، segmentation و automation هنوز ساخته نشده                               |
+| Admin/operations panel         | **کامل**                             | سفارش، اعزام، کاتالوگ، قیمت‌گذاری، گزارش مالی، تسویه با شرکا، برداشت مشتری، سرویس‌دهنده‌ها، متن پیام‌ها و دسترسی‌ها            |
+| External store integrations    | **Planned**                          | adapter یا همگام‌سازی فروشگاه بیرونی وجود ندارد                                                                                |
 
 <a id="platform-architecture"></a>
 
@@ -133,17 +134,17 @@ but none is an approved transparent, slogan-free horizontal hero export.
 ### System context
 
 این نمودار actorهای فعلی و آینده را جدا می‌کند. خط‌چین‌ها نمایانگر قابلیت‌های
-آینده/deferred هستند.
+آینده هستند.
 
 ```mermaid
 flowchart TB
   Customer[مشتری ایرانی] -->|اپ فارسی و API| Platform[پلتفرم الو نون]
-  Bakery[نانوایی شریک] -.->|پرتال عملیاتی آینده| Platform
-  Courier[پیک] -.->|workflow عملیاتی آینده| Platform
-  CourierPartner[شریک پیک] -.->|adapter آینده| Platform
-  Operations[عملیات و مدیریت] -.->|پنل آینده| Platform
+  Bakery[نانوایی شریک] -->|پنل شعبه| Platform
+  Courier[پیک] -->|اپ پیک| Platform
+  CourierPartner[شریک پیک] -->|تسویه و پرداخت| Platform
+  Operations[عملیات و مدیریت] -->|پنل مدیریت| Platform
   Support[پشتیبانی و CRM] -.->|CRM آینده| Platform
-  Platform -.->|adapter پرداخت آینده| PaymentProvider[ارائه‌دهنده پرداخت ایرانی]
+  Platform -.->|اعتبارنامهٔ production تنظیم نشده| PaymentProvider[ارائه‌دهنده پرداخت ایرانی]
   Platform -.->|integration آینده| CommerceProvider[فروشگاه یا commerce provider بیرونی]
 ```
 
@@ -151,29 +152,30 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-  Web[Next.js Web]
+  Web[Next.js Web - فروشگاه، پنل مدیریت، پنل نانوایی]
   CustomerMobile[Expo Customer Mobile]
-  CourierMobile[Expo Courier Mobile - shell]
+  CourierMobile[Expo Courier Mobile]
   API[Fastify API]
   Contracts[Zod Contracts + OpenAPI 3.1]
   Domain[Framework-neutral Domain]
   DB[Prisma + PostgreSQL 16]
   Audit[AuditEvent + DomainEventOutbox]
-  Finance[Payment + Ledger + Chart of Accounts]
+  Finance[Payment + Ledger + Wallet + Settlement]
   Provider[Provider SPI + Registry + Orchestrator]
-  Future[Workers / Notifications / Admin - deferred]
+  Sweeps[Sweeps - settlement, outbox, alerts]
 
   Web --> API
   CustomerMobile --> API
-  CourierMobile -.-> API
+  CourierMobile --> API
   API --> Contracts
   API --> Domain
   API --> DB
   DB --> Audit
   DB --> Finance
   API --> Provider
-  Provider -.->|real adapter absent| External[External Provider]
-  Audit -.-> Future
+  Provider -.->|اعتبارنامهٔ production تنظیم نشده| External[درگاه، پیامک، ایمیل، مسیریاب]
+  Audit --> Sweeps
+  Sweeps --> Provider
 ```
 
 وابستگی packageها یک‌طرفه است: applicationها می‌توانند به packageها وابسته
@@ -296,10 +298,10 @@ sequenceDiagram
 | Payments                   | Payment aggregate و state machine مستقل                                        |
 | Ledger & Chart of Accounts | journal دوطرفه، entry immutable و governance حساب                              |
 | Provider Foundation        | configuration، credential reference، registry/SPI، attempts و callback receipt |
-| Execution Orchestrator     | initialization-only، دو تراکنش و outcome نرمال‌شده                             |
+| Execution Orchestrator     | دو تراکنش پیرامون مرز خارجی و outcome نرمال‌شده                                |
 | Audit & Outbox             | رویداد تراکنشی و trail قابل‌انتساب                                             |
-| Customer Mobile            | جریان فارسی session تا confirmation سفارش                                      |
-| Bakery/Courier/Admin/CRM   | مدل یا blueprint موجود؛ workflow و UI production عمدتاً planned/deferred       |
+| Customer Mobile            | جریان فارسی از session تا پرداخت، کیف پول و پیگیری سفارش                       |
+| Bakery/Courier/Admin       | پنل شعبهٔ نانوایی، اپ پیک و پنل مدیریت کامل؛ CRM فعلاً فقط داده و رویداد       |
 
 <a id="financial-architecture"></a>
 
@@ -313,14 +315,17 @@ sequenceDiagram
   مجزا، currency یکسان و debit/credit متوازن دارد.
 - پول در persistence و contract به‌صورت integer `bigint` در **IRR** نگهداری و به
   شکل decimal string منتقل می‌شود؛ floating-point ممنوع است.
-- اپ فعلی قیمت را به ریال نمایش می‌دهد. هر نمایش آیندهٔ «تومان» باید صرفاً
-  presentation دقیق و آشکارِ `IRR ÷ 10` باشد و هرگز منبع حقیقت مالی نشود.
-- chart سیستمی ۱۴ حسابی برای هر tenant به‌صورت deterministic و idempotent
-  bootstrap می‌شود؛ identity حساب سیستمی immutable است.
+- همهٔ سطح‌های کاربری قیمت را به **تومان** نشان می‌دهند و همهٔ سطح‌های داخلی
+  ریال نگه می‌دارند. تبدیل فقط در یک جا انجام می‌شود (`@alo-noon/domain`) و
+  جابه‌جایی رقم است، نه تقسیم؛ ریال هرگز از منبع حقیقت مالی کنار نمی‌رود.
+- chart سیستمی نسخهٔ ۴ با ۱۶ حساب برای هر tenant به‌صورت deterministic و
+  idempotent bootstrap می‌شود؛ identity حساب سیستمی immutable است.
 - configuration provider، `PaymentAttempt` و Execution Orchestrator از Payment
   truth جدا هستند. outcome `VERIFIED` یا `ACCEPTED` به‌تنهایی `CAPTURED` نیست.
-- adapter واقعی درگاه ایرانی، callback verification، inquiry، capture،
-  settlement، reconciliation و refund هنوز deferred هستند.
+- پنج adapter درگاه ایرانی (IdPay، NextPay، Shepa، Zarinpal، Zibal)، callback
+  verification، capture، تسویه با شرکا، عودت وجه و برداشت از کیف پول پیاده‌سازی
+  و با تست پوشش داده شده‌اند. آنچه باقی مانده اعتبارنامهٔ production است، نه کد:
+  هیچ‌کدام تا امروز به یک درگاه واقعی وصل نشده‌اند.
 
 <a id="security-integrity"></a>
 
@@ -525,24 +530,23 @@ promotion محیط، smoke test و rollback automation هنوز پیاده‌س�
 
 ترتیب، dependency فنی را نشان می‌دهد و تعهد زمانی نیست.
 
-1. **Foundation تکمیل‌شده:** domain/contract/database، multi-tenancy، forced
-   RLS، checkout اتمیک، Payment/Ledger/Chart، provider foundation و orchestrator
-   initialization-only.
-2. **مسیر اجرای پرداخت:** adapter واقعی و تأییدشدهٔ درگاه ایرانی، secret
-   manager، transport بیرونی، redirect، callback verification، inquiry و capture
-   transactional.
-3. **فعال‌سازی احراز هویت production:** provider تأییدشدهٔ پیامک، adapter واقعی،
-   secret provisioning و اتصال metrics/alert؛ abuse controls و runbook پیاده
-   شده‌اند.
-4. **عملیات نانوایی:** onboarding، ظرفیت عملیاتی، production/packaging queue،
-   پذیرش سفارش و printing.
-5. **عملیات پیک:** dispatch، assignment command، proof، tracking و SLA.
-6. **اعلان و عملیات مالی:** workers، delivery channel، settlement،
-   reconciliation و refund با authority و audit.
+1. **ساخته‌شده:** domain/contract/database، multi-tenancy با forced RLS،
+   checkout اتمیک، Payment/Ledger/Chart، پنج adapter درگاه، callback و capture،
+   کیف پول (شارژ، پرداخت، انتقال، عودت، برداشت)، تسویه با شرکا، dispatch و
+   برنامه‌ریزی سفر، پنل مدیریت، پنل شعبهٔ نانوایی، اپ مشتری، اپ پیک و صفحه‌های
+   قانونی.
+2. **اعتبارنامهٔ production:** کلید پیامک، merchant درگاه و کلید مسیریاب. کد
+   آماده است؛ هیچ adapter تا امروز به provider واقعی وصل نشده.
+3. **استیجینگ و شواهد:** یک محیط staging و تمرین کامل جریان روی sandbox
+   providerها، پیش از اینکه پول واقعی جابه‌جا شود.
+4. **اولین استقرار واقعی:** سرور، دامنه، TLS، پشتیبان‌گیری و مانیتورینگ.
+5. **هویت حقوقی و نماد اعتماد:** ثبت کسب‌وکار، تنظیم متغیرهای هویتی و نصب نماد
+   اینماد. صفحه‌های قانونی هر دو را از محیط می‌خوانند و تا تنظیم‌نشدن، صریح
+   می‌گویند تنظیم نشده‌اند.
+6. **چاپ و onboarding نانوایی:** print agent و مسیر پذیرش شریک تازه.
 7. **CRM:** timeline projection، support workflow، consent-aware automation و
    UI.
-8. **اتصال بیرونی:** store/commerce، maps، courier و analytics adapterهای
-   review‌شده.
+8. **تحویل زمان‌بندی‌شده و اشتراک:** slot آینده و سفارش تکرارشونده.
 9. **گسترش ایران:** rollout شهر‌به‌شهر با pricing/serviceability/partner config.
 10. **آمادگی enterprise/white-label آینده:** operator governance، branding و
     deployment isolation بر اساس شواهد مقیاس؛ نه هدف launch فعلی.
