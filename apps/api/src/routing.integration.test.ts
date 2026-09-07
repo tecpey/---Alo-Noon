@@ -197,6 +197,18 @@ async function buildWorld(
   } = {},
 ): Promise<World> {
   const suffix = `${label}${randomUUID().slice(0, 6)}`.toUpperCase().replace(/-/g, '')
+  /**
+   * The unique half, kept where truncation cannot reach it.
+   *
+   * `City.code` is unique across every tenant and capped at sixteen characters.
+   * Building it as prefix + label + random meant a twelve-character label like
+   * UNCONFIGURED left two random characters after the cap — about two hundred
+   * possibilities, on a column shared by every run this database has ever seen.
+   * It collided roughly one run in four, and looked like an environment problem
+   * every time. The label belongs in the tenant's name, where a person reads it;
+   * the code needs entropy and nothing else.
+   */
+  const unique = randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()
   const now = new Date()
 
   const tenant = await prisma.tenant.create({
@@ -204,13 +216,13 @@ async function buildWorld(
   })
   const tenantId = tenant.id
   const city = await prisma.city.create({
-    data: { tenantId, code: `RC${suffix}`.slice(0, 16), nameFa: 'شهر', isActive: true },
+    data: { tenantId, code: `RC${unique}`, nameFa: 'شهر', isActive: true },
   })
   const zone = await prisma.operationalZone.create({
     data: {
       tenantId,
       cityId: city.id,
-      code: `RZ${suffix}`.slice(0, 16),
+      code: `RZ${unique}`,
       nameFa: 'ناحیه',
       isActive: true,
     },
@@ -229,7 +241,7 @@ async function buildWorld(
       bakeryId: bakery.id,
       cityId: city.id,
       operationalZoneId: zone.id,
-      code: `RB${suffix}`.slice(0, 16),
+      code: `RB${unique}`,
       nameFa: 'شعبه',
       addressLine: 'نشانی',
       latitude: String(BRANCH.latitude),

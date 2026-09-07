@@ -405,14 +405,18 @@ async function seedTenant(): Promise<Fixture> {
 
 /** The smallest branch a grant can legally point at. */
 async function seedBranch(tenantId: string, tag: string): Promise<string> {
+  // `City.code` is unique across every tenant and capped at sixteen characters,
+  // so a tag in the code eats into the entropy that keeps runs apart. The tag
+  // lives in the readable names below instead.
+  const unique = randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()
   const city = await prisma.city.create({
-    data: { tenantId, code: `AC-${tag}-${suffix}`.slice(0, 16), nameFa: 'شهر', isActive: true },
+    data: { tenantId, code: `AC${unique}`, nameFa: 'شهر', isActive: true },
   })
   const zone = await prisma.operationalZone.create({
     data: {
       tenantId,
       cityId: city.id,
-      code: `AZ-${tag}-${suffix}`.slice(0, 16),
+      code: `AZ${unique}`,
       nameFa: 'ناحیه',
       isActive: true,
     },
@@ -431,7 +435,7 @@ async function seedBranch(tenantId: string, tag: string): Promise<string> {
       bakeryId: bakery.id,
       cityId: city.id,
       operationalZoneId: zone.id,
-      code: `AB-${tag}-${suffix}`.slice(0, 32),
+      code: `AB-${tag}-${unique}`,
       nameFa: `شعبهٔ ${tag}`,
       addressLine: 'نشانی',
       latitude: '36.5442',
