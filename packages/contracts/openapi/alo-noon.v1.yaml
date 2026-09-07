@@ -1575,6 +1575,411 @@ paths:
         '404': { description: No such grant in this tenant. }
         '409': { description: An account cannot revoke its own access. }
         '503': { description: Access management is temporarily unavailable. }
+  /api/v1/admin/access/branches:
+    get:
+      operationId: listGrantableBranches
+      summary: The branches a branch-scoped role can be granted against.
+      description: >-
+        Answers to admin.access.manage rather than to the catalogue's own permission.
+        ACCESS_ADMIN — the role whose entire job is issuing grants — does not hold
+        admin.catalog.manage, so borrowing the catalogue's branch listing would leave
+        exactly that role unable to fill in the one field a branch grant needs. Three
+        fields, because everything else about a branch is the catalogue's business and
+        none of it helps somebody pick one from a list.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Branches in this tenant, by name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrantableBranchListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage access. }
+        '503': { description: Access management is temporarily unavailable. }
+  /api/v1/admin/settlement/outstanding:
+    get:
+      operationId: listOutstandingPartnerBalances
+      summary: What each partner has earned and not been paid.
+      description: >-
+        Summed in the database rather than read and added here: a month of one city's
+        orders is a great many rows to move across a socket to produce one number per
+        partner, and the sum has to be exact. `oldestAt` is the figure a total alone
+        hides — two partners owed the same amount are in very different positions if one
+        has been waiting since last month.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every partner with something owing, largest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerBalanceListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle partner payouts. }
+        '503': { description: The payout desk is temporarily unavailable. }
+  /api/v1/admin/settlement/payouts:
+    get:
+      operationId: listPartnerPayouts
+      summary: Payout runs, newest first.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: The payout runs this tenant has prepared.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPayoutListEnvelope' }
+        '400': { description: That payout listing is not a valid request. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle partner payouts. }
+        '503': { description: The payout desk is temporarily unavailable. }
+    post:
+      operationId: preparePartnerPayout
+      summary: Prepare a payout covering everything a partner is owed.
+      description: >-
+        The amount is never in the request: it is whatever the partner has earned and not
+        been paid at the instant the transaction reads it, under a row lock, so two runs
+        prepared at the same moment cannot both claim the same earnings. The ledger
+        posting happens here and not when somebody presses "paid" — the platform stops
+        owing the moment it decides to pay, and the bank transfer that follows is evidence
+        recorded against something that already exists. Nothing owing answers 204: not a
+        failure, and not a payout either.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreparePayoutCommand' }
+      responses:
+        '201':
+          description: The payout run, awaiting a bank transfer somebody makes by hand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPayoutEnvelope' }
+        '204': { description: Nothing is owing to that partner. }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle partner payouts. }
+        '503': { description: The payout desk is temporarily unavailable. }
+  /api/v1/admin/settlement/payouts/{payoutId}/paid:
+    post:
+      operationId: markPartnerPayoutPaid
+      summary: Record that the money was actually sent.
+      description: >-
+        Nothing here moves money. The platform holds no banking credentials; a person
+        makes the transfer and comes back to record what the bank called it, which is the
+        only thing that lets the payment be found again on a statement. Recording the same
+        payout twice is the same outcome, not a second transfer.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BankReferenceCommand' }
+      responses:
+        '200':
+          description: The payout, now settled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPayoutEnvelope' }
+        '400': { description: The bank reference is missing or too long. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle partner payouts. }
+        '404': { description: No such payout in this tenant. }
+        '409': { description: That payout is no longer awaiting payment. }
+        '503': { description: The payout desk is temporarily unavailable. }
+  /api/v1/admin/withdrawals:
+    get:
+      operationId: listOpenWalletWithdrawals
+      summary: Customer withdrawal requests still awaiting an answer, oldest first.
+      description: >-
+        The amount has already left each customer's balance — it is debited when the
+        request is made, not when the transfer is sent, so nothing here is spendable while
+        somebody at a bank is already sending it. Only the last four digits of the card
+        are stored, which with the holder's name is what a bank transfer form needs.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Open requests, with the customer who made each.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffWithdrawalListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle customer withdrawals. }
+        '503': { description: The withdrawal desk is temporarily unavailable. }
+  /api/v1/admin/withdrawals/{withdrawalId}/paid:
+    post:
+      operationId: markWalletWithdrawalPaid
+      summary: Record that a customer's withdrawal was sent.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: withdrawalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BankReferenceCommand' }
+      responses:
+        '200':
+          description: The withdrawal, now settled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WalletWithdrawalEnvelope' }
+        '400': { description: The bank reference is missing or too long. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle customer withdrawals. }
+        '404': { description: No such withdrawal request. }
+        '503': { description: The withdrawal desk is temporarily unavailable. }
+  /api/v1/admin/withdrawals/{withdrawalId}/reject:
+    post:
+      operationId: rejectWalletWithdrawal
+      summary: Refuse a withdrawal and put the money back.
+      description: >-
+        The credit lands in the same transaction as the refusal, as its own statement
+        line, so the customer sees what happened rather than a balance that silently
+        returned. The reason is required and the customer reads it verbatim — a rejection
+        with no reason is a phone call they have to make to find out anything.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: withdrawalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectWithdrawalCommand' }
+      responses:
+        '200':
+          description: The withdrawal, refused, with the money back on the balance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WalletWithdrawalEnvelope' }
+        '400': { description: The reason is missing or too long. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle customer withdrawals. }
+        '404': { description: No such withdrawal request. }
+        '503': { description: The withdrawal desk is temporarily unavailable. }
+  /api/v1/admin/routing-providers/configurations:
+    get:
+      operationId: listAdminRoutingConfigurations
+      summary: List the tenant's routing engine configurations.
+      description: >-
+        The credential reference is returned and the value behind it never is. An operator
+        debugging dead distances needs to know which variable the engine reads from, and
+        the deployment's secret store is the only thing that holds what is in it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Configurations without any credential material.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoutingConfigurationListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern routing configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminRoutingConfiguration
+      summary: Configure the routing engine that measures delivery distance.
+      description: >-
+        Nothing uses an engine until an operator has confirmed it works — the same rule the
+        payment gateways follow. Until then, and whenever no engine is configured at all,
+        distances are estimated rather than routed and every trip says so.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminRoutingConfigurationCreate' }
+      responses:
+        '201':
+          description: Configuration created, or returned unchanged when identical.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoutingConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern routing configuration. }
+        '409':
+          description: >-
+            An immutable configuration differs from the request, an enabled default
+            already exists, or a concurrency conflict occurred.
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/routing-providers/configurations/{configurationId}/health:
+    post:
+      operationId: attestAdminRoutingHealth
+      summary: Record an observed health status for a routing engine.
+      description: >-
+        UNKNOWN is not accepted: nothing may reset an engine to "never observed" once it
+        has been.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The configuration with its new health status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoutingConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern routing configuration. }
+        '404': { description: No such configuration in this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderHealthCommand' }
+  /api/v1/admin/email-providers/configurations:
+    get:
+      operationId: listAdminEmailConfigurations
+      summary: List the tenant's email provider configurations.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Configurations without any credential material.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminEmailConfigurationListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminEmailConfiguration
+      summary: Configure the email provider that carries operator alerts.
+      description: >-
+        The sender address and name are returned as well as accepted: both are printed on
+        every message the tenant sends, so neither is a secret, and both are what an
+        operator needs when mail starts going to spam.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminEmailConfigurationCreate' }
+      responses:
+        '201':
+          description: Configuration created, or returned unchanged when identical.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminEmailConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '409':
+          description: >-
+            An immutable configuration differs from the request, an enabled default
+            already exists, or a concurrency conflict occurred.
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/email-providers/configurations/{configurationId}/health:
+    post:
+      operationId: attestAdminEmailHealth
+      summary: Record an observed health status for an email provider.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderHealthCommand' }
+      responses:
+        '200':
+          description: The configuration with its new health status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminEmailConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '404': { description: No such configuration in this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/alert-recipients:
+    get:
+      operationId: listAdminAlertRecipients
+      summary: Who receives operator alerts.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: The tenant's alert recipients.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAlertRecipientListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminAlertRecipient
+      summary: Add somebody to the alert list.
+      description: >-
+        `criticalOnly` exists so that a person who should hear about an outage at two in
+        the morning is not also woken by every routine notice. An alert list everybody
+        mutes is an alert list.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAlertRecipientCreate' }
+      responses:
+        '201':
+          description: The recipient.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAlertRecipientEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '409': { description: That address is already on the list. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/alert-recipients/{recipientId}/enabled:
+    post:
+      operationId: setAdminAlertRecipientEnabled
+      summary: Silence or restore one alert recipient.
+      description: >-
+        Disabled rather than deleted, so somebody who left the rota for a fortnight comes
+        back to the same row and the audit trail still explains the quiet period.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: recipientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAlertRecipientEnabledCommand' }
+      responses:
+        '200':
+          description: The recipient with its new state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAlertRecipientEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '404': { description: No such recipient in this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -3611,4 +4016,372 @@ components:
             uptime: { type: number, minimum: 0 }
             version: { type: string }
             checks: { type: array, items: { type: object } }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    GrantableBranch:
+      type: object
+      required: [id, nameFa, bakeryNameFa]
+      properties:
+        id: { type: string, format: uuid }
+        nameFa: { type: string, minLength: 1 }
+        bakeryNameFa: { type: string, minLength: 1 }
+    GrantableBranchListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/GrantableBranch' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    SettlementParty:
+      type: string
+      enum: [BAKERY, COURIER]
+    PartnerBalance:
+      type: object
+      required: [party, partnerId, partnerName, amount, orderCount, oldestAt]
+      properties:
+        party: { $ref: '#/components/schemas/SettlementParty' }
+        partnerId: { type: string, format: uuid }
+        partnerName: { type: string, minLength: 1 }
+        amount: { $ref: '#/components/schemas/Money' }
+        orderCount: { type: integer, minimum: 0 }
+        oldestAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When the oldest unpaid order was delivered. The figure a total alone hides:
+            two partners owed the same amount are in very different positions if one has
+            been waiting since last month.
+    PartnerBalanceListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/PartnerBalance' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    PartnerPayoutSummary:
+      type: object
+      required:
+        [
+          id,
+          party,
+          partnerId,
+          partnerName,
+          state,
+          amount,
+          orderCount,
+          periodStart,
+          periodEnd,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        party: { $ref: '#/components/schemas/SettlementParty' }
+        partnerId: { type: string, format: uuid }
+        partnerName: { type: string, minLength: 1 }
+        state: { type: string, enum: [DRAFT, PAID, CANCELLED] }
+        amount: { $ref: '#/components/schemas/Money' }
+        orderCount: { type: integer, minimum: 1 }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+        bankReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: What the bank called the transfer. Present once somebody sent the money.
+        createdAt: { type: string, format: date-time }
+        paidAt: { type: string, format: date-time }
+    PartnerPayoutEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/PartnerPayoutSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    PartnerPayoutListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/PartnerPayoutSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    PreparePayoutCommand:
+      type: object
+      additionalProperties: false
+      required: [party, partnerId, idempotencyKey]
+      description: >-
+        No amount. It is whatever the partner has earned and not been paid at the instant
+        the transaction reads it; a staff-supplied figure would be a staff-chosen payout,
+        and the one thing a payout must not be is a number somebody typed.
+      properties:
+        party: { $ref: '#/components/schemas/SettlementParty' }
+        partnerId: { type: string, format: uuid }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    BankReferenceCommand:
+      type: object
+      additionalProperties: false
+      required: [bankReference]
+      properties:
+        bankReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The bank's own reference. Required, because a transfer recorded with nothing
+            to look it up by cannot be reconciled against a statement, and reconciling
+            against a statement is the entire point of recording it.
+    RejectWithdrawalCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+          description: >-
+            The customer reads this verbatim. A rejection with no reason is a phone call
+            they have to make to find out anything, and their money is already back.
+    WalletWithdrawalSummary:
+      type: object
+      required: [id, amount, state, cardLastFour, cardHolderName, requestedAt]
+      properties:
+        id: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Money' }
+        state: { type: string, enum: [REQUESTED, PAID, REJECTED] }
+        cardLastFour:
+          type: string
+          pattern: '^[0-9]{4}$'
+          description: >-
+            Four digits and no more. The customer sends a full card number once; the API
+            keeps these and forgets the rest before the row is written.
+        cardHolderName: { type: string, minLength: 1, maxLength: 120 }
+        iban: { type: string, pattern: '^IR[0-9]{24}$' }
+        bankReference: { type: string, minLength: 1, maxLength: 128 }
+        rejectionReason: { type: string, minLength: 1, maxLength: 500 }
+        requestedAt: { type: string, format: date-time }
+        settledAt: { type: string, format: date-time }
+    WalletWithdrawalEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/WalletWithdrawalSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    StaffWithdrawalSummary:
+      allOf:
+        - $ref: '#/components/schemas/WalletWithdrawalSummary'
+        - type: object
+          required: [customerId, customerMobileE164]
+          properties:
+            customerId: { type: string, format: uuid }
+            customerMobileE164: { type: string, pattern: '^\+989\d{9}$' }
+    StaffWithdrawalListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/StaffWithdrawalSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminProviderHealthCommand:
+      type: object
+      additionalProperties: false
+      required: [healthStatus, reason]
+      description: >-
+        UNKNOWN is absent deliberately: nothing may reset a service to "never observed"
+        once it has been.
+      properties:
+        healthStatus: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminRoutingConfigurationCreate:
+      type: object
+      additionalProperties: false
+      required:
+        [providerCode, adapterVersion, environment, credentialReference, enabled, isDefault, reason]
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        credentialReference:
+          $ref: '#/components/schemas/ProviderCredentialReference'
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminRoutingConfigurationSummary:
+      type: object
+      required:
+        [
+          id,
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          environment,
+          credentialReference,
+          enabled,
+          isDefault,
+          priority,
+          healthStatus,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        credentialReference:
+          type: string
+          description: >-
+            The reference, never the value. An operator debugging dead distances needs to
+            know which variable the engine reads from; what is in it stays in the
+            deployment's secret store.
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        healthStatus: { type: string, enum: [UNKNOWN, HEALTHY, DEGRADED, UNHEALTHY] }
+        createdAt: { type: string, format: date-time }
+    AdminRoutingConfigurationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminRoutingConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminRoutingConfigurationListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminRoutingConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminEmailConfigurationCreate:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          providerCode,
+          adapterVersion,
+          environment,
+          credentialReference,
+          senderAddress,
+          senderName,
+          enabled,
+          isDefault,
+          reason,
+        ]
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        credentialReference:
+          $ref: '#/components/schemas/ProviderCredentialReference'
+        senderAddress: { type: string, format: email, minLength: 3, maxLength: 254 }
+        senderName: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminEmailConfigurationSummary:
+      type: object
+      required:
+        [
+          id,
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          environment,
+          credentialReference,
+          senderAddress,
+          senderName,
+          enabled,
+          isDefault,
+          priority,
+          healthStatus,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        credentialReference: { type: string }
+        senderAddress: { type: string, format: email }
+        senderName: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        healthStatus: { type: string, enum: [UNKNOWN, HEALTHY, DEGRADED, UNHEALTHY] }
+        createdAt: { type: string, format: date-time }
+    AdminEmailConfigurationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminEmailConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminEmailConfigurationListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminEmailConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminAlertRecipientCreate:
+      type: object
+      additionalProperties: false
+      required: [address, displayName, criticalOnly, reason]
+      properties:
+        address: { type: string, format: email, minLength: 3, maxLength: 254 }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        criticalOnly:
+          type: boolean
+          description: >-
+            So that somebody who should hear about an outage at two in the morning is not
+            also woken by every routine notice.
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminAlertRecipientEnabledCommand:
+      type: object
+      additionalProperties: false
+      required: [enabled, reason]
+      properties:
+        enabled: { type: boolean }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminAlertRecipientSummary:
+      type: object
+      required: [id, address, displayName, enabled, criticalOnly, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        address: { type: string, format: email }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        criticalOnly: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    AdminAlertRecipientEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminAlertRecipientSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminAlertRecipientListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminAlertRecipientSummary' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
