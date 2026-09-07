@@ -30,10 +30,10 @@
     "@alo-noon/typescript-config": "workspace:*",
     "@types/react": "^19.2.0",
     "eslint": "^9.24.0",
-    "expo-blur": "^57.0.2",
-    "react": "19.2.8",
-    "react-native": "0.86.0",
-    "react-native-svg": "^15.15.5",
+    "expo-blur": "~57.0.2",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-svg": "15.15.4",
     "typescript": "^5.8.3",
     "vitest": "^4.1.10"
   }

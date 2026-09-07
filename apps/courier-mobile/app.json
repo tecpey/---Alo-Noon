@@ -2,12 +2,15 @@
   "expo": {
     "name": "الو نون | پیک",
     "slug": "alo-noon-courier",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "ir.alonoon.courier"
+      "bundleIdentifier": "ir.alonoon.courier",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "ir.alonoon.courier",
@@ -25,6 +28,7 @@
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#261F17"
-    }
+    },
+    "primaryColor": "#ED8732"
   }
 }
