@@ -285,7 +285,20 @@ export function createPrismaPartnerSettlementService(
           tenantId,
           command.partnerId,
         )
-        if (claimable.length === 0) return null
+        // Nothing to claim can mean two different things, and they must not
+        // look alike. The replay check above ran before the lock, so a request
+        // that was genuinely concurrent with an identical one waited here and
+        // now finds the earnings already claimed — by its own twin. Answering
+        // "nothing owing" would tell an operator their payout had not happened
+        // when it had. Asking again, now that the lock has been released, gets
+        // the payout that was made.
+        if (claimable.length === 0) {
+          const settled = await transaction.partnerPayout.findFirst({
+            where: { tenantId, idempotencyKey: command.idempotencyKey },
+            include: payoutInclude,
+          })
+          return settled ? toPayoutSummary(settled) : null
+        }
 
         const ids = claimable.map((row) => row.id)
         const earnings = await transaction.orderEarning.findMany({
