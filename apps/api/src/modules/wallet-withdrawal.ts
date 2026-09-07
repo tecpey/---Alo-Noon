@@ -232,6 +232,13 @@ export function createPrismaWalletWithdrawalService(
         const withdrawal = await lockOpen(transaction, tenantId, command.withdrawalId)
         // Already recorded is the same outcome, not a second transfer.
         if (withdrawal.state === 'PAID') return toSummary(withdrawal)
+        // Anything else settled is a different answer already given. Falling
+        // through would leave the database trigger as the only thing stopping
+        // it, and a trigger's refusal reaches the operator as "temporarily
+        // unavailable" — which invites the retry that must not happen.
+        if (withdrawal.state !== 'REQUESTED') {
+          throw new WalletWithdrawalError('WITHDRAWAL_ALREADY_SETTLED', 409)
+        }
 
         const paid = await transaction.walletWithdrawal.update({
           where: { id: withdrawal.id },
@@ -255,6 +262,13 @@ export function createPrismaWalletWithdrawalService(
         await assertMaySettle(transaction, tenantId, actorAccountId, now)
         const withdrawal = await lockOpen(transaction, tenantId, command.withdrawalId)
         if (withdrawal.state === 'REJECTED') return toSummary(withdrawal)
+        // Rejecting a paid request would credit the balance a second time for
+        // money that already left the bank. The trigger below refuses it, but
+        // only after this transaction has built the reversal — refuse it here,
+        // with an answer that says why.
+        if (withdrawal.state !== 'REQUESTED') {
+          throw new WalletWithdrawalError('WITHDRAWAL_ALREADY_SETTLED', 409)
+        }
 
         const rejected = await transaction.walletWithdrawal.update({
           where: { id: withdrawal.id },

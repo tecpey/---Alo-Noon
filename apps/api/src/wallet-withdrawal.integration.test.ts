@@ -211,6 +211,10 @@ databaseDescribe('taking money back out of a wallet, over PostgreSQL', () => {
     expect(again.bankReference).toBe('PAYA-2026-0906-11')
 
     // A paid request cannot be walked back and refunded on top of the transfer.
+    // The refusal has to be this one: the database trigger also stops it, but a
+    // trigger reaches the operator as "temporarily unavailable", which reads as
+    // an invitation to try again — on the one operation that must not be tried
+    // again. So the code, not the trigger, has to be what answers.
     await expect(
       withdrawals.reject(
         fixture.tenantId,
@@ -219,7 +223,7 @@ databaseDescribe('taking money back out of a wallet, over PostgreSQL', () => {
         now,
         randomUUID(),
       ),
-    ).rejects.toThrow()
+    ).rejects.toMatchObject({ code: 'WITHDRAWAL_ALREADY_SETTLED', status: 409 })
 
     // The balance is still down by exactly what was sent.
     const balance = await prisma.customerWallet.findFirstOrThrow({
@@ -301,6 +305,28 @@ databaseDescribe('taking money back out of a wallet, over PostgreSQL', () => {
       },
     })
     expect(credits).toBe(1)
+  })
+
+  it('will not pay a request it already refused', async () => {
+    // The mirror of the case above, and the more dangerous direction: the money
+    // is back on the customer's balance, so paying it now sends it twice.
+    const [rejected] = await prisma.walletWithdrawal.findMany({
+      where: { tenantId: fixture.tenantId, state: 'REJECTED' },
+    })
+    await expect(
+      withdrawals.markPaid(
+        fixture.tenantId,
+        fixture.financeAccountId,
+        { withdrawalId: rejected!.id, bankReference: 'PAYA-2026-0906-99' },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: 'WITHDRAWAL_ALREADY_SETTLED', status: 409 })
+
+    const untouched = await prisma.walletWithdrawal.findFirstOrThrow({
+      where: { id: rejected!.id },
+    })
+    expect(untouched.state).toBe('REJECTED')
+    expect(untouched.bankReference).toBeNull()
   })
 })
 
