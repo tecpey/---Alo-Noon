@@ -682,14 +682,24 @@ export async function grantRoleAction(
   const mobileE164 = mobileField(form, 'mobileE164')
   if (!mobileE164) return failure('شمارهٔ موبایل باید به شکل ۰۹xxxxxxxxx باشد.')
 
+  // Present only on the branch form. The API decides from the role whether a
+  // branch is required and refuses the mismatch either way; sending it blank
+  // for a tenant role would be sending a field that means nothing.
+  const bakeryBranchId = field(form, 'bakeryBranchId')
+
   const result = await post<{ mobileE164: string }>('/api/v1/admin/access/grants', {
     mobileE164,
     roleCode: field(form, 'roleCode'),
+    ...(bakeryBranchId && { bakeryBranchId }),
     reason: field(form, 'reason') || 'اعطای دسترسی از پنل مدیریت',
   })
   if (!result.ok) return failure(translateProviderError(result.error.code, 'اعطای نقش ناموفق بود.'))
   revalidatePath('/admin/access')
-  return success('نقش داده شد. تغییر بلافاصله اثر می‌کند.')
+  return success(
+    bakeryBranchId
+      ? 'دسترسی شعبه داده شد. این حساب فقط همان شعبه را می‌بیند و از /bakery وارد می‌شود.'
+      : 'نقش داده شد. تغییر بلافاصله اثر می‌کند.',
+  )
 }
 
 export async function revokeRoleAction(

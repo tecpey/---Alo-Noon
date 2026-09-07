@@ -58,6 +58,19 @@ export class AdminAccessError extends Error {
 
 export interface AdminAccessService {
   listRoles(actor: AccessActor): AdminRoleSummary[]
+  /**
+   * The branches a branch-scoped role can be granted against.
+   *
+   * Here rather than borrowed from the catalogue, because the catalogue's
+   * listing is gated on `admin.catalog.manage` and the one role whose entire
+   * job is issuing grants — ACCESS_ADMIN — does not hold it. Naming which shop
+   * a grant reaches is part of managing access, so it answers to the same
+   * permission the grant does.
+   *
+   * Deliberately three fields. Everything else about a branch is the
+   * catalogue's business and none of it helps somebody pick one from a list.
+   */
+  listGrantableBranches(tenantId: string): Promise<GrantableBranch[]>
   listStaff(tenantId: string, actor: AccessActor): Promise<StaffMember[]>
   grantRole(
     tenantId: string,
@@ -75,6 +88,12 @@ export interface AdminAccessService {
   ): Promise<StaffMember>
 }
 
+export interface GrantableBranch {
+  id: string
+  nameFa: string
+  bakeryNameFa: string
+}
+
 export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAccessService {
   return {
     listRoles(actor) {
@@ -85,6 +104,23 @@ export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAcces
         permissions: [...role.permissions],
         grantable: permissionsBeyond(role, actor.permissions).length === 0,
       }))
+    },
+
+    async listGrantableBranches(tenantId) {
+      return readTransaction(prisma, tenantId, async (transaction) => {
+        // ownership-established: a staff surface gated on admin.access.manage;
+        // the tenant comes from the session and is restated on top of RLS.
+        const branches = await transaction.bakeryBranch.findMany({
+          where: { tenantId },
+          select: { id: true, nameFa: true, bakery: { select: { displayNameFa: true } } },
+          orderBy: { nameFa: 'asc' },
+        })
+        return branches.map((branch) => ({
+          id: branch.id,
+          nameFa: branch.nameFa,
+          bakeryNameFa: branch.bakery.displayNameFa,
+        }))
+      })
     },
 
     async listStaff(tenantId, actor) {

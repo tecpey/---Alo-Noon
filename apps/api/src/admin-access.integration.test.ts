@@ -31,6 +31,20 @@ interface Fixture {
   /** A member with no admin role at all. */
   newcomerId: string
   newcomerMobile: string
+  /** Somebody to hand a bakery counter to. */
+  clerkMobile: string
+  /**
+   * A second clerk, used only by the scope-mismatch test.
+   *
+   * Tests in this file share one fixture and run in order, so a test that
+   * grants a role to the newcomer changes what every later test sees. This
+   * account exists so the mismatch check can grant something without moving the
+   * ground under the revocation tests below it.
+   */
+  spareMobile: string
+  branchId: string
+  /** A branch in a second tenant, which this one has no business naming. */
+  foreignBranchId: string
 }
 
 let fixture: Fixture
@@ -130,6 +144,99 @@ databaseDescribe('admin access management over PostgreSQL', () => {
     })
     expect(audit?.actorId).toBe(fixture.ownerId)
     expect(audit?.metadata).toMatchObject({ roleCode: 'CATALOG_MANAGER' })
+  })
+
+  /**
+   * The two grants a bakery partner's staff hold, and the two ways of getting
+   * them wrong. Both mistakes are silent without this check: a branch role at
+   * GLOBAL scope hands a shop counter every order in the city, and a tenant role
+   * against a branch produces an operator who signs in and can do nothing.
+   */
+  it('grants a branch role against the branch it names', async () => {
+    const member = await service.grantRole(
+      fixture.tenantId,
+      { accountId: fixture.ownerId, permissions: fixture.ownerPermissions },
+      {
+        mobileE164: fixture.clerkMobile,
+        roleCode: 'BRANCH_OPERATOR',
+        bakeryBranchId: fixture.branchId,
+        reason: 'پشت پیشخوان شعبهٔ مرکزی',
+      },
+      now,
+      randomUUID(),
+    )
+
+    expect(member.roles.map((role) => role.code)).toEqual(['BRANCH_OPERATOR'])
+    expect(member.roles[0]?.bakeryBranchId).toBe(fixture.branchId)
+    expect(member.roles[0]?.bakeryBranchNameFa).toContain('شعبه')
+    // The flat list is tenant-wide permissions only. This clerk can move orders
+    // at one counter and would read as a tenant operator if that appeared here.
+    expect(member.permissions).toEqual([])
+
+    const grant = await prisma.accessGrant.findFirstOrThrow({
+      where: { accountId: member.accountId, revokedAt: null },
+    })
+    expect(grant.scopeType).toBe('BAKERY_BRANCH')
+    expect(grant.scopeId).toBe(fixture.branchId)
+  })
+
+  it('refuses a branch role with no branch, and a tenant role with one', async () => {
+    await expect(
+      service.grantRole(
+        fixture.tenantId,
+        { accountId: fixture.ownerId, permissions: fixture.ownerPermissions },
+        { mobileE164: fixture.spareMobile, roleCode: 'BRANCH_OWNER', reason: 'بدون شعبه' },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'ROLE_SCOPE_MISMATCH', status: 400 })
+
+    // A tenant role is granted GLOBAL whatever the form sent, so naming a
+    // branch cannot narrow it by accident either.
+    const member = await service.grantRole(
+      fixture.tenantId,
+      { accountId: fixture.ownerId, permissions: fixture.ownerPermissions },
+      {
+        mobileE164: fixture.spareMobile,
+        roleCode: 'OPERATIONS_ANALYST',
+        bakeryBranchId: fixture.branchId,
+        reason: 'شعبه بی‌اثر است',
+      },
+      now,
+      randomUUID(),
+    )
+    const analyst = member.roles.find((role) => role.code === 'OPERATIONS_ANALYST')
+    expect(analyst?.bakeryBranchId).toBeUndefined()
+  })
+
+  it('refuses a branch belonging to another tenant', async () => {
+    // `AccessGrant.scopeId` has no foreign key — it names a branch, a city or a
+    // courier partner depending on the scope — so nothing but this check stops
+    // a grant from pointing across the tenant boundary RLS exists to hold.
+    await expect(
+      service.grantRole(
+        fixture.tenantId,
+        { accountId: fixture.ownerId, permissions: fixture.ownerPermissions },
+        {
+          mobileE164: fixture.clerkMobile,
+          roleCode: 'BRANCH_OWNER',
+          bakeryBranchId: fixture.foreignBranchId,
+          reason: 'شعبهٔ tenant دیگر',
+        },
+        now,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'BAKERY_BRANCH_NOT_FOUND', status: 404 })
+  })
+
+  it('lists the branches a grant can name, without the catalogue permission', async () => {
+    // The role whose entire job is issuing grants holds admin.access.manage and
+    // nothing else. If this listing answered to the catalogue's permission, that
+    // role could not fill in the one field a branch grant needs.
+    const branches = await service.listGrantableBranches(fixture.tenantId)
+    expect(branches.map((branch) => branch.id)).toContain(fixture.branchId)
+    expect(branches.map((branch) => branch.id)).not.toContain(fixture.foreignBranchId)
+    expect(branches[0]?.bakeryNameFa).toContain('نانوایی')
   })
 
   it('treats re-granting what someone already holds as a no-op', async () => {
@@ -273,6 +380,14 @@ async function seedTenant(): Promise<Fixture> {
   ])
   const newcomerMobile = uniqueMobile()
   const newcomerId = await createAccount(tenantId, null, [], newcomerMobile)
+  const clerkMobile = uniqueMobile()
+  await createAccount(tenantId, null, [], clerkMobile)
+  const spareMobile = uniqueMobile()
+  await createAccount(tenantId, null, [], spareMobile)
+
+  const foreign = await prisma.tenant.create({
+    data: { slug: `access-other-${suffix.toLowerCase()}`, name: `Access other ${suffix}` },
+  })
 
   return {
     tenantId,
@@ -281,7 +396,51 @@ async function seedTenant(): Promise<Fixture> {
     accessAdminId,
     newcomerId,
     newcomerMobile,
+    clerkMobile,
+    spareMobile,
+    branchId: await seedBranch(tenantId, 'OURS'),
+    foreignBranchId: await seedBranch(foreign.id, 'THEIRS'),
   }
+}
+
+/** The smallest branch a grant can legally point at. */
+async function seedBranch(tenantId: string, tag: string): Promise<string> {
+  const city = await prisma.city.create({
+    data: { tenantId, code: `AC-${tag}-${suffix}`.slice(0, 16), nameFa: 'شهر', isActive: true },
+  })
+  const zone = await prisma.operationalZone.create({
+    data: {
+      tenantId,
+      cityId: city.id,
+      code: `AZ-${tag}-${suffix}`.slice(0, 16),
+      nameFa: 'ناحیه',
+      isActive: true,
+    },
+  })
+  const bakery = await prisma.bakery.create({
+    data: {
+      tenantId,
+      legalName: `Bakery ${tag} ${suffix}`,
+      displayNameFa: `نانوایی ${tag}`,
+      partnerStatus: 'ACTIVE',
+    },
+  })
+  const branch = await prisma.bakeryBranch.create({
+    data: {
+      tenantId,
+      bakeryId: bakery.id,
+      cityId: city.id,
+      operationalZoneId: zone.id,
+      code: `AB-${tag}-${suffix}`.slice(0, 32),
+      nameFa: `شعبهٔ ${tag}`,
+      addressLine: 'نشانی',
+      latitude: '36.5442',
+      longitude: '52.6781',
+      operationalStatus: 'ACTIVE',
+      qualityStatus: 'APPROVED',
+    },
+  })
+  return branch.id
 }
 
 function uniqueMobile(): string {

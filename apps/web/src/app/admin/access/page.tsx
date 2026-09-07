@@ -4,8 +4,10 @@ import { grantRoleAction, revokeRoleAction } from '../../../lib/admin-actions'
 import {
   isUnauthenticated,
   listAccessRoles,
+  listGrantableBranches,
   listStaff,
   type AdminRoleSummary,
+  type GrantableBranch,
   type StaffMember,
 } from '../../../lib/admin-api'
 import { formatDateTime } from '../../../lib/admin-format-display'
@@ -26,6 +28,10 @@ const ROLE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   OPERATIONS_ANALYST: 'فقط دیدن گزارش‌ها و سفارش‌ها.',
   CATALOG_MANAGER: 'مدیریت کاتالوگ، قیمت‌ها و موجودی.',
   ACCESS_ADMIN: 'فقط دادن و گرفتن دسترسی، بدون هیچ دسترسی عملیاتی دیگر.',
+  ORDER_OPERATOR: 'صف سفارش‌های کل tenant: پذیرش، تولید و تحویل.',
+  FINANCE_ADMIN: 'تسویه با شرکا، پرداخت به آن‌ها و برداشت مشتری‌ها.',
+  BRANCH_OPERATOR: 'پشت پیشخوانِ یک شعبه: صف همان شعبه و بس.',
+  BRANCH_OWNER: 'همان بالا، به‌علاوهٔ درآمد و مانده‌ی همان شعبه.',
 }
 
 const PERMISSION_LABELS: Readonly<Record<string, string>> = {
@@ -36,10 +42,17 @@ const PERMISSION_LABELS: Readonly<Record<string, string>> = {
   'admin.orders.read': 'سفارش‌ها',
   'admin.catalog.manage': 'کاتالوگ و قیمت',
   'admin.access.manage': 'مدیریت دسترسی',
+  'admin.orders.manage': 'پیشبرد سفارش‌ها',
+  'admin.finance.settle': 'تسویه و پرداخت',
+  'routing-provider.configuration.govern': 'سرویس مسیریاب',
 }
 
 export default async function AdminAccessPage() {
-  const [staff, roles] = await Promise.all([listStaff(), listAccessRoles()])
+  const [staff, roles, branches] = await Promise.all([
+    listStaff(),
+    listAccessRoles(),
+    listGrantableBranches(),
+  ])
   if (
     (!staff.ok && isUnauthenticated(staff.error)) ||
     (!roles.ok && isUnauthenticated(roles.error))
@@ -48,6 +61,13 @@ export default async function AdminAccessPage() {
 
   const roleList: AdminRoleSummary[] = roles.ok ? roles.data : []
   const grantable = roleList.filter((role) => role.grantable)
+  // Two forms, because they are two acts. A tenant role is granted once and
+  // sees everything; a branch role is granted against one counter. One form
+  // with an optional branch field would let somebody hand a bakery's clerk the
+  // whole city by leaving a select alone.
+  const tenantRoles = grantable.filter((role) => role.scope === 'TENANT')
+  const branchRoles = grantable.filter((role) => role.scope === 'BAKERY_BRANCH')
+  const branchList: GrantableBranch[] = branches.ok ? branches.data : []
 
   return (
     <main className="admin">
@@ -101,15 +121,59 @@ export default async function AdminAccessPage() {
             <SelectField
               label="نقش"
               name="roleCode"
-              options={grantable.map((role) => ({
+              options={tenantRoles.map((role) => ({
                 value: role.code,
                 label: `${role.name} — ${ROLE_DESCRIPTIONS[role.code] ?? role.code}`,
               }))}
-              {...(grantable.length === 0 && {
+              {...(tenantRoles.length === 0 && {
                 hint: 'حساب شما هیچ نقشی را کامل پوشش نمی‌دهد، پس چیزی برای دادن ندارید.',
               })}
             />
             <Field label="دلیل" name="reason" required placeholder="مسئول کاتالوگ شعبهٔ مرکزی" />
+          </ActionForm>
+        </details>
+
+        <details className="card">
+          <summary>اعطای دسترسی شعبه به کارکنان نانوایی</summary>
+          <p className="muted">
+            این نقش‌ها به <strong>یک شعبه</strong> بسته‌اند و بیرون از آن هیچ چیز نمی‌بینند. کارکنان
+            نانوایی از <code dir="ltr">/bakery</code> وارد می‌شوند، نه از پنل مدیریت. آن‌ها هم باید
+            یک بار با همان شماره وارد شده باشند.
+          </p>
+          <ActionForm action={grantRoleAction} submitLabel="اعطای دسترسی شعبه">
+            <Field
+              label="شمارهٔ موبایل"
+              name="mobileE164"
+              required
+              dir="ltr"
+              inputMode="tel"
+              placeholder="09121234567"
+            />
+            <SelectField
+              label="نقش"
+              name="roleCode"
+              options={branchRoles.map((role) => ({
+                value: role.code,
+                label: `${role.name} — ${ROLE_DESCRIPTIONS[role.code] ?? role.code}`,
+              }))}
+              {...(branchRoles.length === 0 && {
+                hint: 'حساب شما این نقش‌ها را کامل پوشش نمی‌دهد، پس چیزی برای دادن ندارید.',
+              })}
+            />
+            <SelectField
+              label="شعبه"
+              name="bakeryBranchId"
+              options={branchList.map((branch) => ({
+                value: branch.id,
+                label: `${branch.nameFa} — ${branch.bakeryNameFa}`,
+              }))}
+              hint={
+                branchList.length === 0
+                  ? 'هنوز شعبه‌ای ثبت نشده است.'
+                  : 'این حساب فقط همین شعبه را می‌بیند.'
+              }
+            />
+            <Field label="دلیل" name="reason" required placeholder="صاحب نانوایی، شعبهٔ مرکزی" />
           </ActionForm>
         </details>
       </section>
@@ -122,6 +186,7 @@ export default async function AdminAccessPage() {
               <thead>
                 <tr>
                   <th>نقش</th>
+                  <th>دامنه</th>
                   <th>برای چه کسی</th>
                   <th>اختیارات</th>
                   <th>شما می‌توانید بدهید؟</th>
@@ -131,6 +196,7 @@ export default async function AdminAccessPage() {
                 {roleList.map((role) => (
                   <tr key={role.code}>
                     <td>{role.name}</td>
+                    <td>{role.scope === 'BAKERY_BRANCH' ? 'یک شعبه' : 'کل tenant'}</td>
                     <td>{ROLE_DESCRIPTIONS[role.code] ?? '—'}</td>
                     <td>
                       {role.permissions
@@ -151,6 +217,17 @@ export default async function AdminAccessPage() {
   )
 }
 
+/**
+ * A role with the branch it reaches, when it reaches only one.
+ *
+ * The branch is never omitted. A review that lists «اپراتور شعبه» without
+ * saying which shop is a review that cannot answer the question it exists to
+ * answer.
+ */
+function roleLabel(role: StaffMember['roles'][number]): string {
+  return role.bakeryBranchNameFa ? `${role.name} (${role.bakeryBranchNameFa})` : role.name
+}
+
 function StaffRow({ member }: Readonly<{ member: StaffMember }>) {
   return (
     <li className="row">
@@ -166,14 +243,18 @@ function StaffRow({ member }: Readonly<{ member: StaffMember }>) {
         <dl className="row-meta">
           <div>
             <dt>نقش‌ها</dt>
-            <dd>{member.roles.map((role) => role.name).join('، ')}</dd>
+            <dd>{member.roles.map(roleLabel).join('، ')}</dd>
           </div>
           <div>
-            <dt>اختیارات</dt>
+            <dt>اختیارات در کل tenant</dt>
             <dd>
-              {member.permissions
-                .map((permission) => PERMISSION_LABELS[permission] ?? permission)
-                .join('، ')}
+              {member.permissions.length === 0
+                ? // Every grant this account holds is branch-scoped. Saying so
+                  // is the point: an empty list here would read as "no access".
+                  'ندارد — دسترسی‌اش فقط روی شعبه است.'
+                : member.permissions
+                    .map((permission) => PERMISSION_LABELS[permission] ?? permission)
+                    .join('، ')}
             </dd>
           </div>
         </dl>
@@ -182,7 +263,7 @@ function StaffRow({ member }: Readonly<{ member: StaffMember }>) {
       {member.roles.map((role) => (
         <div className="row-actions" key={role.grantId}>
           <span className="muted">
-            {role.name} — از {formatDateTime(role.grantedAt)}
+            {roleLabel(role)} — از {formatDateTime(role.grantedAt)}
           </span>
           {member.isSelf ? (
             // Shown rather than hidden: an operator who wonders why they cannot

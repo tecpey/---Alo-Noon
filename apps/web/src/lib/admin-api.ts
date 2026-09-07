@@ -432,27 +432,58 @@ export async function revokeSession(): Promise<void> {
 export interface AdminRoleSummary {
   code: string
   name: string
+  /**
+   * How far the role reaches. A `BAKERY_BRANCH` role is granted against one
+   * branch and sees only it; the panel needs this to know whether to ask which.
+   */
+  scope: 'TENANT' | 'BAKERY_BRANCH'
   permissions: string[]
   grantable: boolean
+}
+
+export interface StaffRoleGrant {
+  grantId: string
+  code: string
+  name: string
+  grantedAt: string
+  expiresAt: string | null
+  bakeryBranchId?: string
+  bakeryBranchNameFa?: string
 }
 
 export interface StaffMember {
   accountId: string
   mobileE164: string
   status: string
-  roles: Array<{
-    grantId: string
-    code: string
-    name: string
-    grantedAt: string
-    expiresAt: string | null
-  }>
+  roles: StaffRoleGrant[]
+  /**
+   * Only tenant-wide grants feed this list. A branch operator's
+   * `admin.orders.manage` is real but reaches one counter, and reporting it
+   * here would make them read as a tenant operator to everyone who sees this
+   * page.
+   */
   permissions: string[]
   isSelf: boolean
 }
 
 export async function listAccessRoles(): Promise<ApiResult<AdminRoleSummary[]>> {
   return request<AdminRoleSummary[]>('/api/v1/admin/access/roles', { method: 'GET' })
+}
+
+export interface GrantableBranch {
+  id: string
+  nameFa: string
+  bakeryNameFa: string
+}
+
+/**
+ * The branches a branch role can be granted against.
+ *
+ * Not the catalogue's listing: that one answers to `admin.catalog.manage`, and
+ * the role whose whole job is issuing grants does not hold it.
+ */
+export async function listGrantableBranches(): Promise<ApiResult<GrantableBranch[]>> {
+  return request<GrantableBranch[]>('/api/v1/admin/access/branches', { method: 'GET' })
 }
 
 export async function listStaff(): Promise<ApiResult<StaffMember[]>> {

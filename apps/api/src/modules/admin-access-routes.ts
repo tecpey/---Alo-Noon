@@ -50,6 +50,17 @@ export function registerAdminAccessRoutes(
     return reply.send({ success: true, data: roles, meta: adminResponseMeta() })
   })
 
+  app.get('/api/v1/admin/access/branches', ACCESS_RATE_LIMIT, async (request, reply) => {
+    const actor = await authenticatedStaff(request, reply, dependencies, ACCESS_PERMISSION)
+    if (!actor) return reply
+    try {
+      const branches = await dependencies.service.listGrantableBranches(actor.tenantId)
+      return reply.send({ success: true, data: branches, meta: adminResponseMeta() })
+    } catch (error) {
+      return accessFailure(request, reply, error)
+    }
+  })
+
   app.get('/api/v1/admin/access/staff', ACCESS_RATE_LIMIT, async (request, reply) => {
     const actor = await authenticatedStaff(request, reply, dependencies, ACCESS_PERMISSION)
     if (!actor) return reply
