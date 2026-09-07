@@ -217,6 +217,62 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
      */
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   })
+
+  /**
+   * The two answers that were escaping the envelope.
+   *
+   * Every route in this API replies `{ success, data | error, meta }`, and two
+   * paths never reached a route to do it: an unmatched URL and a body that is
+   * not the JSON its own content-type claims. Fastify answered both in its own
+   * shape — `{ statusCode, code, error, message }`, carrying an internal
+   * framework code and no requestId — so a client that trusts the envelope met
+   * a response it could not read, on the two failures it is most likely to
+   * meet. The 404 also echoed the requested path straight back into the body,
+   * which is nothing a caller needs to be told.
+   *
+   * A requestId on every one of them, because a failure a customer reports and
+   * a line in the log are only the same event if something connects them.
+   */
+  app.setNotFoundHandler((_request, reply) =>
+    reply
+      .code(404)
+      .send(errorEnvelope('ROUTE_NOT_FOUND', 'The requested endpoint does not exist.')),
+  )
+
+  app.setErrorHandler((raw: unknown, request, reply) => {
+    // Typed narrowly rather than trusted: anything at all can be thrown, and a
+    // handler that assumes an Error is a handler that throws inside itself on
+    // the one request where somebody threw a string.
+    const error = raw as { statusCode?: unknown; code?: unknown; message?: unknown }
+    const status = typeof error.statusCode === 'number' ? error.statusCode : 500
+    const code = typeof error.code === 'string' ? error.code : undefined
+    const message = typeof error.message === 'string' ? error.message : ''
+
+    // A 4xx is the caller's to fix and is logged at the level it deserves; a
+    // 5xx is ours, and is the reason this handler logs at all.
+    if (status >= 500) request.log.error({ err: raw }, 'Unhandled error')
+    else request.log.warn({ err: raw, statusCode: status }, 'Request refused')
+
+    // Never the thrown message on a 5xx. Whatever raised it was not written to
+    // be read by a stranger, and the ones that are — a driver's error, a
+    // provider's body — are exactly the ones that carry a hostname, a query or
+    // a credential.
+    if (status >= 500) {
+      return reply
+        .code(500)
+        .send(errorEnvelope('INTERNAL_ERROR', 'The service could not complete that request.'))
+    }
+
+    // Below 500 the message is Fastify's own validation or parsing sentence,
+    // which says something true and useful about the request that was sent.
+    //
+    // The *code* is not: `FST_ERR_CTP_INVALID_JSON_BODY` names the framework
+    // rather than the fault, and it is the framework's to rename on any
+    // upgrade. Every code this API publishes is one it owns and keeps.
+    const published = !code || code.startsWith('FST_ERR') ? 'INVALID_REQUEST' : code
+    return reply.code(status).send(errorEnvelope(published, message || 'The request was refused.'))
+  })
+
   registerDiscoveryRoutes(app, {
     catalogRepository: options.catalogRepository ?? unavailableCatalogRepository,
     cityRepository: options.cityRepository ?? unavailableCityRepository,
