@@ -175,7 +175,7 @@ function FinancialSections({ report }: Readonly<{ report: FinancialReport }>) {
 
         {gapIsZero ? (
           <p className="muted">
-            هر ریالی که دریافت شده، سفارشِ متناظرش هم پرداخت‌شده علامت خورده است.
+            هر مبلغی که دریافت شده، سفارشِ متناظرش هم پرداخت‌شده علامت خورده است.
           </p>
         ) : (
           <p className="error-box">

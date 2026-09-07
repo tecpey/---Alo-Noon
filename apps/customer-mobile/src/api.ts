@@ -21,6 +21,8 @@ import {
   walletTopUpStartedEnvelopeSchema,
   walletTransferEnvelopeSchema,
   walletTransferListEnvelopeSchema,
+  walletWithdrawalEnvelopeSchema,
+  walletWithdrawalListEnvelopeSchema,
   type ActiveCitySummary,
   type AddressCreate,
   type AddressSummary,
@@ -41,6 +43,7 @@ import {
   type WalletEntrySummary,
   type WalletSummary,
   type WalletTransferSummary,
+  type WalletWithdrawalSummary,
 } from '@alo-noon/contracts'
 
 interface RuntimeSchema<T> {
@@ -197,6 +200,23 @@ export interface CustomerApiClient {
   }): Promise<WalletTransferSummary>
   /** Types the code back. This is the call that moves the money. */
   confirmWalletTransfer(transferId: string, code: string): Promise<WalletTransferSummary>
+  /** Withdrawals this customer has asked for, newest first. */
+  listWalletWithdrawals(): Promise<WalletWithdrawalSummary[]>
+  /**
+   * Asks for the balance back, in money.
+   *
+   * The card number is sent once and never comes back: the API keeps four
+   * digits and forgets the rest before the row is written. Nothing on this side
+   * stores it either — not in state that outlives the call, and not in the
+   * idempotency key, which is a value that survives in the database.
+   */
+  requestWalletWithdrawal(input: {
+    amountRial: string
+    cardNumber: string
+    cardHolderName: string
+    iban?: string
+    idempotencyKey: string
+  }): Promise<WalletWithdrawalSummary>
 }
 
 export function createCustomerApiClient(
@@ -342,6 +362,19 @@ export function createCustomerApiClient(
         body: JSON.stringify({
           recipientMobile: input.recipientMobile,
           amount: input.amountRial,
+          idempotencyKey: input.idempotencyKey,
+        }),
+      }),
+    listWalletWithdrawals: async () =>
+      request('/api/v1/wallet/withdrawals', walletWithdrawalListEnvelopeSchema),
+    requestWalletWithdrawal: async (input) =>
+      request('/api/v1/wallet/withdrawals', walletWithdrawalEnvelopeSchema, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: input.amountRial,
+          cardNumber: input.cardNumber,
+          cardHolderName: input.cardHolderName,
+          ...(input.iban && { iban: input.iban }),
           idempotencyKey: input.idempotencyKey,
         }),
       }),

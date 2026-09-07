@@ -16,14 +16,24 @@ describe('money formatting', () => {
   it('keeps a figure beyond the float-safe range exact', () => {
     // The whole reason money is a string: parsing this would lose the last digit.
     expect(groupDigits('27021597769222984')).toBe('27٬021٬597٬769٬222٬984')
-    expect(formatMoney({ amount: '27021597769222984', currency: 'IRR' })).toContain('۲۷')
+    // The last digit survives the conversion, which a float would have eaten.
+    expect(formatMoney({ amount: '27021597769222980', currency: 'IRR' })).toBe(
+      '۲٬۷۰۲٬۱۵۹٬۷۷۶٬۹۲۲٬۲۹۸ تومان',
+    )
   })
 
+  /**
+   * Toman, like every other number anybody in this system reads.
+   *
+   * The panel printed Rial while the storefront, both applications and every
+   * text message printed Toman, so an operator comparing a report against a
+   * customer's screen was reading the same money ten times over.
+   */
   it.each([
-    ['0', '۰ ریال'],
-    ['7', '۷ ریال'],
-    ['250000', '۲۵۰٬۰۰۰ ریال'],
-    ['1000000', '۱٬۰۰۰٬۰۰۰ ریال'],
+    ['0', '۰ تومان'],
+    ['70', '۷ تومان'],
+    ['2500000', '۲۵۰٬۰۰۰ تومان'],
+    ['10000000', '۱٬۰۰۰٬۰۰۰ تومان'],
   ])('renders %s as %s', (amount, expected) => {
     expect(formatMoney({ amount, currency: 'IRR' })).toBe(expected)
   })
@@ -92,9 +102,9 @@ describe('state labels', () => {
   })
 
   it('keeps the sign on money that may legitimately be negative', () => {
-    expect(formatSignedMoney({ amount: '-250000', currency: 'IRR' })).toContain('−')
-    expect(formatSignedMoney({ amount: '250000', currency: 'IRR' })).not.toContain('−')
+    expect(formatSignedMoney({ amount: '-2500000', currency: 'IRR' })).toContain('−')
+    expect(formatSignedMoney({ amount: '2500000', currency: 'IRR' })).not.toContain('−')
     // A gap of zero is neither a surplus nor a shortfall.
-    expect(formatSignedMoney({ amount: '0', currency: 'IRR' })).toBe('۰ ریال')
+    expect(formatSignedMoney({ amount: '0', currency: 'IRR' })).toBe('۰ تومان')
   })
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { DomainError } from './errors'
-import { formatToman, groupDigits, parseTomanToRial, rialToToman } from './toman'
+import { formatToman, groupDigits, parseTomanToRial, rialToToman, tomanDigits } from './toman'
 
 describe('showing Rial as Toman', () => {
   it('shifts a digit rather than dividing', () => {
@@ -33,6 +33,33 @@ describe('showing Rial as Toman', () => {
     expect(groupDigits('1')).toBe('1')
     expect(groupDigits('1234567')).toBe('1٬234٬567')
     expect(groupDigits('000')).toBe('0')
+  })
+})
+
+describe('the number without its unit', () => {
+  /**
+   * Two functions on purpose, and this is the pair they exist for.
+   *
+   * A sentence this code writes needs the word «تومان» attached. A message
+   * template an operator wrote already contains the word, so substituting the
+   * phrase would render «۵۰٬۰۰۰ تومان تومان» into a text message somebody is
+   * about to act on.
+   */
+  it('gives the grouped Persian digits and nothing else', () => {
+    expect(tomanDigits(500_000n)).toBe('۵۰٬۰۰۰')
+    expect(tomanDigits(1_850_000n)).toBe('۱۸۵٬۰۰۰')
+    expect(tomanDigits(0n)).toBe('۰')
+    expect(tomanDigits(500_000n)).not.toContain('تومان')
+  })
+
+  it('is exactly what formatToman prints, minus the unit', () => {
+    expect(formatToman(1_850_000n)).toBe(`${tomanDigits(1_850_000n)} تومان`)
+  })
+
+  it('refuses an amount that is not a whole Toman, like every other conversion', () => {
+    // A stray Rial is a pricing fault. Rounding it here would hide the fault
+    // behind a plausible number, in a text message about money.
+    expect(() => tomanDigits(1_850_005n)).toThrow(DomainError)
   })
 })
 

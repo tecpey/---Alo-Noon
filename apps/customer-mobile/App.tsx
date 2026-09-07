@@ -31,16 +31,20 @@ import type {
   WalletEntrySummary,
   WalletSummary,
   WalletTransferSummary,
+  WalletWithdrawalSummary,
 } from '@alo-noon/contracts'
 import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
 import {
   formatDeliveryWindow,
+  MINIMUM_WITHDRAWAL,
   orderProgress,
   parseTomanToRial,
+  toLatinDigits,
   topUpRefusalMessage,
   transferRefusalMessage,
   validateTopUpAmount,
   validateTransferAmount,
+  withdrawalRefusalMessage,
 } from '@alo-noon/domain'
 import { GlassSurface, OvenIcon, PlusIcon, PressScale, SteamIcon } from '@alo-noon/mobile-ui'
 
@@ -93,6 +97,7 @@ export default function App() {
   const [wallet, setWallet] = useState<WalletSummary | null>(null)
   const [walletEntries, setWalletEntries] = useState<WalletEntrySummary[]>([])
   const [walletTransfers, setWalletTransfers] = useState<WalletTransferSummary[]>([])
+  const [walletWithdrawals, setWalletWithdrawals] = useState<WalletWithdrawalSummary[]>([])
   const [walletLoading, setWalletLoading] = useState(false)
   const [walletBusy, setWalletBusy] = useState(false)
   const [walletNotice, setWalletNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(
@@ -695,14 +700,16 @@ export default function App() {
     if (!api) return
     setWalletLoading(true)
     try {
-      const [balance, entries, transfers] = await Promise.all([
+      const [balance, entries, transfers, withdrawals] = await Promise.all([
         api.readWallet(),
         api.listWalletEntries(),
         api.listWalletTransfers(),
+        api.listWalletWithdrawals(),
       ])
       setWallet(balance)
       setWalletEntries(entries)
       setWalletTransfers(transfers)
+      setWalletWithdrawals(withdrawals)
       // A transfer already waiting for its code is resumed rather than
       // restarted: a customer who closed the app comes back to the code field,
       // not to a form that would charge a second text to reach the same place.
@@ -784,6 +791,73 @@ export default function App() {
         idempotencyKey: commandKey('mobile-transfer'),
       })
       setTransferStage({ step: 'confirming', transfer })
+    } catch (error) {
+      setWalletNotice({ tone: 'error', text: walletErrorText(error) })
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
+  /**
+   * Asks for the balance back, in money.
+   *
+   * The card number reaches the API once and is never stored on this side: not
+   * in state that outlives the call, and not in the idempotency key, which is a
+   * value that survives in a database column. The key is the amount and the
+   * hour, so a double-tap replays onto the request it already made while a
+   * deliberate second withdrawal later in the day gets its own.
+   */
+  const requestWithdrawal = async (input: {
+    amountToman: string
+    cardNumber: string
+    cardHolderName: string
+    iban: string
+  }) => {
+    if (!api || walletBusy) return
+    const amount = parseTomanToRial(input.amountToman)
+    if (amount === null) {
+      setWalletNotice({ tone: 'error', text: 'مبلغ برداشت را درست وارد کنید.' })
+      return
+    }
+    if (amount < MINIMUM_WITHDRAWAL) {
+      setWalletNotice({ tone: 'error', text: withdrawalRefusalMessage('BELOW_MINIMUM') })
+      return
+    }
+    // Digits only, and exactly sixteen. A card pasted from a banking app
+    // arrives with spaces or dashes, and a customer should not be told their
+    // own card is invalid because of how their bank prints it.
+    const cardNumber = toLatinDigits(input.cardNumber).replace(/\D/g, '')
+    if (!/^\d{16}$/.test(cardNumber)) {
+      setWalletNotice({ tone: 'error', text: 'شمارهٔ کارت باید ۱۶ رقم باشد.' })
+      return
+    }
+    const holder = input.cardHolderName.trim()
+    if (holder.length < 2) {
+      setWalletNotice({ tone: 'error', text: 'نام صاحب کارت را وارد کنید.' })
+      return
+    }
+    const iban = input.iban ? toLatinDigits(input.iban).replace(/[\s-]/g, '').toUpperCase() : ''
+    if (iban && !/^IR\d{24}$/.test(iban)) {
+      setWalletNotice({ tone: 'error', text: 'شبا باید با IR و ۲۴ رقم باشد.' })
+      return
+    }
+
+    setWalletBusy(true)
+    setWalletNotice(null)
+    try {
+      const withdrawal = await api.requestWalletWithdrawal({
+        amountRial: amount.toString(),
+        cardNumber,
+        cardHolderName: holder,
+        ...(iban && { iban }),
+        idempotencyKey: commandKey('mobile-withdrawal'),
+      })
+      setWalletNotice({
+        tone: 'ok',
+        text: `درخواست ثبت شد. ${formatMoney(withdrawal.amount.amount)} از موجودی کم شد و پس از بررسی به کارت شما واریز می‌شود.`,
+      })
+      await loadWallet()
     } catch (error) {
       setWalletNotice({ tone: 'error', text: walletErrorText(error) })
       handleAuthenticatedError(error)
@@ -1025,9 +1099,11 @@ export default function App() {
             loading={walletLoading}
             busy={walletBusy}
             notice={walletNotice}
+            withdrawals={walletWithdrawals}
             transferStage={transferStage}
             onTopUp={(amount) => void topUpWallet(amount)}
             onOpenTransfer={(input) => void openTransfer(input)}
+            onRequestWithdrawal={(input) => void requestWithdrawal(input)}
             onConfirmTransfer={(transferId, code) => void confirmTransfer(transferId, code)}
             onCancelTransfer={() => {
               setTransferStage({ step: 'idle' })

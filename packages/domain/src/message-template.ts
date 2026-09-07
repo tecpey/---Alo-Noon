@@ -71,8 +71,12 @@ const BAKERY_NAME: MessageTemplateVariable = {
 const ORDER_TOTAL: MessageTemplateVariable = {
   name: 'total',
   required: false,
-  labelFa: 'مبلغ سفارش (ریال)',
-  example: '۱٬۸۵۰٬۰۰۰',
+  // Toman, like every other number a customer reads. The ledger keeps Rial and
+  // nobody says Rial out loud; a text message quoting the order in the other
+  // unit is the same order priced ten times over, in the one place the customer
+  // has nothing on screen to compare it against.
+  labelFa: 'مبلغ سفارش (تومان)',
+  example: '۱۸۵٬۰۰۰',
 }
 const REASON: MessageTemplateVariable = {
   name: 'reason',
@@ -103,7 +107,7 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: readonly MessageTemplateDefinition[] 
     descriptionFa: 'پیش از انتقال موجودی به کیف پول شخص دیگر، برای خودِ فرستنده فرستاده می‌شود.',
     variables: [
       { name: 'code', required: true, labelFa: 'کد تأیید', example: '۰۰۴۲۳۱' },
-      { name: 'amount', required: true, labelFa: 'مبلغ انتقال (ریال)', example: '۵۰۰٬۰۰۰' },
+      { name: 'amount', required: true, labelFa: 'مبلغ انتقال (تومان)', example: '۵۰٬۰۰۰' },
       { name: 'recipient', required: false, labelFa: 'گیرنده', example: 'زهرا م.' },
       { name: 'minutes', required: false, labelFa: 'مدت اعتبار (دقیقه)', example: '۵' },
     ],
@@ -111,7 +115,7 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: readonly MessageTemplateDefinition[] 
     // it confirms an act the sender cannot see; this one lets somebody who did
     // not start a transfer know exactly what is being attempted with their
     // balance.
-    defaultBody: 'انتقال {amount} ریال از کیف پول شما. کد تأیید: {code}',
+    defaultBody: 'انتقال {amount} تومان از کیف پول شما. کد تأیید: {code}',
   },
   {
     purpose: 'ORDER_ACCEPTED',

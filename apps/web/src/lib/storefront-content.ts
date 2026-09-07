@@ -25,14 +25,30 @@ export interface OrderCondition {
   readonly icon: 'pin' | 'bag' | 'clock'
 }
 
+/**
+ * The values here describe how ordering works. They are not this visitor's
+ * state, and they must not read as though they were: the panel used to announce
+ * a delivery window of «امروز، ۱۸:۰۰ – ۱۹:۰۰» to somebody who had not chosen
+ * one, which is a promise the shop had not made and could not keep.
+ *
+ * The address value is a fallback only. When the storefront knows which city it
+ * priced the shelves in, the page shows that instead.
+ */
 export const orderConditions: readonly OrderCondition[] = [
-  { id: 'address', labelFa: 'آدرس تحویل', valueFa: 'بابل، محله مدرس', icon: 'pin' },
+  { id: 'address', labelFa: 'آدرس تحویل', valueFa: 'شهرتان را انتخاب کنید', icon: 'pin' },
   { id: 'method', labelFa: 'نوع خرید', valueFa: 'تحویل درب منزل', icon: 'bag' },
-  { id: 'window', labelFa: 'زمان تحویل', valueFa: 'امروز، ۱۸:۰۰ – ۱۹:۰۰', icon: 'clock' },
+  { id: 'window', labelFa: 'زمان تحویل', valueFa: 'هنگام تسویه انتخاب می‌کنید', icon: 'clock' },
 ]
 
-/** What the footer says the platform is. */
-export const foundationStatus = 'زیرساخت سفارش نان آماده است'
+/**
+ * What the footer says about the shop.
+ *
+ * It used to read «زیرساخت سفارش نان آماده است» — a sentence written for whoever
+ * was building the platform, on the page where a customer decides whether to
+ * trust it with a card. This one says the thing a customer is actually asking:
+ * who bakes the bread and when the money moves.
+ */
+export const foundationStatus = 'نان از نانوایی‌های محله؛ پرداخت امن، پیش از تأیید سفارش'
 
 export const heroCopy = {
   /** Two lines, and they break where the artwork breaks them. */

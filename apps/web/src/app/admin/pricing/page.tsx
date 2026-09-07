@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { rialToToman } from '@alo-noon/domain'
+
 import {
   createOfferingAction,
   repriceOfferingAction,
@@ -167,13 +169,13 @@ export default async function AdminPricingPage({
               {...(activeVariants.length === 0 && { hint: 'اول در کاتالوگ یک گونه بسازید.' })}
             />
             <Field
-              label="قیمت (ریال)"
+              label="قیمت (تومان)"
               name="price"
               required
               dir="ltr"
               inputMode="numeric"
-              placeholder="250000"
-              hint="عدد کامل به ریال. جداکنندهٔ هزارگان و ارقام فارسی هم پذیرفته می‌شود."
+              placeholder="25000"
+              hint="به تومان، همان عددی که مشتری روی سایت می‌بیند. جداکنندهٔ هزارگان و ارقام فارسی هم پذیرفته می‌شود."
             />
             <Field
               label="ظرفیت روزانه"
@@ -261,12 +263,15 @@ function OfferingRow({ offering }: Readonly<{ offering: AdminOffering }>) {
           <ActionForm action={repriceOfferingAction} submitLabel="ثبت قیمت">
             <input type="hidden" name="offeringId" value={offering.id} />
             <Field
-              label="قیمت تازه (ریال)"
+              label="قیمت تازه (تومان)"
               name="price"
               required
               dir="ltr"
               inputMode="numeric"
-              defaultValue={offering.price.amount}
+              // Pre-filled with the current price in the same unit the field
+              // reads, so an operator adjusting a price is editing a number
+              // rather than converting one.
+              defaultValue={tomanValue(offering.price.amount)}
             />
             <Field label="دلیل" name="reason" placeholder="افزایش قیمت آرد" />
           </ActionForm>
@@ -322,4 +327,25 @@ function pageHref(query: Record<string, string>, page: number): string {
   next.set('page', String(page))
   next.delete('pageSize')
   return `/admin/pricing?${next.toString()}`
+}
+
+/**
+ * A stored Rial price as the plain Toman number this form's fields hold.
+ *
+ * Unformatted on purpose: it goes into an input somebody is about to edit, and
+ * grouping separators there are characters they have to delete first.
+ *
+ * Empty rather than throwing when the stored amount is not a whole Toman. The
+ * domain refuses that conversion by design — a price of 250,005 Rial is a
+ * pricing fault and rounding it here would hide the fault behind a plausible
+ * number — but a page that will not render is no way to tell an operator, and
+ * an empty field makes them type the price they meant.
+ */
+function tomanValue(amountRial: string): string {
+  if (!/^\d+$/.test(amountRial)) return ''
+  try {
+    return rialToToman(BigInt(amountRial))
+  } catch {
+    return ''
+  }
 }

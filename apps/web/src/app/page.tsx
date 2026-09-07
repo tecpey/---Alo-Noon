@@ -15,7 +15,6 @@ import { RetryButton } from './components/retry-button'
 import { SiteHeader } from './components/site-header'
 import {
   BagIcon,
-  ChevronDownIcon,
   ChevronIcon,
   ClockIcon,
   CourierIcon,
@@ -54,10 +53,19 @@ const TRUST_ICONS = {
   courier: CourierIcon,
 } as const
 
+/**
+ * One of the three terms an order runs on.
+ *
+ * A `div`, not a `button`. These were buttons with a chevron and no handler:
+ * three controls that looked pressable, invited a press, and did nothing. An
+ * affordance that leads nowhere costs more than the affordance is worth — a
+ * customer who presses one and gets nothing has learned that this shop's
+ * controls do not work, on the first screen they ever see.
+ */
 function ConditionField({ condition, value }: { condition: OrderCondition; value: string }) {
   const Glyph = CONDITION_ICONS[condition.icon]
   return (
-    <button type="button" className="condition">
+    <div className="condition">
       <span className="condition__glyph">
         <Glyph duotone />
       </span>
@@ -65,8 +73,7 @@ function ConditionField({ condition, value }: { condition: OrderCondition; value
         <span className="condition__label">{condition.labelFa}</span>
         <span className="condition__value">{value}</span>
       </span>
-      <ChevronDownIcon className="condition__chevron" />
-    </button>
+    </div>
   )
 }
 
@@ -152,8 +159,11 @@ export default async function HomePage() {
               glass because it lies on the photograph: a solid panel here would
               punch a hole in the picture it is sitting on.
 
-              The city is the one field that is not a placeholder: it is the city
-              the shelves below were actually priced in.
+              The city is read from the storefront the shelves below were
+              actually priced in. The other two describe how ordering works
+              rather than claiming a state this visitor is in: a hero panel that
+              announced «امروز، ۱۸:۰۰ – ۱۹:۰۰» was inventing a delivery window
+              for somebody who has not chosen one.
             */}
             <div className="conditions" role="group" aria-label="شرایط تحویل">
               {orderConditions.map((condition) => (

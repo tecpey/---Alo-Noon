@@ -2,11 +2,18 @@
  * Presentation helpers shared by the admin pages.
  *
  * Money arrives as an unsigned decimal string of IRR minor units, deliberately
- * never a number, and is grouped for reading without ever being parsed: an order
- * total in Rial can exceed the float-safe range, and a dashboard that rounds
- * revenue is worse than one that shows nothing.
+ * never a number, and is never parsed into one: a month of a working city's
+ * revenue exceeds the float-safe range, and a dashboard that rounds is worse
+ * than one that shows nothing.
+ *
+ * It is shown in **Toman**, like every other number anybody in this system
+ * reads. The panel used to print Rial while the storefront, both applications
+ * and every text message printed Toman, so an operator comparing a report
+ * against a customer's screen was reading the same money ten times over. The
+ * conversion is the domain's, shared with the storefront, so the two cannot
+ * drift apart again.
  */
-import { groupDigits, toPersianDigits } from './persian'
+import { formatToman, groupDigits, toPersianDigits } from './persian'
 
 export { groupDigits, toPersianDigits }
 
@@ -17,7 +24,7 @@ export interface DisplayMoney {
 
 export function formatMoney(money: DisplayMoney | undefined): string {
   if (!money) return '—'
-  return `${toPersianDigits(groupDigits(money.amount))} ریال`
+  return formatToman(money.amount)
 }
 
 /**
@@ -31,8 +38,8 @@ export function formatMoney(money: DisplayMoney | undefined): string {
 export function formatSignedMoney(money: DisplayMoney | undefined): string {
   if (!money) return '—'
   const negative = money.amount.startsWith('-')
-  const digits = toPersianDigits(groupDigits(negative ? money.amount.slice(1) : money.amount))
-  return `${negative ? '−' : ''}${digits} ریال`
+  const magnitude = formatToman(negative ? money.amount.slice(1) : money.amount)
+  return `${negative ? '−' : ''}${magnitude}`
 }
 
 export function formatCount(value: number): string {

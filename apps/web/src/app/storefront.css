@@ -417,23 +417,15 @@
   align-items: center;
   gap: 0.85rem;
   padding: 0.9rem 1.1rem;
-  border: 0;
   border-inline-start: 1px solid var(--line-subtle);
-  background: transparent;
   text-align: start;
-  transition:
-    background var(--duration-base) var(--easing-standard),
-    transform var(--duration-fast) var(--easing-standard);
 }
 .condition:last-child {
   border-inline-start: 0;
 }
-.condition:hover {
-  background: color-mix(in srgb, var(--surface-card) 55%, transparent);
-}
-.condition:active {
-  transform: scale(0.985);
-}
+/* No hover or press state: these describe how ordering works and are not
+   controls. Styling them as though they respond would be the same lie the
+   chevron was. */
 .condition__glyph {
   display: grid;
   place-items: center;
@@ -463,15 +455,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.condition__chevron {
-  flex: none;
-  color: var(--ink-faint);
-  transition: transform var(--duration-base) var(--easing-standard);
-}
-.condition:hover .condition__chevron {
-  transform: translateY(2px);
-}
-
 @media (max-width: 900px) {
   .hero {
     grid-template-columns: 1fr;

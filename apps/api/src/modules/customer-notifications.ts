@@ -4,6 +4,7 @@ import {
   notificationPurposeForEvent,
   renderMessageTemplate,
   selectPushDevices,
+  tomanDigits,
   type AuthenticationCredentialResolver,
   type AuthenticationDeliveryEnvironment,
   type MessageTemplatePurpose,
@@ -104,7 +105,9 @@ export function createPrismaCustomerNotificationService(
         orderCode: order.publicId,
         customerName: order.recipientNameSnapshot,
         bakeryName: order.bakeryNameSnapshot,
-        total: new Intl.NumberFormat('fa-IR').format(order.totalAmount),
+        // Toman, like the price the customer paid on screen. See
+        // `tomanDigits`: the template supplies the unit word.
+        total: tomanDigits(order.totalAmount),
         ...(typeof event.payload['reason'] === 'string' && {
           reason: event.payload['reason'],
         }),

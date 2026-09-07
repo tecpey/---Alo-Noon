@@ -9,6 +9,8 @@ import { revalidatePath } from 'next/cache'
 import type { ActionState } from './action-state'
 import { authPost, sessionTokenFromSetCookie } from './api-core'
 import { patch, post, put, revokeSession } from './admin-api'
+import { parseTomanToRial } from '@alo-noon/domain'
+
 import {
   derivedIdempotencyKey,
   PROVIDER_ERROR_MESSAGES,
@@ -430,14 +432,27 @@ export async function setSmsHealthAction(
  * decimal string, so normalise here and refuse anything left over rather than
  * stripping characters until something parses.
  */
+/**
+ * A price the operator typed in **Toman**, as the Rial the API stores.
+ *
+ * The form used to ask for Rial while the storefront, the applications and the
+ * rest of this panel all spoke Toman. An operator who thinks in Toman — which
+ * is everybody — typing 50000 for a fifty-thousand-Toman loaf was publishing it
+ * at five thousand, on a live shop, with nothing on the screen to catch it. One
+ * unit everywhere is the only version of this that is safe.
+ *
+ * Persian and Arabic-Indic digits and every thousands separator anybody uses
+ * are accepted, because refusing them would be the panel failing to read its
+ * own language. Returns null rather than throwing: this reads a form field, and
+ * a refusal is a sentence the screen shows.
+ */
 function priceField(form: FormData, name: string): string | null {
   const raw = field(form, name)
   if (!raw) return null
-  const latin = raw
-    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
-    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
-    .replace(/[,٬\s]/g, '')
-  return /^[1-9][0-9]{0,17}$/.test(latin) ? latin : null
+  const rial = parseTomanToRial(raw)
+  // The API's own ceiling is eighteen digits of Rial; anything longer is a
+  // slipped keyboard rather than a price.
+  return rial !== null && rial > 0n && rial.toString().length <= 18 ? rial.toString() : null
 }
 
 function numberField(form: FormData, name: string): number | undefined {
@@ -552,7 +567,7 @@ export async function createOfferingAction(
   form: FormData,
 ): Promise<ActionState> {
   const price = priceField(form, 'price')
-  if (!price) return failure('قیمت باید عددی مثبت به ریال باشد.')
+  if (!price) return failure('قیمت باید عددی مثبت به تومان باشد.')
   const stockOnHand = numberField(form, 'stockOnHand')
   const dailyCapacity = numberField(form, 'dailyCapacity')
   const preparationMinutes = numberField(form, 'preparationMinutes')
@@ -577,7 +592,7 @@ export async function repriceOfferingAction(
   form: FormData,
 ): Promise<ActionState> {
   const price = priceField(form, 'price')
-  if (!price) return failure('قیمت باید عددی مثبت به ریال باشد.')
+  if (!price) return failure('قیمت باید عددی مثبت به تومان باشد.')
   const result = await patch(`/api/v1/admin/catalog/offerings/${field(form, 'offeringId')}`, {
     price,
     reason: field(form, 'reason') || 'تغییر قیمت از پنل مدیریت',

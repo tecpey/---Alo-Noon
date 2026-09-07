@@ -200,3 +200,15 @@ export const walletTopUpStartedEnvelopeSchema = z.object({
   data: z.object({ paymentId: uuidSchema }),
   meta: responseMetaSchema,
 })
+
+export const walletWithdrawalEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: walletWithdrawalSummarySchema,
+  meta: responseMetaSchema,
+})
+
+export const walletWithdrawalListEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.array(walletWithdrawalSummarySchema),
+  meta: responseMetaSchema,
+})

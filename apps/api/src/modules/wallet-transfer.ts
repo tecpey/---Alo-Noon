@@ -17,6 +17,7 @@ import {
   maskName,
   normalizeIranianMobile,
   renderMessageTemplate,
+  tomanDigits,
   TRANSFER_CODE_TTL_MS,
   transferRefusalMessage,
   validateTransferAmount,
@@ -382,7 +383,11 @@ async function sendCode(
   const recipientName = maskName(fullName(input.transfer.recipient))
   const body = renderMessageTemplate(template.body, {
     code: input.code,
-    amount: new Intl.NumberFormat('fa-IR').format(input.transfer.amount),
+    // Toman, matching the template's own wording and every screen the sender
+    // has just looked at. Quoting Rial here would describe the same transfer at
+    // ten times the amount, in the one message whose whole job is letting
+    // somebody catch a transfer they did not start.
+    amount: tomanDigits(input.transfer.amount),
     recipient: recipientName ?? maskMobile(input.transfer.recipient.mobileE164),
     minutes: String(Math.round(TRANSFER_CODE_TTL_MS / 60_000)),
   })

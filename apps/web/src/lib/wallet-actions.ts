@@ -7,6 +7,7 @@ import {
   formatToman,
   MINIMUM_WITHDRAWAL,
   parseTomanToRial,
+  toLatinDigits,
   topUpRefusalMessage,
   transferRefusalMessage,
   validateTopUpAmount,
@@ -265,18 +266,4 @@ export async function requestWithdrawalAction(input: {
   }
   revalidatePath('/wallet')
   return { ok: true, withdrawal: result.data }
-}
-
-/**
- * Persian and Arabic-Indic digits folded to Latin.
- *
- * A customer typing a card number on a Persian keyboard produces ۶۰۳۷…, and
- * refusing that as "not sixteen digits" would be the site failing to read its
- * own language.
- */
-function toLatinDigits(value: string): string {
-  return value.replace(/[۰-۹٠-٩]/g, (digit) => {
-    const persian = '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)
-    return String(persian >= 0 ? persian : '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
-  })
 }

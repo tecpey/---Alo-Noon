@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 
-import type { WalletEntrySummary, WalletSummary, WalletTransferSummary } from '@alo-noon/contracts'
+import type {
+  WalletEntrySummary,
+  WalletSummary,
+  WalletTransferSummary,
+  WalletWithdrawalSummary,
+} from '@alo-noon/contracts'
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
 
 import { formatMoney } from '../presentation'
@@ -49,6 +54,12 @@ const INCOMING: ReadonlySet<WalletEntrySummary['kind']> = new Set([
   'WITHDRAWAL_REVERSAL',
 ])
 
+const WITHDRAWAL_STATES: Readonly<Record<WalletWithdrawalSummary['state'], string>> = {
+  REQUESTED: 'در انتظار واریز',
+  PAID: 'واریز شد',
+  REJECTED: 'رد شد',
+}
+
 const TRANSFER_STATES: Readonly<Record<WalletTransferSummary['state'], string>> = {
   PENDING: 'در انتظار کد تأیید',
   COMPLETED: 'انجام شد',
@@ -60,6 +71,7 @@ export function WalletScreen({
   wallet,
   entries,
   transfers,
+  withdrawals,
   loading,
   busy,
   notice,
@@ -68,12 +80,14 @@ export function WalletScreen({
   onOpenTransfer,
   onConfirmTransfer,
   onCancelTransfer,
+  onRequestWithdrawal,
 }: {
   wallet: WalletSummary | null
   entries: readonly WalletEntrySummary[]
   transfers: readonly WalletTransferSummary[]
+  withdrawals: readonly WalletWithdrawalSummary[]
   loading: boolean
-  /** True while a top-up or a transfer is in flight. */
+  /** True while a top-up, a transfer or a withdrawal is in flight. */
   busy: boolean
   /** What went wrong, or what just went right. */
   notice: { readonly tone: 'ok' | 'error'; readonly text: string } | null
@@ -82,11 +96,25 @@ export function WalletScreen({
   onOpenTransfer: (input: { recipientMobile: string; amountToman: string }) => void
   onConfirmTransfer: (transferId: string, code: string) => void
   onCancelTransfer: () => void
+  onRequestWithdrawal: (input: {
+    amountToman: string
+    cardNumber: string
+    cardHolderName: string
+    iban: string
+  }) => void
 }) {
   const [topUpAmount, setTopUpAmount] = useState(String(PRESETS_TOMAN[1]))
   const [recipient, setRecipient] = useState('')
   const [transferAmount, setTransferAmount] = useState('')
   const [code, setCode] = useState('')
+  // Folded away until asked for. Almost nobody wants this on almost any visit —
+  // the balance is there to be spent — and a card-number field sitting open on
+  // a screen somebody opened to check a number is a field filled in by mistake.
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [cardNumber, setCardNumber] = useState('')
+  const [cardHolder, setCardHolder] = useState('')
+  const [iban, setIban] = useState('')
 
   return (
     <View style={{ gap: 20 }}>
@@ -233,6 +261,90 @@ export function WalletScreen({
       </View>
 
       <View style={sharedStyles.card}>
+        <Text style={sharedStyles.title}>برداشت به کارت بانکی</Text>
+        <Text style={styles.fineprint}>
+          موجودی کیف پول پول خودتان است و می‌توانید آن را پس بگیرید. واریز دستی و در روزهای کاری
+          انجام می‌شود؛ معمولاً یک تا سه روز کاری.
+        </Text>
+        {withdrawOpen ? (
+          <>
+            <TextInput
+              accessibilityLabel="مبلغ برداشت به تومان"
+              value={withdrawAmount}
+              onChangeText={setWithdrawAmount}
+              keyboardType="number-pad"
+              placeholder="مبلغ به تومان"
+              editable={!busy}
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="شمارهٔ کارت ۱۶ رقمی"
+              value={cardNumber}
+              onChangeText={setCardNumber}
+              keyboardType="number-pad"
+              placeholder="شمارهٔ کارت ۱۶ رقمی"
+              editable={!busy}
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="نام صاحب کارت"
+              value={cardHolder}
+              onChangeText={setCardHolder}
+              placeholder="نام صاحب کارت"
+              editable={!busy}
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="شبا، اختیاری"
+              value={iban}
+              onChangeText={setIban}
+              autoCapitalize="characters"
+              placeholder="شبا (اختیاری) — IR..."
+              editable={!busy}
+              style={styles.input}
+            />
+            <Action
+              label="ثبت درخواست"
+              busy={busy}
+              onPress={() => {
+                onRequestWithdrawal({
+                  amountToman: withdrawAmount,
+                  cardNumber,
+                  cardHolderName: cardHolder,
+                  iban,
+                })
+                // The card has done its one job. Cleared here rather than left
+                // sitting in a text field behind whatever the customer opens
+                // next.
+                setCardNumber('')
+                setIban('')
+              }}
+            />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setWithdrawOpen(false)}
+              disabled={busy}
+            >
+              <Text style={sharedStyles.linkText}>انصراف</Text>
+            </Pressable>
+            <Text style={styles.fineprint}>
+              کارت باید به نام خودتان باشد. واریز به کارت شخص دیگر انجام نمی‌شود.
+            </Text>
+          </>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setWithdrawOpen(true)}
+            disabled={busy || wallet?.balance.amount === '0'}
+          >
+            <Text style={sharedStyles.linkText}>
+              {wallet?.balance.amount === '0' ? 'موجودی برای برداشت ندارید' : 'درخواست برداشت'}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={sharedStyles.card}>
         <Text style={sharedStyles.title}>گردش کیف پول</Text>
         {entries.length === 0 ? (
           <Text style={sharedStyles.emptyText}>هنوز گردشی ثبت نشده است.</Text>
@@ -264,6 +376,40 @@ export function WalletScreen({
                   <Text style={sharedStyles.value}>{formatMoney(transfer.amount.amount)}</Text>
                 </View>
                 <Text style={sharedStyles.label}>{TRANSFER_STATES[transfer.state]}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/*
+        Kept out of the statement for the same reason transfers are: a refused
+        withdrawal moved money twice and nets to nothing, and the statement will
+        show both halves without ever saying why. The reason lives here.
+      */}
+      {withdrawals.length > 0 && (
+        <View style={sharedStyles.card}>
+          <Text style={sharedStyles.title}>برداشت‌های شما</Text>
+          <View>
+            {withdrawals.map((withdrawal, index) => (
+              <View
+                key={withdrawal.id}
+                style={[
+                  sharedStyles.listRow,
+                  index === withdrawals.length - 1 && sharedStyles.listRowLast,
+                ]}
+              >
+                <View style={sharedStyles.rowBetween}>
+                  <Text style={sharedStyles.value}>کارت **** {withdrawal.cardLastFour}</Text>
+                  <Text style={sharedStyles.value}>{formatMoney(withdrawal.amount.amount)}</Text>
+                </View>
+                <Text style={sharedStyles.label}>{WITHDRAWAL_STATES[withdrawal.state]}</Text>
+                {withdrawal.rejectionReason && (
+                  <Text style={styles.fineprint}>{withdrawal.rejectionReason}</Text>
+                )}
+                {withdrawal.bankReference && (
+                  <Text style={styles.fineprint}>{withdrawal.bankReference}</Text>
+                )}
               </View>
             ))}
           </View>

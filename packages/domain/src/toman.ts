@@ -53,8 +53,38 @@ export function rialToToman(amountRial: bigint): string {
  * it on purpose: a bare number in a text message about money is a number the
  * reader has to guess the unit of.
  */
+export function tomanDigits(amountRial: bigint): string {
+  return toPersianDigits(groupDigits(rialToToman(amountRial)))
+}
+
+/**
+ * The same number with its unit attached.
+ *
+ * Two functions rather than one with a flag, because the two callers are
+ * different in kind: a sentence this code writes needs the word, and a message
+ * template an operator wrote already has the word in it — appending a second
+ * one would produce «۵۰٬۰۰۰ تومان تومان».
+ */
 export function formatToman(amountRial: bigint): string {
   return `${toPersianDigits(groupDigits(rialToToman(amountRial)))} تومان`
+}
+
+/**
+ * Persian and Arabic-Indic digits folded to Latin, and nothing else touched.
+ *
+ * Every field in this system that reads a number a person typed needs this
+ * first. A customer on a Persian keyboard types ۶۰۳۷۹۹۱۲۳۴۵۶۴۵۶۷ for a card
+ * number, and refusing it as "not sixteen digits" is the software failing to
+ * read its own language.
+ *
+ * Separators are left alone: what counts as one differs by field — a card
+ * number tolerates spaces and dashes, an amount tolerates thousands marks — and
+ * folding both here would let a dash through into an amount.
+ */
+export function toLatinDigits(value: string): string {
+  return value
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
 }
 
 /**
@@ -66,10 +96,7 @@ export function formatToman(amountRial: bigint): string {
  * screen shows rather than a fault.
  */
 export function parseTomanToRial(raw: string): bigint | null {
-  const latin = raw
-    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
-    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
-    .replace(/[\s,٬،_]/g, '')
+  const latin = toLatinDigits(raw).replace(/[\s,٬،_]/g, '')
   if (!/^\d{1,15}$/.test(latin)) return null
   const toman = BigInt(latin)
   if (toman <= 0n) return null

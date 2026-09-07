@@ -18,8 +18,13 @@ import {
  * remains is copy, and copy has its own ways of going wrong.
  */
 describe('storefront copy', () => {
-  it('exposes the foundation status in Persian', () => {
-    expect(foundationStatus).toContain('آماده')
+  it('tells a customer something about the shop, not about the platform', () => {
+    // It once read «زیرساخت سفارش نان آماده است» — infrastructure status, on the
+    // page where somebody decides whether to hand over a card. The two words
+    // below are what a customer is actually asking about.
+    expect(foundationStatus).toContain('نانوایی')
+    expect(foundationStatus).toContain('پرداخت')
+    expect(foundationStatus).not.toContain('زیرساخت')
   })
 
   it('keeps the headline in the two lines the artwork sets', () => {
