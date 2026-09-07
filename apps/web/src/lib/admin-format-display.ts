@@ -13,7 +13,7 @@
  * conversion is the domain's, shared with the storefront, so the two cannot
  * drift apart again.
  */
-import { formatToman, groupDigits, toPersianDigits } from './persian'
+import { formatTomanExact, groupDigits, toPersianDigits } from './persian'
 
 export { groupDigits, toPersianDigits }
 
@@ -22,33 +22,53 @@ export interface DisplayMoney {
   currency: string
 }
 
+/**
+ * Money on an operator's screen.
+ *
+ * The exact conversion, not the strict one the storefront uses for prices. What
+ * this panel shows is mostly *derived* money — a commission, a bakery's share,
+ * a payout total, a column of a trial balance — and a basis-point rate lands on
+ * a whole Toman only by luck. The strict formatter refuses a half Toman, and a
+ * refusal on this screen means a dash where a number belongs: a settlement page
+ * that stops reporting looks exactly like a settlement page with nothing to
+ * report.
+ *
+ * The sign survives, always. It has no business being here — these are
+ * magnitudes — but a minus dropped on the way to a report is a debt printed as
+ * a credit, and there is no reading of "safer" that gets you there.
+ */
 export function formatMoney(money: DisplayMoney | undefined): string {
   if (!money) return '—'
-  return formatToman(money.amount)
+  const negative = money.amount.startsWith('-')
+  const magnitude = formatTomanExact(negative ? money.amount.slice(1) : money.amount)
+  return negative && magnitude !== '—' ? `−${magnitude}` : magnitude
 }
 
 /**
  * Money that may legitimately be negative — a ledger balance, or a gap between
  * two figures that should agree.
  *
- * `formatMoney` clamps, because a negative order total is a data fault rather
- * than a number to show. Here the sign is the whole point: a reconciliation gap
- * that lost its minus would read as a surplus.
+ * Identical rendering to `formatMoney`, kept as its own name because the call
+ * sites differ in what they are asserting: here the sign is expected, and a
+ * reconciliation gap that lost its minus would read as a surplus.
  */
-export function formatSignedMoney(money: DisplayMoney | undefined): string {
-  if (!money) return '—'
-  const negative = money.amount.startsWith('-')
-  const magnitude = formatToman(negative ? money.amount.slice(1) : money.amount)
-  return `${negative ? '−' : ''}${magnitude}`
-}
+export const formatSignedMoney = formatMoney
 
 export function formatCount(value: number): string {
   return toPersianDigits(groupDigits(String(Math.trunc(Math.abs(value)))))
 }
 
+/**
+ * A rate as a percentage, with the Persian decimal separator.
+ *
+ * `toFixed` leaves an ASCII full stop behind, which next to a money column that
+ * writes ۸۳۲٫۵ gives one table two different decimal marks. Substituted rather
+ * than formatted through `Intl`, which would also introduce a grouping mark
+ * this number never needs.
+ */
 export function formatPercent(rate: number | null): string {
   if (rate === null) return '—'
-  return `${toPersianDigits((rate * 100).toFixed(1))}٪`
+  return `${toPersianDigits((rate * 100).toFixed(1)).replace('.', '٫')}٪`
 }
 
 /**

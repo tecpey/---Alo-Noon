@@ -1,4 +1,4 @@
-import { formatToman } from '@alo-noon/domain'
+import { formatTomanExact } from '@alo-noon/domain'
 
 import type { CourierReport } from './api'
 
@@ -92,11 +92,16 @@ export const FAILURE_REASONS: ReadonlyArray<{ readonly code: string; readonly la
  * Toman, matching the customer app and the website. A courier reading a
  * cash-on-hand or order figure in a different unit from the customer who
  * ordered it is a conversation at a door that neither of them can win.
+ *
+ * The exact conversion: a courier's share of an order comes from a basis-point
+ * rate and lands on a whole Toman only by luck, and the alternative to showing
+ * the half is showing the Rial figure bare — which is the ten-times misreading
+ * this conversion exists to prevent.
  */
 export function formatMoney(amount: string): string {
   if (!/^\d+$/.test(amount)) return amount
   try {
-    return formatToman(BigInt(amount))
+    return formatTomanExact(BigInt(amount))
   } catch {
     return amount
   }

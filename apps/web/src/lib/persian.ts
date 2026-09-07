@@ -11,7 +11,12 @@
  * total in Rial can exceed the float-safe range, and a price that rounds on its
  * way to a customer's screen is worse than one that fails to render.
  */
-import { formatToman as tomanPhrase, groupDigits, toPersianDigits } from '@alo-noon/domain'
+import {
+  formatToman as tomanPhrase,
+  formatTomanExact as tomanPhraseExact,
+  groupDigits,
+  toPersianDigits,
+} from '@alo-noon/domain'
 
 export { groupDigits, toPersianDigits }
 
@@ -22,12 +27,37 @@ export { groupDigits, toPersianDigits }
  * on the same input, which is right where a message is being composed and wrong
  * here: a malformed price should be visibly missing on one line rather than
  * take the page down with it.
+ *
+ * For a *price* that refusal is the correct answer — prices are entered in
+ * Toman, so a fraction of one is a fault. It is the wrong answer for a figure
+ * this system derived, which is what `formatTomanExact` is for.
  */
 export function formatToman(amountRial: string): string {
   const digits = amountRial.replace(/^-/, '')
   if (!/^\d+$/.test(digits)) return '—'
   try {
     return tomanPhrase(BigInt(digits))
+  } catch {
+    return '—'
+  }
+}
+
+/**
+ * A derived amount in Toman, with the half-Toman kept.
+ *
+ * The operator panels read commissions, partner balances, payout totals and a
+ * trial balance — all of them products of a basis-point rate, none of them
+ * guaranteed to land on a whole Toman. Passing those through the strict
+ * formatter turned every such figure into a dash, which is the worst outcome
+ * available: a report that quietly stops reporting looks like a quiet month.
+ *
+ * Only genuinely unreadable input still draws a dash.
+ */
+export function formatTomanExact(amountRial: string): string {
+  const digits = amountRial.replace(/^-/, '')
+  if (!/^\d+$/.test(digits)) return '—'
+  try {
+    return tomanPhraseExact(BigInt(digits))
   } catch {
     return '—'
   }

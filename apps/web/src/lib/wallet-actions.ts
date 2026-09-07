@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import type { WalletTransferSummary, WalletWithdrawalSummary } from '@alo-noon/contracts'
 import {
-  formatToman,
+  formatTomanExact,
   MINIMUM_WITHDRAWAL,
   parseTomanToRial,
   toLatinDigits,
@@ -184,7 +184,11 @@ function shortfallFrom(details: unknown): string | null {
   const amount = (shortfall as { amount?: unknown }).amount
   if (typeof amount !== 'string' || !/^\d+$/.test(amount)) return null
   try {
-    return formatToman(BigInt(amount))
+    // Exact: a shortfall is a difference between a total and a balance, so it
+    // inherits whatever remainder either of them carries. Dropping the number
+    // out of «موجودی کیف پول ... کم دارد» leaves a refusal that does not say
+    // how much to top up — which is the only thing it was there to say.
+    return formatTomanExact(BigInt(amount))
   } catch {
     return null
   }

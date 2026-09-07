@@ -17,7 +17,7 @@ import { ShieldIcon, TransferIcon, WalletIcon } from '../components/icons'
 import { TopUpForm } from './top-up-form'
 import { TransferForm } from './transfer-form'
 import { WithdrawalForm } from './withdrawal-form'
-import { formatToman, toPersianDigits } from '../../lib/persian'
+import { formatTomanExact, toPersianDigits } from '../../lib/persian'
 import {
   currentSession,
   listWalletEntries,
@@ -97,7 +97,9 @@ export default async function WalletPage({
               </span>
               <div>
                 <p className="wallet__balance-label">موجودی قابل استفاده</p>
-                <p className="wallet__balance-amount">{formatToman(wallet.data.balance.amount)}</p>
+                <p className="wallet__balance-amount">
+                  {formatTomanExact(wallet.data.balance.amount)}
+                </p>
               </div>
             </section>
 
@@ -164,10 +166,10 @@ function Statement({ entries }: { entries: readonly WalletEntrySummary[] }) {
                 <p className="wallet-entry__amount">
                   <span aria-hidden="true">{sign}</span>
                   <span className="visually-hidden">{sign === '+' ? 'واریز' : 'برداشت'}</span>
-                  {formatToman(entry.amount.amount)}
+                  {formatTomanExact(entry.amount.amount)}
                 </p>
                 <p className="wallet-entry__after">
-                  مانده: {formatToman(entry.balanceAfter.amount)}
+                  مانده: {formatTomanExact(entry.balanceAfter.amount)}
                 </p>
               </div>
             </li>
@@ -203,7 +205,7 @@ function Transfers({ transfers }: { transfers: readonly WalletTransferSummary[] 
                 {transferStateLabel(transfer.state)} — {persianDate(transfer.createdAt)}
               </p>
             </div>
-            <p className="wallet-transfer__amount">{formatToman(transfer.amount.amount)}</p>
+            <p className="wallet-transfer__amount">{formatTomanExact(transfer.amount.amount)}</p>
           </li>
         ))}
       </ol>
@@ -250,7 +252,7 @@ function Withdrawals({ withdrawals }: { withdrawals: readonly WalletWithdrawalSu
                 </p>
               )}
             </div>
-            <p className="wallet-transfer__amount">{formatToman(withdrawal.amount.amount)}</p>
+            <p className="wallet-transfer__amount">{formatTomanExact(withdrawal.amount.amount)}</p>
           </li>
         ))}
       </ol>

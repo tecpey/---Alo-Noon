@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react'
 import type { WalletTransferSummary } from '@alo-noon/contracts'
 
 import { ShieldIcon } from '../components/icons'
-import { formatToman, toPersianDigits } from '../../lib/persian'
+import { formatTomanExact, toPersianDigits } from '../../lib/persian'
 import { confirmTransferAction, openTransferAction } from '../../lib/wallet-actions'
 
 /**
@@ -75,7 +75,7 @@ export function TransferForm({ pending }: { pending: WalletTransferSummary | nul
       <section className="wallet__section wallet__transfer" aria-labelledby="transfer-title">
         <h2 id="transfer-title">انتقال به کیف پول دیگر</h2>
         <p className="wallet__note wallet__note--ok" role="status">
-          {formatToman(done.amount.amount)} به{' '}
+          {formatTomanExact(done.amount.amount)} به{' '}
           {done.recipientName ?? toPersianDigits(done.recipientMobileMasked)} منتقل شد.
         </p>
         <button type="button" className="an-button an-button--quiet" onClick={() => setDone(null)}>
@@ -94,7 +94,7 @@ export function TransferForm({ pending }: { pending: WalletTransferSummary | nul
           {/* Who and how much, restated. This is the sentence that catches a
               wrong digit, so it is the largest thing in the step. */}
           <p className="wallet__confirm">
-            <strong>{formatToman(open.amount.amount)}</strong> به{' '}
+            <strong>{formatTomanExact(open.amount.amount)}</strong> به{' '}
             <strong>{open.recipientName ?? toPersianDigits(open.recipientMobileMasked)}</strong>
           </p>
           <p className="wallet__hint">کد تأیید به شمارهٔ خودتان پیامک شد.</p>

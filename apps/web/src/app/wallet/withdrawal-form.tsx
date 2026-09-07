@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 
-import { formatToman } from '../../lib/persian'
+import { formatTomanExact } from '../../lib/persian'
 import { requestWithdrawalAction } from '../../lib/wallet-actions'
 
 /**
@@ -47,7 +47,7 @@ export function WithdrawalForm({ balanceRial }: { balanceRial: string }) {
       setIban('')
       setAmount('')
       setDone(
-        `درخواست ثبت شد. مبلغ ${formatToman(result.withdrawal.amount.amount)} از موجودی کم شد و پس از بررسی به کارت شما واریز می‌شود.`,
+        `درخواست ثبت شد. مبلغ ${formatTomanExact(result.withdrawal.amount.amount)} از موجودی کم شد و پس از بررسی به کارت شما واریز می‌شود.`,
       )
       setOpen(false)
     })

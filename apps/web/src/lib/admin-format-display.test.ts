@@ -49,6 +49,37 @@ describe('money formatting', () => {
     // Zero revenue and "we could not read revenue" must not look identical.
     expect(formatMoney(undefined)).toBe('—')
   })
+
+  /**
+   * The half Toman that a commission rate produces.
+   *
+   * A 250,000 Rial subtotal at 3.33٪ is 8,325 Rial — 832٫5 Toman — and so is
+   * the bakery's share of the same order, and every column that sums either.
+   * The strict conversion refuses those, which on a report means a dash where a
+   * number belongs; a settlement page that stops reporting looks exactly like a
+   * settlement page with nothing to report.
+   */
+  it.each([
+    ['8325', '۸۳۲٫۵ تومان'],
+    ['2416750', '۲۴۱٬۶۷۵ تومان'],
+    ['2416755', '۲۴۱٬۶۷۵٫۵ تومان'],
+    ['5', '۰٫۵ تومان'],
+  ])('keeps the half Toman in a derived figure: %s', (amount, expected) => {
+    expect(formatMoney({ amount, currency: 'IRR' })).toBe(expected)
+  })
+
+  it('never drops a minus sign', () => {
+    // A debt printed as a credit is worse than no number at all, and both
+    // helpers reach the trial balance.
+    expect(formatMoney({ amount: '-2500000', currency: 'IRR' })).toBe('−۲۵۰٬۰۰۰ تومان')
+    expect(formatSignedMoney({ amount: '-8325', currency: 'IRR' })).toBe('−۸۳۲٫۵ تومان')
+    expect(formatSignedMoney({ amount: '2500000', currency: 'IRR' })).toBe('۲۵۰٬۰۰۰ تومان')
+  })
+
+  it('still draws a dash for an amount it cannot read', () => {
+    expect(formatMoney({ amount: 'NaN', currency: 'IRR' })).toBe('—')
+    expect(formatSignedMoney({ amount: '-', currency: 'IRR' })).toBe('—')
+  })
 })
 
 describe('count and percent formatting', () => {
@@ -58,9 +89,12 @@ describe('count and percent formatting', () => {
   })
 
   it('renders a rate as a percentage and a missing one as a dash', () => {
-    expect(formatPercent(0.4218)).toBe('۴۲.۲٪')
-    expect(formatPercent(1)).toBe('۱۰۰.۰٪')
+    // The Persian decimal separator, the same one the money column uses: one
+    // table with two different decimal marks reads as two different tables.
+    expect(formatPercent(0.4218)).toBe('۴۲٫۲٪')
+    expect(formatPercent(1)).toBe('۱۰۰٫۰٪')
     expect(formatPercent(null)).toBe('—')
+    expect(formatPercent(0.4218)).not.toContain('.')
   })
 })
 

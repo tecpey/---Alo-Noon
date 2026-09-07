@@ -1,5 +1,5 @@
 import type { ProductSummary } from '@alo-noon/contracts'
-import { formatToman, parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
+import { formatTomanExact, parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
 
 // The keyboard-facing normalisers live in the domain package because the
 // courier app takes the same two inputs from the same keyboards. Re-exported
@@ -16,14 +16,20 @@ export const normalizeOtpCode = parseOtpCode
  * not come back from.
  *
  * The arithmetic lives in the domain so a message the API texts and a label the
- * app draws cannot disagree. Anything that is not a whole Toman amount is
- * returned untouched rather than rounded: a malformed price should be visible,
- * not plausible.
+ * app draws cannot disagree.
+ *
+ * The exact conversion, remainder and all. This screen shows wallet balances
+ * and statement lines as well as prices, and a balance is whatever arithmetic
+ * left behind — a refund, a reversal, a share of something. The strict
+ * conversion refuses a half Toman, and the fallback here would then print the
+ * raw Rial figure, unlabelled: a customer reading their own balance would see
+ * ۸۳۲۵ where the truth is ۸۳۲٫۵. Ten times wrong, on their own money, is the
+ * exact mistake this whole unit conversion exists to prevent.
  */
 export function formatMoney(amount: string): string {
   if (!/^\d+$/.test(amount)) return amount
   try {
-    return formatToman(BigInt(amount))
+    return formatTomanExact(BigInt(amount))
   } catch {
     return amount
   }

@@ -1,6 +1,6 @@
 import { DomainError } from './errors'
 import type { CaptureJournalLine } from './payment-settlement'
-import { formatToman } from './toman'
+import { formatToman, formatTomanExact } from './toman'
 
 /**
  * A balance the customer charged, and what may move it.
@@ -190,7 +190,11 @@ export function withdrawalRefusalMessage(
   }
   return shortfall === undefined
     ? 'موجودی کیف پول برای این برداشت کافی نیست.'
-    : `موجودی کیف پول ${formatToman(shortfall)} کم دارد.`
+    : // Exact, unlike the limit above. A limit is a round number this file
+      // chose; a shortfall is a subtraction, and the strict conversion throws
+      // on a remainder — which would turn a refusal a customer can act on into
+      // a server error.
+      `موجودی کیف پول ${formatTomanExact(shortfall)} کم دارد.`
 }
 
 function assertPositive(amount: bigint, message: string): void {

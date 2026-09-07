@@ -70,6 +70,41 @@ export function formatToman(amountRial: bigint): string {
 }
 
 /**
+ * Rial to Toman keeping the remainder, for the numbers this system *derives*
+ * rather than the ones a person typed.
+ *
+ * The strict conversion above is right for a price: prices are entered in
+ * Toman, so a price that is not a whole Toman is a fault worth refusing. It is
+ * wrong for a settlement figure. A commission is `subtotal × basisPoints ÷
+ * 10000`, and that division lands on a whole Toman only by coincidence — a
+ * 250,000 Rial subtotal at 3.33٪ is 8,325 Rial, which is 832٫5 Toman. So is the
+ * bakery's share of the same order, and so is every column that sums either of
+ * them. Refusing those would blank a financial report rather than protect it.
+ *
+ * The remainder is one digit by construction: a Toman is exactly ten Rial, so
+ * the only fraction that can exist is halves. It is printed with the Persian
+ * decimal separator, and only when it is there — a whole amount renders exactly
+ * as the strict conversion would, so the two never disagree on the same number.
+ *
+ * Still integer arithmetic throughout. The point of holding money in BigInt is
+ * lost the moment a report divides.
+ */
+export function tomanExactDigits(amountRial: bigint): string {
+  if (amountRial < 0n) {
+    throw new DomainError('INVALID_AMOUNT', 'A negative amount cannot be shown as Toman')
+  }
+  const digits = amountRial.toString().padStart(2, '0')
+  const whole = groupDigits(digits.slice(0, -1))
+  const remainder = digits.slice(-1)
+  return remainder === '0' ? whole : `${whole}٫${remainder}`
+}
+
+/** `tomanExactDigits` in Persian digits, with the unit word. */
+export function formatTomanExact(amountRial: bigint): string {
+  return `${toPersianDigits(tomanExactDigits(amountRial))} تومان`
+}
+
+/**
  * Persian and Arabic-Indic digits folded to Latin, and nothing else touched.
  *
  * Every field in this system that reads a number a person typed needs this
