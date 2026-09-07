@@ -209,3 +209,79 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+/**
+ * The offer to install the shop.
+ *
+ * Pinned to the bottom rather than dropped over the page. A modal asking to
+ * install an app somebody has not decided they want yet is the interruption
+ * everybody has learned to dismiss without reading, and this only appears at
+ * all once the browser has judged the shop installable.
+ *
+ * `env(safe-area-inset-bottom)` keeps it clear of the home indicator on a
+ * modern phone, where otherwise the decline button sits under the gesture bar
+ * and cannot be tapped — which would leave somebody with a banner they cannot
+ * get rid of.
+ */
+.install-offer {
+  position: fixed;
+  inset-inline: 0.75rem;
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  max-width: 32rem;
+  margin-inline: auto;
+  padding: 0.85rem 1rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: install-offer-rise var(--duration-base) var(--easing-standard);
+}
+.install-offer__text {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.9rem;
+}
+.install-offer__text strong {
+  color: var(--ink-strong);
+}
+.install-offer__text span {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+.install-offer__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* Quieter than a button and still a real target: declining must not be a thing
+   somebody has to aim at. */
+.install-offer__decline {
+  min-height: 2.5rem;
+  padding-inline: 0.6rem;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.install-offer__decline:hover {
+  color: var(--ink-strong);
+}
+
+@keyframes install-offer-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

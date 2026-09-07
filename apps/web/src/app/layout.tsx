@@ -5,6 +5,7 @@ import { colors, cssVariables } from '@alo-noon/design-tokens'
 
 import './styles.css'
 import { siteUrl } from '../lib/site-url'
+import { ProgressiveApp } from './components/progressive-app'
 
 export const metadata: Metadata = {
   /**
@@ -18,6 +19,18 @@ export const metadata: Metadata = {
   description:
     'سفارش نان تازه از نانوایی‌های محله؛ پخت‌های ویژه و نان روزمرهٔ بسته‌بندی‌شده، با تحویل در زمانی که خودتان انتخاب می‌کنید.',
   applicationName: 'الو نون',
+  /**
+   * iOS installs from a different set of tags than the manifest, and ignores
+   * most of it. Without these, adding الو نون to a Safari home screen gives a
+   * shortcut that opens in a browser chrome with the page's own title under it.
+   */
+  appleWebApp: {
+    capable: true,
+    title: 'الو نون',
+    // The bar is drawn in the page's own paper rather than left translucent,
+    // which on iOS means content sliding under the clock.
+    statusBarStyle: 'default',
+  },
 }
 
 export const viewport: Viewport = {
@@ -37,7 +50,16 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         */}
         <style dangerouslySetInnerHTML={{ __html: cssVariables() }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/*
+          After the page, not before it: this registers the service worker and
+          holds the install offer, and neither is worth a millisecond of the
+          first paint. It renders nothing at all until a browser says the shop
+          is installable.
+        */}
+        <ProgressiveApp />
+      </body>
     </html>
   )
 }
