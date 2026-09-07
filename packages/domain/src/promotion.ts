@@ -104,6 +104,21 @@ export const PromotionRefusal = {
   NOT_FIRST_ORDER: 'PROMOTION_NOT_FIRST_ORDER',
   /** The terms are valid but worth nothing here — free delivery on a free delivery. */
   NO_EFFECT: 'PROMOTION_NO_EFFECT',
+  /**
+   * The discount would take the whole order, leaving nothing to pay.
+   *
+   * There is no free-order path in this platform, by design: an order is placed
+   * by spending a wallet balance or by paying at a gateway, and both of those
+   * need an amount. A zero total would be accepted by the basket, refused at
+   * payment as `ORDER_NOT_PAYABLE`, and leave the customer holding a code the
+   * platform issued and a basket it will not take money for.
+   *
+   * Reachable without anybody doing anything strange: a hundred-percent code on
+   * a basket already over the free-delivery threshold. Refused here, where the
+   * customer can still add something or drop the code, rather than at checkout
+   * where the only thing left to do is give up.
+   */
+  WOULD_LEAVE_NOTHING_TO_PAY: 'PROMOTION_WOULD_LEAVE_NOTHING_TO_PAY',
 } as const
 export type PromotionRefusal = (typeof PromotionRefusal)[keyof typeof PromotionRefusal]
 
@@ -149,6 +164,8 @@ export function promotionRefusalMessage(reason: string): string | undefined {
       return 'این کد فقط برای اولین سفارش است.'
     case PromotionRefusal.NO_EFFECT:
       return 'این کد روی این سبد تخفیفی ندارد.'
+    case PromotionRefusal.WOULD_LEAVE_NOTHING_TO_PAY:
+      return 'این کد کل مبلغ سبد را پوشش می‌دهد و سفارش بدون پرداخت ثبت نمی‌شود. یک قلم دیگر اضافه کنید یا بدون کد ادامه دهید.'
     default:
       // Undefined rather than a generic sentence: the caller knows what it is
       // translating and has a better fallback than this function does.
@@ -236,6 +253,13 @@ export function evaluatePromotion(
   if (discount > ceiling) discount = ceiling
 
   if (discount <= 0n) return { applied: false, reason: PromotionRefusal.NO_EFFECT }
+  // Nothing left to pay is not a discount, it is a giveaway with no way to
+  // place the order behind it. Refused rather than clamped: clamping would
+  // charge a token Rial and call a hundred-percent code honoured, which is a
+  // worse lie than saying the code does not fit this basket.
+  if (discount >= context.subtotal + context.deliveryFee) {
+    return { applied: false, reason: PromotionRefusal.WOULD_LEAVE_NOTHING_TO_PAY }
+  }
   return { applied: true, discountAmount: discount, basis }
 }
 

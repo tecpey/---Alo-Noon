@@ -133,6 +133,65 @@ describe('evaluatePromotion — what a code is worth', () => {
   })
 })
 
+/**
+ * The order nobody can pay for.
+ *
+ * Reachable without anybody doing anything strange: a hundred-percent code is
+ * allowed by the terms validator, and a basket over the free-delivery threshold
+ * has a delivery fee of zero. Together they leave a total of nothing — which
+ * the basket would accept and the payment step would refuse as
+ * `ORDER_NOT_PAYABLE`, stranding a customer holding a code this platform
+ * issued.
+ *
+ * There is no free-order path here by design: an order is placed by spending a
+ * balance or paying at a gateway, and both need an amount. So the refusal
+ * belongs where the customer can still act on it.
+ */
+describe('evaluatePromotion — the discount that leaves nothing to pay', () => {
+  it('refuses a code that would take the whole order', () => {
+    const outcome = evaluatePromotion(
+      terms({ percentageBasisPoints: 10_000 }),
+      // Over the free-delivery threshold, so the fee is nothing and the
+      // hundred-percent code takes everything that is left.
+      context({ subtotal: 100_000n, deliveryFee: 0n }),
+    )
+    expect(outcome.applied).toBe(false)
+    if (!outcome.applied) {
+      expect(outcome.reason).toBe(PromotionRefusal.WOULD_LEAVE_NOTHING_TO_PAY)
+    }
+  })
+
+  it('refuses a fixed amount that covers the basket and the delivery both', () => {
+    const outcome = evaluatePromotion(
+      terms({ kind: PromotionKind.FIXED_AMOUNT, fixedAmount: 500_000n }),
+      context({ subtotal: 100_000n, deliveryFee: 0n }),
+    )
+    expect(outcome.applied).toBe(false)
+    if (!outcome.applied) {
+      expect(outcome.reason).toBe(PromotionRefusal.WOULD_LEAVE_NOTHING_TO_PAY)
+    }
+  })
+
+  it('still applies a hundred percent when there is a delivery fee left to pay', () => {
+    // The bread is free and the ride is not: a real total, a payable order, and
+    // a code honoured in full.
+    const outcome = evaluatePromotion(
+      terms({ percentageBasisPoints: 10_000 }),
+      context({ subtotal: 100_000n, deliveryFee: 20_000n }),
+    )
+    expect(outcome.applied).toBe(true)
+    if (outcome.applied) {
+      expect(outcome.discountAmount).toBe(100_000n)
+      expect(outcome.basis).toBe(DiscountBasis.SUBTOTAL)
+    }
+  })
+
+  it('tells the customer what to do about it, not just that it failed', () => {
+    const message = promotionRefusalMessage(PromotionRefusal.WOULD_LEAVE_NOTHING_TO_PAY)
+    expect(message).toContain('اضافه کنید')
+  })
+})
+
 describe('evaluatePromotion — who may use it', () => {
   it('refuses a campaign that has been switched off', () => {
     expect(evaluatePromotion(terms({ isActive: false }), context())).toEqual({
