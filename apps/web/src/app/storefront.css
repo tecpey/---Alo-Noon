@@ -1266,9 +1266,29 @@
   border: 1px dashed var(--line-base);
   border-radius: var(--radius-xl);
 }
+.catalog-state h1,
 .catalog-state h2 {
   font-size: 1.15rem;
   color: var(--ink-strong);
+}
+/* A page-level state offers a way out, and sometimes two: try again, or go back
+   to the shop. Wrapped so they sit side by side and wrap together on a phone. */
+.catalog-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-block-start: 0.5rem;
+}
+/* The support reference. Quiet, because it is for the one conversation in a
+   hundred that needs it, and not for the ninety-nine that do not. */
+.catalog-state__note {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+.catalog-state__note code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  unicode-bidi: isolate;
 }
 .catalog-state p {
   max-width: 46ch;

@@ -130,18 +130,16 @@
 }
 
 .note,
+/* One block, not two: the second declaration overrode the first's border colour
+   and background, so half of what was written here never rendered. */
 .error-box {
-  border: 1px solid var(--line);
+  border: 1px solid var(--bad-line);
   border-radius: 0.75rem;
-  background: var(--surface);
+  background: var(--bad-tint);
+  color: var(--bad);
   padding: 0.9rem 1.1rem;
   font-size: 0.92rem;
   line-height: 2;
-}
-.error-box {
-  border-color: var(--bad-line);
-  background: var(--bad-tint);
-  color: var(--bad);
 }
 
 .card {
