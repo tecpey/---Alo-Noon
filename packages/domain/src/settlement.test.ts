@@ -8,6 +8,7 @@ import {
   settleOrder,
   settlementJournal,
   withdrawalJournal,
+  BASIS_POINTS,
   type OrderEconomics,
 } from './settlement'
 
@@ -219,5 +220,116 @@ describe('showing a rate to a person', () => {
   it('keeps a fractional rate rather than rounding it away', () => {
     expect(formatBasisPoints(1_250)).toBe('۱۲٫۵۰٪')
     expect(formatBasisPoints(1_205)).toBe('۱۲٫۰۵٪')
+  })
+})
+
+/**
+ * The same rules, over the space instead of over examples.
+ *
+ * Every test above picks numbers that make a point. That is how a rule gets
+ * explained, and it is not how a rule gets broken: the orders that break one
+ * are the awkward ones nobody thought to write down — a rate of a single basis
+ * point, a delivery fee of one Rial, a discount that eats all but the last
+ * Rial of the order.
+ *
+ * The generator is seeded, so a failure here is a failure anybody can
+ * reproduce by running the file again. A settlement test that fails once a
+ * fortnight and passes on retry teaches nobody anything.
+ */
+describe('the settlement rules, over a few thousand orders', () => {
+  /** xorshift32: same sequence everywhere, no dependency, good enough to spread. */
+  function seeded(seed: number): () => number {
+    let state = seed
+    return () => {
+      state ^= state << 13
+      state ^= state >>> 17
+      state ^= state << 5
+      return (state >>> 0) / 0x1_0000_0000
+    }
+  }
+
+  function orders(count: number): OrderEconomics[] {
+    const random = seeded(0x5eed_1234)
+    const pick = (max: number) => BigInt(Math.floor(random() * max))
+    const generated: OrderEconomics[] = []
+    while (generated.length < count) {
+      const subtotal = pick(50_000_000) + 1n
+      const deliveryFee = pick(500_000)
+      // Discounts up to the whole order, including the one that leaves a single
+      // Rial behind, which is the edge the total-must-be-positive rule guards.
+      const discount = pick(Number(subtotal + deliveryFee))
+      const total = subtotal + deliveryFee - discount
+      if (total <= 0n) continue
+      generated.push({
+        subtotal,
+        deliveryFee,
+        discount,
+        total,
+        commissionBasisPoints: Math.floor(random() * 10_001),
+        courierBasisPoints: Math.floor(random() * 10_001),
+      })
+    }
+    return generated
+  }
+
+  const sample = orders(3_000)
+
+  it('never invents or loses a Rial', () => {
+    for (const economics of sample) {
+      const settlement = settleOrder(economics)
+      const journal = settlementJournal(settlement, economics.total)
+      const debits = journal
+        .filter((line) => line.side === 'DEBIT')
+        .reduce((total, line) => total + line.amount, 0n)
+      const credits = journal
+        .filter((line) => line.side === 'CREDIT')
+        .reduce((total, line) => total + line.amount, 0n)
+      expect(debits).toBe(credits)
+      // The posted amount is the journal's own debit side. Passing the order
+      // total instead is the mistake that made every settled order fail the
+      // database's balance trigger.
+      expect(journalTotal(journal)).toBe(debits)
+      // Nothing is ever posted as a zero or a negative: the ledger refuses both,
+      // and a negative would be a credit wearing a debit's clothes.
+      for (const line of journal) expect(line.amount > 0n).toBe(true)
+    }
+  })
+
+  it('divides the bread exactly between the bakery and the platform', () => {
+    for (const economics of sample) {
+      const settlement = settleOrder(economics)
+      // No third share, no remainder left over, no Rial counted twice.
+      expect(settlement.commission + settlement.bakeryShare).toBe(economics.subtotal)
+      // The rounding always favours the bakery, whatever the rate.
+      expect(settlement.commission * BASIS_POINTS).toBeLessThanOrEqual(
+        economics.subtotal * BigInt(economics.commissionBasisPoints),
+      )
+      // And nobody's share is negative, at any rate or any size.
+      expect(settlement.commission >= 0n).toBe(true)
+      expect(settlement.bakeryShare >= 0n).toBe(true)
+      expect(settlement.courierShare >= 0n).toBe(true)
+    }
+  })
+
+  it('never pays a courier partner more than the customer paid to be delivered to', () => {
+    for (const economics of sample) {
+      const settlement = settleOrder(economics)
+      // The delivery fee is the whole envelope. A share above it would be the
+      // platform funding rides out of the bread, which nobody agreed to.
+      expect(settlement.courierShare <= economics.deliveryFee).toBe(true)
+    }
+  })
+
+  it('charges every discount to the platform and none of it to the partners', () => {
+    for (const economics of sample) {
+      const settlement = settleOrder(economics)
+      // The bakery's share is computed from the undiscounted bread, so a
+      // promotion cannot quietly become a partner's contribution.
+      expect(settlement.promotionCost).toBe(economics.discount)
+      expect(settlement.bakeryShare).toBe(
+        economics.subtotal -
+          (economics.subtotal * BigInt(economics.commissionBasisPoints)) / BASIS_POINTS,
+      )
+    }
   })
 })
