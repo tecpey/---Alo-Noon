@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto'
-import { afterAll, describe, expect, it } from 'vitest'
+import { randomBytes, randomUUID } from 'node:crypto'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
 import {
   canonicalProviderRequest,
   createPaymentProviderAdapterRegistry,
+  generateOrderCode,
   type PaymentProviderAdapter,
 } from '@alo-noon/domain'
 
@@ -13,11 +14,21 @@ import { createPrismaPaymentProviderService } from './modules/payment-provider'
 
 const databaseDescribe = process.env['DATABASE_URL'] ? describe : describe.skip
 const prisma = new PrismaClient()
-const tenantId = '00000000-0000-4000-8000-000000000001'
+// A tenant of this suite's own. The shared fixture id cannot be used here:
+// only one configuration per tenant may be the active default, so a second run
+// against the same database would collide with the first run's default and fail
+// a test that has nothing to do with defaults.
+const tenantId = randomUUID()
 
 afterAll(async () => prisma.$disconnect())
 
 databaseDescribe('payment provider PostgreSQL foundation', () => {
+  beforeAll(async () => {
+    await prisma.tenant.create({
+      data: { id: tenantId, slug: `provider-${tenantId.slice(0, 8)}`, name: 'Provider suite' },
+    })
+  })
+
   it('governs configuration, attempts and replay-safe callbacks without capturing payment', async () => {
     const suffix = randomUUID().slice(0, 8).toUpperCase()
     const now = new Date('2026-08-03T16:00:00.000Z')
@@ -677,6 +688,7 @@ async function createPayment(suffix: string, now: Date) {
   })
   const order = await prisma.order.create({
     data: {
+      publicId: generateOrderCode((length) => randomBytes(length)),
       tenantId,
       idempotencyKey: `provider-order-${suffix}`,
       customerId: customer.id,

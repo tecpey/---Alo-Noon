@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 
 import type { FastifyInstance } from 'fastify'
 
@@ -13,6 +13,7 @@ import {
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   authorizeQuoteToOrder,
+  generateOrderCode,
   transitionOrder,
   type CorrelationId,
   type OrderId,
@@ -20,12 +21,20 @@ import {
 
 import type { AuthDependencies } from './auth.js'
 import { authenticatedCustomer, serviceDateAt } from './commerce.js'
+import { claimDeliveryWindow } from './delivery-windows.js'
+import { consumeRedemptionForQuote } from './promotions.js'
 
 const quoteForOrderInclude = {
-  items: { orderBy: { id: 'asc' } },
+  items: {
+    orderBy: { id: 'asc' },
+    include: { bakeryProductOffering: { select: { stockTracked: true } } },
+  },
   deliveryAddress: true,
   deliveryPricingRule: true,
   order: { select: { id: true } },
+  // The window this basket was priced for. The order claims its capacity and
+  // inherits its end as the deadline everything downstream reads.
+  deliveryWindow: { select: { id: true, startsAt: true, endsAt: true, serviceDate: true } },
   cart: {
     include: {
       bakeryBranch: { include: { bakery: true, city: true } },
@@ -33,7 +42,15 @@ const quoteForOrderInclude = {
   },
 } satisfies Prisma.QuoteInclude
 
-const orderInclude = { items: { orderBy: { id: 'asc' } } } satisfies Prisma.OrderInclude
+const orderInclude = {
+  items: { orderBy: { id: 'asc' } },
+  // So the customer's own list can tell whether they already said something,
+  // without a round trip per order. Offering the rating form for an order
+  // already rated invites somebody to fill in a form that will be refused.
+  rating: {
+    select: { breadScore: true, deliveryScore: true, comment: true, createdAt: true },
+  },
+} satisfies Prisma.OrderInclude
 type QuoteForOrder = Prisma.QuoteGetPayload<{ include: typeof quoteForOrderInclude }>
 type OrderRecord = Prisma.OrderGetPayload<{ include: typeof orderInclude }>
 
@@ -45,6 +62,20 @@ export interface OrderRepository {
     now: Date,
     correlationId: string,
   ): Promise<OrderSummary>
+  /**
+   * The customer's own orders, newest first.
+   *
+   * Drafts are excluded: a draft is an order the customer never placed, and
+   * showing abandoned checkouts back to them as orders would be confusing at
+   * best. Bounded rather than paginated — a customer following their bread is
+   * looking at the last few, not browsing a history.
+   */
+  listForCustomer(tenantId: string, customerId: string, limit: number): Promise<OrderSummary[]>
+  findForCustomer(
+    tenantId: string,
+    customerId: string,
+    orderId: string,
+  ): Promise<OrderSummary | null>
 }
 
 export interface OrderDependencies {
@@ -68,6 +99,56 @@ export class OrderError extends Error {
 }
 
 export function registerOrderRoutes(app: FastifyInstance, dependencies: OrderDependencies): void {
+  /**
+   * A customer following their own bread.
+   *
+   * Read-only and scoped to the session's customer. This is where a paid order
+   * stops being a void: before it existed, a customer paid and had no way to
+   * learn anything ever happened.
+   */
+  app.get('/api/v1/orders', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const customer = await authenticatedCustomer(request, dependencies.auth)
+    if (!customer) {
+      return reply
+        .code(401)
+        .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
+    }
+    try {
+      const orders = await dependencies.repository.listForCustomer(
+        customer.tenantId,
+        customer.customerId,
+        CUSTOMER_ORDER_LIMIT,
+      )
+      return reply.send({ success: true, data: orders, meta: responseMeta() })
+    } catch (error) {
+      return orderFailure(request, reply, error)
+    }
+  })
+
+  app.get<{ Params: { orderId: string } }>('/api/v1/orders/:orderId', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const customer = await authenticatedCustomer(request, dependencies.auth)
+    if (!customer) {
+      return reply
+        .code(401)
+        .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
+    }
+    try {
+      const order = await dependencies.repository.findForCustomer(
+        customer.tenantId,
+        customer.customerId,
+        request.params.orderId,
+      )
+      if (!order) {
+        return reply.code(404).send(errorEnvelope('ORDER_NOT_FOUND', 'No such order.'))
+      }
+      return reply.send({ success: true, data: order, meta: responseMeta() })
+    } catch (error) {
+      return orderFailure(request, reply, error)
+    }
+  })
+
   app.post('/api/v1/orders', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
     const customer = await authenticatedCustomer(request, dependencies.auth)
@@ -105,6 +186,36 @@ export function createPrismaOrderRepository(
   options: PrismaOrderRepositoryOptions = {},
 ): OrderRepository {
   return {
+    async listForCustomer(tenantId, customerId, limit) {
+      return readTransaction(prisma, tenantId, async (transaction) => {
+        // ownership-established: filtered on the session's own customerId, so
+        // this can only ever return the caller's orders.
+        const orders = await transaction.order.findMany({
+          where: { tenantId, customerId, state: { not: 'DRAFT' } },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          include: orderInclude,
+        })
+        // An order placed before the quote provenance rules existed would throw
+        // from `mapOrder`; in a list that would hide every other order behind
+        // one bad row, so those are skipped rather than fatal.
+        return orders.flatMap((order) => (order.quoteId ? [mapOrder(order)] : []))
+      })
+    },
+
+    async findForCustomer(tenantId, customerId, orderId) {
+      return readTransaction(prisma, tenantId, async (transaction) => {
+        // ownership-established: scoped to the session's customerId, so another
+        // customer's order reads as absent rather than as a refusal that
+        // confirms it exists.
+        const order = await transaction.order.findFirst({
+          where: { id: orderId, tenantId, customerId, state: { not: 'DRAFT' } },
+          include: orderInclude,
+        })
+        return order ? mapOrder(order) : null
+      })
+    },
+
     async create(tenantId, customerId, input, now, correlationId) {
       return serializableWithRetry(
         prisma,
@@ -168,7 +279,13 @@ export function createPrismaOrderRepository(
           assertCurrentDependencies(quote, tenantId, customerId, now)
 
           const branch = quote.cart.bakeryBranch
-          const serviceDate = serviceDateAt(now, branch.city.timezone)
+          // The day whose capacity this order consumes. An order for tomorrow
+          // morning must come out of tomorrow's ovens, not today's — reading it
+          // from `now` would let a branch take a full day of scheduled orders
+          // on top of a full day of immediate ones.
+          const serviceDate = quote.deliveryWindow
+            ? quote.deliveryWindow.serviceDate
+            : serviceDateAt(now, branch.city.timezone)
           const capacitySlot = await transaction.bakeryCapacitySlot.findUnique({
             where: { bakeryBranchId_serviceDate: { bakeryBranchId: branch.id, serviceDate } },
           })
@@ -186,9 +303,41 @@ export function createPrismaOrderRepository(
           `
           if (reserved.length !== 1) throw new OrderError('CAPACITY_UNAVAILABLE', 422)
 
+          // A place in the chosen window, claimed the same way and for the same
+          // reason: a bakery that can do two hundred loaves a day cannot get
+          // forty of them out of the oven between seven and eight, and the day
+          // slot alone cannot say that.
+          if (
+            quote.deliveryWindow &&
+            !(await claimDeliveryWindow(transaction, tenantId, quote.deliveryWindow.id, now))
+          ) {
+            throw new OrderError('DELIVERY_WINDOW_UNAVAILABLE', 422)
+          }
+
+          for (const item of quote.items) {
+            if (!item.bakeryProductOffering.stockTracked) continue
+            const decremented = await transaction.$queryRaw<Array<{ id: string }>>`
+              UPDATE "BakeryProductOffering"
+              SET "stockOnHand" = "stockOnHand" - ${item.quantity}, "updatedAt" = ${now}
+              WHERE "id" = ${item.bakeryProductOfferingId}::uuid
+                AND "tenantId" = ${tenantId}::uuid
+                AND "stockTracked"
+                AND "stockOnHand" >= ${item.quantity}
+              RETURNING "id"
+            `
+            if (decremented.length !== 1) throw new OrderError('STOCK_UNAVAILABLE', 422)
+          }
+
           const order = await transaction.order.create({
             data: {
               tenantId,
+              // The code a customer reads back down the phone. Generated here
+              // rather than left to the schema's cuid default, which produced
+              // twenty-five characters nobody could read and which pushed every
+              // order notification into a second paid SMS. Generated inside the
+              // transaction so the unique index's own retry produces a fresh
+              // code rather than replaying the collided one.
+              publicId: generateOrderCode((length) => randomBytes(length)),
               quoteId: quote.id,
               idempotencyKey: input.idempotencyKey,
               customerId,
@@ -196,6 +345,17 @@ export function createPrismaOrderRepository(
               operationalZoneId: quote.deliveryOperationalZoneIdSnapshot!,
               bakeryBranchId: branch.id,
               bakeryCapacitySlotId: capacitySlot.id,
+              // Inherited from the quote, which is where the city's cash policy
+              // was actually applied. Taking it from the request instead would
+              // let anyone opt out of the gateway by asking.
+              paymentMethod: quote.paymentMethod,
+              ...(quote.deliveryWindow && {
+                deliveryWindowId: quote.deliveryWindow.id,
+                // The end of the window, not its start: the window is a promise
+                // to arrive *by* then, and every deadline downstream — the
+                // courier's, the late-delivery report's — reads this field.
+                requestedDeliveryAt: quote.deliveryWindow.endsAt,
+              }),
               savedAddressId: quote.deliveryAddressId,
               state: 'DRAFT',
               paymentState: 'NOT_STARTED',
@@ -214,6 +374,7 @@ export function createPrismaOrderRepository(
               discountAmount: quote.discountAmount,
               totalAmount: quote.totalAmount,
               currency: quote.currency,
+              ...(quote.promotionId && { promotionId: quote.promotionId }),
               items: {
                 create: quote.items.map((item) => ({
                   tenantId,
@@ -234,6 +395,11 @@ export function createPrismaOrderRepository(
             },
             include: orderInclude,
           })
+
+          // The campaign's budget is spent here and nowhere earlier. Until this
+          // moment the redemption was only held, so a customer who priced a
+          // basket and walked away cost the campaign nothing.
+          await consumeRedemptionForQuote(transaction, tenantId, quote.id, order.id)
 
           const transitionIdempotencyKey = `order-created-${order.id}`
           transitionOrder({
@@ -258,15 +424,19 @@ export function createPrismaOrderRepository(
               occurredAt: now,
             },
           })
+          // ownership-established: order was just created for this customerId,
+          // and quote/cart were resolved under the same customerId filter above.
           await transaction.order.update({
             where: { id: order.id },
             data: { state: 'PENDING_CONFIRMATION' },
           })
+          // ownership-established: quote was resolved under this customerId above.
           const quoteAccepted = await transaction.quote.updateMany({
             where: { id: quote.id, status: 'ACTIVE' },
             data: { status: 'ACCEPTED' },
           })
           if (quoteAccepted.count !== 1) throw new OrderError('QUOTE_NOT_ACTIVE', 409)
+          // ownership-established: cart is the one referenced by that same quote.
           await transaction.cart.update({
             where: { id: quote.cartId },
             data: { state: 'CONVERTED' },
@@ -315,6 +485,7 @@ export function createPrismaOrderRepository(
           ])
           await options.beforeCommit?.(transaction)
 
+          // ownership-established: re-reads the order just created for this customerId.
           const completed = await transaction.order.findUnique({
             where: { id: order.id },
             include: orderInclude,
@@ -433,6 +604,27 @@ export function isSerializationFailure(error: unknown): boolean {
   )
 }
 
+/**
+ * A tenant-scoped read. ReadCommitted because a customer refreshing their order
+ * must never contend with the settlement trying to capture its payment.
+ */
+async function readTransaction<T>(
+  prisma: PrismaClient,
+  tenantId: string,
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(
+    async (transaction) => {
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+      return operation(transaction)
+    },
+    { isolationLevel: 'ReadCommitted' },
+  )
+}
+
+/** How many recent orders a customer sees without asking for more. */
+export const CUSTOMER_ORDER_LIMIT = 20
+
 function mapOrder(order: OrderRecord): OrderSummary {
   if (!order.quoteId) throw new OrderError('ORDER_PROVENANCE_INCOMPLETE', 503)
   return {
@@ -441,6 +633,15 @@ function mapOrder(order: OrderRecord): OrderSummary {
     quoteId: order.quoteId,
     state: order.state,
     paymentState: order.paymentState,
+    paymentMethod: order.paymentMethod,
+    rating: order.rating
+      ? {
+          breadScore: order.rating.breadScore,
+          deliveryScore: order.rating.deliveryScore,
+          comment: order.rating.comment,
+          createdAt: order.rating.createdAt.toISOString(),
+        }
+      : null,
     productionState: order.productionState,
     deliveryState: order.deliveryState,
     subtotal: { amount: order.subtotalAmount.toString(), currency: order.currency },
@@ -487,6 +688,7 @@ function orderFailure(
     QUOTE_PRICING_UNAVAILABLE: 422,
     BAKERY_BRANCH_UNAVAILABLE: 422,
     CAPACITY_UNAVAILABLE: 422,
+    STOCK_UNAVAILABLE: 422,
   }
   if (code && statuses[code]) {
     const messages: Record<string, string> = {
@@ -499,6 +701,7 @@ function orderFailure(
       QUOTE_EXPIRED: 'The quote has expired.',
       ORDER_CONCURRENCY_CONFLICT: 'Order creation conflicted; retry safely.',
       CAPACITY_UNAVAILABLE: 'Bakery capacity is unavailable.',
+      STOCK_UNAVAILABLE: 'One or more items are out of stock.',
     }
     return reply
       .code(statuses[code]!)

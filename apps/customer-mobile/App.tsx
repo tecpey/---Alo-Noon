@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import Constants from 'expo-constants'
 import * as Location from 'expo-location'
+import * as Notifications from 'expo-notifications'
 import { StatusBar } from 'expo-status-bar'
 import {
   ActivityIndicator,
+  Image,
+  Linking,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -16,17 +21,44 @@ import type {
   ActiveCitySummary,
   AddressSummary,
   CartSummary,
+  DeliveryWindow,
   OrderSummary,
+  PaymentExecutionSummary,
+  PaymentSummary,
   ProductSummary,
   QuoteSummary,
   SessionContext,
+  WalletEntrySummary,
+  WalletSummary,
+  WalletTransferSummary,
+  WalletWithdrawalSummary,
 } from '@alo-noon/contracts'
-import { colors } from '@alo-noon/design-tokens'
+import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
+import {
+  formatDeliveryWindow,
+  MINIMUM_WITHDRAWAL,
+  orderProgress,
+  parseTomanToRial,
+  toLatinDigits,
+  topUpRefusalMessage,
+  transferRefusalMessage,
+  validateTopUpAmount,
+  validateTransferAmount,
+  withdrawalRefusalMessage,
+} from '@alo-noon/domain'
+import { GlassSurface, OvenIcon, PlusIcon, PressScale, SteamIcon } from '@alo-noon/mobile-ui'
 
+import brandMark from './assets/logo-mark.png'
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
 import { customerCopy } from './src/copy'
+import { registerForPushNotifications } from './src/push'
+import { AccountScreen } from './src/screens/account'
+import { CheckoutChoices } from './src/screens/checkout-choices'
+import { OrderDetailScreen, OrdersScreen } from './src/screens/orders'
+import { TabBar, type Tab } from './src/screens/tabs'
+import { WalletScreen, type WalletTransferStage } from './src/screens/wallet'
 import {
-  formatRials,
+  formatMoney,
   normalizeIranianMobile,
   normalizeOtpCode,
   productPromiseLabel,
@@ -35,7 +67,16 @@ import {
 
 type Screen = 'boot' | 'phone' | 'otp' | 'location' | 'catalog'
 
-const apiBaseUrl = process.env['EXPO_PUBLIC_API_BASE_URL']
+const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL
+
+/**
+ * The EAS project Expo issues push tokens against.
+ *
+ * Absent in a build that was never made by EAS — a bare `expo start`, or the
+ * web export — and absent is handled rather than guessed at: without it there
+ * is no token to register, and the app says nothing about it.
+ */
+const easProjectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined
 
 export default function App() {
   const api = useMemo(() => {
@@ -47,6 +88,24 @@ export default function App() {
     }
   }, [])
   const [screen, setScreen] = useState<Screen>('boot')
+  // Which of the three destinations is showing, once the funnel is done. Kept
+  // here rather than in a router because there is no history to keep: three
+  // flat tabs and one detail below one of them.
+  const [tab, setTab] = useState<Tab>('shop')
+  const [orders, setOrders] = useState<OrderSummary[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [wallet, setWallet] = useState<WalletSummary | null>(null)
+  const [walletEntries, setWalletEntries] = useState<WalletEntrySummary[]>([])
+  const [walletTransfers, setWalletTransfers] = useState<WalletTransferSummary[]>([])
+  const [walletWithdrawals, setWalletWithdrawals] = useState<WalletWithdrawalSummary[]>([])
+  const [walletLoading, setWalletLoading] = useState(false)
+  const [walletBusy, setWalletBusy] = useState(false)
+  const [walletNotice, setWalletNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(
+    null,
+  )
+  const [transferStage, setTransferStage] = useState<WalletTransferStage>({ step: 'idle' })
+  const [openOrderId, setOpenOrderId] = useState<string>()
+  const [reordering, setReordering] = useState(false)
   const [session, setSession] = useState<SessionContext | null>(null)
   const [cities, setCities] = useState<ActiveCitySummary[]>([])
   const [selectedCityId, setSelectedCityId] = useState<string>()
@@ -54,6 +113,15 @@ export default function App() {
   const [products, setProducts] = useState<ProductSummary[]>([])
   const [cart, setCart] = useState<CartSummary | null>(null)
   const [quote, setQuote] = useState<QuoteSummary | null>(null)
+  // What the customer chose before pricing. A quote is priced against both, so
+  // changing either throws the quote away rather than leaving a total on screen
+  // that belongs to a different set of choices.
+  const [windows, setWindows] = useState<DeliveryWindow[]>([])
+  const [chosenWindow, setChosenWindow] = useState<string | null>(null)
+  const [promotionCode, setPromotionCode] = useState('')
+  // Kept so sign-out can hand the same token back. Without it the row stays
+  // and the next order buzzes a phone nobody is signed into.
+  const [pushToken, setPushToken] = useState<string>()
   const [order, setOrder] = useState<OrderSummary | null>(null)
   const [addresses, setAddresses] = useState<AddressSummary[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState<string>()
@@ -65,6 +133,9 @@ export default function App() {
   const [addressCommandKey, setAddressCommandKey] = useState<string>()
   const [quoteCommandKey, setQuoteCommandKey] = useState<string>()
   const [orderCommandKey, setOrderCommandKey] = useState<string>()
+  const [payment, setPayment] = useState<PaymentSummary | null>(null)
+  const [execution, setExecution] = useState<PaymentExecutionSummary | null>(null)
+  const [paymentCommandKey, setPaymentCommandKey] = useState<string>()
   const [phone, setPhone] = useState('')
   const [otpCommand, setOtpCommand] = useState<{ mobileE164: string; idempotencyKey: string }>()
   const [otp, setOtp] = useState('')
@@ -89,11 +160,16 @@ export default function App() {
           return
         }
         setScreen('location')
+        // Tokens rotate, so a customer who already agreed has to be
+        // re-registered every launch. Silent: `false` means this never puts a
+        // permission dialog in front of somebody who has not been asked yet.
+        void registerPush(false)
         try {
           await Promise.all([
             loadCities(api, active),
             loadCart(api, active),
             loadAddresses(api, active),
+            loadBalance(api, active),
           ])
         } catch (error) {
           if (active) setMessage(errorMessage(error))
@@ -124,10 +200,83 @@ export default function App() {
       setSelectedAddressId(saved[0]?.id)
     }
 
+    /**
+     * The balance alone, at sign-in.
+     *
+     * Checkout needs it to decide whether to offer paying from it, and that
+     * decision happens long before anybody opens the wallet tab. Only the
+     * balance: the statement is three more rows nobody has asked to see yet.
+     */
+    async function loadBalance(client: CustomerApiClient, stillActive: boolean) {
+      const balance = await client.readWallet()
+      if (stillActive) setWallet(balance)
+    }
+
     return () => {
       active = false
     }
   }, [api])
+
+  /**
+   * The windows this basket's branch is offering.
+   *
+   * Read when a basket first has something in it, because the offer belongs to
+   * the branch the basket is with — an empty basket has no branch to ask about.
+   * Re-read on the branch rather than on every cart version: adding a second
+   * loaf does not change what time the ovens run, and refetching on each tap
+   * would spend a customer's data to be told the same thing.
+   *
+   * A failure is silent by design. No windows means the section is not offered
+   * and the order goes out as soon as it is ready, which is a complete way to
+   * buy bread — putting an error in front of somebody for it would break a
+   * checkout that still works.
+   */
+  const branchWithBasket = cart && cart.items.length > 0 ? cart.bakeryBranchId : null
+  useEffect(() => {
+    if (!api || !branchWithBasket) {
+      setWindows([])
+      return
+    }
+
+    let active = true
+    void api
+      .listDeliveryWindows()
+      .then((offered) => {
+        if (active) setWindows(offered)
+      })
+      .catch(() => {
+        if (active) setWindows([])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [api, branchWithBasket])
+
+  /**
+   * Tells the server where to reach this customer, if it can.
+   *
+   * Best-effort and silent by design: every way this fails leaves order
+   * messages arriving by SMS, which is what happened before push existed, and
+   * none of them is worth an error in front of somebody who came here for
+   * bread.
+   */
+  const registerPush = async (askIfUndetermined: boolean) => {
+    if (!api) return
+    const outcome = await registerForPushNotifications({
+      runtime: Notifications,
+      api: {
+        register: async (input) => {
+          await api.registerPushDevice(input)
+          setPushToken(input.expoPushToken)
+        },
+      },
+      projectId: easProjectId,
+      platform: Platform.OS,
+      askIfUndetermined,
+    })
+    if (outcome !== 'REGISTERED') setPushToken(undefined)
+  }
 
   const requestOtp = async () => {
     if (!api || busy) return
@@ -262,6 +411,7 @@ export default function App() {
     setMessage(undefined)
     setQuote(null)
     setOrder(null)
+    resetPayment()
     try {
       const updated = await api.setCartItem(product.offeringId, {
         cityId: selectedCityId,
@@ -283,6 +433,7 @@ export default function App() {
     setMessage(undefined)
     setQuote(null)
     setOrder(null)
+    resetPayment()
     try {
       setCart(await api.removeCartItem(offeringId, cart.version))
     } catch (error) {
@@ -331,8 +482,15 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     try {
-      setQuote(await api.createQuote(selectedAddressId, cart.version, idempotencyKey))
+      const trimmedCode = promotionCode.trim()
+      setQuote(
+        await api.createQuote(selectedAddressId, cart.version, idempotencyKey, {
+          ...(trimmedCode && { promotionCode: trimmedCode }),
+          ...(chosenWindow && { deliveryWindowStartsAt: chosenWindow }),
+        }),
+      )
       setOrder(null)
+      resetPayment()
       setQuoteCommandKey(undefined)
     } catch (error) {
       handleAuthenticatedError(error)
@@ -348,8 +506,107 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     try {
-      setOrder(await api.createOrder(quote.id, idempotencyKey))
+      const placed = await api.createOrder(quote.id, idempotencyKey)
+      setOrder(placed)
       setOrderCommandKey(undefined)
+
+      // Now, and not before. An app that asks to send notifications at first
+      // launch is asking a stranger for permission to interrupt them; an app
+      // that asks the moment there is an order to report on has a reason the
+      // customer can see. iOS only ever shows the prompt once.
+      void registerPush(true)
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resetPayment = () => {
+    setPayment(null)
+    setExecution(null)
+    setPaymentCommandKey(undefined)
+  }
+
+  /**
+   * Opens the payment and asks the gateway for a page to send the customer to.
+   *
+   * Both steps share one idempotency key so a double tap replays onto the same
+   * payment and the same attempt rather than opening a second of either. The
+   * key is only cleared once a URL is in hand: if the second call fails, the
+   * retry must reuse it.
+   */
+  const startPayment = async (source: 'GATEWAY' | 'BALANCE' = 'GATEWAY') => {
+    if (!api || !order || busy) return
+    const idempotencyKey = paymentCommandKey ?? commandKey('mobile-payment')
+    setPaymentCommandKey(idempotencyKey)
+    setBusy(true)
+    setMessage(undefined)
+
+    // A balance has no bank to wait for: the same call that opens the payment
+    // captures it, so there is nothing to initialise and nothing to come back
+    // from.
+    if (source === 'BALANCE') {
+      try {
+        setPayment(await api.startPayment(order.id, idempotencyKey, 'BALANCE'))
+        setPaymentCommandKey(undefined)
+        setOrder(await api.readOrder(order.id))
+        void loadWallet()
+      } catch (error) {
+        setMessage(walletErrorText(error))
+        handleAuthenticatedError(error)
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
+    try {
+      const opened = payment ?? (await api.startPayment(order.id, idempotencyKey))
+      setPayment(opened)
+      const result = await api.initializePayment(opened.id, idempotencyKey)
+      setExecution(result)
+      if (result.customerAction) {
+        setPaymentCommandKey(undefined)
+        await Linking.openURL(result.customerAction.url)
+      } else {
+        // No page to send them to means the gateway refused before the customer
+        // ever saw it. Its own message is the useful one when there is one.
+        setMessage(
+          result.failure?.customerMessageKey
+            ? customerCopy.paymentRefused
+            : customerCopy.paymentUnavailable,
+        )
+      }
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Asks the API what actually happened, after the customer comes back.
+   *
+   * Deliberately not driven by the return URL: every parameter on it is
+   * attacker-controllable, and the verdict comes from the gateway's own
+   * server-to-server answer. Settlement may not have finished when they return,
+   * which is why this is a button they can press again rather than a one-shot
+   * read.
+   */
+  const refreshPayment = async () => {
+    if (!api || !payment || busy) return
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      // Both, together: the customer asking "did it go through" and "where is
+      // my bread" is the same tap, and the answers live in two aggregates.
+      const [freshPayment, freshOrder] = await Promise.all([
+        api.readPayment(payment.id),
+        order ? api.readOrder(order.id) : Promise.resolve(null),
+      ])
+      setPayment(freshPayment)
+      if (freshOrder) setOrder(freshOrder)
     } catch (error) {
       handleAuthenticatedError(error)
     } finally {
@@ -362,6 +619,11 @@ export default function App() {
     setBusy(true)
     setMessage(undefined)
     try {
+      // Before the session goes, while the request can still be authorised.
+      if (pushToken) {
+        await api.forgetPushDevice(pushToken).catch(() => undefined)
+        setPushToken(undefined)
+      }
       await api.logout()
       setSession(null)
       setCities([])
@@ -371,6 +633,7 @@ export default function App() {
       setCart(null)
       setQuote(null)
       setOrder(null)
+      resetPayment()
       setAddresses([])
       setSelectedAddressId(undefined)
       setCoordinates(undefined)
@@ -378,12 +641,288 @@ export default function App() {
       setQuoteCommandKey(undefined)
       setOrderCommandKey(undefined)
       setChallengeId(undefined)
+      // Everything the previous customer could see goes with them. Leaving the
+      // order list behind would show one person's orders to the next.
+      setOrders([])
+      setOpenOrderId(undefined)
+      setTab('shop')
       setScreen('phone')
       setMessage(undefined)
     } catch (error) {
       setMessage(errorMessage(error))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Discards the price when a choice that produced it changes.
+   *
+   * A quote is priced against the window and the code that were sent with it. Leaving the old total on screen after one of them moves
+   * shows a number that is no longer the number, and the customer only finds
+   * out at the gateway.
+   */
+  const chooseWindow = (startsAt: string | null) => {
+    setChosenWindow(startsAt)
+    setQuote(null)
+  }
+  const changePromotionCode = (code: string) => {
+    setPromotionCode(code)
+    setQuote(null)
+  }
+
+  /**
+   * Reads the order list on demand rather than on a timer.
+   *
+   * A customer opening this tab wants what is true now; a poll would spend
+   * their data all morning to say nothing changed.
+   */
+  const loadOrders = async () => {
+    if (!api) return
+    setOrdersLoading(true)
+    try {
+      setOrders(await api.listOrders())
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setOrdersLoading(false)
+    }
+  }
+
+  /**
+   * Everything the wallet screen shows, in one pass.
+   *
+   * Three reads rather than one, because they are three resources — and all
+   * three together, because a balance without its statement is a number a
+   * customer cannot check.
+   */
+  const loadWallet = async () => {
+    if (!api) return
+    setWalletLoading(true)
+    try {
+      const [balance, entries, transfers, withdrawals] = await Promise.all([
+        api.readWallet(),
+        api.listWalletEntries(),
+        api.listWalletTransfers(),
+        api.listWalletWithdrawals(),
+      ])
+      setWallet(balance)
+      setWalletEntries(entries)
+      setWalletTransfers(transfers)
+      setWalletWithdrawals(withdrawals)
+      // A transfer already waiting for its code is resumed rather than
+      // restarted: a customer who closed the app comes back to the code field,
+      // not to a form that would charge a second text to reach the same place.
+      const pending = transfers.find((transfer) => transfer.state === 'PENDING')
+      setTransferStage(pending ? { step: 'confirming', transfer: pending } : { step: 'idle' })
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletLoading(false)
+    }
+  }
+
+  /**
+   * Charges the balance through the bank.
+   *
+   * The same two calls an order's payment makes, because a top-up is an
+   * ordinary payment — which is what buys it the callback route, the settlement
+   * sweep and the retry semantics without any of it being written twice.
+   */
+  const topUpWallet = async (amountToman: string) => {
+    if (!api || walletBusy) return
+    const amount = parseTomanToRial(amountToman)
+    if (amount === null) {
+      setWalletNotice({ tone: 'error', text: 'مبلغ شارژ را درست وارد کنید.' })
+      return
+    }
+    const refusal = validateTopUpAmount(amount)
+    if (refusal) {
+      setWalletNotice({ tone: 'error', text: topUpRefusalMessage(refusal) })
+      return
+    }
+
+    setWalletBusy(true)
+    setWalletNotice(null)
+    try {
+      const started = await api.startWalletTopUp(amount.toString(), commandKey('mobile-top-up'))
+      const result = await api.initializePayment(started.paymentId, commandKey('mobile-top-up-go'))
+      if (result.customerAction) {
+        await Linking.openURL(result.customerAction.url)
+      } else {
+        setWalletNotice({ tone: 'error', text: customerCopy.paymentUnavailable })
+      }
+    } catch (error) {
+      setWalletNotice({ tone: 'error', text: walletErrorText(error) })
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
+  /** Names a recipient and an amount, and asks for the code. Moves nothing. */
+  const openTransfer = async (input: { recipientMobile: string; amountToman: string }) => {
+    if (!api || walletBusy) return
+    const recipientMobile = normalizeIranianMobile(input.recipientMobile)
+    if (!recipientMobile) {
+      setWalletNotice({ tone: 'error', text: 'شمارهٔ گیرنده معتبر نیست.' })
+      return
+    }
+    const amount = parseTomanToRial(input.amountToman)
+    if (amount === null) {
+      setWalletNotice({ tone: 'error', text: 'مبلغ انتقال را درست وارد کنید.' })
+      return
+    }
+    const refusal = validateTransferAmount(amount)
+    if (refusal) {
+      setWalletNotice({
+        tone: 'error',
+        text: transferRefusalMessage(refusal) ?? 'مبلغ انتقال معتبر نیست.',
+      })
+      return
+    }
+
+    setWalletBusy(true)
+    setWalletNotice(null)
+    try {
+      const transfer = await api.openWalletTransfer({
+        recipientMobile,
+        amountRial: amount.toString(),
+        idempotencyKey: commandKey('mobile-transfer'),
+      })
+      setTransferStage({ step: 'confirming', transfer })
+    } catch (error) {
+      setWalletNotice({ tone: 'error', text: walletErrorText(error) })
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
+  /**
+   * Asks for the balance back, in money.
+   *
+   * The card number reaches the API once and is never stored on this side: not
+   * in state that outlives the call, and not in the idempotency key, which is a
+   * value that survives in a database column. The key is the amount and the
+   * hour, so a double-tap replays onto the request it already made while a
+   * deliberate second withdrawal later in the day gets its own.
+   */
+  const requestWithdrawal = async (input: {
+    amountToman: string
+    cardNumber: string
+    cardHolderName: string
+    iban: string
+  }) => {
+    if (!api || walletBusy) return
+    const amount = parseTomanToRial(input.amountToman)
+    if (amount === null) {
+      setWalletNotice({ tone: 'error', text: 'مبلغ برداشت را درست وارد کنید.' })
+      return
+    }
+    if (amount < MINIMUM_WITHDRAWAL) {
+      setWalletNotice({ tone: 'error', text: withdrawalRefusalMessage('BELOW_MINIMUM') })
+      return
+    }
+    // Digits only, and exactly sixteen. A card pasted from a banking app
+    // arrives with spaces or dashes, and a customer should not be told their
+    // own card is invalid because of how their bank prints it.
+    const cardNumber = toLatinDigits(input.cardNumber).replace(/\D/g, '')
+    if (!/^\d{16}$/.test(cardNumber)) {
+      setWalletNotice({ tone: 'error', text: 'شمارهٔ کارت باید ۱۶ رقم باشد.' })
+      return
+    }
+    const holder = input.cardHolderName.trim()
+    if (holder.length < 2) {
+      setWalletNotice({ tone: 'error', text: 'نام صاحب کارت را وارد کنید.' })
+      return
+    }
+    const iban = input.iban ? toLatinDigits(input.iban).replace(/[\s-]/g, '').toUpperCase() : ''
+    if (iban && !/^IR\d{24}$/.test(iban)) {
+      setWalletNotice({ tone: 'error', text: 'شبا باید با IR و ۲۴ رقم باشد.' })
+      return
+    }
+
+    setWalletBusy(true)
+    setWalletNotice(null)
+    try {
+      const withdrawal = await api.requestWalletWithdrawal({
+        amountRial: amount.toString(),
+        cardNumber,
+        cardHolderName: holder,
+        ...(iban && { iban }),
+        idempotencyKey: commandKey('mobile-withdrawal'),
+      })
+      setWalletNotice({
+        tone: 'ok',
+        text: `درخواست ثبت شد. ${formatMoney(withdrawal.amount.amount)} از موجودی کم شد و پس از بررسی به کارت شما واریز می‌شود.`,
+      })
+      await loadWallet()
+    } catch (error) {
+      setWalletNotice({ tone: 'error', text: walletErrorText(error) })
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
+  /** Types the code back. This is the call that moves the money. */
+  const confirmTransfer = async (transferId: string, code: string) => {
+    if (!api || walletBusy) return
+    const normalized = normalizeOtpCode(code)
+    if (!normalized) {
+      setWalletNotice({ tone: 'error', text: 'کد تأیید را کامل وارد کنید.' })
+      return
+    }
+
+    setWalletBusy(true)
+    setWalletNotice(null)
+    try {
+      const transfer = await api.confirmWalletTransfer(transferId, normalized)
+      setTransferStage({ step: 'done', transfer })
+      setWalletNotice({ tone: 'ok', text: 'انتقال انجام شد.' })
+      await loadWallet()
+    } catch (error) {
+      setWalletNotice({ tone: 'error', text: walletErrorText(error) })
+      // A dead transfer must not keep a code field on screen promising a second
+      // chance that does not exist.
+      if (error instanceof CustomerApiError && error.code !== 'INVALID_CODE') {
+        setTransferStage({ step: 'idle' })
+        await loadWallet()
+      }
+      handleAuthenticatedError(error)
+    } finally {
+      setWalletBusy(false)
+    }
+  }
+
+  const reorderFrom = async (orderId: string) => {
+    if (!api || reordering) return
+    setReordering(true)
+    setMessage(undefined)
+    try {
+      const result = await api.reorder(orderId)
+      setCart(await api.getCart())
+      // The adjustments are the point. Saying nothing and handing somebody two
+      // loaves where they asked for four is the failure this exists to avoid.
+      setMessage(
+        result.adjustments.length === 0
+          ? 'سبد از روی همان سفارش پر شد.'
+          : result.adjustments
+              .map((adjustment) =>
+                adjustment.reason === 'REORDER_QUANTITY_REDUCED'
+                  ? `${adjustment.nameFa} فقط ${adjustment.quantity.toLocaleString('fa-IR')} عدد موجود بود`
+                  : `${adjustment.nameFa} الان موجود نیست`,
+              )
+              .join(' · '),
+      )
+      setOpenOrderId(undefined)
+      setTab('shop')
+    } catch (error) {
+      setMessage(errorMessage(error))
+      handleAuthenticatedError(error)
+    } finally {
+      setReordering(false)
     }
   }
 
@@ -397,6 +936,7 @@ export default function App() {
       setCart(null)
       setQuote(null)
       setOrder(null)
+      resetPayment()
       setAddresses([])
       setSelectedAddressId(undefined)
       setCoordinates(undefined)
@@ -417,8 +957,34 @@ export default function App() {
     )
   }
 
+  const openOrder = orders.find((candidate) => candidate.id === openOrderId)
+  // What is actually in motion, so the badge means "something is happening"
+  // rather than "you have ordered before". A finished order is not news.
+  const liveOrderCount = orders.filter((candidate) => {
+    const tone = orderProgress(candidate).tone
+    return tone === 'live' || tone === 'waiting'
+  }).length
+
   return (
-    <Shell>
+    <Shell
+      footer={
+        // Only once there is somewhere to go. During the funnel the tabs would
+        // lead to two empty screens and one the customer has not reached yet.
+        screen === 'catalog' ? (
+          <TabBar
+            active={tab}
+            liveOrderCount={liveOrderCount}
+            onChange={(next) => {
+              setMessage(undefined)
+              setOpenOrderId(undefined)
+              setTab(next)
+              if (next === 'orders') void loadOrders()
+              if (next === 'wallet') void loadWallet()
+            }}
+          />
+        ) : undefined
+      }
+    >
       {screen === 'boot' && <Loading label="در حال بررسی نشست امن…" />}
 
       {screen === 'phone' && (
@@ -473,9 +1039,9 @@ export default function App() {
               <Text style={styles.fieldLabel}>شهر</Text>
               <View style={styles.cityList}>
                 {cities.map((city) => (
-                  <Pressable
+                  <PressScale
                     key={city.id}
-                    accessibilityRole="button"
+                    scaleTo={0.94}
                     accessibilityState={{ selected: selectedCityId === city.id }}
                     style={[styles.cityChip, selectedCityId === city.id && styles.cityChipSelected]}
                     onPress={() => setSelectedCityId(city.id)}
@@ -488,7 +1054,7 @@ export default function App() {
                     >
                       {city.nameFa}
                     </Text>
-                  </Pressable>
+                  </PressScale>
                 ))}
               </View>
               <PrimaryButton
@@ -503,7 +1069,72 @@ export default function App() {
         </View>
       )}
 
-      {screen === 'catalog' && (
+      {screen === 'catalog' && tab === 'orders' && (
+        <View style={styles.catalogPanel}>
+          {openOrder ? (
+            <OrderDetailScreen
+              order={openOrder}
+              reordering={reordering}
+              onBack={() => setOpenOrderId(undefined)}
+              onReorder={() => void reorderFrom(openOrder.id)}
+            />
+          ) : (
+            <OrdersScreen
+              orders={orders}
+              loading={ordersLoading}
+              onOpen={(picked) => setOpenOrderId(picked.id)}
+              onRefresh={() => void loadOrders()}
+            />
+          )}
+          {message && <InlineMessage text={message} />}
+        </View>
+      )}
+
+      {screen === 'catalog' && tab === 'wallet' && (
+        <View style={styles.catalogPanel}>
+          <WalletScreen
+            wallet={wallet}
+            entries={walletEntries}
+            transfers={walletTransfers}
+            loading={walletLoading}
+            busy={walletBusy}
+            notice={walletNotice}
+            withdrawals={walletWithdrawals}
+            transferStage={transferStage}
+            onTopUp={(amount) => void topUpWallet(amount)}
+            onOpenTransfer={(input) => void openTransfer(input)}
+            onRequestWithdrawal={(input) => void requestWithdrawal(input)}
+            onConfirmTransfer={(transferId, code) => void confirmTransfer(transferId, code)}
+            onCancelTransfer={() => {
+              setTransferStage({ step: 'idle' })
+              setWalletNotice(null)
+            }}
+          />
+        </View>
+      )}
+
+      {screen === 'catalog' && tab === 'account' && (
+        <View style={styles.catalogPanel}>
+          <AccountScreen
+            session={session}
+            addresses={addresses}
+            loading={busy}
+            selectedAddressId={selectedAddressId}
+            onSelect={(addressId) => {
+              setSelectedAddressId(addressId)
+              // Choosing where it goes is a shopping decision, so it hands the
+              // customer back to the basket rather than leaving them on a
+              // settings screen wondering whether it took.
+              setTab('shop')
+            }}
+            onAdd={() => setTab('shop')}
+            onLogout={() => void logout()}
+          />
+          {message && <InlineMessage text={message} />}
+        </View>
+      )}
+
+      {screen === 'catalog' && tab === 'shop' && (
         <View style={styles.catalogPanel}>
           <Header session={session} onLogout={logout} />
           <Text style={styles.title}>{customerCopy.title}</Text>
@@ -548,11 +1179,27 @@ export default function App() {
               cart={cart}
               quote={quote}
               order={order}
+              payment={payment}
+              awaitingReturn={Boolean(execution?.customerAction)}
               addressSelected={Boolean(selectedAddressId)}
               busy={busy}
               onRemove={(offeringId) => void removeCartItem(offeringId)}
               onQuote={() => void createQuote()}
               onOrder={() => void createOrder()}
+              onPay={(source) => void startPayment(source)}
+              walletBalance={wallet?.balance.amount ?? null}
+              onRefreshPayment={() => void refreshPayment()}
+              choices={
+                <CheckoutChoices
+                  windows={windows}
+                  chosenWindow={chosenWindow}
+                  onChooseWindow={chooseWindow}
+                  promotionCode={promotionCode}
+                  onPromotionCode={changePromotionCode}
+                  quote={quote}
+                  now={new Date()}
+                />
+              }
             />
           )}
           {message && <InlineMessage text={message} />}
@@ -564,6 +1211,7 @@ export default function App() {
               setOperationalZoneId(undefined)
               setQuote(null)
               setOrder(null)
+              resetPayment()
               setScreen('location')
             }}
           >
@@ -575,16 +1223,53 @@ export default function App() {
   )
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+/**
+ * The app's frame.
+ *
+ * The lockup at the top is the real mark beside the real wordmark, the same two
+ * things the shopfront and the panel show — a phone app that spells the brand
+ * out in the system font is a phone app that belongs to a different company.
+ */
+function Shell({
+  children,
+  footer,
+}: {
+  children: React.ReactNode
+  /**
+   * Rendered below the scroll view rather than inside it, so the tab bar does
+   * not scroll away. Reaching the bottom of a long order list is exactly when
+   * somebody wants to leave it.
+   */
+  footer?: React.ReactNode
+}) {
   return (
     <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.brandLockup}>
-          <Text style={styles.brand}>الو نون</Text>
-          <Text style={styles.brandCaption}>انتخاب روشن برای نان روزانه</Text>
-        </View>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, footer ? styles.scrollContentTabbed : null]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/*
+          Glass, for the same reason the web's bar is: it floats over a screen
+          of bread photographs, and a solid bar there cuts the screen in half.
+          It is the only glass in this app — a blurred surface is a real GPU
+          cost on a phone, so it is spent where it earns its keep.
+        */}
+        <GlassSurface style={styles.brandBar}>
+          <View style={styles.brandLockup}>
+            <Text style={styles.brand}>{customerCopy.brandName}</Text>
+            <Text style={styles.brandCaption}>{customerCopy.brandTagline}</Text>
+          </View>
+          <Image
+            source={brandMark}
+            style={styles.brandMark}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+            alt=""
+          />
+        </GlassSurface>
         {children}
       </ScrollView>
+      {footer}
       <StatusBar style="dark" />
     </SafeAreaView>
   )
@@ -666,26 +1351,31 @@ function PrimaryButton({
   busy,
   disabled = false,
   onPress,
+  icon,
 }: {
   label: string
   busy: boolean
   disabled?: boolean
   onPress: () => void
+  /** An optional glyph before the label, for the one or two buttons that earn one. */
+  icon?: React.ReactNode
 }) {
   return (
-    <Pressable
-      accessibilityRole="button"
+    <PressScale
       accessibilityState={{ busy, disabled: busy || disabled }}
       disabled={busy || disabled}
       style={[styles.primaryButton, (busy || disabled) && styles.buttonDisabled]}
       onPress={onPress}
     >
       {busy ? (
-        <ActivityIndicator color={colors.neutral[50]} />
+        <ActivityIndicator color={ink.onAction} />
       ) : (
-        <Text style={styles.primaryButtonText}>{label}</Text>
+        <View style={styles.primaryButtonInner}>
+          {icon}
+          <Text style={styles.primaryButtonText}>{label}</Text>
+        </View>
       )}
-    </Pressable>
+    </PressScale>
   )
 }
 
@@ -706,11 +1396,21 @@ function ProductCard({
       <View style={styles.productTopRow}>
         <Text style={styles.productName}>{product.nameFa}</Text>
         <View style={[styles.promiseBadge, isFresh && styles.freshBadge]}>
+          {isFresh ? (
+            <OvenIcon size={14} color={tint.success.ink} />
+          ) : (
+            <SteamIcon size={14} color={ink.muted} />
+          )}
           <Text style={[styles.promiseText, isFresh && styles.freshText]}>{promise}</Text>
         </View>
       </View>
-      <Text style={styles.price}>{formatRials(product.price.amount)}</Text>
-      <PrimaryButton label="افزودن به سبد" busy={busy} onPress={onAdd} />
+      <Text style={styles.price}>{formatMoney(product.price.amount)}</Text>
+      <PrimaryButton
+        label="افزودن به سبد"
+        busy={busy}
+        onPress={onAdd}
+        icon={<PlusIcon size={18} color={ink.onAction} />}
+      />
     </View>
   )
 }
@@ -800,21 +1500,54 @@ function CartCard({
   cart,
   quote,
   order,
+  payment,
+  awaitingReturn,
   addressSelected,
   busy,
   onRemove,
   onQuote,
   onOrder,
+  onPay,
+  onRefreshPayment,
+  walletBalance,
+  choices,
 }: {
   cart: CartSummary
   quote: QuoteSummary | null
   order: OrderSummary | null
+  payment: PaymentSummary | null
+  /** True once the customer has been handed a gateway page to open. */
+  awaitingReturn: boolean
   addressSelected: boolean
   busy: boolean
   onRemove: (offeringId: string) => void
   onQuote: () => void
   onOrder: () => void
+  onPay: (source: 'GATEWAY' | 'BALANCE') => void
+  onRefreshPayment: () => void
+  /**
+   * The balance, in Rial, or null when it has not been read.
+   *
+   * Null means the choice is not offered rather than offered and broken. A
+   * customer told "pay from balance" and then told the balance is unknown has
+   * been asked a question nobody can answer.
+   */
+  walletBalance: string | null
+  /**
+   * When, how and with what code — passed in rather than built here so this
+   * component keeps knowing only about the basket it was already about.
+   */
+  choices: ReactNode
 }) {
+  // Recomputed from the order rather than remembered, so a re-priced basket
+  // cannot leave a balance button standing against a total it no longer covers.
+  const balanceCovers =
+    walletBalance !== null &&
+    order !== null &&
+    /^\d+$/.test(walletBalance) &&
+    /^\d+$/.test(order.total.amount) &&
+    BigInt(walletBalance) >= BigInt(order.total.amount)
+
   return (
     <View style={styles.cartCard}>
       <View style={styles.cartTitleRow}>
@@ -836,18 +1569,21 @@ function CartCard({
             <View style={styles.cartItemCopy}>
               <Text style={styles.cartItemName}>{item.nameFa}</Text>
               <Text style={styles.cartItemMeta}>
-                {item.quantity.toLocaleString('fa-IR')} عدد · {formatRials(item.lineTotal.amount)}
+                {item.quantity.toLocaleString('fa-IR')} عدد · {formatMoney(item.lineTotal.amount)}
               </Text>
             </View>
           </View>
         ))
       )}
       <View style={styles.totalRow}>
-        <Text style={styles.price}>{formatRials(cart.subtotal.amount)}</Text>
+        <Text style={styles.price}>{formatMoney(cart.subtotal.amount)}</Text>
         <Text style={styles.totalLabel}>جمع سبد</Text>
       </View>
+      {/* Above the price, because each of these changes it. Hidden once an
+          order exists: by then they are decided and the server holds them. */}
+      {cart.items.length > 0 && !order && choices}
       <PrimaryButton
-        label="دریافت قیمت نهایی"
+        label={quote ? 'محاسبهٔ دوباره' : 'دریافت قیمت نهایی'}
         busy={busy}
         disabled={cart.items.length === 0 || !addressSelected}
         onPress={onQuote}
@@ -858,8 +1594,23 @@ function CartCard({
           <Text style={styles.quoteMeta}>
             انقضا: {new Date(quote.expiresAt).toLocaleTimeString('fa-IR')}
           </Text>
-          <Text style={styles.quoteMeta}>هزینه ارسال: {formatRials(quote.deliveryFee.amount)}</Text>
-          <Text style={styles.quoteTotal}>{formatRials(quote.total.amount)}</Text>
+          <Text style={styles.quoteMeta}>هزینه ارسال: {formatMoney(quote.deliveryFee.amount)}</Text>
+          {/* Only when there is one. A zero discount line invites the question
+              "why is my discount nothing". */}
+          {quote.discount.amount !== '0' && (
+            <Text style={styles.quoteMeta}>تخفیف: {formatMoney(quote.discount.amount)}</Text>
+          )}
+          {quote.deliveryWindow && (
+            <Text style={styles.quoteMeta}>
+              زمان تحویل:{' '}
+              {formatDeliveryWindow(
+                quote.deliveryWindow.startsAt,
+                quote.deliveryWindow.endsAt,
+                new Date(),
+              )}
+            </Text>
+          )}
+          <Text style={styles.quoteTotal}>{formatMoney(quote.total.amount)}</Text>
           <Text style={styles.quoteNotice}>
             مبلغ و نشانی این قیمت در سرور ثبت شده‌اند. پرداخت هنوز آغاز نمی‌شود.
           </Text>
@@ -870,13 +1621,94 @@ function CartCard({
         <View accessibilityLiveRegion="polite" style={styles.orderConfirmation}>
           <Text style={styles.quoteTitle}>سفارش با موفقیت ثبت شد</Text>
           <Text style={styles.quoteMeta}>شماره سفارش: {order.publicId}</Text>
-          <Text style={styles.quoteMeta}>وضعیت: در انتظار تأیید</Text>
-          <Text style={styles.quoteTotal}>{formatRials(order.total.amount)}</Text>
-          <Text style={styles.quoteNotice}>پرداخت هنوز آغاز نشده است.</Text>
+          <Text style={styles.quoteMeta}>پرداخت: {PAYMENT_STATE_FA[payment?.state ?? 'NONE']}</Text>
+          <Text style={styles.quoteMeta}>سفارش: {ORDER_STATE_FA[order.state] ?? order.state}</Text>
+          {order.productionState !== 'NOT_REQUIRED' && (
+            <Text style={styles.quoteMeta}>
+              تولید: {PRODUCTION_STATE_FA[order.productionState] ?? order.productionState}
+            </Text>
+          )}
+          <Text style={styles.quoteTotal}>{formatMoney(order.total.amount)}</Text>
+
+          {payment?.state === 'CAPTURED' ? (
+            <Text style={styles.quoteNotice}>پرداخت شما تأیید شد.</Text>
+          ) : (
+            <>
+              {awaitingReturn && (
+                <Text style={styles.quoteNotice}>{customerCopy.paymentReturn}</Text>
+              )}
+              {/*
+                Two ways money reaches an order, and the balance goes first when
+                it covers the total — it is the faster one, and the one that
+                does not leave the app. Offered only when it can actually pay:
+                a button that refuses is worse than a button that is absent.
+              */}
+              {balanceCovers && (
+                <PrimaryButton
+                  label="پرداخت از کیف پول"
+                  busy={busy}
+                  onPress={() => onPay('BALANCE')}
+                />
+              )}
+              <PrimaryButton
+                label={awaitingReturn ? 'پرداخت دوباره' : 'پرداخت با درگاه بانکی'}
+                busy={busy}
+                onPress={() => onPay('GATEWAY')}
+              />
+              {walletBalance !== null && !balanceCovers && (
+                <Text style={styles.quoteNotice}>
+                  موجودی کیف پول ({formatMoney(walletBalance)}) برای این سفارش کافی نیست.
+                </Text>
+              )}
+              {payment && (
+                <PrimaryButton label="بررسی وضعیت پرداخت" busy={busy} onPress={onRefreshPayment} />
+              )}
+            </>
+          )}
         </View>
       )}
     </View>
   )
+}
+
+/**
+ * What a payment state means to the person who just paid.
+ *
+ * `AUTHORIZED` is not "paid": the gateway has agreed but the money has not been
+ * captured, and telling a customer they are done before it has would be a lie
+ * the ledger disagrees with.
+ */
+const PAYMENT_STATE_FA: Readonly<Record<string, string>> = {
+  NONE: 'در انتظار پرداخت',
+  CREATED: 'در انتظار پرداخت',
+  PENDING: 'در حال بررسی با درگاه',
+  AUTHORIZED: 'در حال بررسی با درگاه',
+  CAPTURED: 'پرداخت‌شده',
+  FAILED: 'پرداخت ناموفق',
+}
+
+/**
+ * The order's own progress, which is the question a customer asks after paying.
+ * Kept separate from the payment states above because they answer different
+ * things: the money can be in while the bakery has not yet said yes.
+ */
+const ORDER_STATE_FA: Readonly<Record<string, string>> = {
+  DRAFT: 'پیش‌نویس',
+  PENDING_CONFIRMATION: 'در انتظار تأیید نانوایی',
+  CONFIRMED: 'تأییدشده',
+  IN_FULFILLMENT: 'در مسیر تحویل',
+  CANCEL_REQUESTED: 'درخواست لغو',
+  DELIVERY_FAILED: 'تحویل ناموفق',
+  COMPLETED: 'تحویل‌شده',
+  CANCELLED: 'لغوشده',
+}
+
+const PRODUCTION_STATE_FA: Readonly<Record<string, string>> = {
+  UNSCHEDULED: 'در نوبت',
+  SCHEDULED: 'زمان‌بندی‌شده',
+  IN_PRODUCTION: 'در حال پخت',
+  READY: 'آمادهٔ تحویل',
+  HANDED_OFF: 'تحویل به پیک',
 }
 
 function InlineMessage({ text }: { text: string }) {
@@ -957,8 +1789,60 @@ function errorMessage(error: unknown): string {
   }
 }
 
+/**
+ * Why a wallet request was refused, in words a customer can act on.
+ *
+ * Separate from `errorMessage` because the API already writes these sentences —
+ * the shortfall, the attempts left, the minimum — and rewriting them here would
+ * be a second place for the same limit to be quoted, eventually differently.
+ * The generic table is the fallback for the transport failures it does cover.
+ */
+function walletErrorText(error: unknown): string {
+  if (!(error instanceof CustomerApiError)) return errorMessage(error)
+
+  const shortfall = walletShortfall(error.details)
+  if (shortfall) return `موجودی کافی نیست. ${formatMoney(shortfall)} کم دارید.`
+
+  switch (error.code) {
+    case 'INVALID_CODE':
+      return `کد تأیید درست نیست.${attemptsSuffix(error.details)}`
+    case 'EXHAUSTED':
+      return 'این انتقال منقضی شده است. دوباره شروع کنید.'
+    case 'NOT_PENDING':
+      return 'این انتقال قبلاً بسته شده است.'
+    case 'RECIPIENT_NOT_FOUND':
+      return 'شماره‌ای که وارد کردید در الو نون ثبت نشده است.'
+    case 'SELF_TRANSFER':
+      return 'نمی‌توانید به کیف پول خودتان انتقال دهید.'
+    case 'CODE_NOT_SENT':
+      return 'ارسال کد تأیید ممکن نشد. کمی بعد دوباره تلاش کنید.'
+    case 'TOP_UP_UNAVAILABLE':
+    case 'WALLET_UNAVAILABLE':
+      return 'کیف پول موقتاً در دسترس نیست؛ دوباره تلاش کنید.'
+    default:
+      return errorMessage(error)
+  }
+}
+
+/** The Rial figure inside a refusal's `details.shortfall`, when there is one. */
+function walletShortfall(details: unknown): string | null {
+  if (!details || typeof details !== 'object') return null
+  const shortfall = (details as Record<string, unknown>)['shortfall']
+  if (!shortfall || typeof shortfall !== 'object') return null
+  const amount = (shortfall as { amount?: unknown }).amount
+  return typeof amount === 'string' && /^\d+$/.test(amount) ? amount : null
+}
+
+/** " ۴ تلاش دیگر باقی است." when the refusal counted, and nothing when it did not. */
+function attemptsSuffix(details: unknown): string {
+  if (!details || typeof details !== 'object') return ''
+  const left = (details as Record<string, unknown>)['attemptsLeft']
+  if (typeof left !== 'number' || !Number.isInteger(left) || left < 0) return ''
+  return ` ${left.toLocaleString('fa-IR')} تلاش دیگر باقی است.`
+}
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.primary[50] },
+  screen: { flex: 1, backgroundColor: surface.base },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -966,21 +1850,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 32,
   },
+  // Centring is right for a single auth card and wrong for a list: an order
+  // history that starts halfway down the screen looks like a rendering fault.
+  scrollContentTabbed: { justifyContent: 'flex-start' },
+  brandBar: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: line.subtle,
+  },
   brandLockup: { alignItems: 'flex-end', gap: 2 },
+  brandMark: { width: 34, height: 46 },
   brand: {
-    color: colors.primary[800],
+    color: ink.strong,
     fontSize: 22,
     fontWeight: '800',
     textAlign: 'right',
   },
-  brandCaption: { color: colors.neutral[600], fontSize: 13, textAlign: 'right' },
+  brandCaption: { color: ink.muted, fontSize: 13, textAlign: 'right' },
   card: {
     gap: 16,
     padding: 24,
     borderWidth: 1,
-    borderColor: colors.primary[100],
+    borderColor: line.subtle,
     borderRadius: 28,
-    backgroundColor: colors.neutral[50],
+    backgroundColor: surface.card,
   },
   catalogPanel: { gap: 16 },
   title: {
@@ -1001,10 +1900,10 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: colors.neutral[300],
+    borderColor: line.base,
     borderRadius: 16,
-    backgroundColor: colors.neutral[50],
-    color: colors.neutral[900],
+    backgroundColor: surface.sunken,
+    color: ink.strong,
     fontSize: 18,
     writingDirection: 'ltr',
   },
@@ -1015,10 +1914,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     borderRadius: 16,
-    backgroundColor: colors.primary[700],
+    backgroundColor: colors.primary[600],
   },
   buttonDisabled: { opacity: 0.55 },
-  primaryButtonText: { color: colors.neutral[50], fontSize: 16, fontWeight: '800' },
+  primaryButtonInner: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
+  primaryButtonText: { color: ink.onAction, fontSize: 16, fontWeight: '800' },
   secondaryButton: {
     minHeight: 46,
     alignItems: 'center',
@@ -1028,15 +1928,15 @@ const styles = StyleSheet.create({
     borderColor: colors.primary[200],
     borderRadius: 14,
   },
-  secondaryButtonText: { color: colors.primary[800], fontSize: 15, fontWeight: '700' },
+  secondaryButtonText: { color: ink.action, fontSize: 15, fontWeight: '700' },
   message: {
     padding: 14,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: tint.error.border,
     borderRadius: 14,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: tint.error.surface,
   },
-  messageText: { color: '#991B1B', lineHeight: 24, textAlign: 'right' },
+  messageText: { color: tint.error.ink, lineHeight: 24, textAlign: 'right' },
   loadingText: { color: colors.neutral[700], textAlign: 'center' },
   cityList: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
   cityChip: {
@@ -1062,10 +1962,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: '#DCFCE7',
+    backgroundColor: tint.success.surface,
   },
-  sessionBadgeText: { color: '#166534', fontSize: 12, fontWeight: '800' },
-  logoutText: { color: colors.primary[800], fontWeight: '700' },
+  sessionBadgeText: { color: tint.success.ink, fontSize: 12, fontWeight: '800' },
+  logoutText: { color: ink.action, fontWeight: '700' },
   emptyText: {
     padding: 18,
     borderRadius: 16,
@@ -1079,9 +1979,9 @@ const styles = StyleSheet.create({
     gap: 14,
     padding: 18,
     borderWidth: 1,
-    borderColor: colors.neutral[200],
+    borderColor: line.subtle,
     borderRadius: 20,
-    backgroundColor: colors.neutral[50],
+    backgroundColor: surface.card,
   },
   productTopRow: { gap: 12 },
   productName: {
@@ -1092,15 +1992,18 @@ const styles = StyleSheet.create({
   },
   promiseBadge: {
     alignSelf: 'flex-end',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: colors.neutral[100],
   },
   promiseText: { color: colors.neutral[700], fontSize: 12, fontWeight: '700' },
-  freshBadge: { backgroundColor: '#ECFCCB' },
-  freshText: { color: '#3F6212' },
-  price: { color: colors.primary[800], fontSize: 16, fontWeight: '800', textAlign: 'right' },
+  freshBadge: { backgroundColor: tint.success.surface },
+  freshText: { color: tint.success.ink },
+  price: { color: ink.action, fontSize: 16, fontWeight: '800', textAlign: 'right' },
   cartCard: {
     gap: 14,
     padding: 20,
@@ -1144,7 +2047,7 @@ const styles = StyleSheet.create({
   quoteTitle: { color: colors.success, fontWeight: '800', textAlign: 'right' },
   quoteMeta: { color: colors.neutral[600], textAlign: 'right' },
   quoteTotal: {
-    color: colors.primary[800],
+    color: ink.action,
     fontSize: 22,
     fontWeight: '900',
     textAlign: 'right',
@@ -1163,8 +2066,8 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#86EFAC',
+    borderColor: tint.success.border,
     borderRadius: 16,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: tint.success.surface,
   },
 })

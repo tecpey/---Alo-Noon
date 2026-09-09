@@ -12,11 +12,45 @@ export type LedgerAccountType = (typeof LedgerAccountType)[keyof typeof LedgerAc
 export const LedgerEntrySide = { DEBIT: 'DEBIT', CREDIT: 'CREDIT' } as const
 export type LedgerEntrySide = (typeof LedgerEntrySide)[keyof typeof LedgerEntrySide]
 
-export const FinancialTransactionType = { PAYMENT_CAPTURE: 'PAYMENT_CAPTURE' } as const
+export const FinancialTransactionType = {
+  PAYMENT_CAPTURE: 'PAYMENT_CAPTURE',
+  PAYMENT_REFUND: 'PAYMENT_REFUND',
+  /** Money arriving from a gateway into a customer's balance. */
+  WALLET_TOP_UP: 'WALLET_TOP_UP',
+  /**
+   * A delivered order divided between the bakery, the courier partner and the
+   * platform. Belongs to an order and to no payment.
+   */
+  ORDER_SETTLEMENT: 'ORDER_SETTLEMENT',
+  /** Money leaving for a partner's bank account. Belongs to neither. */
+  PARTNER_PAYOUT: 'PARTNER_PAYOUT',
+  /**
+   * A customer's balance paid back to their card. Belongs to neither an order
+   * nor a payment: a balance can come from a dozen orders, or from a top-up
+   * that was never spent, and by the time it goes out it is simply money the
+   * platform owes one person.
+   */
+  WALLET_WITHDRAWAL: 'WALLET_WITHDRAWAL',
+} as const
 export type FinancialTransactionType =
   (typeof FinancialTransactionType)[keyof typeof FinancialTransactionType]
 
-export const SYSTEM_CHART_VERSION = 1 as const
+/**
+ * The newest system chart version.
+ *
+ * Four exist. v1 laid out the fourteen accounts every tenant starts with. v2
+ * added a courier cash receivable when the platform took money at doors and
+ * provisions nothing now that it does not — the account it introduced is no
+ * longer created, though the tenants that received it keep it. v3 adds the
+ * customer wallet: what the platform owes people who have charged a balance and
+ * not spent it yet. v4 adds the cost of a promotion, which is the platform's
+ * and nobody else's.
+ *
+ * v2's number is retired rather than reused. A version is a migration of the
+ * chart, and a chart that reached v2 reached it; renumbering would make an
+ * existing tenant's history disagree with its own accounts.
+ */
+export const SYSTEM_CHART_VERSION = 4 as const
 
 export interface SystemLedgerAccountTemplate {
   key: string
@@ -72,6 +106,18 @@ export const SYSTEM_LEDGER_ACCOUNT_TEMPLATES = Object.freeze([
     key: 'COURIER_PAYABLE',
     code: 'L_2300_COURIER_PAYABLE',
     name: 'Courier payable',
+    type: 'LIABILITY',
+    parentKey: 'LIABILITIES',
+    isPostable: true,
+  },
+  {
+    // What the platform owes people who have charged a balance and not spent
+    // it. Separate from payment clearing because the two are owed to different
+    // people: clearing is what the bakery and courier are owed for work in
+    // progress, this is what the customer is owed for work not started.
+    key: 'CUSTOMER_WALLET',
+    code: 'L_2400_CUSTOMER_WALLET',
+    name: 'Customer wallet',
     type: 'LIABILITY',
     parentKey: 'LIABILITIES',
     isPostable: true,
@@ -136,6 +182,18 @@ export const SYSTEM_LEDGER_ACCOUNT_TEMPLATES = Object.freeze([
     key: 'PAYMENT_PROCESSING_EXPENSE',
     code: 'X_5200_PAYMENT_PROCESSING',
     name: 'Payment processing expense',
+    type: 'EXPENSE',
+    parentKey: 'EXPENSES',
+    isPostable: true,
+  },
+  {
+    // A discount reduces what the customer pays and does not reduce what the
+    // bakery is owed. That difference is money the platform chose to spend on
+    // demand, which is what an expense is — and it makes "what did promotions
+    // cost us this month" one balance rather than a query nobody will write.
+    key: 'PROMOTION_COST',
+    code: 'X_5300_PROMOTION',
+    name: 'Promotion cost',
     type: 'EXPENSE',
     parentKey: 'EXPENSES',
     isPostable: true,
@@ -253,7 +311,13 @@ export interface JournalLine {
 
 export interface FinancialPosting {
   paymentId: string
-  orderId: string
+  /**
+   * The order this money is for, absent on a wallet top-up.
+   *
+   * A top-up is the one posting with nothing to deliver: money crosses the
+   * platform's edge and becomes a balance, and there is no order yet to name.
+   */
+  orderId?: string
   type: FinancialTransactionType
   amount: bigint
   currency: 'IRR'
@@ -266,9 +330,15 @@ export interface FinancialPosting {
 export function postDoubleEntry(
   posting: FinancialPosting,
 ): Readonly<FinancialPosting & { debitTotal: bigint; creditTotal: bigint }> {
+  // A top-up must name no order; everything else must name one. Stated as a
+  // rule rather than as a presence check, so neither shape can drift into the
+  // other unnoticed.
+  const namesOrder = posting.orderId !== undefined && posting.orderId.trim().length > 0
+  if (namesOrder === (posting.type === FinancialTransactionType.WALLET_TOP_UP)) {
+    throw new DomainError('INVALID_FINANCIAL_TRANSACTION', 'Financial posting is invalid')
+  }
   if (
     !posting.paymentId.trim() ||
-    !posting.orderId.trim() ||
     posting.idempotencyKey.trim().length < 16 ||
     posting.idempotencyKey.length > 128 ||
     !posting.correlationId.trim() ||

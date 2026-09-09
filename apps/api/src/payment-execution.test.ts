@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { PaymentExecutionSummary, SessionContext } from '@alo-noon/contracts'
@@ -10,6 +11,7 @@ import {
   paymentExecutionRequestKey,
   type PaymentExecutionService,
 } from './modules/payment-execution'
+import { createPaymentSecretResolver, encryptPaymentSecret } from './providers/secret-resolver'
 
 const tenantId = '00000000-0000-4000-8000-000000000001'
 const customerId = '11111111-1111-4111-8111-111111111111'
@@ -171,5 +173,78 @@ describe('payment execution retry classification', () => {
       ),
     ).toBe(false)
     expect(isRetryablePaymentExecutionConflict({ code: 'P2002' }, true)).toBe(false)
+  })
+})
+
+describe('local-encrypted payment credential resolver', () => {
+  const key = randomBytes(32)
+  const encodedKey = key.toString('base64')
+
+  it('round-trips a gateway secret and zeroes it on disposal', async () => {
+    const blob = encryptPaymentSecret('a-real-gateway-api-key', key)
+    const resolver = createPaymentSecretResolver({ PAYMENT_SECRET_IDPAY: blob }, encodedKey)
+
+    const credential = await resolver.resolve('local-encrypted://IDPAY', tenantId, 'IDPAY')
+    expect(Buffer.from(credential.material).toString('utf8')).toBe('a-real-gateway-api-key')
+    credential.dispose()
+    expect(Buffer.from(credential.material).every((byte) => byte === 0)).toBe(true)
+  })
+
+  it('stores ciphertext, never the secret itself', () => {
+    const blob = encryptPaymentSecret('a-real-gateway-api-key', key)
+    expect(blob).not.toContain('a-real-gateway-api-key')
+    expect(Buffer.from(blob, 'base64').toString('utf8')).not.toContain('a-real-gateway-api-key')
+    // Fresh IV per call, so the same secret never encrypts to the same blob.
+    expect(encryptPaymentSecret('a-real-gateway-api-key', key)).not.toBe(blob)
+  })
+
+  it('rejects a tampered blob instead of returning wrong material', async () => {
+    const raw = Buffer.from(encryptPaymentSecret('a-real-gateway-api-key', key), 'base64')
+    raw[raw.length - 1] = (raw[raw.length - 1] ?? 0) ^ 0xff
+    const resolver = createPaymentSecretResolver(
+      { PAYMENT_SECRET_IDPAY: raw.toString('base64') },
+      encodedKey,
+    )
+
+    await expect(resolver.resolve('local-encrypted://IDPAY', tenantId, 'IDPAY')).rejects.toThrow(
+      'PAYMENT_SECRET_AUTHENTICATION_FAILED',
+    )
+  })
+
+  it('rejects the wrong decryption key', async () => {
+    const blob = encryptPaymentSecret('a-real-gateway-api-key', key)
+    const resolver = createPaymentSecretResolver(
+      { PAYMENT_SECRET_IDPAY: blob },
+      randomBytes(32).toString('base64'),
+    )
+
+    await expect(resolver.resolve('local-encrypted://IDPAY', tenantId, 'IDPAY')).rejects.toThrow(
+      'PAYMENT_SECRET_AUTHENTICATION_FAILED',
+    )
+  })
+
+  it.each([
+    ['a missing secret', 'local-encrypted://ABSENT'],
+    // env:// is rejected by a database CHECK constraint, so it can never be stored.
+    ['an env reference', 'env://PAYMENT_PROVIDER_IDPAY'],
+    ['a vault reference this deployment cannot open', 'vault://alo-noon/idpay'],
+  ])('reports %s as unavailable', async (_label, reference) => {
+    const resolver = createPaymentSecretResolver({}, encodedKey)
+    await expect(resolver.resolve(reference, tenantId, 'IDPAY')).rejects.toThrow(
+      'PAYMENT_PROVIDER_CREDENTIAL_UNAVAILABLE',
+    )
+  })
+
+  it('fails every resolution when no encryption key is configured', async () => {
+    const resolver = createPaymentSecretResolver({ PAYMENT_SECRET_IDPAY: 'x' }, undefined)
+    await expect(resolver.resolve('local-encrypted://IDPAY', tenantId, 'IDPAY')).rejects.toThrow(
+      'PAYMENT_PROVIDER_CREDENTIAL_UNAVAILABLE',
+    )
+  })
+
+  it('rejects an encryption key that is not 32 bytes', () => {
+    expect(() => createPaymentSecretResolver({}, randomBytes(16).toString('base64'))).toThrow(
+      'PAYMENT_SECRET_KEY_INVALID',
+    )
   })
 })

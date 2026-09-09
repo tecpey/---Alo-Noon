@@ -90,38 +90,42 @@ export function registerPaymentExecutionRoutes(
   app: FastifyInstance,
   dependencies: PaymentExecutionDependencies,
 ): void {
-  app.post('/api/v1/payments/initialize', async (request, reply) => {
-    reply.header('Cache-Control', 'no-store')
-    const customer = await authenticatedCustomer(request, dependencies.auth)
-    if (!customer) {
-      return reply
-        .code(401)
-        .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
-    }
-    const parsed = paymentExecutionInitializeSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply
-        .code(400)
-        .send(errorEnvelope('INVALID_PAYMENT_EXECUTION_REQUEST', 'Payment request is invalid.'))
-    }
+  app.post(
+    '/api/v1/payments/initialize',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const customer = await authenticatedCustomer(request, dependencies.auth)
+      if (!customer) {
+        return reply
+          .code(401)
+          .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
+      }
+      const parsed = paymentExecutionInitializeSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_PAYMENT_EXECUTION_REQUEST', 'Payment request is invalid.'))
+      }
 
-    try {
-      const result = await dependencies.service.initialize(
-        customer.tenantId,
-        { type: 'CUSTOMER', id: customer.customerId },
-        parsed.data,
-        dependencies.now?.() ?? new Date(),
-        randomUUID(),
-      )
-      return reply.code(result.replayed ? 200 : 201).send({
-        success: true,
-        data: result,
-        meta: responseMeta(),
-      })
-    } catch (error) {
-      return executionFailure(request, reply, error)
-    }
-  })
+      try {
+        const result = await dependencies.service.initialize(
+          customer.tenantId,
+          { type: 'CUSTOMER', id: customer.customerId },
+          parsed.data,
+          dependencies.now?.() ?? new Date(),
+          randomUUID(),
+        )
+        return reply.code(result.replayed ? 200 : 201).send({
+          success: true,
+          data: result,
+          meta: responseMeta(),
+        })
+      } catch (error) {
+        return executionFailure(request, reply, error)
+      }
+    },
+  )
 }
 
 export function createPrismaPaymentExecutionService(
@@ -173,6 +177,11 @@ export function createPrismaPaymentExecutionService(
   }
 }
 
+// Payment credentials are resolved by createLocalEncryptedPaymentSecretResolver
+// in ../providers/secret-resolver.ts. There is deliberately no env:// resolver:
+// the database CHECK constraint on ProviderCredentialReference rejects env://
+// for payment credentials, so such a reference could never be stored to resolve.
+
 async function prepareExecution(
   prisma: PrismaClient,
   options: PrismaPaymentExecutionOptions,
@@ -200,6 +209,10 @@ async function prepareExecution(
         WHERE "id" = ${command.paymentId}::uuid AND "tenantId" = ${tenantId}::uuid
         FOR UPDATE
       `
+      // ownership-established: ownsPayment() below rejects a payment belonging to
+      // another customer, and reports it as NOT_FOUND so existence is not leaked.
+      // Ownership is asserted here rather than in the where clause because a
+      // SYSTEM actor is legitimately allowed to act on any customer's payment.
       const payment = await transaction.payment.findFirst({
         where: { id: command.paymentId, tenantId },
         include: { order: true },
@@ -685,13 +698,38 @@ function executionFingerprint(
     .digest('hex')
 }
 
+/**
+ * Whether this payment may be sent to a gateway.
+ *
+ * Two shapes, because a payment now has two purposes. Both must be a positive
+ * Rial amount that has not already succeeded or failed. An order payment must
+ * additionally still match its order — same total, order still unconfirmed and
+ * unpaid — because a gateway page opened against a stale total is a customer
+ * charged the wrong number.
+ *
+ * A top-up has no order to agree with, and the absence is checked rather than
+ * assumed: a payment marked as a top-up that somehow carries an order, or an
+ * order payment with none, is a row this code cannot reason about and must not
+ * send anybody to a bank with.
+ */
 function assertPaymentEligible(payment: AttemptRecord['payment']): void {
-  if (
+  const commonlyIneligible =
     payment.currency !== 'IRR' ||
     payment.amount <= 0n ||
-    payment.amount !== payment.order.totalAmount ||
     payment.state === 'CAPTURED' ||
-    payment.state === 'FAILED' ||
+    payment.state === 'FAILED'
+
+  if (payment.purpose === 'WALLET_TOP_UP') {
+    if (commonlyIneligible || payment.order !== null) {
+      throw new PaymentExecutionError('PAYMENT_NOT_ELIGIBLE_FOR_EXECUTION', 422)
+    }
+    return
+  }
+
+  if (
+    commonlyIneligible ||
+    payment.order === null ||
+    payment.amount !== payment.order.totalAmount ||
     payment.order.state !== 'PENDING_CONFIRMATION' ||
     payment.order.paymentState !== 'NOT_STARTED'
   ) {

@@ -166,6 +166,8 @@ describe('customer API client', () => {
           cartId: '22222222-2222-4222-8222-222222222222',
           cartVersion: 3,
           status: 'ACTIVE',
+          paymentMethod: 'ONLINE_GATEWAY',
+          rating: null,
           expiresAt: '2026-07-29T12:10:00.000Z',
           deliveryAddressId: '77777777-7777-4777-8777-777777777777',
           deliveryServiceAreaId: '88888888-8888-4888-8888-888888888888',
@@ -214,6 +216,44 @@ describe('customer API client', () => {
     )
   })
 
+  /**
+   * The three checkout choices reach the wire, and an unused one stays off it.
+   *
+   * The failure this guards against is quiet: a blank code field sent as
+   * `promotionCode: ''` is refused by the quote schema, so a customer who
+   * never touched the discount box cannot get a price at all. Nothing about
+   * the screen would say why.
+   */
+  it('carries the checkout choices, and omits the ones not made', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse({}, 500))
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    await expect(
+      client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001', {
+        promotionCode: 'NOON10',
+      }),
+    ).rejects.toBeInstanceOf(CustomerApiError)
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
+    expect(body).toMatchObject({ promotionCode: 'NOON10' })
+    expect(body).not.toHaveProperty('deliveryWindowStartsAt')
+  })
+
+  it('drops an empty discount code rather than sending a blank one', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse({}, 500))
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    await expect(
+      client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001', {
+        promotionCode: '',
+      }),
+    ).rejects.toBeInstanceOf(CustomerApiError)
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty(
+      'promotionCode',
+    )
+  })
+
   it('sends only quote identity and an idempotency key when creating an order', async () => {
     const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
       jsonResponse({
@@ -224,6 +264,8 @@ describe('customer API client', () => {
           quoteId: '22222222-2222-4222-8222-222222222222',
           state: 'PENDING_CONFIRMATION',
           paymentState: 'NOT_STARTED',
+          paymentMethod: 'ONLINE_GATEWAY',
+          rating: null,
           productionState: 'UNSCHEDULED',
           deliveryState: 'UNASSIGNED',
           subtotal: { amount: '500000', currency: 'IRR' },
@@ -246,5 +288,211 @@ describe('customer API client', () => {
       }),
     )
     expect(fetchMock.mock.calls[0]?.[1]?.body).not.toContain('total')
+  })
+
+  it('never sends an amount when opening a payment', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          success: true,
+          data: {
+            id: '55555555-5555-4555-8555-555555555555',
+            publicId: 'PAY-000001',
+            orderId: '66666666-6666-4666-8666-666666666666',
+            customerId: '33333333-3333-4333-8333-333333333333',
+            state: 'CREATED',
+            amount: { amount: '250000', currency: 'IRR' },
+            version: 1,
+            createdAt: '2026-08-08T09:00:00.000Z',
+            updatedAt: '2026-08-08T09:00:00.000Z',
+          },
+          meta,
+        },
+        201,
+      ),
+    )
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    const payment = await client.startPayment(
+      '66666666-6666-4666-8666-666666666666',
+      'mobile-payment-0000000001',
+    )
+
+    expect(payment.amount.amount).toBe('250000')
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    // The amount comes from the order on the server. A client that could name a
+    // price would be a client that could choose one.
+    expect(Object.keys(body).sort()).toEqual(['idempotencyKey', 'orderId'])
+  })
+
+  it('surfaces the gateway page to open, and refuses a response without one', async () => {
+    const accepted = {
+      paymentAttemptId: '77777777-7777-4777-8777-777777777777',
+      paymentId: '55555555-5555-4555-8555-555555555555',
+      providerConfigurationId: '88888888-8888-4888-8888-888888888888',
+      providerCode: 'IDPAY',
+      adapterVersion: '1.0.0',
+      adapterSpiVersion: 1,
+      state: 'CUSTOMER_ACTION_REQUIRED',
+      outcome: 'CUSTOMER_ACTION_REQUIRED',
+      providerReference: 'tx-1',
+      customerAction: { url: 'https://gateway.example/pay/tx-1', expiresAt: null },
+      failure: null,
+      correlationId: '99999999-9999-4999-8999-999999999999',
+      replayed: false,
+      createdAt: '2026-08-08T09:00:00.000Z',
+      updatedAt: '2026-08-08T09:00:00.000Z',
+    }
+    const fetchMock = vi
+      .fn<CustomerFetch>()
+      .mockResolvedValue(jsonResponse({ success: true, data: accepted, meta }, 201))
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const result = await client.initializePayment(
+      '55555555-5555-4555-8555-555555555555',
+      'mobile-payment-0000000001',
+    )
+    expect(result.customerAction?.url).toBe('https://gateway.example/pay/tx-1')
+
+    // An http:// action would send a customer to a page their bank credentials
+    // travel to in the clear; the contract refuses it before the app can open it.
+    const insecure = vi.fn<CustomerFetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          success: true,
+          data: {
+            ...accepted,
+            customerAction: { url: 'http://gateway.example/pay', expiresAt: null },
+          },
+          meta,
+        },
+        201,
+      ),
+    )
+    await expect(
+      createCustomerApiClient('https://api.alonoon.ir', insecure).initializePayment(
+        '55555555-5555-4555-8555-555555555555',
+        'mobile-payment-0000000001',
+      ),
+    ).rejects.toBeInstanceOf(CustomerApiError)
+  })
+
+  it('reads a payment back by id rather than trusting the return URL', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          id: '55555555-5555-4555-8555-555555555555',
+          publicId: 'PAY-000001',
+          orderId: '66666666-6666-4666-8666-666666666666',
+          customerId: '33333333-3333-4333-8333-333333333333',
+          state: 'CAPTURED',
+          amount: { amount: '250000', currency: 'IRR' },
+          version: 4,
+          createdAt: '2026-08-08T09:00:00.000Z',
+          updatedAt: '2026-08-08T09:05:00.000Z',
+        },
+        meta,
+      }),
+    )
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const payment = await client.readPayment('55555555-5555-4555-8555-555555555555')
+
+    expect(payment.state).toBe('CAPTURED')
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://api.alonoon.ir/api/v1/payments/55555555-5555-4555-8555-555555555555',
+    )
+  })
+
+  /**
+   * A top-up sends the amount in Rial, which is what the ledger keeps. The
+   * screen asks for Toman and converts once, at the edge — an amount that
+   * reached the API in the wrong unit would be wrong by a factor of ten in
+   * whichever direction hurts more.
+   */
+  it('sends a top-up in the unit the ledger keeps', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: { paymentId: '55555555-5555-4555-8555-555555555555' },
+        meta,
+      }),
+    )
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    const started = await client.startWalletTopUp('500000', 'mobile-top-up-000001')
+
+    expect(started.paymentId).toBe('55555555-5555-4555-8555-555555555555')
+    const request = fetchMock.mock.calls[0]?.[1]
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.alonoon.ir/api/v1/wallet/top-ups')
+    expect(JSON.parse(String(request?.body))).toEqual({
+      amount: '500000',
+      idempotencyKey: 'mobile-top-up-000001',
+    })
+  })
+
+  /**
+   * The shortfall travels with the refusal, so the screen can say how much to
+   * add rather than only that there is not enough.
+   */
+  it("carries a refusal's details through to the caller", async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_BALANCE',
+            message: 'موجودی کافی نیست.',
+            details: { shortfall: { amount: '200000', currency: 'IRR' } },
+          },
+          meta,
+        },
+        422,
+      ),
+    )
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    const error = await client
+      .openWalletTransfer({
+        recipientMobile: '+989121234567',
+        amountRial: '500000',
+        idempotencyKey: 'mobile-transfer-000001',
+      })
+      .catch((thrown: unknown) => thrown)
+
+    expect(error).toBeInstanceOf(CustomerApiError)
+    expect((error as CustomerApiError).code).toBe('INSUFFICIENT_BALANCE')
+    expect((error as CustomerApiError).details).toEqual({
+      shortfall: { amount: '200000', currency: 'IRR' },
+    })
+  })
+
+  /** A payment that names no source is a gateway payment, as it always was. */
+  it('only names a payment source when one was chosen', async () => {
+    const payment = {
+      id: '66666666-6666-4666-8666-666666666666',
+      publicId: 'pay000001',
+      orderId: '77777777-7777-4777-8777-777777777777',
+      purpose: 'ORDER',
+      customerId: '33333333-3333-4333-8333-333333333333',
+      state: 'CREATED',
+      amount: { amount: '500000', currency: 'IRR' },
+      version: 1,
+      createdAt: '2026-08-30T09:00:00.000Z',
+      updatedAt: '2026-08-30T09:00:00.000Z',
+    }
+    // A fresh Response per call: a body can only be read once, and this test
+    // deliberately makes two requests.
+    const fetchMock = vi
+      .fn<CustomerFetch>()
+      .mockImplementation(async () => jsonResponse({ success: true, data: payment, meta }))
+    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+
+    await client.startPayment(payment.orderId, 'mobile-payment-000001')
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty('source')
+
+    await client.startPayment(payment.orderId, 'mobile-payment-000002', 'BALANCE')
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      source: 'BALANCE',
+    })
   })
 })

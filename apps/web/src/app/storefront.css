@@ -1,0 +1,1381 @@
+/*
+ * The storefront.
+ *
+ * Laid out in logical properties throughout — `inline-start`, not `left` — so
+ * the Persian interface and any future left-to-right one are the same
+ * stylesheet rather than the same stylesheet plus a mirror of it.
+ *
+ * Three planes, and only three: the photograph at the back, the paper the shop
+ * is printed on, and glass for the two things that float above both. Nothing
+ * flat gets glass; there would be nothing behind it to see.
+ */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * The application sits on the page as a raised sheet rather than filling it.
+ * That is the brand's own instinct — an arch, a tile, a rounded mark — and it
+ * gives the warm paper somewhere to show.
+ */
+.app-frame {
+  position: relative;
+  max-width: 1180px;
+  margin-inline: auto;
+  margin-block: clamp(0px, 2vw, 28px);
+  background: var(--surface-base);
+  border-radius: var(--radius-3xl);
+  box-shadow: var(--shadow-lg);
+  overflow: clip;
+}
+
+@media (max-width: 900px) {
+  .app-frame {
+    margin-block: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* ---------------------------------------------------------------- movement */
+
+/*
+ * Content settles rather than arrives. Fourteen pixels and a long flat curve:
+ * enough to notice, not enough to watch.
+ *
+ * The hidden state is applied by script after mount (`.reveal--armed`), never
+ * by this file alone. A page that hides its content in CSS and reveals it in
+ * JavaScript is a blank page for everyone the script did not reach.
+ */
+.reveal {
+  transition:
+    opacity var(--duration-reveal) var(--easing-reveal),
+    transform var(--duration-reveal) var(--easing-reveal);
+}
+.reveal--armed {
+  opacity: 0;
+  transform: translateY(var(--reveal-distance));
+}
+
+/* ------------------------------------------------------------------- header */
+
+/*
+ * Pinned, and glass. The two facts a customer needs while scrolling a page of
+ * bread are where it is going and what they have already chosen; a bar that
+ * scrolls away takes both with it, and a solid bar pinned over photographs cuts
+ * the page in half.
+ */
+.site-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  background: var(--glass-bar-fallback);
+  transition:
+    box-shadow var(--duration-base) var(--easing-standard),
+    background var(--duration-base) var(--easing-standard);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .site-header {
+    background: var(--glass-bar-background);
+    -webkit-backdrop-filter: var(--glass-bar-backdropFilter);
+    backdrop-filter: var(--glass-bar-backdropFilter);
+  }
+}
+
+/* Real glass has a lit edge. A translucent rectangle without one reads as a
+   rendering fault rather than as a material. */
+.site-header::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--glass-bar-border) 22%,
+    var(--glass-bar-border) 78%,
+    transparent
+  );
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--easing-standard);
+}
+.site-header--condensed::after {
+  opacity: 1;
+}
+.site-header--condensed {
+  box-shadow: var(--glass-bar-shadow);
+}
+
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  transition: padding var(--duration-base) var(--easing-standard);
+}
+/* Gives back a few pixels of reading height once a customer is scrolling. */
+.site-header--condensed .site-header__inner {
+  padding-block: 0.6rem;
+}
+
+.site-header__brand {
+  flex: none;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.brand-lockup__words {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+.brand-lockup__name {
+  color: var(--ink-strong);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+.brand-lockup__tagline {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+/* Address and search share one raised bar: together they are the question of
+   what this shop can sell you, and separating them made two half-questions. */
+.site-header__controls {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--duration-base) var(--easing-standard);
+}
+.site-header__controls:focus-within {
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 3px color-mix(in srgb, var(--primary-600) 22%, transparent);
+}
+
+.site-header__address {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-base);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+.site-header__address:active {
+  transform: scale(0.97);
+}
+.site-header__address svg {
+  color: var(--primary-600);
+}
+
+.site-header__search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  padding-inline: 1rem;
+  border-inline-start: 1px solid var(--line-subtle);
+  color: var(--ink-faint);
+}
+.site-header__search input {
+  flex: 1;
+  min-width: 0;
+  padding-block: 0.55rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink-base);
+  font: inherit;
+}
+.site-header__search input::placeholder {
+  color: var(--ink-faint);
+}
+.site-header__search input:focus {
+  outline: none;
+}
+.site-header__search:focus-within {
+  color: var(--primary-600);
+}
+
+.site-header__account {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.site-header__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-full);
+  color: var(--ink-base);
+  font-size: 0.95rem;
+  transition:
+    background var(--duration-base) var(--easing-standard),
+    transform var(--duration-fast) var(--easing-standard);
+}
+.site-header__link:hover {
+  background: var(--surface-sunken);
+}
+.site-header__link:active {
+  transform: scale(0.97);
+}
+.site-header__basket {
+  position: relative;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+}
+/* One overshoot when something lands in the basket. The customer's eye is
+   already on the button they pressed; this is what tells them where it went. */
+.site-header__basket.is-bumping {
+  animation: basket-bump 420ms var(--easing-spring);
+}
+@keyframes basket-bump {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(1.09);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* The count rides the basket rather than sitting beside it: a number floating
+   next to two icons belongs to neither. */
+.site-header__count {
+  position: absolute;
+  inset-block-start: -0.45rem;
+  inset-inline-end: -0.35rem;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  padding-inline: 0.3rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  color: var(--ink-onAction);
+  font-size: 0.75rem;
+  font-weight: 800;
+  box-shadow: var(--shadow-action);
+  animation: count-in 260ms var(--easing-spring);
+}
+@keyframes count-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 900px) {
+  .site-header__inner {
+    flex-wrap: wrap;
+    padding: 0.9rem 1rem;
+  }
+  .site-header__controls {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .site-header__account span:not(.site-header__count) {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------------------- hero */
+
+.hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1.5rem 1.5rem;
+}
+
+.hero__art {
+  position: relative;
+  align-self: stretch;
+  min-height: 340px;
+  /* Runs the full height of the hero, both rows, so the delivery bar sits on
+     the photograph rather than under it — which is what the artwork does, and
+     what stops the bar reading as a separate strip bolted below the hero. */
+  grid-row: 1 / 3;
+  grid-column: 1;
+  /* Bleeds past the frame's padding so the bread reaches its edge, the way it
+     does on a bakery's own window. Inline-start, which in Persian is the right:
+     bleeding to `end` sent it across the page and over the top bar. */
+  margin-inline-start: -1.5rem;
+  /* Sits under the pinned bar, never over it. */
+  margin-block-start: calc(var(--header-overlap, 0px) * -1);
+}
+.hero__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+}
+.hero__veil {
+  position: absolute;
+  inset: 0;
+  background: var(--gradient-heroVeil);
+}
+
+.hero__copy {
+  position: relative;
+  z-index: 1;
+  padding-block: 2.5rem;
+}
+.hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-block-end: 0.9rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-100);
+  color: var(--primary-700);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.hero h1 {
+  display: flex;
+  flex-direction: column;
+  font-size: clamp(2.2rem, 4.6vw, 3.6rem);
+  line-height: 1.3;
+}
+.hero__lead {
+  max-width: 34rem;
+  margin-block-start: 1.1rem;
+  color: var(--ink-muted);
+  font-size: clamp(0.98rem, 1.3vw, 1.1rem);
+}
+.hero__cta {
+  margin-block-start: 1.9rem;
+}
+
+/* ------------------------------------------------------- delivery conditions */
+
+.conditions {
+  position: relative;
+  z-index: 2;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  /* Held off both edges the way the artwork holds it: clear of the frame on the
+     left, and clear of the photograph's un-faded half on the right. */
+  margin-inline: clamp(0px, 14%, 190px) clamp(0px, 10%, 140px);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--glass-panel-fallback);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .conditions {
+    background: var(--glass-panel-background);
+    -webkit-backdrop-filter: var(--glass-panel-backdropFilter);
+    backdrop-filter: var(--glass-panel-backdropFilter);
+    border-color: var(--glass-panel-border);
+    box-shadow:
+      var(--glass-panel-shadow),
+      inset 0 1px 0 var(--glass-panel-highlight);
+  }
+}
+
+.condition {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.9rem 1.1rem;
+  border-inline-start: 1px solid var(--line-subtle);
+  text-align: start;
+}
+.condition:last-child {
+  border-inline-start: 0;
+}
+/* No hover or press state: these describe how ordering works and are not
+   controls. Styling them as though they respond would be the same lie the
+   chevron was. */
+.condition__glyph {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--primary-600);
+  box-shadow: var(--shadow-sm);
+}
+.condition__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.condition__label {
+  color: var(--ink-strong);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.condition__value {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+    padding-inline: 1rem;
+  }
+  .hero__art {
+    order: -1;
+    grid-row: auto;
+    grid-column: auto;
+    margin: 0 -1rem;
+    min-height: 240px;
+  }
+  .hero__veil {
+    background: var(--gradient-heroVeilVertical);
+  }
+  .hero__copy {
+    padding-block: 0 0.5rem;
+    margin-block-start: -3rem;
+  }
+  .conditions {
+    grid-row: auto;
+    margin-inline: 0;
+    grid-template-columns: 1fr;
+  }
+  .condition {
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--line-subtle);
+  }
+  .condition:first-child {
+    border-block-start: 0;
+  }
+}
+
+/* -------------------------------------------------------------------- trust */
+
+.trust-wrap {
+  padding: 1.5rem 1.5rem 0;
+}
+.trust {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.trust__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  transition:
+    transform var(--duration-base) var(--easing-standard),
+    box-shadow var(--duration-base) var(--easing-standard);
+}
+.trust__item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.trust__glyph {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--primary-100);
+  color: var(--primary-700);
+}
+.trust__title {
+  color: var(--ink-strong);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+.trust__body {
+  margin-block-start: 0.2rem;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+@media (max-width: 900px) {
+  .trust-wrap {
+    padding-inline: 1rem;
+  }
+  .trust {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .trust {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------ category rail */
+
+.rail {
+  padding: 1.5rem 1.5rem 0;
+}
+/*
+ * A rail rather than a wrapped block: on a phone the second row of a wrapped
+ * filter is the row nobody scrolls to, and an overflowing rail says so by
+ * showing a chip half-cut at the edge.
+ */
+.rail__track {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-block-end: 0.35rem;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.rail__track::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex: none;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--ink-base);
+  font-size: 0.92rem;
+  font-weight: 600;
+  scroll-snap-align: start;
+  transition:
+    background var(--duration-base) var(--easing-standard),
+    color var(--duration-base) var(--easing-standard),
+    border-color var(--duration-base) var(--easing-standard),
+    transform var(--duration-fast) var(--easing-spring);
+}
+.chip:hover {
+  border-color: var(--primary-300);
+}
+.chip:active {
+  transform: scale(0.95);
+}
+.chip--active {
+  background: var(--primary-600);
+  border-color: var(--primary-600);
+  color: var(--ink-onAction);
+  box-shadow: var(--shadow-action);
+}
+
+@media (max-width: 900px) {
+  .rail {
+    padding-inline: 1rem;
+  }
+}
+
+/* ------------------------------------------------------------------ shelves */
+
+.shelf {
+  padding: 0 1.5rem;
+}
+.shelf:last-of-type {
+  padding-block-end: 2rem;
+}
+
+/* The mark, at eyebrow size, beside every section title. Repeating it is what
+   makes a long page read as one shop instead of a stack of blocks. */
+.shelf__mark {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--gradient-brandArc);
+  color: var(--ink-onAction);
+  box-shadow: var(--shadow-sm);
+}
+
+/* The logo's own steam, stretched into a rule at the end of a section head. */
+.shelf__ribbon {
+  width: 116px;
+  height: 28px;
+  flex: none;
+  color: var(--primary-300);
+  opacity: 0.75;
+}
+
+.shelf__grid {
+  display: grid;
+  gap: 1rem;
+}
+.shelf__grid--wide {
+  grid-template-columns: repeat(3, 1fr);
+}
+.shelf__grid--tall {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 900px) {
+  .shelf {
+    padding-inline: 1rem;
+  }
+  .shelf__ribbon {
+    display: none;
+  }
+  .shelf__grid--wide,
+  .shelf__grid--tall {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .shelf__grid--wide,
+  .shelf__grid--tall {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------- bread card */
+
+.product-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0.5rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--duration-base) var(--easing-standard),
+    box-shadow var(--duration-base) var(--easing-standard),
+    border-color var(--duration-base) var(--easing-standard);
+}
+.product-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--primary-200);
+  box-shadow: var(--shadow-md);
+}
+
+.product-card__frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.product-card__frame img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 5;
+  object-fit: cover;
+  transition: transform var(--duration-slow) var(--easing-standard);
+}
+.product-card--tall .product-card__frame img {
+  aspect-ratio: 8 / 3;
+}
+/* A slow push in, not a zoom. Anything faster makes a photograph of bread look
+   like a stock-video transition. */
+.product-card:hover .product-card__frame img {
+  transform: scale(1.045);
+}
+
+/*
+ * A bread the shop has no photograph of.
+ *
+ * It occupies exactly the frame the photograph would, so a shelf where only
+ * some products have pictures still lines up. Tinted rather than grey: a grey
+ * box in a warm page reads as a failed image, and the drawn loaf reads as a
+ * placeholder only if it looks deliberate.
+ */
+.product-card__placeholder {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 5;
+  background:
+    radial-gradient(120% 120% at 50% 0%, var(--primary-50), transparent 70%), var(--surface-sunken);
+  color: var(--primary-400);
+}
+.product-card--tall .product-card__placeholder {
+  aspect-ratio: 8 / 3;
+}
+.product-card__placeholder svg {
+  width: 46%;
+  max-width: 140px;
+  height: auto;
+}
+
+/*
+ * "تازه از تنور", on the bread that actually is.
+ *
+ * It reads off the product's fulfilment class rather than being a decoration
+ * the page chooses, so a badge can never contradict what the kitchen will do
+ * with the order.
+ */
+.product-card__badge {
+  position: absolute;
+  inset-block-start: 0.5rem;
+  inset-inline-start: 0.5rem;
+  z-index: 1;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow: var(--shadow-sm);
+}
+
+/* A single specular sweep across the photograph on hover — the one gloss on
+   this page, and it exists to say the card is live, not to be admired. */
+.product-card__sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 62%
+  );
+  transform: translateX(-120%);
+  opacity: 0;
+  pointer-events: none;
+}
+.product-card:hover .product-card__sheen {
+  animation: sheen 720ms var(--easing-standard);
+}
+@keyframes sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-120%);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(120%);
+  }
+}
+
+/*
+ * The add button lives on the card, so a customer who knows what they want
+ * never opens a product page to get it.
+ *
+ * Always present on touch — where there is no hover, a control that appears on
+ * hover is a control that does not exist — and it fades up on pointer devices
+ * so a grid of cards is a grid of bread rather than a grid of buttons.
+ */
+/*
+ * Above the stretched link, or the link would swallow every tap meant for it.
+ * A positioned element with a z-index paints over a sibling pseudo-element at
+ * `auto`, whatever the DOM order, which is what makes the two coexist.
+ */
+.product-card__add {
+  position: absolute;
+  z-index: 2;
+  inset-block-end: 0.5rem;
+  inset-inline-start: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  padding-inline: 0.6rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  color: var(--ink-onAction);
+  font-size: 0.85rem;
+  font-weight: 800;
+  box-shadow: var(--shadow-action);
+  transition:
+    transform var(--duration-fast) var(--easing-spring),
+    opacity var(--duration-base) var(--easing-standard),
+    background var(--duration-base) var(--easing-standard);
+}
+.product-card__add:hover {
+  background: var(--primary-700);
+}
+.product-card__add:active {
+  transform: scale(0.88);
+}
+.product-card__add.is-held {
+  background: var(--success);
+}
+
+@media (hover: hover) {
+  .product-card__add {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  .product-card:hover .product-card__add,
+  .product-card:focus-within .product-card__add,
+  .product-card__add.is-held {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.product-card__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 0.55rem 0.4rem;
+}
+/* The name is the card's link, and it stretches its own hit area over the whole
+   card. That keeps the markup valid — a button inside an anchor is interactive
+   content inside interactive content — while leaving the entire card clickable. */
+.product-card__name {
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+.product-card__name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.product-card__name:focus-visible::after {
+  outline: 2px solid var(--line-strong);
+  outline-offset: 2px;
+}
+.product-card__price {
+  color: var(--ink-action);
+  font-size: 0.92rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------- steps */
+
+.steps {
+  position: relative;
+  margin-block-start: 1rem;
+  padding: 0 1.5rem 2.5rem;
+}
+/* Barely there, on purpose. The first pass at this was twice as strong and read
+   as wallpaper — texture you can see clearly has stopped being texture. */
+.steps__texture,
+.site-footer__texture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--brand-tan);
+  opacity: 0.035;
+  pointer-events: none;
+  /* Fades out before the section ends, so the pattern has no visible seam. */
+  mask-image: linear-gradient(180deg, transparent, #000 30%, #000 70%, transparent);
+}
+.steps > *,
+.site-footer__inner {
+  position: relative;
+}
+
+.steps__list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.step {
+  height: 100%;
+  padding: 1.25rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+}
+.step__number {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  margin-block-end: 0.75rem;
+  border-radius: var(--radius-full);
+  background: var(--gradient-brandArc);
+  color: var(--ink-onAction);
+  font-weight: 800;
+}
+.step__title {
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+.step__body {
+  margin-block-start: 0.3rem;
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+
+@media (max-width: 900px) {
+  .steps {
+    padding-inline: 1rem;
+  }
+  .steps__list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------- footer */
+
+.site-footer {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-inverse);
+  color: var(--ink-onAction);
+}
+.site-footer__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.75rem 1.5rem;
+}
+.site-footer__texture {
+  color: var(--primary-400);
+  opacity: 0.055;
+}
+.site-footer .brand-lockup__name {
+  color: var(--ink-onAction);
+}
+.site-footer .brand-lockup__tagline {
+  color: var(--neutral-300);
+}
+.site-footer p {
+  color: var(--neutral-300);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .site-footer__inner {
+    padding-inline: 1rem;
+  }
+}
+
+/* ------------------------------------------------------------------- drawer */
+
+/*
+ * The basket sheet.
+ *
+ * The one place the heaviest glass is used, and the honest use of it: the shop
+ * is still there behind the sheet, dimmed and blurred, which is exactly what a
+ * customer needs while deciding whether to add one more loaf or check out.
+ */
+.drawer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  pointer-events: none;
+}
+.drawer--open {
+  pointer-events: auto;
+}
+
+.drawer__scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--neutral-900) 34%, transparent);
+  opacity: 0;
+  transition: opacity var(--duration-slow) var(--easing-standard);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .drawer__scrim {
+    backdrop-filter: blur(3px);
+  }
+}
+.drawer--open .drawer__scrim {
+  opacity: 1;
+}
+
+.drawer__panel {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-sheet-fallback);
+  border-inline-end: 1px solid var(--glass-sheet-border);
+  box-shadow: var(--glass-sheet-shadow);
+  /* Enters from the edge it lives on, which in Persian is the right. */
+  transform: translateX(100%);
+  transition: transform var(--duration-slow) var(--easing-standard);
+}
+.drawer--open .drawer__panel {
+  transform: translateX(0);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .drawer__panel {
+    background: var(--glass-sheet-background);
+    -webkit-backdrop-filter: var(--glass-sheet-backdropFilter);
+    backdrop-filter: var(--glass-sheet-backdropFilter);
+    box-shadow:
+      var(--glass-sheet-shadow),
+      inset 1px 0 0 var(--glass-sheet-highlight);
+  }
+}
+
+.drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem 0.9rem;
+  border-block-end: 1px solid var(--line-subtle);
+}
+.drawer__head h2 {
+  font-size: 1.2rem;
+}
+.drawer__close {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+.drawer__close:active {
+  transform: scale(0.95);
+}
+/* The chevron points out of the sheet, whichever way the language runs. */
+.drawer__close svg {
+  transform: scaleX(-1);
+}
+
+.drawer__lines {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.75rem;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.drawer-line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+}
+.drawer-line__thumb {
+  flex: none;
+  width: 3.6rem;
+  height: 2.9rem;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.drawer-line__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.drawer-line__body {
+  flex: 1;
+  min-width: 0;
+}
+.drawer-line__name {
+  color: var(--ink-strong);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.drawer-line__price {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+
+/* Plus first, reading right to left: the common action sits where the thumb
+   lands, and the one that removes something is further away. */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex: none;
+  padding: 0.2rem;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-base);
+}
+.stepper button {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--ink-action);
+  font-size: 1rem;
+  font-weight: 800;
+  transition:
+    background var(--duration-fast) var(--easing-standard),
+    transform var(--duration-fast) var(--easing-spring);
+}
+.stepper button:hover {
+  background: var(--primary-100);
+}
+.stepper button:active {
+  transform: scale(0.85);
+}
+.stepper span {
+  min-width: 1.4rem;
+  text-align: center;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.drawer__foot {
+  padding: 1rem 1.25rem 1.25rem;
+  border-block-start: 1px solid var(--line-subtle);
+  background: color-mix(in srgb, var(--surface-card) 70%, transparent);
+}
+.drawer__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-block-end: 0.6rem;
+}
+.drawer__total span {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+.drawer__total strong {
+  color: var(--ink-strong);
+  font-size: 1.25rem;
+}
+.drawer__note {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-block-end: 0.9rem;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  line-height: 1.8;
+}
+.drawer__note svg {
+  flex: none;
+  color: var(--success);
+}
+.drawer__cta {
+  width: 100%;
+}
+
+.drawer__empty,
+.shelf__empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+  color: var(--ink-muted);
+}
+.drawer__empty-art,
+.shelf__empty-art {
+  width: 128px;
+  height: auto;
+  color: var(--brand-tan);
+  opacity: 0.7;
+}
+.shelf__empty {
+  background: var(--surface-card);
+  border: 1px dashed var(--line-base);
+  border-radius: var(--radius-lg);
+}
+.shelf__empty-text {
+  font-size: 0.95rem;
+}
+
+/* ------------------------------------------------- when there are no shelves */
+
+/*
+ * The four reasons a customer can arrive at a shop with no bread on it: they
+ * have not said which city they are in, the shop is not open in any city yet,
+ * the catalog could not be loaded, and the bakeries have not opened today's
+ * offering.
+ *
+ * They share this block because they are the same shape — a heading, a sentence
+ * that says what to do next, and at most one control — and differ only in the
+ * words. What they must never share is the *wording*: "چیزی برای نمایش نیست"
+ * would be true of all four and useful in none.
+ */
+.catalog-state {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  margin: 1.5rem;
+  padding: 2.75rem 1.5rem;
+  text-align: center;
+  background: var(--surface-card);
+  border: 1px dashed var(--line-base);
+  border-radius: var(--radius-xl);
+}
+.catalog-state h1,
+.catalog-state h2 {
+  font-size: 1.15rem;
+  color: var(--ink-strong);
+}
+/* A page-level state offers a way out, and sometimes two: try again, or go back
+   to the shop. Wrapped so they sit side by side and wrap together on a phone. */
+.catalog-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-block-start: 0.5rem;
+}
+/* The support reference. Quiet, because it is for the one conversation in a
+   hundred that needs it, and not for the ninety-nine that do not. */
+.catalog-state__note {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+.catalog-state__note code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  unicode-bidi: isolate;
+}
+.catalog-state p {
+  max-width: 46ch;
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+/* A fault is the shop's problem, not the customer's, so it is marked in the
+   action colour rather than dressed up as an ordinary empty state. */
+.catalog-state--fault {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--primary-600) 35%, var(--line-base));
+}
+
+.city-switch {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-block-start: 0.5rem;
+}
+.city-switch__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+/*
+ * The basket while it is being written to the server.
+ *
+ * Deliberately faint. The optimistic quantity is already on screen and is
+ * almost always the one that will stick, so a spinner over the whole sheet
+ * would make the common case look like the slow case.
+ */
+.drawer__panel.is-saving .drawer__lines {
+  opacity: 0.72;
+  transition: opacity var(--duration-base) var(--easing-standard);
+}
+
+/* What the server refused, in the customer's own language, where they are
+   already looking — beside the total, not as an alert they must dismiss. */
+.drawer__error {
+  margin-block-end: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--primary-600) 10%, var(--surface-card));
+  border: 1px solid color-mix(in srgb, var(--primary-600) 35%, transparent);
+  color: var(--primary-700);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
+/* The footer's trust links. Muted against the dark ground rather than styled as
+ * calls to action: somebody looking for them will find them, and nobody should
+ * be pulled out of the shop toward a policy page. */
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  font-size: 0.85rem;
+}
+.site-footer__links a {
+  color: var(--neutral-300);
+  text-decoration: none;
+}
+.site-footer__links a:hover,
+.site-footer__links a:focus-visible {
+  color: var(--ink-onAction);
+  text-decoration: underline;
+}
+.site-footer__seal {
+  display: inline-block;
+  line-height: 0;
+  /* The registrar's badge is drawn for a light ground; a white plate keeps it
+     legible without altering the mark itself, which may not be recoloured. */
+  background: var(--surface-card);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem;
+}
+
+/* An order code is a token to be read back, so it stays Latin and left to
+   right even inside a Persian line, and in a face where a zero cannot be
+   mistaken for an O. The alphabet already excludes O, I, L and U; the typeface
+   is what stops the remaining pairs looking alike. */
+.order__code {
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', 'Cascadia Mono', monospace);
+  font-size: 0.95em;
+  letter-spacing: 0.04em;
+  unicode-bidi: isolate;
+}

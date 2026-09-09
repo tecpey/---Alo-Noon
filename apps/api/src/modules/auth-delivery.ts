@@ -10,6 +10,7 @@ import {
   assertAuthenticationDeliveryTransition,
   createAuthenticationDeliveryPolicy,
   generateSecureOtp,
+  messageTemplateDefinition,
   normalizeAuthenticationDeliveryResult,
   normalizeIranianMobile,
   selectAuthenticationProvider,
@@ -90,6 +91,13 @@ type Preparation =
       adapter: AuthenticationDeliveryProvider
       otp: string
       fingerprint: string
+      /**
+       * The tenant's sign-in message, read in the same transaction that created
+       * the attempt. Read here rather than at send time so the wording that goes
+       * out is the wording that was live when the code was issued — an operator
+       * saving an edit mid-flight cannot land half of it on one message.
+       */
+      messageBody: string
     }
 
 export function createPrismaAuthenticationDeliveryService(
@@ -332,43 +340,53 @@ async function prepareDelivery(
         }
       }
 
-      const [phoneCount, ipCount, tenantCount, providerCount] = await Promise.all([
-        transaction.authAbuseEvent.count({
-          where: {
-            tenantId: command.tenantId,
-            action: 'OTP_REQUEST',
-            mobileDigest,
-            occurredAt: { gte: new Date(command.now.getTime() - 60 * 60_000) },
-          },
-        }),
-        transaction.authAbuseEvent.count({
-          where: {
-            tenantId: command.tenantId,
-            action: 'OTP_REQUEST',
-            sourceIpDigest,
-            occurredAt: { gte: new Date(command.now.getTime() - 10 * 60_000) },
-          },
-        }),
-        transaction.authAbuseEvent.count({
-          where: {
-            tenantId: command.tenantId,
-            action: 'OTP_REQUEST',
-            occurredAt: { gte: new Date(command.now.getTime() - 60 * 60_000) },
-          },
-        }),
-        transaction.authAbuseEvent.count({
-          where: {
-            tenantId: command.tenantId,
-            action: 'OTP_REQUEST',
-            providerConfigurationId: selected.id,
-            occurredAt: { gte: new Date(command.now.getTime() - 60_000) },
-          },
-        }),
-      ])
+      const [phoneCount, ipCount, tenantCount, tenantDailyCount, providerCount] = await Promise.all(
+        [
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              mobileDigest,
+              occurredAt: { gte: new Date(command.now.getTime() - 60 * 60_000) },
+            },
+          }),
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              sourceIpDigest,
+              occurredAt: { gte: new Date(command.now.getTime() - 10 * 60_000) },
+            },
+          }),
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              occurredAt: { gte: new Date(command.now.getTime() - 60 * 60_000) },
+            },
+          }),
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              occurredAt: { gte: new Date(command.now.getTime() - 24 * 60 * 60_000) },
+            },
+          }),
+          transaction.authAbuseEvent.count({
+            where: {
+              tenantId: command.tenantId,
+              action: 'OTP_REQUEST',
+              providerConfigurationId: selected.id,
+              occurredAt: { gte: new Date(command.now.getTime() - 60_000) },
+            },
+          }),
+        ],
+      )
       if (
         phoneCount >= options.policy.maxPhoneSendsPerHour ||
         ipCount >= options.policy.maxIpSendsPerTenMinutes ||
         tenantCount >= options.policy.maxTenantSendsPerHour ||
+        tenantDailyCount >= options.policy.maxTenantSendsPerDay ||
         providerCount >= options.policy.maxProviderSendsPerMinute
       ) {
         await writeSuppressionRecords(
@@ -403,6 +421,12 @@ async function prepareDelivery(
           resendAvailableAt,
           maxAttempts: options.policy.maxVerificationAttempts,
           correlationId: command.correlationId,
+          // expiresAt and resendAvailableAt are derived from command.now, and
+          // auth_challenge_time_check compares all three. Letting createdAt
+          // default to the database clock mixes two clocks inside one row, so
+          // any skew between them turns a valid challenge into a constraint
+          // violation. Pin it to the same instant the window was computed from.
+          createdAt: command.now,
         },
       })
       const attempt = await transaction.authOtpDeliveryAttempt.create({
@@ -436,8 +460,26 @@ async function prepareDelivery(
         null,
         command.now,
       )
+      const template = await transaction.messageTemplate.findUnique({
+        where: {
+          tenantId_channel_purpose: {
+            tenantId: command.tenantId,
+            channel: 'SMS',
+            purpose: 'AUTH_OTP',
+          },
+        },
+      })
       await options.beforePreparationCommit?.(transaction)
-      return { kind: 'PREPARED', attempt, adapter, otp, fingerprint }
+      return {
+        kind: 'PREPARED',
+        attempt,
+        adapter,
+        otp,
+        fingerprint,
+        // A tenant that has never opened the messages page still sends a
+        // sensible code message rather than nothing.
+        messageBody: template?.body ?? messageTemplateDefinition('AUTH_OTP').defaultBody,
+      }
     },
   )
 }
@@ -480,6 +522,7 @@ async function invokeDelivery(
         timeoutMs: options.policy.invocationTimeoutMs,
         signal: controller.signal,
         configuration,
+        messageBody: preparation.messageBody,
         credential,
       }),
       timeoutResult,

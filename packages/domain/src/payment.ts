@@ -1,10 +1,32 @@
 import { DomainError } from './errors'
 
+/**
+ * Where the money for an order comes from.
+ *
+ * Two entries, and they are the whole business: money reaches the platform
+ * before an order is final, either straight from a bank gateway or out of a
+ * balance the customer charged from one earlier. Cash at the door was a third
+ * and was retired with the model that needed it — an order confirmed on a
+ * promise and settled at the step.
+ *
+ * Both routes are prepaid, which is why there are only two. A method that let
+ * an order be placed without the money already here would be a different
+ * business, not a third option.
+ */
+export const PaymentMethod = {
+  /** A bank gateway, redirect and callback. */
+  ONLINE_GATEWAY: 'ONLINE_GATEWAY',
+  /** A balance the customer already charged. No gateway, no waiting. */
+  WALLET: 'WALLET',
+} as const
+export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod]
+
 export const PaymentAggregateState = {
   CREATED: 'CREATED',
   PENDING: 'PENDING',
   AUTHORIZED: 'AUTHORIZED',
   CAPTURED: 'CAPTURED',
+  REFUNDED: 'REFUNDED',
   FAILED: 'FAILED',
 } as const
 export type PaymentAggregateState =
@@ -18,7 +40,13 @@ export type PaymentTransitionActor =
   (typeof PaymentTransitionActor)[keyof typeof PaymentTransitionActor]
 
 export interface PaymentInitialization {
-  orderId: string
+  /**
+   * What this payment buys, absent when it buys nothing yet.
+   *
+   * A wallet top-up is a payment with nothing to deliver: the money becomes a
+   * balance, and the order it eventually pays for has not been placed.
+   */
+  orderId?: string
   customerId: string
   amount: bigint
   currency: 'IRR'
@@ -65,13 +93,26 @@ const rules: Readonly<Record<PaymentAggregateState, readonly TransitionRule[]>> 
       actors: [PaymentTransitionActor.SYSTEM, PaymentTransitionActor.STAFF],
     },
   ],
-  CAPTURED: [],
+  CAPTURED: [
+    // Only staff, and only deliberately. Nothing in the automated pipeline has
+    // any business deciding to give a customer their money back.
+    { to: PaymentAggregateState.REFUNDED, actors: [PaymentTransitionActor.STAFF] },
+  ],
+  REFUNDED: [],
   FAILED: [],
 }
 
 export function initializePayment(input: PaymentInitialization): Readonly<PaymentInitialization> {
   assertPaymentCommand(input.idempotencyKey, input.correlationId, input.occurredAt)
-  if (!input.orderId.trim() || !input.customerId.trim() || input.amount <= 0n) {
+  // An order id that is present must mean something. Absent is a top-up; blank
+  // is a caller that lost one on the way here, and the two must not look alike.
+  if (input.orderId !== undefined && !input.orderId.trim()) {
+    throw new DomainError(
+      'INVALID_PAYMENT_INITIALIZATION',
+      'Payment initialization requires an order, customer, and positive amount',
+    )
+  }
+  if (!input.customerId.trim() || input.amount <= 0n) {
     throw new DomainError(
       'INVALID_PAYMENT_INITIALIZATION',
       'Payment initialization requires an order, customer, and positive amount',
@@ -112,7 +153,7 @@ export function transitionPayment(input: PaymentTransition): Readonly<PaymentTra
 
 export function orderPaymentStateFor(
   state: PaymentAggregateState,
-): 'NOT_STARTED' | 'PENDING' | 'PAID' {
+): 'NOT_STARTED' | 'PENDING' | 'PAID' | 'REFUNDED' {
   switch (state) {
     case PaymentAggregateState.CREATED:
     case PaymentAggregateState.FAILED:
@@ -122,6 +163,8 @@ export function orderPaymentStateFor(
       return 'PENDING'
     case PaymentAggregateState.CAPTURED:
       return 'PAID'
+    case PaymentAggregateState.REFUNDED:
+      return 'REFUNDED'
   }
 }
 

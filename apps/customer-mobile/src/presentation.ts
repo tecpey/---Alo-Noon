@@ -1,37 +1,38 @@
 import type { ProductSummary } from '@alo-noon/contracts'
+import { formatTomanExact, parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
 
-const persianDigits = '۰۱۲۳۴۵۶۷۸۹'
-const arabicDigits = '٠١٢٣٤٥٦٧٨٩'
+// The keyboard-facing normalisers live in the domain package because the
+// courier app takes the same two inputs from the same keyboards. Re-exported
+// under the names this app already uses rather than renamed at every call site.
+export const normalizeIranianMobile = parseIranianMobile
+export const normalizeOtpCode = parseOtpCode
 
-function normalizeDigits(value: string): string {
-  return [...value]
-    .map((character) => {
-      const persianIndex = persianDigits.indexOf(character)
-      if (persianIndex >= 0) return String(persianIndex)
-      const arabicIndex = arabicDigits.indexOf(character)
-      return arabicIndex >= 0 ? String(arabicIndex) : character
-    })
-    .join('')
-}
-
-export function normalizeIranianMobile(value: string): string | null {
-  const ascii = normalizeDigits(value).replace(/[\s()-]/g, '')
-
-  if (/^09\d{9}$/.test(ascii)) return `+98${ascii.slice(1)}`
-  if (/^9\d{9}$/.test(ascii)) return `+98${ascii}`
-  if (/^\+989\d{9}$/.test(ascii)) return ascii
-  if (/^00989\d{9}$/.test(ascii)) return `+${ascii.slice(2)}`
-  return null
-}
-
-export function normalizeOtpCode(value: string): string | null {
-  const ascii = normalizeDigits(value).replace(/\s/g, '')
-  return /^\d{6}$/.test(ascii) ? ascii : null
-}
-
-export function formatRials(amount: string): string {
+/**
+ * A price, in the unit customers speak.
+ *
+ * Toman, like every price on the website. It used to be Rial here and Toman
+ * there, which meant the same loaf read as ten times dearer in the app than on
+ * the site — the kind of difference somebody notices once, mistrusts, and does
+ * not come back from.
+ *
+ * The arithmetic lives in the domain so a message the API texts and a label the
+ * app draws cannot disagree.
+ *
+ * The exact conversion, remainder and all. This screen shows wallet balances
+ * and statement lines as well as prices, and a balance is whatever arithmetic
+ * left behind — a refund, a reversal, a share of something. The strict
+ * conversion refuses a half Toman, and the fallback here would then print the
+ * raw Rial figure, unlabelled: a customer reading their own balance would see
+ * ۸۳۲۵ where the truth is ۸۳۲٫۵. Ten times wrong, on their own money, is the
+ * exact mistake this whole unit conversion exists to prevent.
+ */
+export function formatMoney(amount: string): string {
   if (!/^\d+$/.test(amount)) return amount
-  return `${new Intl.NumberFormat('fa-IR').format(BigInt(amount))} ریال`
+  try {
+    return formatTomanExact(BigInt(amount))
+  } catch {
+    return amount
+  }
 }
 
 export function productPromiseLabel(

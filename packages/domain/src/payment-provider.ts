@@ -76,20 +76,49 @@ export interface ProviderSecretResolver {
   ): Promise<ResolvedProviderCredential>
 }
 
+/**
+ * Input to establishing whether a returning customer's payment is real.
+ *
+ * Two gateway families answer that question differently, and this input serves
+ * both. Signature-style gateways sign the callback body, so `canonicalBody` and
+ * `approvedHeaders` are enough to decide locally. Iranian gateways sign nothing;
+ * the caller must ask them, over a server-to-server call keyed by the reference
+ * they issued at initialization — which is why `providerReference`,
+ * `expectedAmount` and `timeoutMs` are here.
+ *
+ * `expectedAmount` is what the payment is actually for. It is passed because
+ * several gateways require the amount in the verify request itself, and it is
+ * never a substitute for checking what the gateway reports back: the caller
+ * compares `settledAmount` against its own record, not against this.
+ */
 export interface ProviderVerificationInput {
   canonicalBody: Uint8Array
   approvedHeaders: Readonly<Record<string, string>>
   receivedAt: Date
   configuration: ProviderConfigurationView
   credential: ResolvedProviderCredential
+  providerReference?: string
+  expectedAmount?: bigint
+  paymentAttemptId?: string
+  timeoutMs?: number
 }
 
+/**
+ * `settledAmount` is what the gateway says it actually took, in IRR minor units,
+ * whatever unit the gateway itself speaks. An adapter that cannot obtain it
+ * leaves it undefined rather than echoing the expected amount back — a
+ * confirmation that merely repeats the question proves nothing, and the caller
+ * treats an absent amount as unverifiable.
+ */
 export interface ProviderVerificationResult {
   verified: boolean
   externalEventId?: string
   providerReference?: string
   normalizedOutcome: ProviderNormalizedOutcome
   reasonCode?: string
+  settledAmount?: bigint
+  /** True when the gateway reports this reference was already settled earlier. */
+  alreadySettled?: boolean
 }
 
 export interface ProviderPaymentRequest {

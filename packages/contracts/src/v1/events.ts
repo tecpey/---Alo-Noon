@@ -63,7 +63,8 @@ export type OrderCreatedEventPayload = z.infer<typeof orderCreatedEventPayloadSc
 
 export const paymentCreatedEventPayloadSchema = z.object({
   paymentId: uuidSchema,
-  orderId: uuidSchema,
+  /** Absent on a wallet top-up: a payment with nothing to deliver. */
+  orderId: uuidSchema.optional(),
   customerId: uuidSchema,
   state: z.literal('CREATED'),
   amount: z.string().regex(/^\d+$/),
@@ -73,7 +74,8 @@ export type PaymentCreatedEventPayload = z.infer<typeof paymentCreatedEventPaylo
 
 export const paymentStateChangedEventPayloadSchema = z.object({
   paymentId: uuidSchema,
-  orderId: uuidSchema,
+  /** Absent on a wallet top-up: a payment with nothing to deliver. */
+  orderId: uuidSchema.optional(),
   fromState: z.enum(['CREATED', 'PENDING', 'AUTHORIZED', 'CAPTURED', 'FAILED']),
   toState: z.enum(['CREATED', 'PENDING', 'AUTHORIZED', 'CAPTURED', 'FAILED']),
   version: z.number().int().min(2),
@@ -83,8 +85,9 @@ export type PaymentStateChangedEventPayload = z.infer<typeof paymentStateChanged
 export const financialTransactionPostedEventPayloadSchema = z.object({
   financialTransactionId: uuidSchema,
   paymentId: uuidSchema,
-  orderId: uuidSchema,
-  type: z.literal('PAYMENT_CAPTURE'),
+  /** Absent on a wallet top-up: the one posting with nothing to deliver. */
+  orderId: uuidSchema.optional(),
+  type: z.enum(['PAYMENT_CAPTURE', 'WALLET_TOP_UP']),
   amount: z.string().regex(/^\d+$/),
   currency: z.literal('IRR'),
   entryCount: z.number().int().min(2),

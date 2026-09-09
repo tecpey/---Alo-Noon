@@ -1,20 +1,26 @@
 {
   "expo": {
-    "name": "آلو نون",
+    "name": "الو نون",
     "slug": "alo-noon-customer",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "primaryColor": "#ED8732",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ir.alonoon.customer",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "برای نمایش نان‌های قابل ارسال در محدوده شما، موقعیت مکانی لازم است."
+        "NSLocationWhenInUseUsageDescription": "برای نمایش نان‌های قابل ارسال در محدوده شما، موقعیت مکانی لازم است.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "ir.alonoon.customer",
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ED8732"
+      }
     },
     "plugins": [
       [
@@ -22,8 +28,25 @@
         {
           "locationWhenInUsePermission": "برای نمایش نان‌های قابل ارسال در محدوده شما، موقعیت مکانی لازم است."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#ED8732",
+          "defaultChannel": "orders"
+        }
       ]
     ],
-    "web": { "bundler": "metro" }
+    "web": {
+      "bundler": "metro"
+    },
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#F5EBDF",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5EBDF"
+    }
   }
 }

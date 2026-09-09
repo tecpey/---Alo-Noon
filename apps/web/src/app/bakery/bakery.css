@@ -1,0 +1,89 @@
+/*
+ * What the bakery panel has that the operator panel does not.
+ *
+ * Only this. Everything shared — the shell, the header, tables, forms, state
+ * tints — comes from `admin.css`, because they are the same kind of tool and a
+ * second copy of that stylesheet is a second place for a retuned colour to be
+ * forgotten.
+ *
+ * The one real difference is the queue itself. An operator reads orders in a
+ * table because they are auditing many; a counter reads them as cards because
+ * they are acting on one at a time, standing up, with flour on their hands.
+ */
+.order-cards {
+  display: grid;
+  /* One column on a phone at the counter, two on a laptop in the back office.
+     `auto-fill` rather than a breakpoint, so a narrow window behaves like a
+     phone without anybody choosing a number for it. */
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  gap: 1rem;
+}
+
+.order-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.order-card > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.order-card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  /* The public id is Latin and always read as one token. */
+  letter-spacing: 0.02em;
+}
+
+.order-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.order-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--ground);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.order-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.order-actions .action-form {
+  /* Each step is its own form, and they sit side by side rather than stacking:
+     accepting and rejecting are one decision seen at once, not a list. */
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}

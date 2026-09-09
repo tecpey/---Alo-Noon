@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { currencySchema, isoDateTimeSchema, uuidSchema } from './common'
+import { currencySchema, isoDateTimeSchema, responseMetaSchema, uuidSchema } from './common'
 
 export const paymentProviderCapabilitySchema = z.enum([
   'PAYMENT_INITIALIZATION',
@@ -154,6 +154,13 @@ export const paymentExecutionSummarySchema = z.object({
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
 })
+
+export const paymentExecutionEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: paymentExecutionSummarySchema,
+  meta: responseMetaSchema,
+})
+export type PaymentExecutionEnvelopeContract = z.infer<typeof paymentExecutionEnvelopeSchema>
 
 export const paymentCallbackIntakeSchema = z.object({
   providerCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/),

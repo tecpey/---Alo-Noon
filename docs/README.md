@@ -30,6 +30,14 @@ and its factually equivalent English edition [`README.en.md`](../README.en.md).
 7. [CRM foundation](./product/CRM_FOUNDATION.md)
 8. [MVP roadmap](./07-roadmap/MVP_ROADMAP_FA.md)
 
+### Running the service
+
+Read in this order: the first gets the service up on a server, the second makes
+it able to take an order.
+
+1. [Deployment runbook](./operations/DEPLOYMENT_RUNBOOK_FA.md)
+2. [Admin operations guide](./operations/ADMIN_OPERATIONS_GUIDE_FA.md)
+
 ### Engineering and security
 
 1. [Architecture index](./architecture/README.md)

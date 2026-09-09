@@ -274,6 +274,38 @@ enum AuthDeliveryEnvironment {
   PRODUCTION
 }
 
+enum MessageChannel {
+  SMS
+  PUSH
+}
+
+enum PushDevicePlatform {
+  IOS
+  ANDROID
+}
+
+enum CustomerNotificationState {
+  PENDING
+  SENT
+  FAILED
+  /// The tenant switched this message off, or the order has no reachable phone.
+  /// Recorded rather than skipped silently so "why did nobody get a text" has
+  /// an answer.
+  SUPPRESSED
+}
+
+enum MessageTemplatePurpose {
+  AUTH_OTP
+  ORDER_ACCEPTED
+  ORDER_REJECTED
+  ORDER_READY
+  ORDER_OUT_FOR_DELIVERY
+  ORDER_COMPLETED
+  ORDER_CANCELLED
+  /// Confirming a wallet transfer, sent to the sender's own handset.
+  WALLET_TRANSFER_CODE
+}
+
 enum AuthProviderHealthStatus {
   HEALTHY
   DEGRADED
@@ -349,6 +381,7 @@ enum PaymentAggregateState {
   PENDING
   AUTHORIZED
   CAPTURED
+  REFUNDED
   FAILED
 }
 
@@ -367,6 +400,44 @@ enum LedgerEntrySide {
 
 enum FinancialTransactionType {
   PAYMENT_CAPTURE
+  PAYMENT_REFUND
+  /// Money arriving from a gateway into a customer's balance.
+  ///
+  /// A balance *paying* for an order has no type of its own: it is a
+  /// PAYMENT_CAPTURE like any other, because `Payment.method` already records
+  /// that the money came from a balance rather than a card, and the paid-order
+  /// guard counts captures.
+  WALLET_TOP_UP
+  /// A delivered order divided between the bakery, the courier partner and the
+  /// platform. Belongs to an order and to no payment.
+  ORDER_SETTLEMENT
+  /// Money leaving for a partner's bank account. Belongs to neither.
+  PARTNER_PAYOUT
+  /// A customer's balance paid back to their card. Belongs to neither: a
+  /// balance can come from a dozen orders, or from a top-up nobody spent.
+  WALLET_WITHDRAWAL
+}
+
+/// How an order is paid for.
+enum PaymentMethod {
+  ONLINE_GATEWAY
+  WALLET
+}
+
+/// What a payment is for. A top-up has no order; an order payment must have one.
+enum PaymentPurpose {
+  ORDER
+  WALLET_TOP_UP
+}
+
+enum WalletEntryKind {
+  TOP_UP
+  ORDER_PAYMENT
+  REFUND
+  TRANSFER_IN
+  TRANSFER_OUT
+  WITHDRAWAL
+  WITHDRAWAL_REVERSAL
 }
 
 enum LedgerAccountGovernanceAction {
@@ -378,6 +449,25 @@ enum LedgerAccountGovernanceAction {
 enum PaymentProviderEnvironment {
   TEST
   PRODUCTION
+}
+
+enum PromotionKind {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_DELIVERY
+}
+
+enum DiscountBasis {
+  SUBTOTAL
+  DELIVERY_FEE
+}
+
+/// A redemption is held while a quote is alive and only spent when an order is
+/// accepted, so an abandoned checkout cannot consume a campaign's budget.
+enum PromotionRedemptionState {
+  RESERVED
+  CONSUMED
+  RELEASED
 }
 
 enum PaymentProviderCapability {
@@ -440,36 +530,54 @@ enum PaymentCallbackProcessingStatus {
 }
 
 model Tenant {
-  id             String             @id @default(uuid()) @db.Uuid
-  slug           String             @unique @db.VarChar(64)
-  name           String
-  status         TenantStatus       @default(ACTIVE)
-  defaultLocale  String             @default("fa-IR") @db.VarChar(16)
-  currency       Currency           @default(IRR)
-  domains        TenantDomain[]
-  memberships    TenantMembership[]
-  activeSessions AuthSession[]
-  deliveryPricingRules DeliveryPricingRule[]
-  aiAuditEvents  AiControlPlaneAuditEvent[]
+  id                                 String                              @id @default(uuid()) @db.Uuid
+  slug                               String                              @unique @db.VarChar(64)
+  name                               String
+  status                             TenantStatus                        @default(ACTIVE)
+  defaultLocale                      String                              @default("fa-IR") @db.VarChar(16)
+  currency                           Currency                            @default(IRR)
+  domains                            TenantDomain[]
+  memberships                        TenantMembership[]
+  activeSessions                     AuthSession[]
+  deliveryPricingRules               DeliveryPricingRule[]
+  aiAuditEvents                      AiControlPlaneAuditEvent[]
   authDeliveryProviderConfigurations AuthDeliveryProviderConfiguration[]
-  authOtpChallenges AuthOtpChallenge[]
-  authDeliveryAttempts AuthOtpDeliveryAttempt[]
-  authAbuseEvents AuthAbuseEvent[]
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  authOtpChallenges                  AuthOtpChallenge[]
+  authDeliveryAttempts               AuthOtpDeliveryAttempt[]
+  authAbuseEvents                    AuthAbuseEvent[]
+  messageTemplates                   MessageTemplate[]
+  customerNotifications              CustomerNotification[]
+  customerPushDevices                CustomerPushDevice[]
+  customerWallets                    CustomerWallet[]
+  walletEntries                      WalletEntry[]
+  walletTransfers                    WalletTransfer[]
+  walletWithdrawals                  WalletWithdrawal[]
+  orderEarnings                      OrderEarning[]
+  partnerPayouts                     PartnerPayout[]
+  routingProviderConfigurations      RoutingProviderConfiguration[]
+  emailProviderConfigurations        EmailProviderConfiguration[]
+  operatorAlertRecipients            OperatorAlertRecipient[]
+  operatorAlertDispatches            OperatorAlertDispatch[]
+  routeEstimates                     RouteEstimate[]
+  deliveryTrips                      DeliveryTrip[]
+  deliveryTripStops                  DeliveryTripStop[]
+  promotions                         Promotion[]
+  promotionRedemptions               PromotionRedemption[]
+  createdAt                          DateTime                            @default(now())
+  updatedAt                          DateTime                            @updatedAt
 
   @@index([status, createdAt])
 }
 
 model TenantDomain {
-  id         String   @id @default(uuid()) @db.Uuid
-  tenantId   String   @db.Uuid
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  host       String   @unique @db.VarChar(253)
-  isPrimary  Boolean  @default(false)
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @db.Uuid
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  host       String    @unique @db.VarChar(253)
+  isPrimary  Boolean   @default(false)
   verifiedAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([tenantId, isPrimary])
 }
@@ -497,55 +605,53 @@ model TenantMembership {
 }
 
 model City {
-  id               String            @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
-  code             String            @unique @db.VarChar(32)
-  nameFa           String
-  timezone         String            @default("Asia/Tehran") @db.VarChar(64)
-  isActive         Boolean           @default(false)
-  operationalZones OperationalZone[]
-  addresses        Address[]
-  bakeryBranches   BakeryBranch[]
-  carts            Cart[]
-  orders           Order[]
-  deliveryPricingRules DeliveryPricingRule[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-
-  @@index([tenantId])
+  id                          String                @id @default(uuid()) @db.Uuid
+  tenantId                    String                @db.Uuid
+  code                        String                @unique @db.VarChar(32)
+  nameFa                      String
+  timezone                    String                @default("Asia/Tehran") @db.VarChar(64)
+  isActive                    Boolean               @default(false)
+  operationalZones            OperationalZone[]
+  addresses                   Address[]
+  bakeryBranches              BakeryBranch[]
+  carts                       Cart[]
+  orders                      Order[]
+  deliveryPricingRules        DeliveryPricingRule[]
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt
+  promotions                  Promotion[]
 
   @@unique([id, tenantId], map: "g3b_City_id_tenant_key")
+  @@index([tenantId])
 }
 
 model OperationalZone {
-  id             String         @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
-  cityId         String         @db.Uuid
-  city           City           @relation(fields: [cityId], references: [id], onDelete: Restrict)
-  code           String         @db.VarChar(32)
-  nameFa         String
-  isActive       Boolean        @default(false)
-  serviceAreas   ServiceArea[]
-  addresses      Address[]
-  bakeryBranches BakeryBranch[]
-  orders         Order[]
-  carts          Cart[]
+  id                   String                @id @default(uuid()) @db.Uuid
+  tenantId             String                @db.Uuid
+  cityId               String                @db.Uuid
+  city                 City                  @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  code                 String                @db.VarChar(32)
+  nameFa               String
+  isActive             Boolean               @default(false)
+  serviceAreas         ServiceArea[]
+  addresses            Address[]
+  bakeryBranches       BakeryBranch[]
+  orders               Order[]
+  carts                Cart[]
   deliveryPricingRules DeliveryPricingRule[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@unique([cityId, code])
-  @@index([cityId, isActive])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_OperationalZone_id_tenant_key")
+  @@index([cityId, isActive])
+  @@index([tenantId])
   @@index([cityId, tenantId], map: "g3b_OperationalZone_cityId_tenant_idx")
 }
 
 model ServiceArea {
   id                String          @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId          String          @db.Uuid
   operationalZoneId String          @db.Uuid
   operationalZone   OperationalZone @relation(fields: [operationalZoneId], references: [id], onDelete: Cascade)
   code              String          @db.VarChar(32)
@@ -557,17 +663,15 @@ model ServiceArea {
   updatedAt         DateTime        @updatedAt
 
   @@unique([operationalZoneId, code])
-  @@index([operationalZoneId, isActive])
-
-  @@index([tenantId])
-
-  @@index([operationalZoneId, tenantId], map: "g3b_ServiceArea_operationalZoneId_tenant_idx")
   @@unique([id, tenantId], map: "g3b_ServiceArea_id_tenant_key")
+  @@index([operationalZoneId, isActive])
+  @@index([tenantId])
+  @@index([operationalZoneId, tenantId], map: "g3b_ServiceArea_operationalZoneId_tenant_idx")
 }
 
 model Customer {
   id                     String                  @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId               String                  @db.Uuid
   mobileE164             String                  @db.VarChar(16)
   firstName              String?
   lastName               String?
@@ -586,29 +690,35 @@ model Customer {
   tenantMemberships      TenantMembership[]
   carts                  Cart[]
   quotes                 Quote[]
+  ratings                OrderRating[]
+  favourites             CustomerFavourite[]
+  pushDevices            CustomerPushDevice[]
+  wallet                 CustomerWallet?
+  transfersSent          WalletTransfer[] @relation("WalletTransferSender")
+  transfersReceived      WalletTransfer[] @relation("WalletTransferRecipient")
+  walletWithdrawals      WalletWithdrawal[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
-
-  @@index([lifecycleStatus, createdAt])
-
-  @@index([tenantId])
+  promotionRedemptions   PromotionRedemption[]
 
   @@unique([id, tenantId], map: "g3b_Customer_id_tenant_key")
   @@unique([tenantId, mobileE164], map: "auth_Customer_tenant_mobile_key")
+  @@index([lifecycleStatus, createdAt])
+  @@index([tenantId])
 }
 
 model IdentityAccount {
-  id           String                @id @default(uuid()) @db.Uuid
-  mobileE164   String                @unique @db.VarChar(16)
-  customerId   String?               @unique @db.Uuid
-  customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  status       IdentityAccountStatus @default(ACTIVE)
-  verifiedAt   DateTime?
-  sessions     AuthSession[]
-  accessGrants AccessGrant[]
+  id                String                @id @default(uuid()) @db.Uuid
+  mobileE164        String                @unique @db.VarChar(16)
+  customerId        String?               @unique @db.Uuid
+  customer          Customer?             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  status            IdentityAccountStatus @default(ACTIVE)
+  verifiedAt        DateTime?
+  sessions          AuthSession[]
+  accessGrants      AccessGrant[]
   tenantMemberships TenantMembership[]
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
   @@index([status, createdAt])
 }
@@ -660,28 +770,28 @@ model AuthDeliveryProviderConfiguration {
 }
 
 model AuthOtpChallenge {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  tenantId              String                 @db.Uuid
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  mobileE164            String                 @db.VarChar(16)
-  mobileDigest          String                 @db.VarChar(64)
-  codeDigest            String                 @db.VarChar(64)
-  requestIdempotencyKey String                 @db.VarChar(128)
-  requestFingerprint    String                 @db.VarChar(64)
-  sourceIpDigest        String                 @db.VarChar(64)
-  status                AuthOtpChallengeStatus @default(PREPARED)
-  attempts              Int                    @default(0)
-  maxAttempts           Int                    @default(5)
+  id                    String                  @id @default(uuid()) @db.Uuid
+  tenantId              String                  @db.Uuid
+  tenant                Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  mobileE164            String                  @db.VarChar(16)
+  mobileDigest          String                  @db.VarChar(64)
+  codeDigest            String                  @db.VarChar(64)
+  requestIdempotencyKey String                  @db.VarChar(128)
+  requestFingerprint    String                  @db.VarChar(64)
+  sourceIpDigest        String                  @db.VarChar(64)
+  status                AuthOtpChallengeStatus  @default(PREPARED)
+  attempts              Int                     @default(0)
+  maxAttempts           Int                     @default(5)
   expiresAt             DateTime
   resendAvailableAt     DateTime
   consumedAt            DateTime?
   invalidatedAt         DateTime?
   supersededAt          DateTime?
-  correlationId         String                 @db.Uuid
-  version               Int                    @default(1)
+  correlationId         String                  @db.Uuid
+  version               Int                     @default(1)
   deliveryAttempt       AuthOtpDeliveryAttempt?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 
   @@unique([tenantId, requestIdempotencyKey], map: "auth_challenge_idempotency_key")
   @@unique([id, tenantId], map: "auth_challenge_id_tenant_key")
@@ -690,23 +800,23 @@ model AuthOtpChallenge {
 }
 
 model AuthOtpDeliveryAttempt {
-  id                      String                    @id @default(uuid()) @db.Uuid
-  tenantId                String                    @db.Uuid
-  tenant                  Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  challengeId             String                    @unique @db.Uuid
-  challenge               AuthOtpChallenge          @relation(fields: [challengeId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  providerConfigurationId String                    @db.Uuid
+  id                      String                            @id @default(uuid()) @db.Uuid
+  tenantId                String                            @db.Uuid
+  tenant                  Tenant                            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  challengeId             String                            @unique @db.Uuid
+  challenge               AuthOtpChallenge                  @relation(fields: [challengeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  providerConfigurationId String                            @db.Uuid
   providerConfiguration   AuthDeliveryProviderConfiguration @relation(fields: [providerConfigurationId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  state                   AuthDeliveryAttemptStatus @default(INITIALIZED)
-  requestFingerprint      String                    @db.VarChar(64)
-  providerReference       String?                   @db.VarChar(200)
-  safeFailureCode         String?                   @db.VarChar(64)
-  correlationId           String                    @db.Uuid
+  state                   AuthDeliveryAttemptStatus         @default(INITIALIZED)
+  requestFingerprint      String                            @db.VarChar(64)
+  providerReference       String?                           @db.VarChar(200)
+  safeFailureCode         String?                           @db.VarChar(64)
+  correlationId           String                            @db.Uuid
   startedAt               DateTime
   finalizedAt             DateTime?
-  version                 Int                       @default(1)
-  createdAt               DateTime                  @default(now())
-  updatedAt               DateTime                  @updatedAt
+  version                 Int                               @default(1)
+  createdAt               DateTime                          @default(now())
+  updatedAt               DateTime                          @updatedAt
 
   @@unique([id, tenantId], map: "auth_attempt_id_tenant_key")
   @@unique([challengeId, tenantId], map: "auth_attempt_challenge_tenant_key")
@@ -716,17 +826,17 @@ model AuthOtpDeliveryAttempt {
 }
 
 model AuthAbuseEvent {
-  id                      String                 @id @default(uuid()) @db.Uuid
-  tenantId                String                 @db.Uuid
-  tenant                  Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  id                      String                             @id @default(uuid()) @db.Uuid
+  tenantId                String                             @db.Uuid
+  tenant                  Tenant                             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   action                  AuthAbuseAction
-  mobileDigest            String?                @db.VarChar(64)
-  sourceIpDigest          String?                @db.VarChar(64)
-  providerConfigurationId String?                @db.Uuid
+  mobileDigest            String?                            @db.VarChar(64)
+  sourceIpDigest          String?                            @db.VarChar(64)
+  providerConfigurationId String?                            @db.Uuid
   providerConfiguration   AuthDeliveryProviderConfiguration? @relation(fields: [providerConfigurationId, tenantId], references: [id, tenantId], onDelete: Restrict)
   occurredAt              DateTime
   expiresAt               DateTime
-  createdAt               DateTime               @default(now())
+  createdAt               DateTime                           @default(now())
 
   @@index([tenantId, action, occurredAt], map: "auth_abuse_tenant_window_idx")
   @@index([tenantId, mobileDigest, action, occurredAt], map: "auth_abuse_mobile_window_idx")
@@ -736,17 +846,17 @@ model AuthAbuseEvent {
 }
 
 model AuthSession {
-  id          String          @id @default(uuid()) @db.Uuid
-  accountId   String          @db.Uuid
-  account     IdentityAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  activeTenantId String         @db.Uuid
-  activeTenant   Tenant         @relation(fields: [activeTenantId], references: [id], onDelete: Restrict)
-  tokenDigest String          @unique @db.VarChar(64)
-  expiresAt   DateTime
-  lastSeenAt  DateTime
-  revokedAt   DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id             String          @id @default(uuid()) @db.Uuid
+  accountId      String          @db.Uuid
+  account        IdentityAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  activeTenantId String          @db.Uuid
+  activeTenant   Tenant          @relation(fields: [activeTenantId], references: [id], onDelete: Restrict)
+  tokenDigest    String          @unique @db.VarChar(64)
+  expiresAt      DateTime
+  lastSeenAt     DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   @@index([accountId, revokedAt, expiresAt])
 }
@@ -801,20 +911,19 @@ model AccessGrant {
 
 model Household {
   id        String            @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId  String            @db.Uuid
   name      String
   members   HouseholdMember[]
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_Household_id_tenant_key")
+  @@index([tenantId])
 }
 
 model HouseholdMember {
   id          String              @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId    String              @db.Uuid
   householdId String              @db.Uuid
   household   Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
   customerId  String?             @db.Uuid
@@ -827,106 +936,118 @@ model HouseholdMember {
 
   @@unique([householdId, customerId])
   @@index([householdId, role])
-
   @@index([tenantId])
-
   @@index([householdId, tenantId], map: "g3b_HouseholdMember_householdId_tenant_idx")
   @@index([customerId, tenantId], map: "g3b_HouseholdMember_customerId_tenant_idx")
 }
 
 model Address {
-  id                   String                   @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
-  customerId           String                   @db.Uuid
-  customer             Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  cityId               String                   @db.Uuid
-  city                 City                     @relation(fields: [cityId], references: [id], onDelete: Restrict)
-  operationalZoneId    String?                  @db.Uuid
-  operationalZone      OperationalZone?         @relation(fields: [operationalZoneId], references: [id], onDelete: SetNull)
-  serviceAreaId        String?                  @db.Uuid
-  serviceArea          ServiceArea?             @relation(fields: [serviceAreaId], references: [id], onDelete: Restrict)
-  requestIdempotencyKey String?                 @db.VarChar(128)
-  label                String
-  recipientName        String
-  recipientPhoneE164   String                   @db.VarChar(16)
-  addressLine          String
-  postalCode           String?                  @db.VarChar(10)
-  latitude             Decimal                  @db.Decimal(10, 7)
-  longitude            Decimal                  @db.Decimal(10, 7)
-  deliveryInstructions String?
-  verificationState    AddressVerificationState @default(UNVERIFIED)
-  verifiedAt           DateTime?
-  archivedAt           DateTime?
-  orders               Order[]
-  quotes               Quote[]
-  createdAt            DateTime                 @default(now())
-  updatedAt            DateTime                 @updatedAt
-
-  @@index([customerId, archivedAt])
-  @@index([cityId, operationalZoneId, verificationState])
-
-  @@index([tenantId])
+  id                    String                   @id @default(uuid()) @db.Uuid
+  tenantId              String                   @db.Uuid
+  customerId            String                   @db.Uuid
+  customer              Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cityId                String                   @db.Uuid
+  city                  City                     @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  operationalZoneId     String?                  @db.Uuid
+  operationalZone       OperationalZone?         @relation(fields: [operationalZoneId], references: [id], onDelete: SetNull)
+  serviceAreaId         String?                  @db.Uuid
+  serviceArea           ServiceArea?             @relation(fields: [serviceAreaId], references: [id], onDelete: Restrict)
+  requestIdempotencyKey String?                  @db.VarChar(128)
+  label                 String
+  recipientName         String
+  recipientPhoneE164    String                   @db.VarChar(16)
+  addressLine           String
+  postalCode            String?                  @db.VarChar(10)
+  latitude              Decimal                  @db.Decimal(10, 7)
+  longitude             Decimal                  @db.Decimal(10, 7)
+  deliveryInstructions  String?
+  verificationState     AddressVerificationState @default(UNVERIFIED)
+  verifiedAt            DateTime?
+  archivedAt            DateTime?
+  orders                Order[]
+  quotes                Quote[]
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
 
   @@unique([id, tenantId], map: "g3b_Address_id_tenant_key")
+  @@unique([tenantId, customerId, requestIdempotencyKey], map: "Address_tenant_customer_idempotency_key")
+  @@index([customerId, archivedAt])
+  @@index([cityId, operationalZoneId, verificationState])
+  @@index([tenantId])
   @@index([customerId, tenantId], map: "g3b_Address_customerId_tenant_idx")
   @@index([cityId, tenantId], map: "g3b_Address_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_Address_operationalZoneId_tenant_idx")
   @@index([serviceAreaId, tenantId], map: "g3b_Address_serviceAreaId_tenant_idx")
-  @@unique([tenantId, customerId, requestIdempotencyKey], map: "Address_tenant_customer_idempotency_key")
 }
 
 model Bakery {
   id            String              @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId      String              @db.Uuid
   legalName     String
   displayNameFa String
   partnerStatus BakeryPartnerStatus @default(PROSPECT)
   agreementRef  String?             @unique @db.VarChar(128)
+  /// The platform's cut of the bread, in basis points. 1500 is fifteen percent.
+  commissionBasisPoints Int         @default(1500)
   branches      BakeryBranch[]
+  earnings      OrderEarning[]
+  payouts       PartnerPayout[]
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
-  @@index([partnerStatus])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_Bakery_id_tenant_key")
+  @@index([partnerStatus])
+  @@index([tenantId])
 }
 
 model BakeryBranch {
-  id                 String                  @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
-  bakeryId           String                  @db.Uuid
-  bakery             Bakery                  @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
-  cityId             String                  @db.Uuid
-  city               City                    @relation(fields: [cityId], references: [id], onDelete: Restrict)
-  operationalZoneId  String                  @db.Uuid
-  operationalZone    OperationalZone         @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
-  code               String                  @db.VarChar(32)
-  nameFa             String
-  addressLine        String
-  latitude           Decimal                 @db.Decimal(10, 7)
-  longitude          Decimal                 @db.Decimal(10, 7)
-  pickupInstructions String?
-  operationalStatus  BranchOperationalStatus @default(ONBOARDING)
-  qualityStatus      QualityStatus           @default(PENDING_REVIEW)
-  suspendedUntil     DateTime?
-  suspensionReason   String?
-  operatingHours     BakeryOperatingHours[]
-  capacitySlots      BakeryCapacitySlot[]
-  offerings          BakeryProductOffering[]
-  orders             Order[]
-  fulfillments       Fulfillment[]
-  carts              Cart[]
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
+  id                        String                  @id @default(uuid()) @db.Uuid
+  tenantId                  String                  @db.Uuid
+  bakeryId                  String                  @db.Uuid
+  bakery                    Bakery                  @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
+  cityId                    String                  @db.Uuid
+  city                      City                    @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  operationalZoneId         String                  @db.Uuid
+  operationalZone           OperationalZone         @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
+  code                      String                  @db.VarChar(32)
+  nameFa                    String
+  addressLine               String
+  latitude                  Decimal                 @db.Decimal(10, 7)
+  longitude                 Decimal                 @db.Decimal(10, 7)
+  pickupInstructions        String?
+  operationalStatus         BranchOperationalStatus @default(ONBOARDING)
+  qualityStatus             QualityStatus           @default(PENDING_REVIEW)
+  suspendedUntil            DateTime?
+  suspensionReason          String?
+  /// How the branch cuts its opening hours into bookable delivery windows.
+  /// Held on the branch rather than globally because a bakery that bakes every
+  /// two hours and one that bakes twice a day cannot promise the same thing.
+  deliveryWindowMinutes     Int                     @default(120)
+  /// How long before a window opens the branch stops taking orders for it.
+  /// This is the dough, not the drive.
+  deliveryLeadTimeMinutes   Int                     @default(90)
+  /// How many days ahead a customer may book. Zero means today only.
+  deliveryWindowHorizonDays Int                     @default(1)
+  /// How many orders one window may hold. A bakery that can do two hundred
+  /// loaves a day cannot get forty of them out of the oven between seven and
+  /// eight, and a day-level cap alone cannot say that.
+  deliveryWindowMaxOrders   Int                     @default(20)
+  operatingHours            BakeryOperatingHours[]
+  capacitySlots             BakeryCapacitySlot[]
+  deliveryWindows           BakeryDeliveryWindow[]
+  offerings                 BakeryProductOffering[]
+  orders                    Order[]
+  fulfillments              Fulfillment[]
+  carts                     Cart[]
+  routeEstimates            RouteEstimate[]
+  deliveryTrips             DeliveryTrip[]
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
 
   @@unique([cityId, code])
-  @@index([operationalZoneId, operationalStatus, qualityStatus])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_BakeryBranch_id_tenant_key")
+  @@index([operationalZoneId, operationalStatus, qualityStatus])
+  @@index([tenantId])
   @@index([bakeryId, tenantId], map: "g3b_BakeryBranch_bakeryId_tenant_idx")
   @@index([cityId, tenantId], map: "g3b_BakeryBranch_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_BakeryBranch_operationalZoneId_tenant_idx")
@@ -934,7 +1055,7 @@ model BakeryBranch {
 
 model BakeryOperatingHours {
   id             String       @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId       String       @db.Uuid
   bakeryBranchId String       @db.Uuid
   bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
   dayOfWeek      Int
@@ -943,15 +1064,13 @@ model BakeryOperatingHours {
   isClosed       Boolean      @default(false)
 
   @@unique([bakeryBranchId, dayOfWeek])
-
   @@index([tenantId])
-
   @@index([bakeryBranchId, tenantId], map: "g3b_BakeryOperatingHours_bakeryBranchId_tenant_idx")
 }
 
 model BakeryCapacitySlot {
   id             String       @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId       String       @db.Uuid
   bakeryBranchId String       @db.Uuid
   bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
   serviceDate    DateTime     @db.Date
@@ -963,31 +1082,65 @@ model BakeryCapacitySlot {
   updatedAt      DateTime     @updatedAt
 
   @@unique([bakeryBranchId, serviceDate])
-
-  @@index([tenantId])
-
-  @@index([bakeryBranchId, tenantId], map: "g3b_BakeryCapacitySlot_bakeryBranchId_tenant_idx")
   @@unique([id, tenantId], map: "g3b_BakeryCapacitySlot_id_tenant_key")
   @@unique([id, tenantId, bakeryBranchId], map: "BakeryCapacitySlot_id_tenant_branch_key")
+  @@index([tenantId])
+  @@index([bakeryBranchId, tenantId], map: "g3b_BakeryCapacitySlot_bakeryBranchId_tenant_idx")
+}
+
+/// One bookable delivery window at one branch.
+///
+/// Materialised the moment a customer prices a basket against it, rather than
+/// generated ahead by a scheduled job: a window only needs to exist once
+/// somebody wants it, and a table pre-filled two weeks out for every branch in
+/// every city is a table that is wrong the day an operator changes the hours.
+///
+/// The row exists so the window's capacity can be claimed atomically. A count
+/// of orders would be a read that is stale by the time it is acted on, and two
+/// customers would both take the last slot of the seven o'clock batch.
+model BakeryDeliveryWindow {
+  id             String       @id @default(uuid()) @db.Uuid
+  tenantId       String       @db.Uuid
+  bakeryBranchId String       @db.Uuid
+  bakeryBranch   BakeryBranch @relation(fields: [bakeryBranchId], references: [id], onDelete: Cascade)
+  /// The local calendar day this window belongs to, in the city's timezone.
+  serviceDate    DateTime     @db.Date
+  /// The window itself, as instants. Stored resolved rather than as local
+  /// minutes so that everything downstream — the courier's deadline, the
+  /// customer's notification — reads one unambiguous point in time.
+  startsAt       DateTime
+  endsAt         DateTime
+  maxOrders      Int
+  reservedOrders Int          @default(0)
+  suspended      Boolean      @default(false)
+  quotes         Quote[]
+  orders         Order[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([bakeryBranchId, startsAt])
+  @@unique([id, tenantId], map: "g3b_BakeryDeliveryWindow_id_tenant_key")
+  @@index([tenantId])
+  @@index([bakeryBranchId, serviceDate])
+  @@index([bakeryBranchId, tenantId], map: "g3b_BakeryDeliveryWindow_bakeryBranchId_tenant_idx")
 }
 
 model ProductCategory {
   id        String    @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId  String    @db.Uuid
   code      String    @unique @db.VarChar(32)
   nameFa    String
   products  Product[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_ProductCategory_id_tenant_key")
+  @@index([tenantId])
 }
 
 model Product {
   id            String                 @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId      String                 @db.Uuid
   categoryId    String                 @db.Uuid
   category      ProductCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   slug          String                 @unique @db.VarChar(100)
@@ -999,17 +1152,15 @@ model Product {
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
-  @@index([categoryId, lifecycle])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_Product_id_tenant_key")
+  @@index([categoryId, lifecycle])
+  @@index([tenantId])
   @@index([categoryId, tenantId], map: "g3b_Product_categoryId_tenant_idx")
 }
 
 model ProductVariant {
   id                      String                  @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId                String                  @db.Uuid
   productId               String                  @db.Uuid
   product                 Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
   sku                     String                  @unique @db.VarChar(64)
@@ -1033,17 +1184,15 @@ model ProductVariant {
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt
 
-  @@index([fulfillmentClass, lifecycle])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_ProductVariant_id_tenant_key")
+  @@index([fulfillmentClass, lifecycle])
+  @@index([tenantId])
   @@index([productId, tenantId], map: "g3b_ProductVariant_productId_tenant_idx")
 }
 
 model BakeryProductOffering {
   id                 String                     @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId           String                     @db.Uuid
   bakeryBranchId     String                     @db.Uuid
   bakeryBranch       BakeryBranch               @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
   productVariantId   String                     @db.Uuid
@@ -1053,20 +1202,21 @@ model BakeryProductOffering {
   availability       OfferingAvailabilityStatus @default(DRAFT)
   dailyCapacity      Int?
   preparationMinutes Int?
+  stockTracked       Boolean                    @default(false)
+  stockOnHand        Int?
   availableFrom      DateTime?
   availableUntil     DateTime?
   orderItems         OrderItem[]
   cartItems          CartItem[]
   quoteItems         QuoteItem[]
+  favourites         CustomerFavourite[]
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
 
   @@unique([bakeryBranchId, productVariantId])
-  @@index([bakeryBranchId, availability])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_BakeryProductOffering_id_tenant_key")
+  @@index([bakeryBranchId, availability])
+  @@index([tenantId])
   @@index([bakeryBranchId, tenantId], map: "g3b_BakeryProductOffering_bakeryBranchId_tenant_idx")
   @@index([productVariantId, tenantId], map: "g3b_BakeryProductOffering_productVariantId_tenant_idx")
 }
@@ -1082,7 +1232,7 @@ model DeliveryPricingRule {
   version               Int
   calculationMode       DeliveryPricingCalculationMode @default(FLAT)
   baseFeeAmount         BigInt
-  perKilometerFeeAmount BigInt                          @default(0)
+  perKilometerFeeAmount BigInt                         @default(0)
   minimumOrderAmount    BigInt?
   freeDeliveryThreshold BigInt?
   currency              Currency                       @default(IRR)
@@ -1102,7 +1252,7 @@ model DeliveryPricingRule {
 
 model Cart {
   id                String          @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId          String          @db.Uuid
   customerId        String          @db.Uuid
   customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cityId            String          @db.Uuid
@@ -1118,12 +1268,10 @@ model Cart {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
+  @@unique([id, tenantId], map: "g3b_Cart_id_tenant_key")
   @@index([customerId, state, updatedAt])
   @@index([cityId, operationalZoneId, bakeryBranchId, state])
-
   @@index([tenantId])
-
-  @@unique([id, tenantId], map: "g3b_Cart_id_tenant_key")
   @@index([customerId, tenantId], map: "g3b_Cart_customerId_tenant_idx")
   @@index([cityId, tenantId], map: "g3b_Cart_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_Cart_operationalZoneId_tenant_idx")
@@ -1131,81 +1279,95 @@ model Cart {
 }
 
 model CartItem {
-  id                       String                @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
-  cartId                   String                @db.Uuid
-  cart                     Cart                  @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  bakeryProductOfferingId  String                @db.Uuid
-  bakeryProductOffering    BakeryProductOffering @relation(fields: [bakeryProductOfferingId], references: [id], onDelete: Restrict)
-  quantity                 Int
-  createdAt                DateTime              @default(now())
-  updatedAt                DateTime              @updatedAt
+  id                      String                @id @default(uuid()) @db.Uuid
+  tenantId                String                @db.Uuid
+  cartId                  String                @db.Uuid
+  cart                    Cart                  @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  bakeryProductOfferingId String                @db.Uuid
+  bakeryProductOffering   BakeryProductOffering @relation(fields: [bakeryProductOfferingId], references: [id], onDelete: Restrict)
+  quantity                Int
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
 
   @@unique([cartId, bakeryProductOfferingId])
   @@index([bakeryProductOfferingId])
-
   @@index([tenantId])
-
   @@index([cartId, tenantId], map: "g3b_CartItem_cartId_tenant_idx")
   @@index([bakeryProductOfferingId, tenantId], map: "g3b_CartItem_bakeryProductOfferingId_tenant_idx")
 }
 
 model Quote {
-  id                String      @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
-  publicId          String      @unique @default(cuid()) @db.VarChar(32)
-  idempotencyKey    String      @db.VarChar(128)
-  cartId            String      @db.Uuid
-  cart              Cart        @relation(fields: [cartId], references: [id], onDelete: Restrict)
-  customerId        String      @db.Uuid
-  customer          Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  cartVersion       Int
-  status            QuoteStatus @default(ACTIVE)
-  expiresAt         DateTime
-  subtotalAmount    BigInt
-  deliveryFeeAmount BigInt      @default(0)
-  discountAmount    BigInt      @default(0)
-  totalAmount       BigInt
-  currency          Currency    @default(IRR)
-  deliveryAddressId String?     @db.Uuid
-  deliveryAddress   Address?    @relation(fields: [deliveryAddressId], references: [id], onDelete: Restrict)
-  deliveryPricingRuleId String? @db.Uuid
-  deliveryPricingRule DeliveryPricingRule? @relation(fields: [deliveryPricingRuleId], references: [id], onDelete: Restrict)
-  deliveryPricingRuleVersion Int?
-  deliveryServiceAreaIdSnapshot String? @db.Uuid
-  deliveryOperationalZoneIdSnapshot String? @db.Uuid
-  deliveryDistanceMeters Int?
-  bakeryNameSnapshot String?
-  bakeryPickupSnapshot String?
-  recipientNameSnapshot String?
-  recipientPhoneSnapshot String? @db.VarChar(16)
-  deliveryAddressSnapshot String?
-  deliveryLatitudeSnapshot Decimal? @db.Decimal(10, 7)
-  deliveryLongitudeSnapshot Decimal? @db.Decimal(10, 7)
-  deliveryInstructionsSnapshot String?
-  items             QuoteItem[]
-  order             Order?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id                                String                @id @default(uuid()) @db.Uuid
+  tenantId                          String                @db.Uuid
+  publicId                          String                @unique @default(cuid()) @db.VarChar(32)
+  idempotencyKey                    String                @db.VarChar(128)
+  cartId                            String                @db.Uuid
+  cart                              Cart                  @relation(fields: [cartId], references: [id], onDelete: Restrict)
+  customerId                        String                @db.Uuid
+  customer                          Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cartVersion                       Int
+  status                            QuoteStatus           @default(ACTIVE)
+  expiresAt                         DateTime
+  subtotalAmount                    BigInt
+  deliveryFeeAmount                 BigInt                @default(0)
+  discountAmount                    BigInt                @default(0)
+  totalAmount                       BigInt
+  currency                          Currency              @default(IRR)
+  deliveryAddressId                 String?               @db.Uuid
+  deliveryAddress                   Address?              @relation(fields: [deliveryAddressId], references: [id], onDelete: Restrict)
+  deliveryPricingRuleId             String?               @db.Uuid
+  deliveryPricingRule               DeliveryPricingRule?  @relation(fields: [deliveryPricingRuleId], references: [id], onDelete: Restrict)
+  deliveryPricingRuleVersion        Int?
+  deliveryServiceAreaIdSnapshot     String?               @db.Uuid
+  deliveryOperationalZoneIdSnapshot String?               @db.Uuid
+  deliveryDistanceMeters            Int?
+  /// Whether the distance above was measured on the road network or inferred
+  /// from the straight line. Null on quotes written before routing existed.
+  deliveryDistanceSource            RouteDistanceSource?
+  /// Why the distance is an estimate. Set only when the source is ESTIMATED,
+  /// so its presence alone answers "what went wrong when this was priced?".
+  deliveryDistanceReasonCode        String?               @db.VarChar(64)
+  bakeryNameSnapshot                String?
+  bakeryPickupSnapshot              String?
+  recipientNameSnapshot             String?
+  recipientPhoneSnapshot            String?               @db.VarChar(16)
+  deliveryAddressSnapshot           String?
+  deliveryLatitudeSnapshot          Decimal?              @db.Decimal(10, 7)
+  deliveryLongitudeSnapshot         Decimal?              @db.Decimal(10, 7)
+  deliveryInstructionsSnapshot      String?
+  promotionId                       String?               @db.Uuid
+  promotion                         Promotion?            @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  /// The delivery window the customer chose, when they chose one. Null means
+  /// "as soon as you can", which is what every order was before windows existed.
+  deliveryWindowId                  String?               @db.Uuid
+  deliveryWindow                    BakeryDeliveryWindow? @relation(fields: [deliveryWindowId], references: [id], onDelete: Restrict)
+  /// How the customer said they would pay. Recorded on the quote because the
+  /// choice is made while pricing and the order must not have to guess it.
+  paymentMethod                     PaymentMethod         @default(ONLINE_GATEWAY)
+  promotionRedemption               PromotionRedemption?
+  items                             QuoteItem[]
+  order                             Order?
+  createdAt                         DateTime              @default(now())
+  updatedAt                         DateTime              @updatedAt
 
+  @@unique([tenantId, customerId, idempotencyKey], map: "Quote_tenant_customer_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_Quote_id_tenant_key")
   @@index([customerId, status, expiresAt])
   @@index([cartId, cartVersion, status])
   @@index([deliveryAddressId])
   @@index([deliveryPricingRuleId])
   @@index([deliveryAddressId, tenantId], map: "g3b_Quote_deliveryAddressId_tenant_idx")
+  @@index([promotionId, tenantId], map: "g3b_Quote_promotionId_tenant_idx")
+  @@index([deliveryWindowId, tenantId], map: "g3b_Quote_deliveryWindowId_tenant_idx")
   @@index([deliveryPricingRuleId, tenantId], map: "g3b_Quote_deliveryPricingRuleId_tenant_idx")
-  @@unique([tenantId, customerId, idempotencyKey], map: "Quote_tenant_customer_idempotency_key")
-
   @@index([tenantId])
-
-  @@unique([id, tenantId], map: "g3b_Quote_id_tenant_key")
   @@index([cartId, tenantId], map: "g3b_Quote_cartId_tenant_idx")
   @@index([customerId, tenantId], map: "g3b_Quote_customerId_tenant_idx")
 }
 
 model QuoteItem {
   id                       String                  @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId                 String                  @db.Uuid
   quoteId                  String                  @db.Uuid
   quote                    Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   bakeryProductOfferingId  String                  @db.Uuid
@@ -1227,54 +1389,66 @@ model QuoteItem {
   @@index([quoteId])
   @@index([bakeryProductOfferingId])
   @@index([productVariantId])
-
   @@index([tenantId])
-
   @@index([quoteId, tenantId], map: "g3b_QuoteItem_quoteId_tenant_idx")
   @@index([bakeryProductOfferingId, tenantId], map: "g3b_QuoteItem_bakeryProductOfferingId_tenant_idx")
   @@index([productVariantId, tenantId], map: "g3b_QuoteItem_productVariantId_tenant_idx")
 }
 
 model Order {
-  id                           String                 @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
-  publicId                     String                 @unique @default(cuid()) @db.VarChar(32)
-  quoteId                      String?                @unique @db.Uuid
-  quote                        Quote?                 @relation(fields: [quoteId], references: [id], onDelete: Restrict)
-  idempotencyKey               String                 @db.VarChar(128)
-  customerId                   String                 @db.Uuid
-  customer                     Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  cityId                       String                 @db.Uuid
-  city                         City                   @relation(fields: [cityId], references: [id], onDelete: Restrict)
-  operationalZoneId            String                 @db.Uuid
-  operationalZone              OperationalZone        @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
-  bakeryBranchId               String                 @db.Uuid
-  bakeryBranch                 BakeryBranch           @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
-  bakeryCapacitySlotId         String?                @db.Uuid
-  bakeryCapacitySlot           BakeryCapacitySlot?    @relation(fields: [bakeryCapacitySlotId], references: [id], onDelete: Restrict)
-  savedAddressId               String?                @db.Uuid
-  savedAddress                 Address?               @relation(fields: [savedAddressId], references: [id], onDelete: SetNull)
-  state                        OrderState             @default(DRAFT)
-  paymentState                 PaymentState           @default(NOT_STARTED)
-  productionState              ProductionState        @default(UNSCHEDULED)
-  deliveryState                DeliveryState          @default(UNASSIGNED)
+  id                           String                      @id @default(uuid()) @db.Uuid
+  tenantId                     String                      @db.Uuid
+  /// The code a person reads: eight symbols, no I, L, O or U, from
+  /// `generateOrderCode`. Deliberately without a default — a cuid fallback here
+  /// would be a twenty-five character machine string on the screen where a
+  /// dispatcher reads an order number down a phone, and it would never have
+  /// failed to tell anybody. The database checks the shape as well.
+  publicId                     String                      @unique @db.VarChar(32)
+  quoteId                      String?                     @unique @db.Uuid
+  quote                        Quote?                      @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  idempotencyKey               String                      @db.VarChar(128)
+  customerId                   String                      @db.Uuid
+  customer                     Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cityId                       String                      @db.Uuid
+  city                         City                        @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  operationalZoneId            String                      @db.Uuid
+  operationalZone              OperationalZone             @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
+  bakeryBranchId               String                      @db.Uuid
+  bakeryBranch                 BakeryBranch                @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  bakeryCapacitySlotId         String?                     @db.Uuid
+  bakeryCapacitySlot           BakeryCapacitySlot?         @relation(fields: [bakeryCapacitySlotId], references: [id], onDelete: Restrict)
+  savedAddressId               String?                     @db.Uuid
+  savedAddress                 Address?                    @relation(fields: [savedAddressId], references: [id], onDelete: SetNull)
+  state                        OrderState                  @default(DRAFT)
+  paymentState                 PaymentState                @default(NOT_STARTED)
+  productionState              ProductionState             @default(UNSCHEDULED)
+  deliveryState                DeliveryState               @default(UNASSIGNED)
   recipientNameSnapshot        String
-  recipientPhoneSnapshot       String                 @db.VarChar(16)
+  recipientPhoneSnapshot       String                      @db.VarChar(16)
   deliveryAddressSnapshot      String
-  deliveryLatitudeSnapshot     Decimal                @db.Decimal(10, 7)
-  deliveryLongitudeSnapshot    Decimal                @db.Decimal(10, 7)
+  deliveryLatitudeSnapshot     Decimal                     @db.Decimal(10, 7)
+  deliveryLongitudeSnapshot    Decimal                     @db.Decimal(10, 7)
   deliveryInstructionsSnapshot String?
   bakeryNameSnapshot           String
   bakeryPickupSnapshot         String?
   subtotalAmount               BigInt
-  deliveryFeeAmount            BigInt                 @default(0)
-  discountAmount               BigInt                 @default(0)
+  deliveryFeeAmount            BigInt                      @default(0)
+  discountAmount               BigInt                      @default(0)
   totalAmount                  BigInt
-  currency                     Currency               @default(IRR)
+  currency                     Currency                    @default(IRR)
   customerNotes                String?
-  cancellationReasonCode       String?                @db.VarChar(64)
+  cancellationReasonCode       String?                     @db.VarChar(64)
   cancellationNotes            String?
   requestedDeliveryAt          DateTime?
+  promotionId                  String?                     @db.Uuid
+  promotion                    Promotion?                  @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  /// The window this order was promised for, and whose capacity it claimed.
+  deliveryWindowId             String?                     @db.Uuid
+  deliveryWindow               BakeryDeliveryWindow?       @relation(fields: [deliveryWindowId], references: [id], onDelete: Restrict)
+  earning                      OrderEarning?
+  paymentMethod                PaymentMethod               @default(ONLINE_GATEWAY)
+  rating                       OrderRating?
+  promotionRedemption          PromotionRedemption?
   items                        OrderItem[]
   transitions                  OrderStateTransition[]
   payment                      Payment?
@@ -1282,30 +1456,32 @@ model Order {
   fulfillment                  Fulfillment?
   supportCases                 SupportCase[]
   incidents                    OperationalIncident[]
-  createdAt                    DateTime               @default(now())
-  updatedAt                    DateTime               @updatedAt
-
-  @@index([customerId, createdAt])
-  @@index([cityId, operationalZoneId, state])
-  @@index([bakeryBranchId, productionState, createdAt])
-
-  @@index([tenantId])
+  notifications                CustomerNotification[]
+  walletEntries                WalletEntry[]
+  createdAt                    DateTime                    @default(now())
+  updatedAt                    DateTime                    @updatedAt
 
   @@unique([id, tenantId], map: "g3b_Order_id_tenant_key")
   @@unique([id, tenantId, customerId], map: "Order_id_tenant_customer_key")
+  @@unique([tenantId, customerId, idempotencyKey], map: "Order_tenant_customer_idempotency_key")
+  @@index([customerId, createdAt])
+  @@index([cityId, operationalZoneId, state])
+  @@index([bakeryBranchId, productionState, createdAt])
+  @@index([tenantId])
   @@index([customerId, tenantId], map: "g3b_Order_customerId_tenant_idx")
   @@index([cityId, tenantId], map: "g3b_Order_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_Order_operationalZoneId_tenant_idx")
+  @@index([promotionId, tenantId], map: "g3b_Order_promotionId_tenant_idx")
+  @@index([deliveryWindowId, tenantId], map: "g3b_Order_deliveryWindowId_tenant_idx")
   @@index([bakeryBranchId, tenantId], map: "g3b_Order_bakeryBranchId_tenant_idx")
   @@index([savedAddressId, tenantId], map: "g3b_Order_savedAddressId_tenant_idx")
   @@index([quoteId, tenantId], map: "g3b_Order_quoteId_tenant_idx")
   @@index([bakeryCapacitySlotId, tenantId], map: "g3b_Order_bakeryCapacitySlotId_tenant_idx")
-  @@unique([tenantId, customerId, idempotencyKey], map: "Order_tenant_customer_idempotency_key")
 }
 
 model OrderItem {
   id                       String                  @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId                 String                  @db.Uuid
   orderId                  String                  @db.Uuid
   order                    Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productVariantId         String                  @db.Uuid
@@ -1325,9 +1501,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productVariantId])
-
   @@index([tenantId])
-
   @@index([orderId, tenantId], map: "g3b_OrderItem_orderId_tenant_idx")
   @@index([productVariantId, tenantId], map: "g3b_OrderItem_productVariantId_tenant_idx")
   @@index([bakeryProductOfferingId, tenantId], map: "g3b_OrderItem_bakeryProductOfferingId_tenant_idx")
@@ -1335,7 +1509,7 @@ model OrderItem {
 
 model OrderStateTransition {
   id             String     @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId       String     @db.Uuid
   orderId        String     @db.Uuid
   order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   fromState      OrderState
@@ -1351,31 +1525,34 @@ model OrderStateTransition {
 
   @@index([orderId, occurredAt])
   @@index([correlationId])
-
   @@index([tenantId])
-
   @@index([orderId, tenantId], map: "g3b_OrderStateTransition_orderId_tenant_idx")
 }
 
 model Payment {
-  id                   String                   @id @default(uuid()) @db.Uuid
-  tenantId             String                   @db.Uuid
-  publicId             String                   @unique @default(cuid()) @db.VarChar(32)
-  orderId              String                   @unique @db.Uuid
-  order                Order                    @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  customerId           String                   @db.Uuid
-  customer             Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  state                PaymentAggregateState    @default(CREATED)
-  amount               BigInt
-  currency             Currency                 @default(IRR)
-  version              Int                      @default(1)
-  idempotencyKey       String                   @db.VarChar(128)
-  correlationId        String                   @db.Uuid
-  transitions          PaymentStateTransition[]
-  financialTransaction FinancialTransaction?
-  attempts             PaymentAttempt[]
-  createdAt            DateTime                 @default(now())
-  updatedAt            DateTime                 @updatedAt
+  id                    String                      @id @default(uuid()) @db.Uuid
+  tenantId              String                      @db.Uuid
+  publicId              String                      @unique @default(cuid()) @db.VarChar(32)
+  /// Null for a wallet top-up, which is a payment with nothing to deliver.
+  orderId               String?                     @unique @db.Uuid
+  order                 Order?                      @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  purpose               PaymentPurpose              @default(ORDER)
+  customerId            String                      @db.Uuid
+  customer              Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  state                 PaymentAggregateState       @default(CREATED)
+  method                PaymentMethod               @default(ONLINE_GATEWAY)
+  amount                BigInt
+  currency              Currency                    @default(IRR)
+  version               Int                         @default(1)
+  idempotencyKey        String                      @db.VarChar(128)
+  correlationId         String                      @db.Uuid
+  transitions           PaymentStateTransition[]
+  financialTransactions FinancialTransaction[]
+  attempts              PaymentAttempt[]
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+
+  walletEntries         WalletEntry[]
 
   @@unique([tenantId, customerId, idempotencyKey], map: "Payment_tenant_customer_idempotency_key")
   @@unique([id, tenantId], map: "g3b_Payment_id_tenant_key")
@@ -1462,28 +1639,28 @@ model PaymentProviderGovernanceEvent {
 }
 
 model PaymentAttempt {
-  id                      String                          @id @default(uuid()) @db.Uuid
-  tenantId                String                          @db.Uuid
-  paymentId               String                          @db.Uuid
-  payment                 Payment                         @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  providerConfigurationId String                          @db.Uuid
-  providerConfiguration   PaymentProviderConfiguration    @relation(fields: [providerConfigurationId], references: [id], onDelete: Restrict)
-  state                   PaymentAttemptState             @default(CREATED)
-  version                 Int                             @default(1)
-  providerReference       String?                         @db.VarChar(200)
-  initializationOutcome   PaymentInitializationOutcome?
-  customerActionUrl       String?                         @db.VarChar(2048)
-  actionExpiresAt         DateTime?
-  failureCode             String?                         @db.VarChar(64)
-  customerMessageKey      String?                         @db.VarChar(100)
+  id                        String                          @id @default(uuid()) @db.Uuid
+  tenantId                  String                          @db.Uuid
+  paymentId                 String                          @db.Uuid
+  payment                   Payment                         @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  providerConfigurationId   String                          @db.Uuid
+  providerConfiguration     PaymentProviderConfiguration    @relation(fields: [providerConfigurationId], references: [id], onDelete: Restrict)
+  state                     PaymentAttemptState             @default(CREATED)
+  version                   Int                             @default(1)
+  providerReference         String?                         @db.VarChar(200)
+  initializationOutcome     PaymentInitializationOutcome?
+  customerActionUrl         String?                         @db.VarChar(2048)
+  actionExpiresAt           DateTime?
+  failureCode               String?                         @db.VarChar(64)
+  customerMessageKey        String?                         @db.VarChar(100)
   initializationCompletedAt DateTime?
-  requestIdempotencyKey   String                          @db.VarChar(128)
-  requestFingerprint      String                          @db.Char(64)
-  correlationId           String                          @db.Uuid
-  transitions             PaymentAttemptStateTransition[]
-  callbackReceipts        PaymentCallbackReceipt[]
-  createdAt               DateTime                        @default(now())
-  updatedAt               DateTime                        @updatedAt
+  requestIdempotencyKey     String                          @db.VarChar(128)
+  requestFingerprint        String                          @db.Char(64)
+  correlationId             String                          @db.Uuid
+  transitions               PaymentAttemptStateTransition[]
+  callbackReceipts          PaymentCallbackReceipt[]
+  createdAt                 DateTime                        @default(now())
+  updatedAt                 DateTime                        @updatedAt
 
   @@unique([tenantId, requestIdempotencyKey], map: "PaymentAttempt_tenant_idempotency_key")
   @@unique([tenantId, providerConfigurationId, providerReference], map: "PaymentAttempt_provider_reference_key")
@@ -1602,7 +1779,7 @@ model TenantFinancialBootstrap {
   templateVersion Int
   accountCount    Int
   idempotencyKey  String   @db.VarChar(128)
-  correlationId  String   @db.Uuid
+  correlationId   String   @db.Uuid
   completedAt     DateTime
   createdAt       DateTime @default(now())
 
@@ -1639,10 +1816,12 @@ model LedgerAccountGovernanceEvent {
 model FinancialTransaction {
   id             String                   @id @default(uuid()) @db.Uuid
   tenantId       String                   @db.Uuid
-  paymentId      String                   @unique @db.Uuid
-  payment        Payment                  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  orderId        String                   @db.Uuid
-  order          Order                    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  /// Null for a settlement or a payout: neither is about a payment.
+  paymentId      String?                  @db.Uuid
+  payment        Payment?                 @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  /// Null for a wallet top-up, the one posting with nothing to deliver.
+  orderId        String?                  @db.Uuid
+  order          Order?                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   type           FinancialTransactionType
   amount         BigInt
   currency       Currency                 @default(IRR)
@@ -1653,6 +1832,10 @@ model FinancialTransaction {
   entries        LedgerEntry[]
   createdAt      DateTime                 @default(now())
 
+  // One posting of each kind per payment: a capture, and at most the refund
+  // that reverses it. The old single-posting rule could not express a refund
+  // at all, which is why money could only ever move one way.
+  @@unique([paymentId, type], map: "FinancialTransaction_payment_type_key")
   @@unique([tenantId, idempotencyKey], map: "FinancialTransaction_tenant_idempotency_key")
   @@unique([id, tenantId], map: "g3b_FinancialTransaction_id_tenant_key")
   @@index([paymentId, tenantId], map: "g3b_FinancialTransaction_paymentId_tenant_idx")
@@ -1681,7 +1864,7 @@ model LedgerEntry {
 
 model Fulfillment {
   id                    String                @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId              String                @db.Uuid
   orderId               String                @unique @db.Uuid
   order                 Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
   bakeryBranchId        String?               @db.Uuid
@@ -1702,56 +1885,60 @@ model Fulfillment {
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
 
-  @@index([bakeryBranchId, state, readyAtEstimate])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_Fulfillment_id_tenant_key")
+  @@index([bakeryBranchId, state, readyAtEstimate])
+  @@index([tenantId])
   @@index([orderId, tenantId], map: "g3b_Fulfillment_orderId_tenant_idx")
   @@index([bakeryBranchId, tenantId], map: "g3b_Fulfillment_bakeryBranchId_tenant_idx")
 }
 
 model CourierPartner {
   id          String    @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId    String    @db.Uuid
   code        String    @unique @db.VarChar(32)
   displayName String
   isActive    Boolean   @default(false)
+  /// The partner's cut of the delivery fee, in basis points. 10000 is all of it.
+  deliveryShareBasisPoints Int @default(10000)
   couriers    Courier[]
   vehicles    Vehicle[]
+  earnings    OrderEarning[]
+  payouts     PartnerPayout[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_CourierPartner_id_tenant_key")
+  @@index([tenantId])
 }
 
 model Courier {
-  id               String               @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
-  courierPartnerId String               @db.Uuid
-  courierPartner   CourierPartner       @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
-  externalRef      String?              @db.VarChar(128)
-  mobileE164       String               @db.VarChar(16)
+  id               String                  @id @default(uuid()) @db.Uuid
+  tenantId         String                  @db.Uuid
+  courierPartnerId String                  @db.Uuid
+  courierPartner   CourierPartner          @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
+  externalRef      String?                 @db.VarChar(128)
+  mobileE164       String                  @db.VarChar(16)
   displayName      String
-  status           CourierStatus        @default(ONBOARDING)
+  status           CourierStatus           @default(ONBOARDING)
   assignments      DeliveryAssignment[]
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
 
   @@unique([courierPartnerId, externalRef])
-  @@index([courierPartnerId, status])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_Courier_id_tenant_key")
+  @@index([courierPartnerId, status])
+  /// A courier signs in with the ordinary one-time code, and this number is the
+  /// only thing that says which courier the signed-in account is. See the
+  /// partial unique index in the migration: it holds only for couriers who can
+  /// still take work, so a courier who leaves and returns is a new record.
+  @@index([tenantId, mobileE164], map: "courier_tenant_mobile_idx")
+  @@index([tenantId])
   @@index([courierPartnerId, tenantId], map: "g3b_Courier_courierPartnerId_tenant_idx")
 }
 
 model Vehicle {
   id               String               @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId         String               @db.Uuid
   courierPartnerId String               @db.Uuid
   courierPartner   CourierPartner       @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
   type             VehicleType
@@ -1761,17 +1948,15 @@ model Vehicle {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
-  @@index([courierPartnerId, type, status])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_Vehicle_id_tenant_key")
+  @@index([courierPartnerId, type, status])
+  @@index([tenantId])
   @@index([courierPartnerId, tenantId], map: "g3b_Vehicle_courierPartnerId_tenant_idx")
 }
 
 model DeliveryTask {
   id                String                @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId          String                @db.Uuid
   fulfillmentId     String                @unique @db.Uuid
   fulfillment       Fulfillment           @relation(fields: [fulfillmentId], references: [id], onDelete: Restrict)
   state             DeliveryTaskState     @default(UNASSIGNED)
@@ -1781,21 +1966,20 @@ model DeliveryTask {
   attemptCount      Int                   @default(0)
   failureReasonCode String?               @db.VarChar(64)
   assignments       DeliveryAssignment[]
+  tripStop          DeliveryTripStop?
   incidents         OperationalIncident[]
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
-  @@index([state, pickupBefore])
-
-  @@index([tenantId])
-
   @@unique([id, tenantId], map: "g3b_DeliveryTask_id_tenant_key")
+  @@index([state, pickupBefore])
+  @@index([tenantId])
   @@index([fulfillmentId, tenantId], map: "g3b_DeliveryTask_fulfillmentId_tenant_idx")
 }
 
 model DeliveryAssignment {
   id             String                  @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId       String                  @db.Uuid
   deliveryTaskId String                  @db.Uuid
   deliveryTask   DeliveryTask            @relation(fields: [deliveryTaskId], references: [id], onDelete: Cascade)
   courierId      String                  @db.Uuid
@@ -1811,9 +1995,7 @@ model DeliveryAssignment {
 
   @@index([deliveryTaskId, state])
   @@index([courierId, state, offeredAt])
-
   @@index([tenantId])
-
   @@index([deliveryTaskId, tenantId], map: "g3b_DeliveryAssignment_deliveryTaskId_tenant_idx")
   @@index([courierId, tenantId], map: "g3b_DeliveryAssignment_courierId_tenant_idx")
   @@index([vehicleId, tenantId], map: "g3b_DeliveryAssignment_vehicleId_tenant_idx")
@@ -1821,7 +2003,7 @@ model DeliveryAssignment {
 
 model CustomerEvent {
   id            String       @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId      String       @db.Uuid
   eventId       String       @unique @db.Uuid
   customerId    String       @db.Uuid
   customer      Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
@@ -1840,15 +2022,62 @@ model CustomerEvent {
   @@index([customerId, occurredAt])
   @@index([name, occurredAt])
   @@index([correlationId])
-
   @@index([tenantId])
-
   @@index([customerId, tenantId], map: "g3b_CustomerEvent_customerId_tenant_idx")
+}
+
+/// What a customer thought of an order, once it arrived.
+///
+/// One rating per order, and only after it was delivered. Two scores rather
+/// than one because two different things can go wrong and they belong to
+/// different people: the bread is the bakery's, the delivery is the courier's,
+/// and a single star that blames both teaches nobody anything.
+model OrderRating {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  orderId       String   @unique @db.Uuid
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customerId    String   @db.Uuid
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  /// How the bread was. One to five.
+  breadScore    Int
+  /// How the delivery was. Optional — plenty of people only care about one.
+  deliveryScore Int?
+  comment       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([id, tenantId], map: "g3b_OrderRating_id_tenant_key")
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([orderId, tenantId], map: "g3b_OrderRating_orderId_tenant_idx")
+  @@index([customerId, tenantId], map: "g3b_OrderRating_customerId_tenant_idx")
+}
+
+/// Bread a customer wants to find again without searching for it.
+///
+/// Against the offering rather than the product: a favourite is something you
+/// can put in a basket, and the same loaf from a different bakery is a
+/// different thing to buy.
+model CustomerFavourite {
+  id                      String                @id @default(uuid()) @db.Uuid
+  tenantId                String                @db.Uuid
+  customerId              String                @db.Uuid
+  customer                Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  bakeryProductOfferingId String                @db.Uuid
+  bakeryProductOffering   BakeryProductOffering @relation(fields: [bakeryProductOfferingId], references: [id], onDelete: Cascade)
+  createdAt               DateTime              @default(now())
+
+  @@unique([tenantId, customerId, bakeryProductOfferingId], map: "CustomerFavourite_identity_key")
+  @@unique([id, tenantId], map: "g3b_CustomerFavourite_id_tenant_key")
+  @@index([tenantId])
+  @@index([customerId, tenantId], map: "g3b_CustomerFavourite_customerId_tenant_idx")
+  @@index([bakeryProductOfferingId, tenantId], map: "g3b_CustomerFavourite_bakeryProductOfferingId_tenant_idx")
 }
 
 model DomainEventOutbox {
   id              String       @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId        String       @db.Uuid
   eventId         String       @unique @db.Uuid
   name            String       @db.VarChar(100)
   version         Int          @default(1)
@@ -1870,13 +2099,12 @@ model DomainEventOutbox {
   @@index([status, createdAt])
   @@index([aggregateType, aggregateId, occurredAt])
   @@index([correlationId])
-
   @@index([tenantId])
 }
 
 model AuditEvent {
   id            String    @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId      String    @db.Uuid
   actorType     ActorType
   actorId       String?   @db.Uuid
   action        String    @db.VarChar(100)
@@ -1891,13 +2119,12 @@ model AuditEvent {
   @@index([entityType, entityId, occurredAt])
   @@index([actorType, actorId, occurredAt])
   @@index([correlationId])
-
   @@index([tenantId])
 }
 
 model SupportCase {
   id              String              @id @default(uuid()) @db.Uuid
-  tenantId          String @db.Uuid
+  tenantId        String              @db.Uuid
   publicId        String              @unique @default(cuid()) @db.VarChar(32)
   customerId      String?             @db.Uuid
   customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -1915,9 +2142,7 @@ model SupportCase {
   @@index([status, priority, createdAt])
   @@index([customerId, createdAt])
   @@index([orderId])
-
   @@index([tenantId])
-
   @@index([customerId, tenantId], map: "g3b_SupportCase_customerId_tenant_idx")
   @@index([orderId, tenantId], map: "g3b_SupportCase_orderId_tenant_idx")
 }
@@ -1956,37 +2181,710 @@ model OperationalIncident {
   @@index([deliveryTaskId])
 }
 
-
 model AiControlPlaneAuditEvent {
-  id                    String   @id @db.Uuid
-  tenantId              String   @db.Uuid
-  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  eventId               String   @unique @db.Uuid
-  proposalId            String   @db.Uuid
-  sequence              Int
-  eventType             String   @db.VarChar(64)
-  agentRole             String   @db.VarChar(32)
-  action                String   @db.VarChar(64)
-  classification        String   @db.VarChar(32)
-  redactionStatus       String   @db.VarChar(32)
-  correlationId         String   @db.Uuid
-  traceId               String   @db.VarChar(64)
-  actorAccountId        String?  @db.Uuid
-  charterVersion        String   @db.VarChar(64)
-  policyVersion         String   @db.VarChar(64)
-  modelProvider         String   @db.VarChar(64)
-  modelVersion          String   @db.VarChar(128)
-  provenanceUri         String   @db.VarChar(500)
-  payload               Json
-  payloadDigest         String   @db.VarChar(71)
-  previousEventDigest   String?  @db.VarChar(71)
-  eventDigest           String   @unique @db.VarChar(71)
-  occurredAt            DateTime @db.Timestamptz(6)
-  retainedUntil         DateTime @db.Timestamptz(6)
-  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  id                  String   @id @db.Uuid
+  tenantId            String   @db.Uuid
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  eventId             String   @unique @db.Uuid
+  proposalId          String   @db.Uuid
+  sequence            Int
+  eventType           String   @db.VarChar(64)
+  agentRole           String   @db.VarChar(32)
+  action              String   @db.VarChar(64)
+  classification      String   @db.VarChar(32)
+  redactionStatus     String   @db.VarChar(32)
+  correlationId       String   @db.Uuid
+  traceId             String   @db.VarChar(64)
+  actorAccountId      String?  @db.Uuid
+  charterVersion      String   @db.VarChar(64)
+  policyVersion       String   @db.VarChar(64)
+  modelProvider       String   @db.VarChar(64)
+  modelVersion        String   @db.VarChar(128)
+  provenanceUri       String   @db.VarChar(500)
+  payload             Json
+  payloadDigest       String   @db.VarChar(71)
+  previousEventDigest String?  @db.VarChar(71)
+  eventDigest         String   @unique @db.VarChar(71)
+  occurredAt          DateTime @db.Timestamptz(6)
+  retainedUntil       DateTime @db.Timestamptz(6)
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
 
   @@unique([tenantId, proposalId, sequence], map: "AiControlPlaneAuditEvent_proposal_sequence_key")
   @@index([tenantId, occurredAt], map: "AiControlPlaneAuditEvent_tenant_occurred_idx")
   @@index([tenantId, proposalId, sequence], map: "AiControlPlaneAuditEvent_proposal_idx")
   @@index([tenantId, correlationId], map: "AiControlPlaneAuditEvent_correlation_idx")
+}
+
+/// The text of one kind of message, for one tenant.
+///
+/// Unlike AuthDeliveryProviderConfiguration — whose fields are frozen at
+/// creation because changing a credential reference or sender mid-flight would
+/// silently repoint live traffic — a template is meant to be edited. Wording is
+/// the operator's to change, and requiring a new provider configuration to fix
+/// a typo would be absurd. What is frozen is the row's identity: which tenant
+/// and which purpose it speaks for.
+model MessageTemplate {
+  id          String                 @id @default(uuid()) @db.Uuid
+  tenantId    String                 @db.Uuid
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  channel     MessageChannel
+  purpose     MessageTemplatePurpose
+  body        String                 @db.VarChar(480)
+  /// A disabled template stops its message being sent at all. The OTP purpose
+  /// refuses to be disabled — see the database guard — because that would lock
+  /// every customer out of the app from a settings page.
+  enabled     Boolean                @default(true)
+  version     Int                    @default(1)
+  updatedById String?                @db.Uuid
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@unique([tenantId, channel, purpose], map: "message_template_identity_key")
+  @@unique([id, tenantId], map: "message_template_id_tenant_key")
+  @@index([tenantId, channel], map: "message_template_tenant_channel_idx")
+}
+
+/// One message sent to one customer about one step of one order.
+///
+/// The unique key across tenant, order and purpose is the whole point: the
+/// outbox publisher is at-least-once, so without it a publisher that sent a
+/// message and then died before marking the event published would text the
+/// customer again on the next sweep. Claiming this row is what makes the send
+/// happen once.
+model CustomerNotification {
+  id                String                    @id @default(uuid()) @db.Uuid
+  tenantId          String                    @db.Uuid
+  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orderId           String                    @db.Uuid
+  order             Order                     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  channel           MessageChannel
+  purpose           MessageTemplatePurpose
+  state             CustomerNotificationState @default(PENDING)
+  /// The message as sent. Kept because the template it came from is editable,
+  /// so the template alone cannot answer what a customer actually received.
+  body              String                    @db.VarChar(480)
+  mobileE164        String                    @db.VarChar(16)
+  templateVersion   Int                       @default(0)
+  providerReference String?                   @db.VarChar(200)
+  failureCode       String?                   @db.VarChar(64)
+  attempts          Int                       @default(0)
+  /// Which handset carried it, when a push did. Null for every SMS, and for a
+  /// push that found no device — "it says it was sent and I never got it" is
+  /// only answerable if the record names where it went.
+  pushDeviceId      String?                   @db.Uuid
+  pushDevice        CustomerPushDevice?       @relation(fields: [pushDeviceId], references: [id], onDelete: SetNull)
+  correlationId     String                    @db.Uuid
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@unique([tenantId, orderId, purpose], map: "customer_notification_identity_key")
+  @@index([tenantId, state, createdAt], map: "customer_notification_state_idx")
+  @@index([orderId, tenantId], map: "g3b_CustomerNotification_orderId_tenant_idx")
+  @@index([pushDeviceId, tenantId], map: "g3b_CustomerNotification_pushDeviceId_tenant_idx")
+}
+
+/// Where a customer can be reached without paying for a text message.
+///
+/// One row per installed app rather than per customer: somebody with a phone
+/// and a tablet expects both to buzz, and somebody who reinstalled has a new
+/// token while the old one is still on file and already dead.
+model CustomerPushDevice {
+  id             String                 @id @default(uuid()) @db.Uuid
+  tenantId       String                 @db.Uuid
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  customerId     String                 @db.Uuid
+  customer       Customer               @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// Expo's own token. Stored whole because it is the address the message is
+  /// sent to; a digest could not be delivered to.
+  expoPushToken  String                 @db.VarChar(200)
+  platform       PushDevicePlatform
+  /// False once the push service has said this token is dead. Kept rather than
+  /// deleted so the device can register over its own row, and so an operator
+  /// can see that a customer's silence has a reason.
+  enabled        Boolean                @default(true)
+  disabledReason String?                @db.VarChar(64)
+  disabledAt     DateTime?
+  lastSeenAt     DateTime
+  lastSuccessAt  DateTime?
+  notifications  CustomerNotification[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([tenantId, expoPushToken], map: "CustomerPushDevice_tenant_token_key")
+  @@unique([id, tenantId], map: "g3b_CustomerPushDevice_id_tenant_key")
+  @@index([tenantId, customerId, enabled], map: "CustomerPushDevice_customer_enabled_idx")
+  @@index([customerId, tenantId], map: "g3b_CustomerPushDevice_customerId_tenant_idx")
+}
+
+/// What the platform owes one customer, and every movement of it.
+///
+/// The balance lives on the row rather than being summed from entries on every
+/// read: a running total that has to be recomputed to be trusted is one that
+/// gets cached wrongly somewhere. It is written in the same transaction as the
+/// entry that moved it, and a check constraint guarantees no path can leave a
+/// customer owing the platform money.
+model CustomerWallet {
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @db.Uuid
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  customerId    String        @unique @db.Uuid
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  balanceAmount BigInt        @default(0)
+  currency      Currency      @default(IRR)
+  /// Raised by every movement, so a spend that read a balance and wrote it back
+  /// loses to a concurrent one rather than overwriting it.
+  version       Int           @default(1)
+  entries       WalletEntry[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([tenantId, customerId], map: "CustomerWallet_tenant_customer_key")
+  @@unique([id, tenantId], map: "g3b_CustomerWallet_id_tenant_key")
+  @@index([customerId, tenantId], map: "g3b_CustomerWallet_customerId_tenant_idx")
+}
+
+/// One movement of a wallet balance, and what the balance became.
+///
+/// Append-only by trigger. This is what answers "where did my money go", and a
+/// row that could be edited afterwards could not answer it.
+model WalletEntry {
+  id             String          @id @default(uuid()) @db.Uuid
+  tenantId       String          @db.Uuid
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  walletId       String          @db.Uuid
+  wallet         CustomerWallet  @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  kind           WalletEntryKind
+  /// Always positive. Which way it moved is the kind's business, not the sign's.
+  amount         BigInt
+  balanceAfter   BigInt
+  /// Which movement this was, counting from one. The statement's order, and a
+  /// gap where a lost entry would otherwise be invisible.
+  sequence       Int
+  currency       Currency        @default(IRR)
+  paymentId      String?         @db.Uuid
+  payment        Payment?        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  orderId        String?         @db.Uuid
+  order          Order?          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  /// The transfer this line is one side of, or null for everything else.
+  transferId     String?           @db.Uuid
+  transfer       WalletTransfer?   @relation(fields: [transferId], references: [id], onDelete: Restrict)
+  /// The withdrawal this line belongs to: the debit when it was asked for, or
+  /// the credit back if it was refused.
+  withdrawalId   String?           @db.Uuid
+  withdrawal     WalletWithdrawal? @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  idempotencyKey String          @db.VarChar(128)
+  correlationId  String          @db.Uuid
+  createdAt      DateTime        @default(now())
+
+  @@unique([tenantId, walletId, idempotencyKey], map: "WalletEntry_tenant_wallet_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_WalletEntry_id_tenant_key")
+  @@unique([walletId, sequence(sort: Desc)], map: "WalletEntry_wallet_sequence_key")
+  @@index([walletId, tenantId], map: "g3b_WalletEntry_walletId_tenant_idx")
+  @@index([paymentId, tenantId], map: "g3b_WalletEntry_paymentId_tenant_idx")
+  @@index([orderId, tenantId], map: "g3b_WalletEntry_orderId_tenant_idx")
+  @@index([transferId, tenantId], map: "g3b_WalletEntry_transferId_tenant_idx")
+  @@index([withdrawalId, tenantId], map: "g3b_WalletEntry_withdrawalId_tenant_idx")
+}
+
+/// A customer asking for their balance back, in money.
+///
+/// The balance is debited when this row is created, not when the transfer is
+/// made: a request that only recorded an intention would leave the amount
+/// spendable while somebody at a bank was already sending it. A rejection puts
+/// it back as its own statement line.
+///
+/// The card is stored masked. The platform needs to know which card the
+/// customer meant and has no business holding a complete number.
+model WalletWithdrawal {
+  id                 String                @id @default(uuid()) @db.Uuid
+  tenantId           String                @db.Uuid
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  customerId         String                @db.Uuid
+  customer           Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  amount             BigInt
+  currency           Currency              @default(IRR)
+  state              WalletWithdrawalState @default(REQUESTED)
+  cardLastFour       String                @db.VarChar(4)
+  cardHolderName     String                @db.VarChar(120)
+  iban               String?               @db.VarChar(26)
+  bankReference      String?               @db.VarChar(128)
+  rejectionReason    String?               @db.VarChar(500)
+  requestedAt        DateTime              @default(now())
+  settledAt          DateTime?
+  /// Who settled it. Held as an id without a Prisma relation, like the payout
+  /// rows: it names an actor for the audit trail, not a graph to traverse.
+  settledByAccountId String?               @db.Uuid
+  idempotencyKey     String                @db.VarChar(128)
+  correlationId      String                @db.Uuid
+  entries            WalletEntry[]
+
+  @@unique([tenantId, customerId, idempotencyKey], map: "WalletWithdrawal_tenant_customer_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_WalletWithdrawal_id_tenant_key")
+  @@index([customerId, tenantId], map: "g3b_WalletWithdrawal_customerId_tenant_idx")
+  @@index([tenantId, state, requestedAt], map: "WalletWithdrawal_tenant_state_requested_idx")
+}
+
+enum WalletWithdrawalState {
+  REQUESTED
+  PAID
+  REJECTED
+}
+
+/// Money moving from one customer's balance to another's.
+///
+/// Never posted to the general ledger: both balances sit under the same control
+/// account, so the platform owes exactly what it owed before. The per-customer
+/// detail is WalletEntry, which is the subsidiary ledger.
+model WalletTransfer {
+  id                  String              @id @default(uuid()) @db.Uuid
+  tenantId            String              @db.Uuid
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  senderCustomerId    String              @db.Uuid
+  sender              Customer            @relation("WalletTransferSender", fields: [senderCustomerId], references: [id], onDelete: Restrict)
+  recipientCustomerId String              @db.Uuid
+  recipient           Customer            @relation("WalletTransferRecipient", fields: [recipientCustomerId], references: [id], onDelete: Restrict)
+  amount              BigInt
+  currency            Currency            @default(IRR)
+  state               WalletTransferState @default(PENDING)
+  /// Peppered, never the code itself. A dump cannot be read back into a text message.
+  codeDigest          String              @db.VarChar(128)
+  codeExpiresAt       DateTime
+  failedAttempts      Int                 @default(0)
+  idempotencyKey      String              @db.VarChar(128)
+  correlationId       String              @db.Uuid
+  entries             WalletEntry[]
+  createdAt           DateTime            @default(now())
+  settledAt           DateTime?
+
+  @@unique([tenantId, senderCustomerId, idempotencyKey], map: "WalletTransfer_tenant_sender_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_WalletTransfer_id_tenant_key")
+  @@index([senderCustomerId, tenantId], map: "g3b_WalletTransfer_senderCustomerId_tenant_idx")
+  @@index([recipientCustomerId, tenantId], map: "g3b_WalletTransfer_recipientCustomerId_tenant_idx")
+  @@index([tenantId, state, createdAt(sort: Desc)], map: "WalletTransfer_tenant_state_created_idx")
+}
+
+enum WalletTransferState {
+  PENDING
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum RouteDistanceSource {
+  ROUTED
+  ESTIMATED
+}
+
+enum RoutingEnvironment {
+  TEST
+  PRODUCTION
+}
+
+enum RoutingProviderHealthStatus {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+}
+
+enum OperatorAlertKind {
+  PAYMENT_GATEWAY_UNHEALTHY
+  OUTBOX_EVENTS_PARKED
+  PAYMENTS_AWAITING_SETTLEMENT
+  SMS_PROVIDER_UNAVAILABLE
+}
+
+/// Who hears when something breaks.
+///
+/// Separate from staff accounts on purpose: the person who should be woken at
+/// 4am is often the owner or a shared inbox, and requiring an account would mean
+/// creating sign-ins for people who must never be able to sign in.
+model OperatorAlertRecipient {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  address      String   @db.VarChar(254)
+  displayName  String   @db.VarChar(128)
+  enabled      Boolean  @default(true)
+  /// An owner may want only the critical ones; whoever reconciles cash wants
+  /// the daily warning too.
+  criticalOnly Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId, enabled], map: "OperatorAlertRecipient_tenant_enabled_idx")
+}
+
+/// When each kind was last said, and how often it was held back.
+model OperatorAlertDispatch {
+  id                      String            @id @default(uuid()) @db.Uuid
+  tenantId                String            @db.Uuid
+  tenant                  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  kind                    OperatorAlertKind
+  lastSentAt              DateTime?
+  lastObservedCount       Int               @default(0)
+  /// Kept rather than discarded: "we knew for six hours and said nothing" is a
+  /// different fact from "we did not know", and only one means the quiet period
+  /// is set wrong.
+  suppressedSinceLastSend Int               @default(0)
+  sendCount               Int               @default(0)
+  lastOutcome             String?           @db.VarChar(32)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  @@unique([tenantId, kind], map: "OperatorAlertDispatch_tenant_kind_key")
+}
+
+enum EmailEnvironment {
+  TEST
+  PRODUCTION
+}
+
+enum EmailProviderHealthStatus {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+}
+
+/// Which service carries this tenant's email.
+///
+/// Shaped like the SMS and routing configurations because an operator already
+/// knows that form: created in its final shape, and taken out of rotation by
+/// marking it unhealthy rather than by a migration.
+///
+/// `env://` is allowed, as it is for routing and SMS and unlike payment: an
+/// email credential sends messages, it does not move money. The `EMAIL_` prefix
+/// is enforced for the same reason the others enforce theirs — so a
+/// configuration cannot name an unrelated environment variable and hand its
+/// value to an adapter.
+///
+/// The sender address is stored rather than referenced. It is not a secret, it
+/// is printed on every message the tenant sends, and an operator debugging
+/// "why does this land in spam" needs to read it without a database session.
+model EmailProviderConfiguration {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  tenantId            String                    @db.Uuid
+  tenant              Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  providerCode        String                    @db.VarChar(32)
+  adapterVersion      String                    @db.VarChar(64)
+  adapterSpiVersion   Int                       @default(1)
+  environment         EmailEnvironment
+  credentialReference String                    @db.VarChar(255)
+  senderAddress       String                    @db.VarChar(254)
+  senderName          String                    @db.VarChar(128)
+  enabled             Boolean                   @default(false)
+  isDefault           Boolean                   @default(false)
+  priority            Int                       @default(100)
+  healthStatus        EmailProviderHealthStatus @default(UNKNOWN)
+  governanceVersion   Int                       @default(1)
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  @@unique([tenantId, providerCode, environment, adapterVersion, adapterSpiVersion], map: "EmailProvider_tenant_code_environment_version_key")
+  @@index([tenantId, environment, enabled, isDefault, priority], map: "EmailProvider_tenant_selection_idx")
+}
+
+enum RoutingProfile {
+  MOTORCYCLE
+  CAR
+}
+
+/// Which engine measures the road for this tenant.
+///
+/// Shaped like the SMS gateway configuration because an operator already knows
+/// that form. `env://` is allowed here where payment credentials forbid it: a
+/// routing key buys distances, not money, and the worst a leaked one does is
+/// spend the tenant's routing quota.
+model RoutingProviderConfiguration {
+  id                  String                      @id @default(uuid()) @db.Uuid
+  tenantId            String                      @db.Uuid
+  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  providerCode        String                      @db.VarChar(32)
+  adapterVersion      String                      @db.VarChar(64)
+  adapterSpiVersion   Int                         @default(1)
+  environment         RoutingEnvironment
+  credentialReference String                      @db.VarChar(255)
+  enabled             Boolean                     @default(false)
+  isDefault           Boolean                     @default(false)
+  priority            Int                         @default(100)
+  healthStatus        RoutingProviderHealthStatus @default(UNKNOWN)
+  governanceVersion   Int                         @default(1)
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+
+  @@unique([tenantId, providerCode, environment, adapterVersion, adapterSpiVersion], map: "RoutingProvider_tenant_code_environment_version_key")
+  @@index([tenantId, environment, enabled, isDefault], map: "RoutingProvider_tenant_environment_enabled_idx")
+}
+
+/// What the engine said, kept so it is not asked twice.
+///
+/// Only routed distances live here. There is deliberately no row for a
+/// straight-line estimate: caching a fallback would freeze it in place long
+/// after routing recovered, turning a ten-minute outage into a fortnight of
+/// guessed fares that nothing would ever correct.
+model RouteEstimate {
+  id                   String         @id @default(uuid()) @db.Uuid
+  tenantId             String         @db.Uuid
+  tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bakeryBranchId       String         @db.Uuid
+  bakeryBranch         BakeryBranch   @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  /// Rounded to four places (about eleven metres) before storage, so a saved
+  /// address ordered from twice produces the same key rather than missing on
+  /// floating-point noise.
+  destinationLatitude  Decimal        @db.Decimal(9, 4)
+  destinationLongitude Decimal        @db.Decimal(9, 4)
+  profile              RoutingProfile
+  avoidTrafficZone     Boolean
+  avoidOddEvenZone     Boolean
+  /// Two engines disagree about the same road, so a cached distance belongs to
+  /// the engine that produced it.
+  providerCode         String         @db.VarChar(32)
+  distanceMetres       Int
+  durationSeconds      Int?
+  computedAt           DateTime       @default(now())
+
+  @@unique([tenantId, bakeryBranchId, destinationLatitude, destinationLongitude, profile, avoidTrafficZone, avoidOddEvenZone, providerCode], map: "RouteEstimate_lookup_key")
+  @@index([tenantId, computedAt], map: "RouteEstimate_tenant_computed_idx")
+  @@index([bakeryBranchId, tenantId], map: "g3b_RouteEstimate_bakeryBranchId_tenant_idx")
+}
+
+enum DeliveryTripState {
+  PLANNED
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+/// Several orders, one courier, one ride.
+///
+/// The ride out to a neighbourhood is paid once per trip rather than once per
+/// loaf, which is the largest cost lever left in delivery. The risk it
+/// introduces is that on a shared run the last customer waits for everyone
+/// ahead of them — which is why the planner refuses far more batches than it
+/// builds, and why the stops become immutable the moment a courier is offered
+/// the run.
+model DeliveryTrip {
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @db.Uuid
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// One pickup per run: a rider collecting from two bakeries is two rides with
+  /// the loaves going cold in between.
+  bakeryBranchId     String             @db.Uuid
+  bakeryBranch       BakeryBranch       @relation(fields: [bakeryBranchId], references: [id], onDelete: Restrict)
+  state              DeliveryTripState  @default(PLANNED)
+  plannedDepartureAt DateTime
+  plannedMetres      Int
+  /// What this run saves against delivering each drop separately. Kept rather
+  /// than recomputed, because a plan that has since changed would answer a
+  /// different question.
+  savedMetres        Int                @default(0)
+  dispatchedAt       DateTime?
+  completedAt        DateTime?
+  correlationId      String             @db.Uuid
+  version            Int                @default(1)
+  stops              DeliveryTripStop[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([id, tenantId], map: "g3b_DeliveryTrip_id_tenant_key")
+  @@index([tenantId, state, createdAt], map: "DeliveryTrip_tenant_state_idx")
+  @@index([bakeryBranchId, tenantId], map: "g3b_DeliveryTrip_bakeryBranchId_tenant_idx")
+}
+
+/// One delivery's place in a run. A loaf rides once, and two drops cannot both
+/// be third.
+model DeliveryTripStop {
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @db.Uuid
+  tenant           Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  deliveryTripId   String       @db.Uuid
+  deliveryTrip     DeliveryTrip @relation(fields: [deliveryTripId], references: [id], onDelete: Restrict)
+  deliveryTaskId   String       @unique @db.Uuid
+  deliveryTask     DeliveryTask @relation(fields: [deliveryTaskId], references: [id], onDelete: Restrict)
+  sequence         Int
+  legMetres        Int
+  plannedArrivalAt DateTime
+  createdAt        DateTime     @default(now())
+
+  @@unique([tenantId, deliveryTaskId], map: "DeliveryTripStop_task_key")
+  @@unique([deliveryTripId, sequence], map: "DeliveryTripStop_sequence_key")
+  @@index([deliveryTripId, tenantId], map: "g3b_DeliveryTripStop_deliveryTripId_tenant_idx")
+  @@index([deliveryTaskId, tenantId], map: "g3b_DeliveryTripStop_deliveryTaskId_tenant_idx")
+}
+
+/// A discount campaign.
+///
+/// `cityId` is the field that makes provincial and national rollout possible:
+/// a campaign opened for one city cannot be spent by customers in another, so
+/// one city's launch budget cannot be drained by a market it was never meant
+/// for. Null means the campaign runs everywhere.
+///
+/// Percentages are basis points, never floats — a campaign that is a hundredth
+/// of a Rial out is a ledger that will not reconcile.
+model Promotion {
+  id                    String                @id @default(uuid()) @db.Uuid
+  tenantId              String                @db.Uuid
+  tenant                Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// What the customer types. Stored normalised: upper case, no separators.
+  code                  String                @db.VarChar(64)
+  nameFa                String
+  kind                  PromotionKind
+  percentageBasisPoints Int?
+  fixedAmount           BigInt?
+  maxDiscountAmount     BigInt?
+  minSubtotalAmount     BigInt?
+  currency              Currency              @default(IRR)
+  startsAt              DateTime
+  endsAt                DateTime?
+  totalRedemptionLimit  Int?
+  perCustomerLimit      Int?
+  firstOrderOnly        Boolean               @default(false)
+  cityId                String?               @db.Uuid
+  city                  City?                 @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  isActive              Boolean               @default(false)
+  /// Counted rather than derived, so the limit can be enforced by a conditional
+  /// update instead of a scan that races under concurrency.
+  redeemedCount         Int                   @default(0)
+  redemptions           PromotionRedemption[]
+  quotes                Quote[]
+  orders                Order[]
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@unique([tenantId, code], map: "Promotion_tenant_code_key")
+  @@unique([id, tenantId], map: "g3b_Promotion_id_tenant_key")
+  @@index([tenantId, isActive, startsAt])
+  @@index([cityId])
+  @@index([cityId, tenantId], map: "g3b_Promotion_cityId_tenant_idx")
+}
+
+/// One customer's use of one campaign.
+///
+/// Held when a quote is cut and only spent when the order is accepted. Without
+/// that distinction an abandoned basket would burn a redemption, and a campaign
+/// capped at a thousand would be exhausted by people who never bought anything.
+model PromotionRedemption {
+  id            String                   @id @default(uuid()) @db.Uuid
+  tenantId      String                   @db.Uuid
+  tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  promotionId   String                   @db.Uuid
+  promotion     Promotion                @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  customerId    String                   @db.Uuid
+  customer      Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quoteId       String?                  @unique @db.Uuid
+  quote         Quote?                   @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  orderId       String?                  @unique @db.Uuid
+  order         Order?                   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  /// What it was worth, snapshotted. The campaign's terms may change later; what
+  /// this customer was actually given must not.
+  amount        BigInt
+  basis         DiscountBasis
+  currency      Currency                 @default(IRR)
+  state         PromotionRedemptionState @default(RESERVED)
+  correlationId String                   @db.Uuid
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@unique([id, tenantId], map: "g3b_PromotionRedemption_id_tenant_key")
+  @@index([tenantId, promotionId, customerId, state])
+  @@index([promotionId, state])
+  @@index([customerId])
+  @@index([promotionId, tenantId], map: "g3b_PromotionRedemption_promotionId_tenant_idx")
+  @@index([customerId, tenantId], map: "g3b_PromotionRedemption_customerId_tenant_idx")
+  @@index([quoteId, tenantId], map: "g3b_PromotionRedemption_quoteId_tenant_idx")
+  @@index([orderId, tenantId], map: "g3b_PromotionRedemption_orderId_tenant_idx")
+}
+
+/// What one delivered order was worth to each party.
+///
+/// One row per order, written when it completes, never rewritten. Not a cache
+/// of the ledger — the ledger is the authority — but the record of *which rates
+/// applied on the day*, so a bakery whose commission changes in March cannot
+/// make February's payout recompute itself into a different number.
+model OrderEarning {
+  id                    String          @id @default(uuid()) @db.Uuid
+  tenantId              String          @db.Uuid
+  tenant                Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orderId               String          @unique @db.Uuid
+  order                 Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  bakeryId              String          @db.Uuid
+  bakery                Bakery          @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
+  /// Null when nobody rode: a collected order, or one no courier took.
+  courierPartnerId      String?         @db.Uuid
+  courierPartner        CourierPartner? @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
+  currency              Currency        @default(IRR)
+  subtotalAmount        BigInt
+  deliveryFeeAmount     BigInt
+  discountAmount        BigInt
+  totalAmount           BigInt
+  commissionBasisPoints Int
+  courierBasisPoints    Int
+  commissionAmount      BigInt
+  bakeryShareAmount     BigInt
+  courierShareAmount    BigInt
+  promotionCostAmount   BigInt
+  bakeryPayoutId        String?         @db.Uuid
+  bakeryPayout          PartnerPayout?  @relation("BakeryPayoutEarnings", fields: [bakeryPayoutId], references: [id], onDelete: Restrict)
+  courierPayoutId       String?         @db.Uuid
+  courierPayout         PartnerPayout?  @relation("CourierPayoutEarnings", fields: [courierPayoutId], references: [id], onDelete: Restrict)
+  correlationId         String          @db.Uuid
+  occurredAt            DateTime
+  createdAt             DateTime        @default(now())
+
+  @@unique([id, tenantId], map: "g3b_OrderEarning_id_tenant_key")
+  @@index([orderId, tenantId], map: "g3b_OrderEarning_orderId_tenant_idx")
+  @@index([bakeryId, tenantId], map: "g3b_OrderEarning_bakeryId_tenant_idx")
+  @@index([courierPartnerId, tenantId], map: "g3b_OrderEarning_courierPartnerId_tenant_idx")
+  @@index([bakeryPayoutId, tenantId], map: "g3b_OrderEarning_bakeryPayoutId_tenant_idx")
+  @@index([courierPayoutId, tenantId], map: "g3b_OrderEarning_courierPayoutId_tenant_idx")
+}
+
+/// One transfer to one partner, covering a set of earnings.
+///
+/// The money leaves the platform's account outside this system — an Iranian
+/// interbank transfer is a person at a keyboard — so what is stored is the
+/// decision and its evidence, not a pretence of having moved it.
+model PartnerPayout {
+  id                  String             @id @default(uuid()) @db.Uuid
+  tenantId            String             @db.Uuid
+  tenant              Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  party               PartnerPayoutParty
+  bakeryId            String?            @db.Uuid
+  bakery              Bakery?            @relation(fields: [bakeryId], references: [id], onDelete: Restrict)
+  courierPartnerId    String?            @db.Uuid
+  courierPartner      CourierPartner?    @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
+  state               PartnerPayoutState @default(DRAFT)
+  currency            Currency           @default(IRR)
+  amount              BigInt
+  orderCount          Int
+  periodStart         DateTime
+  periodEnd           DateTime
+  /// The bank's own reference, once somebody has actually made the transfer.
+  bankReference       String?            @db.VarChar(128)
+  preparedByAccountId String             @db.Uuid
+  paidByAccountId     String?            @db.Uuid
+  idempotencyKey      String             @db.VarChar(128)
+  correlationId       String             @db.Uuid
+  bakeryEarnings      OrderEarning[]     @relation("BakeryPayoutEarnings")
+  courierEarnings     OrderEarning[]     @relation("CourierPayoutEarnings")
+  createdAt           DateTime           @default(now())
+  paidAt              DateTime?
+
+  @@unique([tenantId, idempotencyKey], map: "PartnerPayout_tenant_idempotency_key")
+  @@unique([id, tenantId], map: "g3b_PartnerPayout_id_tenant_key")
+  @@index([bakeryId, tenantId], map: "g3b_PartnerPayout_bakeryId_tenant_idx")
+  @@index([courierPartnerId, tenantId], map: "g3b_PartnerPayout_courierPartnerId_tenant_idx")
+  @@index([tenantId, state, createdAt(sort: Desc)], map: "PartnerPayout_tenant_state_created_idx")
+}
+
+enum PartnerPayoutParty {
+  BAKERY
+  COURIER
+}
+
+enum PartnerPayoutState {
+  DRAFT
+  PAID
+  CANCELLED
 }

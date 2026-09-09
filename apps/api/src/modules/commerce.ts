@@ -9,6 +9,7 @@ import {
   uuidSchema,
   type CartItemMutation,
   type CartSummary,
+  type DeliveryWindow,
   type ErrorEnvelope,
   type QuoteCreate,
   type QuoteSummary,
@@ -24,9 +25,21 @@ import {
   calculateCartLine,
   calculateQuoteExpiry,
   selectDeliveryPricingRule,
+  totalAfterDiscount,
+  type RouteDistance,
 } from '@alo-noon/domain'
 
 import { authenticateRequest, type AuthDependencies } from './auth.js'
+import {
+  listDeliveryWindows as listBranchDeliveryWindows,
+  resolveDeliveryWindow,
+} from './delivery-windows.js'
+import {
+  attachRedemptionToQuote,
+  releaseRedemptionsForQuotes,
+  reservePromotion,
+} from './promotions.js'
+import type { RoutingService } from './routing.js'
 
 const cartInclude = {
   items: {
@@ -44,6 +57,14 @@ const cartInclude = {
 
 const quoteInclude = {
   items: { orderBy: { id: 'asc' } },
+  // So the quote can name the campaign that discounted it. A customer reading
+  // "۱۰٬۰۰۰ تومان تخفیف" with no idea which code produced it cannot tell a
+  // working code from a coincidence.
+  promotion: { select: { nameFa: true } },
+  promotionRedemption: { select: { basis: true } },
+  // So the quote can restate the window it was priced for. The customer agreed
+  // to a time, and a summary that omits it is a summary of a different order.
+  deliveryWindow: { select: { startsAt: true, endsAt: true } },
 } satisfies Prisma.QuoteInclude
 
 type CartRecord = Prisma.CartGetPayload<{ include: typeof cartInclude }>
@@ -80,6 +101,15 @@ export interface CommerceRepository {
     now: Date,
     correlationId: string,
   ): Promise<QuoteSummary>
+  /**
+   * The delivery windows the customer's own basket can be booked into.
+   *
+   * Derived from the branch their cart is already against rather than from a
+   * branch identifier in the request. There is nothing to authorise because
+   * there is nothing to name: a customer can only ever ask about their own
+   * basket's bakery.
+   */
+  listDeliveryWindows(tenantId: string, customerId: string, now: Date): Promise<DeliveryWindow[]>
 }
 
 export interface CommerceDependencies {
@@ -189,6 +219,39 @@ export function registerCommerceRoutes(
     }
   })
 
+  /**
+   * When the bakery can bring it.
+   *
+   * Read-only and derived entirely from the customer's own basket, so there is
+   * nothing to authorise beyond the session. Enumerating windows writes
+   * nothing: a customer browsing times costs the platform a schedule lookup,
+   * not a row, which is what keeps a shopper who never buys from filling a
+   * table.
+   */
+  app.get('/api/v1/cart/delivery-windows', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const session = await authenticatedCustomer(request, dependencies.auth)
+    if (!session) {
+      return reply
+        .code(401)
+        .send(errorEnvelope('SESSION_UNAUTHORIZED', 'A valid customer session is required.'))
+    }
+
+    try {
+      return {
+        success: true,
+        data: await dependencies.repository.listDeliveryWindows(
+          session.tenantId,
+          session.customerId,
+          currentTime(dependencies),
+        ),
+        meta: responseMeta(),
+      }
+    } catch (error) {
+      return commerceFailure(request, reply, error)
+    }
+  })
+
   app.post('/api/v1/cart/quote', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
     const session = await authenticatedCustomer(request, dependencies.auth)
@@ -222,7 +285,82 @@ export function registerCommerceRoutes(
   })
 }
 
-export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRepository {
+/**
+ * How far it is, and where that came from.
+ *
+ * The routing service is optional: without one, quotes are priced exactly as
+ * they were before — on the straight line — and nothing else changes. That is
+ * what lets routing be adopted per deployment rather than being a prerequisite
+ * for selling bread.
+ */
+export interface PrismaCommerceOptions {
+  routingService?: RoutingService
+}
+
+export function createPrismaCommerceRepository(
+  prisma: PrismaClient,
+  options: PrismaCommerceOptions = {},
+): CommerceRepository {
+  /**
+   * Resolved before the quote's transaction opens, never inside it.
+   *
+   * Routing is a call to another company's server, and ADR-0010 keeps those out
+   * of database transactions for a reason that is sharper here than usual: this
+   * transaction is SERIALIZABLE and holds locks a checkout depends on. A routing
+   * engine having a slow afternoon would become a checkout having one.
+   *
+   * The context is read first without a transaction, so a replay or a missing
+   * cart costs no routing call at all.
+   */
+  async function resolveDistance(
+    tenantId: string,
+    customerId: string,
+    input: QuoteCreate,
+    now: Date,
+  ): Promise<{ branchId: string; addressId: string; distance: RouteDistance } | null> {
+    if (!options.routingService) return null
+    const context = await prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
+      const replay = await transaction.quote.findFirst({
+        where: { idempotencyKey: input.idempotencyKey, tenantId, customerId },
+        select: { id: true },
+      })
+      if (replay) return null
+      // ownership-established: both reads below are filtered by customerId, so a
+      // cart or address belonging to anyone else is simply not found.
+      const cart = await transaction.cart.findFirst({
+        where: { tenantId, customerId, state: 'ACTIVE' },
+        select: {
+          bakeryBranchId: true,
+          bakeryBranch: { select: { id: true, latitude: true, longitude: true } },
+        },
+      })
+      const address = await transaction.address.findFirst({
+        where: { id: input.deliveryAddressId, tenantId, customerId, archivedAt: null },
+        select: { id: true, latitude: true, longitude: true },
+      })
+      return cart?.bakeryBranch && address ? { branch: cart.bakeryBranch, address } : null
+    })
+    if (!context) return null
+
+    const distance = await options.routingService.distanceFor(
+      tenantId,
+      {
+        branchId: context.branch.id,
+        origin: {
+          latitude: Number(context.branch.latitude),
+          longitude: Number(context.branch.longitude),
+        },
+        destination: {
+          latitude: Number(context.address.latitude),
+          longitude: Number(context.address.longitude),
+        },
+      },
+      now,
+    )
+    return { branchId: context.branch.id, addressId: context.address.id, distance }
+  }
+
   return {
     async getCart(tenantId, customerId) {
       return serializable(prisma, tenantId, async (transaction) => {
@@ -231,6 +369,29 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           include: cartInclude,
         })
         return cart ? mapCart(cart) : null
+      })
+    },
+
+    async listDeliveryWindows(tenantId, customerId, now) {
+      return serializable(prisma, tenantId, async (transaction) => {
+        const cart = await transaction.cart.findFirst({
+          where: { tenantId, customerId, state: 'ACTIVE' },
+          select: { bakeryBranchId: true },
+        })
+        if (!cart) return []
+        const windows = await listBranchDeliveryWindows(
+          transaction,
+          tenantId,
+          cart.bakeryBranchId,
+          now,
+        )
+        return windows.map((window) => ({
+          serviceDate: window.serviceDate,
+          startsAt: window.startsAt.toISOString(),
+          endsAt: window.endsAt.toISOString(),
+          remaining: window.remaining,
+          available: window.available,
+        }))
       })
     },
 
@@ -283,6 +444,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             offeringOperationalZoneId: offering.bakeryBranch.operationalZoneId,
             offeringBakeryBranchId: offering.bakeryBranchId,
           })
+          // ownership-established: cart was loaded above filtered by customerId.
           const updated = await transaction.cart.updateMany({
             where: { id: cart.id, state: 'ACTIVE', version: cart.version },
             data: { version: { increment: 1 } },
@@ -340,6 +502,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           where: { cartId: cart.id, bakeryProductOfferingId: offeringId },
         })
         if (removed.count !== 1) throw new CommerceError('CART_ITEM_NOT_FOUND', 404)
+        // ownership-established: cart was loaded above filtered by customerId.
         const updated = await transaction.cart.updateMany({
           where: { id: cart.id, state: 'ACTIVE', version: cart.version },
           data: { version: { increment: 1 } },
@@ -361,6 +524,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
     },
 
     async createQuote(tenantId, customerId, input, now, correlationId) {
+      const routed = await resolveDistance(tenantId, customerId, input, now)
       return serializable(prisma, tenantId, async (transaction) => {
         const replay = await transaction.quote.findFirst({
           where: { idempotencyKey: input.idempotencyKey, tenantId, customerId },
@@ -374,6 +538,7 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             throw new CommerceError('IDEMPOTENCY_KEY_CONFLICT', 409)
           }
           if (replay.status === 'ACTIVE' && replay.expiresAt <= now) {
+            // ownership-established: replay was found filtered by customerId.
             return mapQuote(
               await transaction.quote.update({
                 where: { id: replay.id },
@@ -456,10 +621,20 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
         await assertBranchCapacity(transaction, cart.items[0]!.bakeryProductOffering, now)
 
         const branch = cart.items[0]!.bakeryProductOffering.bakeryBranch
-        const distanceMeters = calculateDeliveryDistanceMeters(
-          { latitude: Number(branch.latitude), longitude: Number(branch.longitude) },
-          { latitude: Number(address.latitude), longitude: Number(address.longitude) },
-        )
+        // The distance was measured against the branch and address read a moment
+        // ago. If either moved under us — a cart switched branches between the
+        // two reads — that measurement is about a different journey, and using it
+        // would price this one on someone else's road.
+        const routeDistance =
+          routed && routed.branchId === branch.id && routed.addressId === address.id
+            ? routed.distance
+            : null
+        const distanceMeters =
+          routeDistance?.distanceMetres ??
+          calculateDeliveryDistanceMeters(
+            { latitude: Number(branch.latitude), longitude: Number(branch.longitude) },
+            { latitude: Number(address.latitude), longitude: Number(address.longitude) },
+          )
         const pricingRules = await transaction.deliveryPricingRule.findMany({
           where: {
             tenantId,
@@ -488,11 +663,65 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           cart.operationalZoneId,
         )
         const delivery = calculateDeliveryFee(pricingRule, subtotal.amount, distanceMeters)
-        const total = subtotal.add(Money.irr(delivery.deliveryFeeAmount))
+
+        // A code the customer supplied. A refusal does not fail the quote: a
+        // basket that will not price because a code expired is a basket that
+        // gets abandoned. The quote comes back undiscounted and says why.
+        const promotion = input.promotionCode
+          ? await reservePromotion(transaction, tenantId, customerId, {
+              code: input.promotionCode,
+              subtotal: subtotal.amount,
+              deliveryFee: delivery.deliveryFeeAmount,
+              cityId: cart.cityId,
+              now,
+              correlationId,
+            })
+          : null
+        // The window the customer chose, if they chose one. Re-derived from the
+        // branch's own schedule rather than trusted: the start arrives from a
+        // browser, and without checking it an order could be accepted for three
+        // in the morning. A refusal here is reported, not thrown — a window that
+        // filled while the customer was typing their address means "pick
+        // another one", not an error page.
+        const chosenWindow = input.deliveryWindowStartsAt
+          ? await resolveDeliveryWindow(
+              transaction,
+              tenantId,
+              cart.bakeryBranchId,
+              new Date(input.deliveryWindowStartsAt),
+              now,
+            )
+          : null
+        const windowRefused = Boolean(input.deliveryWindowStartsAt) && chosenWindow === null
+
+        const discountAmount = promotion?.applied ? promotion.discountAmount : 0n
+        const total = Money.irr(
+          totalAfterDiscount({
+            subtotal: subtotal.amount,
+            deliveryFee: delivery.deliveryFeeAmount,
+            discountAmount,
+          }),
+        )
+
+        // ownership-established: scoped to a cart loaded above filtered by customerId.
+        const superseded = await transaction.quote.findMany({
+          where: { cartId: cart.id, status: 'ACTIVE' },
+          select: { id: true },
+        })
+        // ownership-established: same cart, loaded above filtered by customerId.
         await transaction.quote.updateMany({
           where: { cartId: cart.id, status: 'ACTIVE' },
           data: { status: 'SUPERSEDED' },
         })
+        // The holds those quotes carried go back to the campaign. Without this a
+        // customer who re-prices their basket twice exhausts their own
+        // per-customer limit against quotes nobody will ever pay.
+        await releaseRedemptionsForQuotes(
+          transaction,
+          tenantId,
+          superseded.map((entry) => entry.id),
+          now,
+        )
 
         const quote = await transaction.quote.create({
           data: {
@@ -504,11 +733,21 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             expiresAt: calculateQuoteExpiry(now),
             subtotalAmount: subtotal.amount,
             deliveryFeeAmount: delivery.deliveryFeeAmount,
+            discountAmount,
             totalAmount: total.amount,
+            ...(promotion?.applied && { promotionId: promotion.promotionId }),
+            ...(chosenWindow && { deliveryWindowId: chosenWindow.id }),
             deliveryAddressId: address.id,
             deliveryServiceAreaIdSnapshot: address.serviceAreaId,
             deliveryOperationalZoneIdSnapshot: address.operationalZoneId,
             deliveryDistanceMeters: distanceMeters,
+            // Recorded so a disputed fare can be explained rather than defended.
+            ...(routeDistance && {
+              deliveryDistanceSource: routeDistance.source,
+              ...(routeDistance.reasonCode !== undefined && {
+                deliveryDistanceReasonCode: routeDistance.reasonCode,
+              }),
+            }),
             deliveryPricingRuleId: pricingRule.id,
             deliveryPricingRuleVersion: pricingRule.version,
             bakeryNameSnapshot: branch.bakery.displayNameFa,
@@ -525,6 +764,11 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
           },
           include: quoteInclude,
         })
+        // The hold now belongs to a quote, which is what lets it be released
+        // when that quote is superseded and spent when it becomes an order.
+        if (promotion?.applied && promotion.redemptionId) {
+          await attachRedemptionToQuote(transaction, promotion.redemptionId, quote.id)
+        }
         await recordCommerceChange(
           transaction,
           tenantId,
@@ -543,7 +787,15 @@ export function createPrismaCommerceRepository(prisma: PrismaClient): CommerceRe
             expiresAt: quote.expiresAt.toISOString(),
           },
         )
-        return mapQuote(quote)
+        // The refusal is transient: it describes what happened to the code on
+        // this request, not a property of the quote. Storing it would mean a
+        // customer re-reading an old quote is told again about a code they have
+        // long since replaced.
+        return {
+          ...mapQuote(quote),
+          ...(promotion && !promotion.applied && { promotionRefusal: promotion.reason }),
+          ...(windowRefused && { deliveryWindowRefusal: 'DELIVERY_WINDOW_UNAVAILABLE' }),
+        }
       })
     },
   }
@@ -661,10 +913,16 @@ export function serviceDateAt(now: Date, timezone: string): Date {
   return new Date(`${part('year')}-${part('month')}-${part('day')}T00:00:00.000Z`)
 }
 
+/**
+ * Internal helper. Callers must pass a cartId they resolved under a customerId
+ * filter — never one taken from request input, which would read another
+ * customer's cart.
+ */
 async function loadCart(
   transaction: Prisma.TransactionClient,
   cartId: string,
 ): Promise<CartSummary> {
+  // ownership-established: callers resolve cartId under a customerId filter.
   const cart = await transaction.cart.findUnique({ where: { id: cartId }, include: cartInclude })
   if (!cart) throw new CommerceError('CART_NOT_FOUND', 404)
   return mapCart(cart)
@@ -730,6 +988,19 @@ function mapQuote(quote: QuoteRecord): QuoteSummary {
     subtotal: { amount: quote.subtotalAmount.toString(), currency: quote.currency },
     deliveryFee: { amount: quote.deliveryFeeAmount.toString(), currency: quote.currency },
     discount: { amount: quote.discountAmount.toString(), currency: quote.currency },
+    ...(quote.promotion && {
+      promotion: {
+        nameFa: quote.promotion.nameFa,
+        basis: quote.promotionRedemption?.basis ?? 'SUBTOTAL',
+      },
+    }),
+    paymentMethod: quote.paymentMethod,
+    ...(quote.deliveryWindow && {
+      deliveryWindow: {
+        startsAt: quote.deliveryWindow.startsAt.toISOString(),
+        endsAt: quote.deliveryWindow.endsAt.toISOString(),
+      },
+    }),
     total: { amount: quote.totalAmount.toString(), currency: quote.currency },
     items: quote.items.map((item) => ({
       id: item.id,
@@ -753,6 +1024,7 @@ async function invalidateQuotes(
   cartId: string,
   now: Date,
 ): Promise<void> {
+  // ownership-established: callers resolve cartId under a customerId filter.
   await transaction.quote.updateMany({
     where: { cartId, status: 'ACTIVE' },
     data: { status: 'SUPERSEDED', expiresAt: now },

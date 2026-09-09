@@ -1,0 +1,399 @@
+import 'server-only'
+
+import type {
+  ActiveCitySummary,
+  AddressSummary,
+  CartSummary,
+  DeliveryWindow,
+  Favourite,
+  OrderRating,
+  OrderSummary,
+  ReorderResult,
+  PaymentExecutionSummary,
+  PaymentSummary,
+  ProductDetail,
+  ProductSummary,
+  QuoteSummary,
+  ServiceabilityResponse,
+  SessionContext,
+  WalletEntrySummary,
+  WalletSummary,
+  WalletTransferSummary,
+  WalletWithdrawalSummary,
+} from '@alo-noon/contracts'
+
+import {
+  isUuid,
+  request,
+  requestWithPagination,
+  type ApiResult,
+  type PaginationMeta,
+} from './api-core'
+
+/**
+ * The storefront's view of the API.
+ *
+ * Every shape here is the contract package's own type rather than a hand-copied
+ * interface. That is the point of having versioned transport contracts: when a
+ * field moves, this file fails to compile instead of quietly rendering
+ * `undefined` where a price should be.
+ *
+ * The transport — tenant host, session cookie, timeouts, envelope unwrapping —
+ * is shared with the admin panel in `api-core`. It runs only on the server, so a
+ * customer's session cookie is never readable by page scripts.
+ */
+
+/* ------------------------------------------------------------- discovery */
+
+export async function listCities(): Promise<ApiResult<ActiveCitySummary[]>> {
+  return request<ActiveCitySummary[]>('/api/v1/serviceability/cities', { method: 'GET' })
+}
+
+/**
+ * Whether this shop delivers to a point.
+ *
+ * The city is part of the question, not part of the answer: the API decides
+ * against one city's zones, and an earlier version of this function left it out
+ * entirely, which the API rejected as an invalid request. The response says
+ * which zone and area matched, and `reason` says why not when it did not.
+ */
+export async function checkServiceability(input: {
+  cityId: string
+  latitude: number
+  longitude: number
+}): Promise<ApiResult<ServiceabilityResponse>> {
+  if (!isUuid(input.cityId)) {
+    return { ok: false, error: { code: 'CITY_NOT_FOUND', message: 'شهر انتخابی معتبر نیست.' } }
+  }
+  return request<ServiceabilityResponse>('/api/v1/serviceability/check', {
+    method: 'POST',
+    body: input,
+  })
+}
+
+export async function listProducts(
+  cityId: string,
+  options: { operationalZoneId?: string; page?: number; pageSize?: number } = {},
+): Promise<ApiResult<ProductSummary[]> & { pagination?: PaginationMeta }> {
+  if (!isUuid(cityId)) {
+    return { ok: false, error: { code: 'CITY_NOT_FOUND', message: 'شهر انتخابی معتبر نیست.' } }
+  }
+  const query = new URLSearchParams({
+    cityId,
+    page: String(options.page ?? 1),
+    pageSize: String(options.pageSize ?? 60),
+    ...(options.operationalZoneId && { operationalZoneId: options.operationalZoneId }),
+  })
+  return requestWithPagination<ProductSummary[]>(`/api/v1/catalog/products?${query.toString()}`)
+}
+
+/**
+ * One bread, by the slug in its URL.
+ *
+ * The slug is put through `encodeURIComponent` rather than trusted: it arrives
+ * from the address bar, and a path segment is not a place to interpolate
+ * whatever a visitor typed.
+ */
+export async function readProduct(
+  slug: string,
+  cityId: string,
+  options: { operationalZoneId?: string } = {},
+): Promise<ApiResult<ProductDetail>> {
+  if (!isUuid(cityId)) {
+    return { ok: false, error: { code: 'CITY_NOT_FOUND', message: 'شهر انتخابی معتبر نیست.' } }
+  }
+  const query = new URLSearchParams({
+    cityId,
+    ...(options.operationalZoneId && { operationalZoneId: options.operationalZoneId }),
+  })
+  return request<ProductDetail>(
+    `/api/v1/catalog/products/${encodeURIComponent(slug)}?${query.toString()}`,
+    { method: 'GET' },
+  )
+}
+
+/* -------------------------------------------------------------- identity */
+
+export async function readSession(): Promise<ApiResult<SessionContext>> {
+  return request<SessionContext>('/api/v1/auth/session', { method: 'GET' })
+}
+
+/**
+ * The signed-in customer, or nobody.
+ *
+ * A failed session read is not an error worth showing anyone: most visitors to
+ * a shop are not signed in, and that is the normal case rather than a fault.
+ */
+export async function currentSession(): Promise<SessionContext | null> {
+  const result = await readSession()
+  return result.ok ? result.data : null
+}
+
+/**
+ * Revokes the session on the API.
+ *
+ * Deleting only the browser cookie would leave a usable session alive on the
+ * server for its full life — on a shared or stolen device, "signed out" would
+ * be a label rather than a fact.
+ */
+export async function revokeShopSession(): Promise<void> {
+  await request('/api/v1/auth/session', { method: 'DELETE' })
+}
+
+/* ---------------------------------------------------------------- basket */
+
+export async function readCart(): Promise<ApiResult<CartSummary | null>> {
+  return request<CartSummary | null>('/api/v1/cart', { method: 'GET' })
+}
+
+/**
+ * Puts a quantity of one offering into the cart.
+ *
+ * `expectedCartVersion` is the cart's optimistic concurrency: the API refuses a
+ * write decided against a version somebody else has since replaced. It is
+ * optional because the very first write happens when there is no cart at all,
+ * and sending a version then is refused.
+ */
+export async function setCartItem(
+  offeringId: string,
+  input: {
+    cityId: string
+    operationalZoneId: string
+    quantity: number
+    expectedCartVersion?: number
+  },
+): Promise<ApiResult<CartSummary>> {
+  if (!isUuid(offeringId)) {
+    return { ok: false, error: { code: 'OFFERING_NOT_FOUND', message: 'این محصول یافت نشد.' } }
+  }
+  return request<CartSummary>(`/api/v1/cart/items/${offeringId}`, { method: 'PUT', body: input })
+}
+
+export async function removeCartItem(
+  offeringId: string,
+  expectedCartVersion?: number,
+): Promise<ApiResult<CartSummary>> {
+  if (!isUuid(offeringId)) {
+    return { ok: false, error: { code: 'OFFERING_NOT_FOUND', message: 'این محصول یافت نشد.' } }
+  }
+  return request<CartSummary>(`/api/v1/cart/items/${offeringId}`, {
+    method: 'DELETE',
+    body: expectedCartVersion === undefined ? {} : { expectedCartVersion },
+  })
+}
+
+/* ------------------------------------------------------------- addresses */
+
+export async function listAddresses(): Promise<ApiResult<AddressSummary[]>> {
+  return request<AddressSummary[]>('/api/v1/addresses', { method: 'GET' })
+}
+
+/**
+ * Saves a delivery address.
+ *
+ * The zone and service area are deliberately not part of the request: the API
+ * decides both from the coordinates, and letting a client assert them would let
+ * it claim delivery to somewhere no courier goes. `idempotencyKey` is required
+ * — a resubmitted form must return the address it already created rather than a
+ * second copy of the same house.
+ */
+export async function createAddress(input: {
+  cityId: string
+  label: string
+  recipientName: string
+  recipientPhone: string
+  addressLine: string
+  latitude: number
+  longitude: number
+  idempotencyKey: string
+  postalCode?: string
+  deliveryInstructions?: string
+}): Promise<ApiResult<AddressSummary>> {
+  return request<AddressSummary>('/api/v1/addresses', { method: 'POST', body: input })
+}
+
+/* ------------------------------------------------------- quote and order */
+
+export async function createQuote(input: {
+  deliveryAddressId: string
+  expectedCartVersion: number
+  idempotencyKey: string
+  /** A discount code, as typed. A bad one does not fail the quote. */
+  promotionCode?: string
+  /** The chosen delivery window, named by the instant it starts. */
+  deliveryWindowStartsAt?: string
+  /** How the customer intends to pay. Checked server-side against the city. */
+}): Promise<ApiResult<QuoteSummary>> {
+  return request<QuoteSummary>('/api/v1/cart/quote', { method: 'POST', body: input })
+}
+
+/**
+ * When the bakery can bring it.
+ *
+ * Derived on the server from the basket's own branch, so there is nothing to
+ * pass and nothing a caller could point at the wrong bakery.
+ */
+export async function listDeliveryWindows(): Promise<ApiResult<DeliveryWindow[]>> {
+  return request<DeliveryWindow[]>('/api/v1/cart/delivery-windows', { method: 'GET' })
+}
+
+export async function placeOrder(input: {
+  quoteId: string
+  idempotencyKey: string
+}): Promise<ApiResult<OrderSummary>> {
+  return request<OrderSummary>('/api/v1/orders', { method: 'POST', body: input })
+}
+
+/* ------------------------------------------------- reorder and engagement */
+
+/**
+ * Rebuilds the basket from a past order.
+ *
+ * The server prices it at today's prices and reports anything it could not
+ * repeat; nothing about the old order's money comes back with it.
+ */
+export async function reorder(orderId: string): Promise<ApiResult<ReorderResult>> {
+  if (!isUuid(orderId)) {
+    return { ok: false, error: { code: 'ORDER_NOT_FOUND', message: 'سفارش یافت نشد.' } }
+  }
+  return request<ReorderResult>(`/api/v1/orders/${orderId}/reorder`, { method: 'POST', body: {} })
+}
+
+export async function rateOrder(
+  orderId: string,
+  input: { breadScore: number; deliveryScore?: number; comment?: string },
+): Promise<ApiResult<OrderRating>> {
+  if (!isUuid(orderId)) {
+    return { ok: false, error: { code: 'ORDER_NOT_FOUND', message: 'سفارش یافت نشد.' } }
+  }
+  return request<OrderRating>(`/api/v1/orders/${orderId}/rating`, { method: 'POST', body: input })
+}
+
+export async function listFavourites(): Promise<ApiResult<Favourite[]>> {
+  return request<Favourite[]>('/api/v1/favourites', { method: 'GET' })
+}
+
+export async function addFavourite(offeringId: string): Promise<ApiResult<undefined>> {
+  return request<undefined>(`/api/v1/favourites/${offeringId}`, { method: 'PUT' })
+}
+
+export async function removeFavourite(offeringId: string): Promise<ApiResult<undefined>> {
+  return request<undefined>(`/api/v1/favourites/${offeringId}`, { method: 'DELETE' })
+}
+
+export async function listOrders(): Promise<ApiResult<OrderSummary[]>> {
+  return request<OrderSummary[]>('/api/v1/orders', { method: 'GET' })
+}
+
+export async function readOrder(orderId: string): Promise<ApiResult<OrderSummary>> {
+  if (!isUuid(orderId)) {
+    return { ok: false, error: { code: 'ORDER_NOT_FOUND', message: 'سفارش یافت نشد.' } }
+  }
+  return request<OrderSummary>(`/api/v1/orders/${orderId}`, { method: 'GET' })
+}
+
+/* --------------------------------------------------------------- payment */
+
+export async function createPayment(input: {
+  orderId: string
+  idempotencyKey: string
+  /** Which of the customer's own money pays. Omitted means the gateway. */
+  source?: 'GATEWAY' | 'BALANCE'
+}): Promise<ApiResult<PaymentSummary>> {
+  return request<PaymentSummary>('/api/v1/payments', { method: 'POST', body: input })
+}
+
+/**
+ * Asks the gateway to open a payment and tell us where to send the customer.
+ *
+ * The answer is deliberately not a URL and nothing else. `state` says whether
+ * the customer must go somewhere, `customerAction` carries the opaque HTTPS
+ * address when they must, and `failure` explains a refusal in a code the shop
+ * can act on. A caller that only read a URL would treat "the gateway said no"
+ * as "the gateway is broken".
+ *
+ * `replayed` is true when this exact idempotency key has already been executed,
+ * which is the normal answer to a customer who pressed pay twice.
+ */
+export async function initializePayment(input: {
+  paymentId: string
+  idempotencyKey: string
+}): Promise<ApiResult<PaymentExecutionSummary>> {
+  return request<PaymentExecutionSummary>('/api/v1/payments/initialize', {
+    method: 'POST',
+    body: input,
+  })
+}
+
+export async function readPayment(paymentId: string): Promise<ApiResult<PaymentSummary>> {
+  if (!isUuid(paymentId)) {
+    return { ok: false, error: { code: 'PAYMENT_NOT_FOUND', message: 'پرداخت یافت نشد.' } }
+  }
+  return request<PaymentSummary>(`/api/v1/payments/${paymentId}`, { method: 'GET' })
+}
+
+/* ----------------------------------------------------------------- wallet */
+
+export async function readWallet(): Promise<ApiResult<WalletSummary>> {
+  return request<WalletSummary>('/api/v1/wallet', { method: 'GET' })
+}
+
+export async function listWalletEntries(): Promise<ApiResult<WalletEntrySummary[]>> {
+  return request<WalletEntrySummary[]>('/api/v1/wallet/entries', { method: 'GET' })
+}
+
+/**
+ * Opens a payment that will charge the balance.
+ *
+ * Answers with a payment id and nothing else: from there it is an ordinary
+ * gateway payment, initialised and redirected exactly like an order's, which is
+ * the point of a top-up reusing the payment aggregate.
+ */
+export async function startWalletTopUp(input: {
+  amount: string
+  idempotencyKey: string
+}): Promise<ApiResult<{ paymentId: string }>> {
+  return request<{ paymentId: string }>('/api/v1/wallet/top-ups', { method: 'POST', body: input })
+}
+
+export async function listWalletTransfers(): Promise<ApiResult<WalletTransferSummary[]>> {
+  return request<WalletTransferSummary[]>('/api/v1/wallet/transfers', { method: 'GET' })
+}
+
+export async function openWalletTransfer(input: {
+  recipientMobile: string
+  amount: string
+  idempotencyKey: string
+}): Promise<ApiResult<WalletTransferSummary>> {
+  return request<WalletTransferSummary>('/api/v1/wallet/transfers', { method: 'POST', body: input })
+}
+
+export async function confirmWalletTransfer(
+  transferId: string,
+  code: string,
+): Promise<ApiResult<WalletTransferSummary>> {
+  if (!isUuid(transferId)) {
+    return { ok: false, error: { code: 'TRANSFER_NOT_FOUND', message: 'انتقال یافت نشد.' } }
+  }
+  return request<WalletTransferSummary>(`/api/v1/wallet/transfers/${transferId}/confirm`, {
+    method: 'POST',
+    body: { code },
+  })
+}
+
+export async function listWalletWithdrawals(): Promise<ApiResult<WalletWithdrawalSummary[]>> {
+  return request<WalletWithdrawalSummary[]>('/api/v1/wallet/withdrawals', { method: 'GET' })
+}
+
+export async function requestWalletWithdrawal(input: {
+  amount: string
+  cardNumber: string
+  cardHolderName: string
+  iban?: string
+  idempotencyKey: string
+}): Promise<ApiResult<WalletWithdrawalSummary>> {
+  return request<WalletWithdrawalSummary>('/api/v1/wallet/withdrawals', {
+    method: 'POST',
+    body: input,
+  })
+}

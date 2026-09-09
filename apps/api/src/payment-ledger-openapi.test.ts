@@ -23,10 +23,35 @@ describe('payment and ledger OpenAPI foundation', () => {
     'LedgerAccountStateChangedEventPayload:',
   ])('publishes %s', (schema) => expect(openApi).toContain(schema))
 
-  it('does not expose an untrusted public payment execution path', () => {
-    expect(openApi).not.toContain('/api/v1/payments:')
+  /**
+   * A customer can now open the payment for their own order and read it back,
+   * so the absence of `/api/v1/payments` is no longer the invariant. What has
+   * to stay true is narrower and more important: nothing a client sends can
+   * name an amount or assert a state. The amount comes from the order; the
+   * state comes from settlement, driven by the gateway's own answer.
+   */
+  it('lets a client open and read a payment, but never price or settle one', () => {
+    expect(openApi).toContain('/api/v1/payments:')
+    expect(openApi).toContain('/api/v1/payments/{paymentId}:')
+
+    // The only payment a client may describe, and it describes neither.
+    const command = openApi.slice(
+      openApi.indexOf('    PaymentCheckoutStart:'),
+      openApi.indexOf('    PaymentEnvelope:'),
+    )
+    expect(command).toContain('orderId')
+    expect(command).toContain('idempotencyKey')
+    expect(command).not.toMatch(/amount|state|status/i)
+    expect(command).toContain('additionalProperties: false')
+
+    // No route exists through which a state could be asserted at all.
+    expect(openApi).not.toContain('/api/v1/payments/{paymentId}/state')
+    expect(openApi).not.toContain('/api/v1/payments/{paymentId}/capture')
+    expect(openApi).not.toContain('/api/v1/payments/capture')
+
+    // Ledger governance stays entirely internal.
     expect(openApi).not.toContain('/api/v1/financial-operations:')
-    expect(openApi).toContain('No public payment-status or ledger-governance')
+    expect(openApi).toContain('no ledger-governance write endpoint is')
   })
 
   it('documents integer IRR and double-entry line constraints', () => {

@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
 import {
   createPaymentProviderAdapterRegistry,
   createProviderExecutionPolicy,
+  generateOrderCode,
   type PaymentProviderAdapter,
   type ProviderInitializationResult,
 } from '@alo-noon/domain'
@@ -372,11 +373,12 @@ databaseDescribe('payment execution orchestrator on PostgreSQL', () => {
     }
     const payment = await prisma.payment.findUniqueOrThrow({
       where: { id: paymentId },
-      include: { order: true, financialTransaction: true },
+      include: { order: true, financialTransactions: true },
     })
     expect(payment).toMatchObject({
       state: 'CREATED',
-      financialTransaction: null,
+      // No posting at all: the relation is a list now, and nothing was written.
+      financialTransactions: [],
       order: { paymentState: 'NOT_STARTED' },
     })
   })
@@ -711,6 +713,7 @@ async function createPayment(suffix: string, occurredAt: Date) {
   })
   const order = await prisma.order.create({
     data: {
+      publicId: generateOrderCode((length) => randomBytes(length)),
       tenantId,
       idempotencyKey: `execution-order-${suffix}`,
       customerId: customer.id,

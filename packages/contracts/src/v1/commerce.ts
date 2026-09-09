@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { freshnessClaimSchema, productFulfillmentClassSchema } from './catalog'
 import { isoDateTimeSchema, moneySchema, responseMetaSchema, uuidSchema } from './common'
+import { paymentMethodSchema } from './payments'
 
 export const cartItemMutationSchema = z.object({
   cityId: uuidSchema,
@@ -20,8 +21,42 @@ export const quoteCreateSchema = z.object({
   deliveryAddressId: uuidSchema,
   expectedCartVersion: z.number().int().min(1),
   idempotencyKey: z.string().trim().min(16).max(128),
+  /**
+   * A discount code, as the customer typed it.
+   *
+   * Optional, and a bad one does not fail the quote: a basket that refuses to
+   * price because a code expired is a basket the customer abandons. The quote
+   * comes back without the discount and says why separately.
+   */
+  promotionCode: z.string().trim().min(1).max(64).optional(),
+  /**
+   * The delivery window the customer chose, named by the instant it starts.
+   *
+   * Optional: an order with no window is delivered as soon as the branch can,
+   * which is what every order was before windows existed. Named by its start
+   * rather than by an identifier because the window may not have been
+   * materialised yet — nothing exists to hold an id until somebody wants it.
+   */
+  deliveryWindowStartsAt: isoDateTimeSchema.optional(),
 })
 export type QuoteCreate = z.infer<typeof quoteCreateSchema>
+
+export const deliveryWindowSchema = z.object({
+  /** The local calendar day this window belongs to, as `YYYY-MM-DD`. */
+  serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startsAt: isoDateTimeSchema,
+  endsAt: isoDateTimeSchema,
+  /** Places left in this window. */
+  remaining: z.number().int().min(0),
+  available: z.boolean(),
+})
+export type DeliveryWindow = z.infer<typeof deliveryWindowSchema>
+
+export const deliveryWindowListEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: z.array(deliveryWindowSchema),
+  meta: responseMetaSchema,
+})
 
 export const commerceItemSnapshotSchema = z.object({
   id: uuidSchema,
@@ -75,6 +110,21 @@ export const quoteSummarySchema = z.object({
   subtotal: moneySchema,
   deliveryFee: moneySchema,
   discount: moneySchema,
+  /** The campaign that produced the discount, when one did. */
+  promotion: z
+    .object({
+      nameFa: z.string().min(1).max(200),
+      basis: z.enum(['SUBTOTAL', 'DELIVERY_FEE']),
+    })
+    .optional(),
+  /** Why a code the customer supplied did nothing. Absent when it worked. */
+  promotionRefusal: z.string().min(1).max(64).optional(),
+  /** The window this basket was priced for, when the customer chose one. */
+  deliveryWindow: z.object({ startsAt: isoDateTimeSchema, endsAt: isoDateTimeSchema }).optional(),
+  /** Set when the chosen window could not be held — it filled, or it is no longer offered. */
+  deliveryWindowRefusal: z.string().min(1).max(64).optional(),
+  /** How this quote will be paid for. Authoritative: the order inherits it. */
+  paymentMethod: paymentMethodSchema,
   total: moneySchema,
   items: z.array(commerceItemSnapshotSchema).min(1),
   createdAt: isoDateTimeSchema,

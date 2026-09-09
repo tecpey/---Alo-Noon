@@ -1,0 +1,124 @@
+/*
+ * The legal pages.
+ *
+ * A reading column and nothing else. These are the pages somebody opens when
+ * they are worried or checking, and every decorative thing on them competes
+ * with the sentence that answers their question. The storefront's tokens carry
+ * the type and colour so this reads as the same product, at a comfortable
+ * measure for continuous prose rather than the shop's card grid.
+ */
+.legal {
+  background: var(--surface-base);
+  color: var(--ink-strong);
+  min-block-size: 100vh;
+}
+
+.legal__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.legal__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+.legal__nav a {
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+.legal__nav a:hover,
+.legal__nav a:focus-visible {
+  color: var(--primary-600);
+  text-decoration: underline;
+}
+
+.legal__body {
+  /* About seventy characters at this size: the width prose has been set at for
+     four hundred years, because it is where the eye finds the next line. */
+  max-inline-size: 42rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 5rem;
+}
+
+.legal__article h1 {
+  font-size: 1.7rem;
+  margin-block: 0 0.35rem;
+}
+.legal__article h2 {
+  font-size: 1.1rem;
+  margin-block: 2rem 0.6rem;
+}
+.legal__article p,
+.legal__article li {
+  line-height: 1.9;
+}
+.legal__article ul,
+.legal__article ol {
+  padding-inline-start: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.legal__article a {
+  color: var(--primary-600);
+}
+
+.legal__updated {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  margin-block-start: 0;
+}
+
+.legal__note {
+  border-inline-start: 3px solid var(--line-subtle);
+  padding-inline-start: 0.9rem;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+/* The identity block. A definition list because that is what it is: a label and
+   the one fact that answers it. */
+.legal__contact dl {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+.legal__contact dl > div {
+  display: contents;
+}
+.legal__contact dt {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+.legal__contact dd {
+  margin: 0;
+}
+
+/* Shown when a deployment has not been given its own identity yet. Warning
+   coloured rather than error: nothing is broken, something is unfinished. */
+.legal__missing {
+  margin-block-start: 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface-card));
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--surface-card));
+  font-size: 0.9rem;
+  line-height: 1.8;
+}
+.legal__missing code {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.legal__seal {
+  display: inline-block;
+  line-height: 0;
+}

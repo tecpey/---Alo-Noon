@@ -460,6 +460,11 @@ databaseDescribe('Phase 2E checkout transaction', () => {
       unitPriceAmount: 250_000n,
       lineTotalAmount: 500_000n,
     })
+    // The code a customer reads back down the phone. Twenty-five characters of
+    // cuid could not be read aloud and pushed every order notification into a
+    // second paid SMS, so orders carry a short unambiguous code instead.
+    expect(persisted?.publicId).toMatch(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/)
+
     expect(persisted?.transitions).toHaveLength(1)
     expect(persisted?.transitions[0]).toMatchObject({
       fromState: 'DRAFT',

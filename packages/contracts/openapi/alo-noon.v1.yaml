@@ -10,12 +10,20 @@ info:
     internal; the versioned tenant chart of accounts and governed account state
     foundation are implemented. The tenant-scoped, SPI-versioned payment-provider abstraction,
     opaque credential-reference, payment-attempt, and callback replay foundation
-    are implemented without a real gateway adapter. No public payment-status or ledger-governance
-    write endpoint is exposed. The authenticated initialization orchestrator is implemented as an
-    injectable, fail-closed boundary; the production server does not configure a real adapter or
-    credential resolver, so real payment execution remains unavailable. Authentication delivery
+    are implemented without a real gateway adapter. A customer may open the payment for an
+    order they own and read it back, and nothing more: no public endpoint lets a client name
+    a payment amount or assert a payment state, and no ledger-governance write endpoint is
+    exposed at all. The authenticated initialization orchestrator is implemented as an
+    injectable, fail-closed boundary. Gateway callbacks are recorded and then settled by
+    server-to-server verification: a payment is captured, posted to the double-entry ledger,
+    and marked paid on its order only when the gateway confirms it for the exact expected
+    amount. No settlement surface is exposed publicly — the customer's return carries an
+    opaque reference and no verdict. Authentication delivery
     now has tenant-scoped persistence, abuse controls, a versioned provider SPI, and recoverable
     two-transaction orchestration; no Iranian SMS provider is approved or enabled.
+    Payment gateway and authentication-delivery provider governance is exposed to staff
+    holding a GLOBAL governance grant. Those routes carry opaque credential references
+    only: no secret material is ever accepted, stored, or returned by this API.
 servers:
   - url: http://localhost:3001
 paths:
@@ -262,6 +270,241 @@ paths:
           description: Cart or item was not found.
         '409':
           description: Expected cart version is stale.
+  /api/v1/orders/{orderId}/reorder:
+    post:
+      operationId: reorderOrder
+      summary: Rebuild the basket from a past order.
+      description: >-
+        Priced at today's prices, never the prices the old order was placed at:
+        a basket rebuilt at three-week-old prices sells bread below what it
+        costs to bake. Replaces the basket rather than merging into it, and
+        reports everything it could not repeat instead of silently omitting it.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: The basket, rebuilt, with anything that had to change.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/ReorderResult' }
+                  meta: { $ref: '#/components/schemas/ResponseMeta' }
+        '401':
+          description: A valid customer session is required.
+        '404':
+          description: No such order for this customer.
+        '422':
+          description: Nothing from that order is still sold.
+  /api/v1/orders/{orderId}/rating:
+    get:
+      operationId: readOrderRating
+      summary: The caller's own rating for an order.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The rating.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/OrderRating' }
+                  meta: { $ref: '#/components/schemas/ResponseMeta' }
+        '401':
+          description: A valid customer session is required.
+        '404':
+          description: No rating has been left for that order.
+    post:
+      operationId: rateOrder
+      summary: Say how an order was.
+      description: >-
+        Only after it arrived, once, and within a month. Two scores because two
+        different things can go wrong and they belong to different people: the
+        bread is the bakery's and the delivery is the courier's.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderRatingInput' }
+      responses:
+        '201':
+          description: Recorded.
+        '401':
+          description: A valid customer session is required.
+        '404':
+          description: No such order for this customer.
+        '422':
+          description: >-
+            The order has not arrived, was already rated, or the rating window
+            has closed.
+  /api/v1/favourites:
+    get:
+      operationId: listFavourites
+      summary: The caller's saved bread.
+      description: >-
+        A favourite that has sold out stays in the list and says so. Removing it
+        would look like the platform lost it.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Saved offerings, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Favourite' }
+                  meta: { $ref: '#/components/schemas/ResponseMeta' }
+        '401':
+          description: A valid customer session is required.
+  /api/v1/favourites/{offeringId}:
+    put:
+      operationId: addFavourite
+      summary: Save a loaf. A second tap is the same favourite, not an error.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: offeringId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Saved.
+        '401':
+          description: A valid customer session is required.
+        '404':
+          description: No such offering.
+    delete:
+      operationId: removeFavourite
+      summary: Forget a loaf. Removing one that was never there is not a failure.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: offeringId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Gone.
+        '401':
+          description: A valid customer session is required.
+  /api/v1/admin/cash/outstanding:
+    get:
+      operationId: listCourierCashPositions
+      summary: How much cash each courier is currently carrying.
+      description: >-
+        Derived from ledger postings rather than a running total on the courier
+        record: a number that is computed cannot drift away from the books, and
+        a number that is stored eventually does. Requires admin.orders.manage —
+        counting cash is an operational act, not a report.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: One row per courier still holding collected cash.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CourierCashPosition' }
+                  meta: { $ref: '#/components/schemas/ResponseMeta' }
+        '401':
+          description: A valid staff session is required.
+        '403':
+          description: This account may not manage orders.
+  /api/v1/admin/cash/remittances:
+    post:
+      operationId: recordCashRemittance
+      summary: Record a courier handing in the cash they collected.
+      description: >-
+        The amount is checked against what the named orders actually say, and
+        nothing is posted unless the two agree. A courier who is short has a
+        dispute — a decision a person makes and records — not a rounding the
+        ledger quietly absorbs. Each order posts its own journal, so an order's
+        cash can be handed in exactly once.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CashRemittanceCommand' }
+      responses:
+        '201':
+          description: Recorded and posted.
+        '401':
+          description: A valid staff session is required.
+        '403':
+          description: This account may not manage orders.
+        '409':
+          description: That remittance key was already used for a different courier.
+        '422':
+          description: >-
+            The count does not match, an order was carried by a different
+            courier, or one of them was never collected.
+  /api/v1/cart/delivery-windows:
+    get:
+      operationId: listDeliveryWindows
+      summary: The delivery windows the caller's own basket can be booked into.
+      description: >-
+        Derived from the branch the caller's cart is already against, so there is
+        nothing to name and nothing to authorise beyond the session. Enumerating
+        windows writes nothing: browsing times costs a schedule lookup, not a row.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Bookable windows, soonest first. Empty when the branch has no hours recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryWindowListEnvelope' }
+        '401':
+          description: A valid customer session is required.
   /api/v1/cart/quote:
     post:
       operationId: createCartQuote
@@ -292,6 +535,23 @@ paths:
         '422':
           description: Cart, address, pricing, or capacity is not quoteable.
   /api/v1/orders:
+    get:
+      operationId: listOrders
+      summary: The caller's own recent orders, newest first.
+      description: >-
+        Drafts are excluded — a draft is an order the customer never placed, and showing
+        abandoned checkouts back as orders would confuse more than it informs. Bounded
+        rather than paginated: a customer following their bread is looking at the last
+        few, not browsing a history.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Recent orders.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderListEnvelope' }
+        '401': { description: A valid customer session is required. }
+        '503': { description: Orders are temporarily unavailable. }
     post:
       operationId: createOrderFromQuote
       summary: Atomically accept a quote and reserve bakery capacity.
@@ -310,6 +570,85 @@ paths:
         '404': { description: Quote is not available to the caller. }
         '409': { description: Quote or idempotency/concurrency conflict. }
         '422': { description: Snapshot, pricing, branch, or capacity is unavailable. }
+  /api/v1/orders/{orderId}:
+    get:
+      operationId: readOrder
+      summary: Follow one of your own orders.
+      description: >-
+        Scoped to the session's own customer, so another customer's order reads as absent
+        rather than as a refusal that confirms it exists. This is where a paid order stops
+        being a void: before it existed, a customer paid and had no way to learn anything
+        ever happened.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderEnvelope' }
+        '401': { description: A valid customer session is required. }
+        '404': { description: No such order for this customer. }
+        '503': { description: Orders are temporarily unavailable. }
+  /api/v1/payments:
+    post:
+      operationId: startPayment
+      summary: Open the payment for an order the caller owns.
+      description: >-
+        The amount is never sent — it comes from the order's own total, because a
+        client-supplied amount would be a client-chosen price. The payment is opened in
+        CREATED and stays there: settlement walks it to PENDING, AUTHORIZED and captured
+        when the gateway confirms, and letting a customer request any of those would be
+        letting them assert they had paid. Replaying the same idempotency key returns the
+        same payment rather than opening a second.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentCheckoutStart' }
+      responses:
+        '201':
+          description: The opened payment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentEnvelope' }
+        '400': { description: The request is malformed. }
+        '401': { description: A valid customer session is required. }
+        '404': { description: No such order for this customer. }
+        '409': { description: This order already has a payment. }
+        '422': { description: The order cannot be paid in its current state. }
+        '503': { description: Payments are temporarily unavailable. }
+  /api/v1/payments/{paymentId}:
+    get:
+      operationId: readPayment
+      summary: Read a payment back, after returning from the gateway.
+      description: >-
+        The screen a gateway returns to needs this. The return redirect proves nothing on
+        its own — every parameter on it is attacker-controllable, and the verdict comes
+        from the gateway's own server-to-server answer — so the app asks what actually
+        happened rather than believing the URL it landed on. Settlement may not have
+        finished when the customer returns, so a state short of CAPTURED is a reason to
+        ask again, not a failure.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The payment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentEnvelope' }
+        '401': { description: A valid customer session is required. }
+        '404': { description: No such payment for this customer. }
+        '503': { description: Payments are temporarily unavailable. }
   /api/v1/payments/initialize:
     post:
       operationId: initializePaymentExecution
@@ -343,6 +682,1304 @@ paths:
         '422': { description: Payment is not eligible for provider initialization. }
         '503':
           { description: Provider, adapter, credential, or persistence boundary is unavailable. }
+  /api/v1/admin/payment-providers/credentials:
+    post:
+      operationId: createAdminPaymentProviderCredential
+      summary: Register an opaque credential reference for a payment gateway.
+      description: >-
+        Accepts only a reference into the deployment's secret store. The secret value
+        itself never travels through this API, is never persisted by it, and can never
+        be read back through it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderCredentialCreate' }
+      responses:
+        '201':
+          description: Credential reference registered or replayed idempotently.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProviderCredentialEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '409': { description: Idempotency or concurrency conflict. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/payment-providers/configurations:
+    get:
+      operationId: listAdminPaymentProviderConfigurations
+      summary: List the tenant's payment gateway configurations.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Configurations, newest first, without any credential material.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminPaymentProviderConfiguration
+      summary: Create a payment gateway configuration bound to a credential reference.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationCreate' }
+      responses:
+        '201':
+          description: Configuration created or replayed idempotently, inactive and UNKNOWN.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '409': { description: Idempotency or concurrency conflict. }
+        '422': { description: No adapter serves the requested provider, version, or capabilities. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/payment-providers/configurations/{configurationId}/governance:
+    post:
+      operationId: governAdminPaymentProviderConfiguration
+      summary: Activate, deactivate, or make default a payment gateway configuration.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPaymentProviderGovernance' }
+      responses:
+        '200':
+          description: Governance applied or replayed idempotently.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '404': { description: No such configuration for this tenant. }
+        '409': { description: Idempotency or concurrency conflict. }
+        '422': { description: No adapter serves this configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/payment-providers/configurations/{configurationId}/health:
+    post:
+      operationId: setAdminPaymentProviderHealth
+      summary: Attest or withdraw a payment gateway's health.
+      description: >-
+        Selection only ever picks a HEALTHY configuration, so this is what makes a newly
+        created gateway usable, and what removes it from rotation during an incident.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPaymentProviderHealth' }
+      responses:
+        '200':
+          description: Health recorded with an audited reason.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentProviderConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '404': { description: No such configuration for this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/sms-providers/configurations:
+    get:
+      operationId: listAdminAuthDeliveryConfigurations
+      summary: List the tenant's authentication SMS provider configurations.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Configurations without any credential material.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminAuthDeliveryConfiguration
+      summary: Configure the SMS provider that delivers authentication codes.
+      description: >-
+        A configuration is frozen by the database after insert, so it is created in its
+        final governed shape. Health is the only field that can change afterwards.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationCreate' }
+      responses:
+        '201':
+          description: Configuration created, or returned unchanged when identical.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '409':
+          description: >-
+            An immutable configuration differs from the request, an enabled default
+            already exists, or a concurrency conflict occurred.
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/sms-providers/configurations/{configurationId}/health:
+    post:
+      operationId: setAdminAuthDeliveryHealth
+      summary: Take an SMS provider out of, or back into, rotation.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAuthDeliveryHealth' }
+      responses:
+        '200':
+          description: Health recorded with an audited reason.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern provider configuration. }
+        '404': { description: No such configuration for this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/reports/sales:
+    get:
+      operationId: getAdminSalesReport
+      summary: Sales and order aggregates for a period.
+      description: >-
+        Amounts are IRR minor units as decimal strings; an order total routinely exceeds
+        what a JSON number holds exactly. The range is closed-open, so consecutive periods
+        tile without counting the boundary twice. Draft orders are excluded everywhere:
+        a draft is an order the customer never placed.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Aggregates for the requested period.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalesReportEnvelope' }
+        '400': { description: The reporting range is malformed or inverted. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not read reports. }
+        '422': { description: The reporting range covers too long a period. }
+        '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/reports/financial:
+    get:
+      operationId: getAdminFinancialReport
+      summary: Trial balance, settlement reconciliation, and gateway funnel.
+      description: >-
+        Three questions answered separately because they fail separately: whether the
+        ledger balances, whether the money customers paid actually arrived, and which
+        gateway is failing. The trial balance is cumulative as of the range's end rather
+        than confined to it — a balance for one week in isolation omits everything carried
+        in — while settlement and funnel figures cover the range itself. Paid orders are
+        dated by the capture that paid them, not by the order's own `updatedAt`, which is
+        auto-managed and would move an order into whatever period it was last edited in.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: The financial position and settlement state for the period.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinancialReportEnvelope' }
+        '400': { description: The reporting range is malformed or inverted. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not read reports. }
+        '422': { description: The reporting range covers too long a period. }
+        '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/orders:
+    get:
+      operationId: listAdminOrders
+      summary: Browse the tenant's placed orders.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/OrderState' }
+        - name: paymentState
+          in: query
+          schema: { $ref: '#/components/schemas/PaymentState' }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: search
+          in: query
+          description: >-
+            Exact match against an order's public id or the recipient's mobile. Deliberately
+            not a prefix or substring search, which would let an operator enumerate
+            customers one digit at a time.
+          schema: { type: string, minLength: 3, maxLength: 64 }
+      responses:
+        '200':
+          description: Paginated orders, newest first, excluding drafts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOrderPage' }
+        '400': { description: The order query is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not read orders. }
+        '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/orders/{orderId}:
+    get:
+      operationId: getAdminOrder
+      summary: Inspect one order, with items and its state history.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOrderDetailEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not read orders. }
+        '404': { description: No such order in this tenant. }
+        '503': { description: Reporting is temporarily unavailable. }
+  /api/v1/admin/orders/{orderId}/accept:
+    post:
+      operationId: acceptOrder
+      summary: Accept a paid order into the bakery.
+      description: >-
+        Refused unless the order is paid. Accepting commits a bakery to bake bread, and
+        doing that before the money arrived is the mistake this rule exists to prevent.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The order after the step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The order is unpaid, or the step is unavailable from its state. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/reject:
+    post:
+      operationId: rejectOrder
+      summary: Refuse an order the bakery cannot take.
+      description: >-
+        Does not require the order to be paid — the unpaid case is exactly the one that
+        needs rejecting.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The cancelled order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The step is unavailable from the order current state. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/start-fulfillment:
+    post:
+      operationId: startOrderFulfillment
+      summary: Move an accepted order into fulfillment.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The order after the step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The order is unpaid, or the step is unavailable. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/complete:
+    post:
+      operationId: completeOrder
+      summary: Close a delivered order.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The completed order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The order is unpaid, or the step is unavailable. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrderWithRefund
+      summary: Cancel an order and give the money back.
+      description: >-
+        Cancelling and refunding are one act, because they are one decision. Splitting
+        them would let an operator cancel and forget the money, which is the failure that
+        matters to a customer. The refund runs first: a crash between the two leaves a
+        refunded payment on an order that still reads live — visible, wrong, and fixable —
+        where the reverse order would leave a cancelled order the customer paid for, which
+        looks finished and is not. Partial refunds are not supported; a request the ledger
+        cannot reconcile is quarantined and the order is deliberately left alone rather
+        than made to look finished.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderTransitionCommand' }
+      responses:
+        '200':
+          description: The cancelled order, with what happened to the money.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CancellationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: The step is unavailable, or the refund was quarantined. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/orders/{orderId}/production:
+    post:
+      operationId: advanceOrderProduction
+      summary: Move the bread through the bakery.
+      description: >-
+        Production is tracked separately from the order because they answer different
+        questions and move at different speeds: an order is confirmed the moment the
+        bakery accepts it, but the bread is not scheduled, baking, or ready until it is.
+        Production only moves while the order is live, and only forwards — except
+        SCHEDULED back to UNSCHEDULED, which is a bakery releasing a slot it cannot fill.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductionTransitionCommand' }
+      responses:
+        '200':
+          description: The order after the production step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderOperationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not operate orders. }
+        '404': { description: No such order in this tenant. }
+        '409': { description: Production does not apply, or the step is not a legal one. }
+        '503': { description: Order operations are unavailable. }
+  /api/v1/admin/catalog/categories:
+    get:
+      operationId: listAdminCatalogCategories
+      summary: Product categories, with how many products each holds.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every category in the tenant, by code.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogCategoryListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '503': { description: The catalogue is temporarily unavailable. }
+    post:
+      operationId: createAdminCatalogCategory
+      summary: Create a product category.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCatalogCategoryCommand' }
+      responses:
+        '201':
+          description: The category.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogCategoryEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '409': { description: A category already uses that code. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/products:
+    get:
+      operationId: listAdminCatalogProducts
+      summary: Browse products with their variants.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: categoryId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: lifecycle
+          in: query
+          schema: { $ref: '#/components/schemas/ProductLifecycle' }
+        - name: search
+          in: query
+          description: Case-insensitive match on the Persian name or the slug.
+          schema: { type: string, minLength: 2, maxLength: 120 }
+      responses:
+        '200':
+          description: Paginated products, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProductPage' }
+        '400': { description: The product query is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '503': { description: The catalogue is temporarily unavailable. }
+    post:
+      operationId: createAdminCatalogProduct
+      summary: Create a product. It always starts as a draft.
+      description: >-
+        A product describes what the bread is. Pricing belongs to an offering, which is a
+        branch's decision to sell one of this product's variants. A new product is a draft
+        because a product that went live the moment it was named would be sellable before
+        anyone priced it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProductCommand' }
+      responses:
+        '201':
+          description: The draft product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProductEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such category in this tenant. }
+        '409': { description: A product already uses that slug. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/products/{productId}:
+    get:
+      operationId: getAdminCatalogProduct
+      summary: One product with all of its variants.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProductEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such product in this tenant. }
+        '503': { description: The catalogue is temporarily unavailable. }
+    patch:
+      operationId: updateAdminCatalogProduct
+      summary: Rename, re-describe, or move a product's lifecycle.
+      description: >-
+        RETIRED is terminal. Bringing a retired product back would resurrect a name that
+        order snapshots and customers' history already treat as finished; if the bakery
+        sells it again, it is a new product. Retiring one is refused while any branch is
+        still selling its variants.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProductCommand' }
+      responses:
+        '200':
+          description: The updated product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProductEnvelope' }
+        '400': { description: The command is malformed or changes nothing. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such product in this tenant. }
+        '409': { description: The lifecycle change is not allowed, or offerings are still live. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/products/{productId}/variants:
+    post:
+      operationId: createAdminCatalogVariant
+      summary: Add a variant to a product.
+      description: >-
+        Classification fields are required together and validated as a set: a freshness
+        claim is only meaningful against a fulfillment class, and a packaged class without
+        packaging is not a half-filled form but an invalid product. The same rule refuses
+        the combination here that would refuse it at checkout.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVariantCommand' }
+      responses:
+        '201':
+          description: The draft variant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminVariantEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such product in this tenant. }
+        '409': { description: A variant already uses that SKU, or the product is retired. }
+        '422': { description: The classification is not a valid combination. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/variants/{variantId}:
+    patch:
+      operationId: updateAdminCatalogVariant
+      summary: Rename a variant, revise its ingredients, or move its lifecycle.
+      description: >-
+        Classification is not patchable. Those fields decide how the order pipeline
+        schedules, holds, and hands over the item; changing them under live offerings
+        would silently re-plan work already committed.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: variantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVariantCommand' }
+      responses:
+        '200':
+          description: The updated variant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminVariantEnvelope' }
+        '400': { description: The command is malformed or changes nothing. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such variant in this tenant. }
+        '409': { description: The lifecycle change is not allowed, or offerings are still live. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/branches:
+    get:
+      operationId: listAdminCatalogBranches
+      summary: Branches that can carry offerings.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every branch in the tenant, with how many offerings it carries.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBranchListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/offerings:
+    get:
+      operationId: listAdminCatalogOfferings
+      summary: Browse what each branch sells, and at what price.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: bakeryBranchId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: productVariantId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: availability
+          in: query
+          schema: { $ref: '#/components/schemas/OfferingAvailability' }
+      responses:
+        '200':
+          description: Paginated offerings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOfferingPage' }
+        '400': { description: The offering query is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '503': { description: The catalogue is temporarily unavailable. }
+    post:
+      operationId: createAdminCatalogOffering
+      summary: Offer a variant at a branch, at a price.
+      description: >-
+        One offering per branch per variant: a second would give the same bread two prices
+        at the same counter, and the selector has no rule for choosing between them. A new
+        offering starts as a draft — price, capacity, and preparation time all deserve a
+        second look before customers see it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOfferingCommand' }
+      responses:
+        '201':
+          description: The draft offering.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOfferingEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such branch or variant in this tenant. }
+        '409': { description: This branch already offers that variant, or the variant is retired. }
+        '422': { description: Stock on hand must be set exactly when stock is tracked. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/catalog/offerings/{offeringId}:
+    patch:
+      operationId: updateAdminCatalogOffering
+      summary: Reprice an offering, pause it, or adjust its stock.
+      description: >-
+        Price and availability are one command on purpose: an operator correcting a
+        mispriced offering usually pauses it in the same breath, and splitting the two
+        would leave a window where the wrong price is live. Repricing never rewrites an
+        order — order lines carry their own price snapshot taken when the quote was
+        accepted. The previous price is recorded on the audit trail, because reconciling a
+        customer's complaint months later means knowing what the price was at the time.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: offeringId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOfferingCommand' }
+      responses:
+        '200':
+          description: The updated offering.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOfferingEnvelope' }
+        '400': { description: The command is malformed or changes nothing. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage the catalogue. }
+        '404': { description: No such offering in this tenant. }
+        '409': { description: The variant or product is not active, or the offering is retired. }
+        '422': { description: Stock on hand must be set exactly when stock is tracked. }
+        '503': { description: The catalogue is temporarily unavailable. }
+  /api/v1/admin/access/roles:
+    get:
+      operationId: listAdminAccessRoles
+      summary: The role catalogue, marked with what this caller may grant.
+      description: >-
+        `grantable` is false when the role carries a permission the caller does not itself
+        hold. Roles are still listed, so an operator can see what they would need rather
+        than wondering why a role is missing.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every admin role.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoleListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage staff access. }
+  /api/v1/admin/access/staff:
+    get:
+      operationId: listAdminStaff
+      summary: Accounts in this tenant that hold, or have held, an admin role.
+      description: >-
+        Deliberately not every tenant member. The tenant's customers are identity accounts
+        too, and listing them here would turn an access screen into a customer directory.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Staff accounts with their live grants.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffMemberListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage staff access. }
+        '503': { description: Access management is temporarily unavailable. }
+  /api/v1/admin/access/grants:
+    post:
+      operationId: grantAdminRole
+      summary: Grant a role to a mobile number.
+      description: >-
+        Refused when the role carries any permission the caller does not hold, measured
+        against live grant rows rather than the caller's session. The target must have
+        signed in once with that number — signing in is what creates the account and what
+        proves whoever holds the number asked to be here. Re-granting a role someone
+        already holds is a no-op, not an error.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantRoleCommand' }
+      responses:
+        '201':
+          description: The staff member, with their grants after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffMemberEnvelope' }
+        '400': { description: The command is malformed, or names an unknown role. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage access, or the role exceeds its own. }
+        '404': { description: No account for that number. }
+        '409': { description: That account is not active, or not a member of this tenant. }
+        '503': { description: Access management is temporarily unavailable. }
+  /api/v1/admin/access/revocations:
+    post:
+      operationId: revokeAdminRole
+      summary: Revoke a role grant.
+      description: >-
+        Measured by the same yardstick as granting: revoking a role the caller could not
+        have granted is refused, because otherwise a narrow operator could strip every
+        wider one and be left alone in the tenant. An account cannot revoke its own grant —
+        recovering from that needs shell access to the database server.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RevokeRoleCommand' }
+      responses:
+        '200':
+          description: The staff member, with their grants after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffMemberEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage access, or the role exceeds its own. }
+        '404': { description: No such grant in this tenant. }
+        '409': { description: An account cannot revoke its own access. }
+        '503': { description: Access management is temporarily unavailable. }
+  /api/v1/admin/access/branches:
+    get:
+      operationId: listGrantableBranches
+      summary: The branches a branch-scoped role can be granted against.
+      description: >-
+        Answers to admin.access.manage rather than to the catalogue's own permission.
+        ACCESS_ADMIN — the role whose entire job is issuing grants — does not hold
+        admin.catalog.manage, so borrowing the catalogue's branch listing would leave
+        exactly that role unable to fill in the one field a branch grant needs. Three
+        fields, because everything else about a branch is the catalogue's business and
+        none of it helps somebody pick one from a list.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Branches in this tenant, by name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrantableBranchListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not manage access. }
+        '503': { description: Access management is temporarily unavailable. }
+  /api/v1/admin/settlement/outstanding:
+    get:
+      operationId: listOutstandingPartnerBalances
+      summary: What each partner has earned and not been paid.
+      description: >-
+        Summed in the database rather than read and added here: a month of one city's
+        orders is a great many rows to move across a socket to produce one number per
+        partner, and the sum has to be exact. `oldestAt` is the figure a total alone
+        hides — two partners owed the same amount are in very different positions if one
+        has been waiting since last month.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every partner with something owing, largest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerBalanceListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle partner payouts. }
+        '503': { description: The payout desk is temporarily unavailable. }
+  /api/v1/admin/settlement/payouts:
+    get:
+      operationId: listPartnerPayouts
+      summary: Payout runs, newest first.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: The payout runs this tenant has prepared.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPayoutListEnvelope' }
+        '400': { description: That payout listing is not a valid request. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle partner payouts. }
+        '503': { description: The payout desk is temporarily unavailable. }
+    post:
+      operationId: preparePartnerPayout
+      summary: Prepare a payout covering everything a partner is owed.
+      description: >-
+        The amount is never in the request: it is whatever the partner has earned and not
+        been paid at the instant the transaction reads it, under a row lock, so two runs
+        prepared at the same moment cannot both claim the same earnings. The ledger
+        posting happens here and not when somebody presses "paid" — the platform stops
+        owing the moment it decides to pay, and the bank transfer that follows is evidence
+        recorded against something that already exists. Nothing owing answers 204: not a
+        failure, and not a payout either.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreparePayoutCommand' }
+      responses:
+        '201':
+          description: The payout run, awaiting a bank transfer somebody makes by hand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPayoutEnvelope' }
+        '204': { description: Nothing is owing to that partner. }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle partner payouts. }
+        '503': { description: The payout desk is temporarily unavailable. }
+  /api/v1/admin/settlement/payouts/{payoutId}/paid:
+    post:
+      operationId: markPartnerPayoutPaid
+      summary: Record that the money was actually sent.
+      description: >-
+        Nothing here moves money. The platform holds no banking credentials; a person
+        makes the transfer and comes back to record what the bank called it, which is the
+        only thing that lets the payment be found again on a statement. Recording the same
+        payout twice is the same outcome, not a second transfer.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BankReferenceCommand' }
+      responses:
+        '200':
+          description: The payout, now settled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPayoutEnvelope' }
+        '400': { description: The bank reference is missing or too long. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle partner payouts. }
+        '404': { description: No such payout in this tenant. }
+        '409': { description: That payout is no longer awaiting payment. }
+        '503': { description: The payout desk is temporarily unavailable. }
+  /api/v1/admin/withdrawals:
+    get:
+      operationId: listOpenWalletWithdrawals
+      summary: Customer withdrawal requests still awaiting an answer, oldest first.
+      description: >-
+        The amount has already left each customer's balance — it is debited when the
+        request is made, not when the transfer is sent, so nothing here is spendable while
+        somebody at a bank is already sending it. Only the last four digits of the card
+        are stored, which with the holder's name is what a bank transfer form needs.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Open requests, with the customer who made each.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffWithdrawalListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle customer withdrawals. }
+        '503': { description: The withdrawal desk is temporarily unavailable. }
+  /api/v1/admin/withdrawals/{withdrawalId}/paid:
+    post:
+      operationId: markWalletWithdrawalPaid
+      summary: Record that a customer's withdrawal was sent.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: withdrawalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BankReferenceCommand' }
+      responses:
+        '200':
+          description: The withdrawal, now settled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WalletWithdrawalEnvelope' }
+        '400': { description: The bank reference is missing or too long. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle customer withdrawals. }
+        '404': { description: No such withdrawal request. }
+        '503': { description: The withdrawal desk is temporarily unavailable. }
+  /api/v1/admin/withdrawals/{withdrawalId}/reject:
+    post:
+      operationId: rejectWalletWithdrawal
+      summary: Refuse a withdrawal and put the money back.
+      description: >-
+        The credit lands in the same transaction as the refusal, as its own statement
+        line, so the customer sees what happened rather than a balance that silently
+        returned. The reason is required and the customer reads it verbatim — a rejection
+        with no reason is a phone call they have to make to find out anything.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: withdrawalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectWithdrawalCommand' }
+      responses:
+        '200':
+          description: The withdrawal, refused, with the money back on the balance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WalletWithdrawalEnvelope' }
+        '400': { description: The reason is missing or too long. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not settle customer withdrawals. }
+        '404': { description: No such withdrawal request. }
+        '503': { description: The withdrawal desk is temporarily unavailable. }
+  /api/v1/admin/routing-providers/configurations:
+    get:
+      operationId: listAdminRoutingConfigurations
+      summary: List the tenant's routing engine configurations.
+      description: >-
+        The credential reference is returned and the value behind it never is. An operator
+        debugging dead distances needs to know which variable the engine reads from, and
+        the deployment's secret store is the only thing that holds what is in it.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Configurations without any credential material.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoutingConfigurationListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern routing configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminRoutingConfiguration
+      summary: Configure the routing engine that measures delivery distance.
+      description: >-
+        Nothing uses an engine until an operator has confirmed it works — the same rule the
+        payment gateways follow. Until then, and whenever no engine is configured at all,
+        distances are estimated rather than routed and every trip says so.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminRoutingConfigurationCreate' }
+      responses:
+        '201':
+          description: Configuration created, or returned unchanged when identical.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoutingConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern routing configuration. }
+        '409':
+          description: >-
+            An immutable configuration differs from the request, an enabled default
+            already exists, or a concurrency conflict occurred.
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/routing-providers/configurations/{configurationId}/health:
+    post:
+      operationId: attestAdminRoutingHealth
+      summary: Record an observed health status for a routing engine.
+      description: >-
+        UNKNOWN is not accepted: nothing may reset an engine to "never observed" once it
+        has been.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The configuration with its new health status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoutingConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern routing configuration. }
+        '404': { description: No such configuration in this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderHealthCommand' }
+  /api/v1/admin/email-providers/configurations:
+    get:
+      operationId: listAdminEmailConfigurations
+      summary: List the tenant's email provider configurations.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Configurations without any credential material.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminEmailConfigurationListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminEmailConfiguration
+      summary: Configure the email provider that carries operator alerts.
+      description: >-
+        The sender address and name are returned as well as accepted: both are printed on
+        every message the tenant sends, so neither is a secret, and both are what an
+        operator needs when mail starts going to spam.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminEmailConfigurationCreate' }
+      responses:
+        '201':
+          description: Configuration created, or returned unchanged when identical.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminEmailConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '409':
+          description: >-
+            An immutable configuration differs from the request, an enabled default
+            already exists, or a concurrency conflict occurred.
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/email-providers/configurations/{configurationId}/health:
+    post:
+      operationId: attestAdminEmailHealth
+      summary: Record an observed health status for an email provider.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderHealthCommand' }
+      responses:
+        '200':
+          description: The configuration with its new health status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminEmailConfigurationEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '404': { description: No such configuration in this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/alert-recipients:
+    get:
+      operationId: listAdminAlertRecipients
+      summary: Who receives operator alerts.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: The tenant's alert recipients.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAlertRecipientListEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '503': { description: Provider governance persistence is unavailable. }
+    post:
+      operationId: createAdminAlertRecipient
+      summary: Add somebody to the alert list.
+      description: >-
+        `criticalOnly` exists so that a person who should hear about an outage at two in
+        the morning is not also woken by every routine notice. An alert list everybody
+        mutes is an alert list.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAlertRecipientCreate' }
+      responses:
+        '201':
+          description: The recipient.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAlertRecipientEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '409': { description: That address is already on the list. }
+        '503': { description: Provider governance persistence is unavailable. }
+  /api/v1/admin/alert-recipients/{recipientId}/enabled:
+    post:
+      operationId: setAdminAlertRecipientEnabled
+      summary: Silence or restore one alert recipient.
+      description: >-
+        Disabled rather than deleted, so somebody who left the rota for a fortnight comes
+        back to the same row and the audit trail still explains the quiet period.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: recipientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAlertRecipientEnabledCommand' }
+      responses:
+        '200':
+          description: The recipient with its new state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAlertRecipientEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: The account may not govern notification configuration. }
+        '404': { description: No such recipient in this tenant. }
+        '503': { description: Provider governance persistence is unavailable. }
   /api/v1/serviceability/check:
     post:
       operationId: checkServiceability
@@ -541,6 +2178,121 @@ components:
         deliveryAddressId: { type: string, format: uuid }
         expectedCartVersion: { type: integer, minimum: 1 }
         idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+        promotionCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: >-
+            A discount code as the customer typed it. A refused code does not fail
+            the quote — the quote returns undiscounted and says why in
+            promotionRefusal.
+        deliveryWindowStartsAt:
+          type: string
+          format: date-time
+          description: >-
+            The chosen delivery window, named by the instant it starts. Optional;
+            omitting it means "as soon as the branch can". Re-derived from the
+            branch's own schedule on the server, so a window nobody offered is
+            refused.
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+    OrderRatingInput:
+      type: object
+      required: [breadScore]
+      properties:
+        breadScore: { type: integer, minimum: 1, maximum: 5 }
+        deliveryScore: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 500 }
+    OrderRating:
+      type: object
+      required: [orderId, breadScore, deliveryScore, comment, createdAt]
+      properties:
+        orderId: { type: string, format: uuid }
+        breadScore: { type: integer, minimum: 1, maximum: 5 }
+        deliveryScore: { type: [integer, 'null'], minimum: 1, maximum: 5 }
+        comment: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    ReorderResult:
+      type: object
+      required: [cartId, addedCount, adjustments]
+      properties:
+        cartId: { type: string, format: uuid }
+        addedCount: { type: integer, minimum: 0 }
+        adjustments:
+          type: array
+          description: Everything that could not be repeated exactly, and why.
+          items:
+            type: object
+            required: [offeringId, nameFa, reason, quantity]
+            properties:
+              offeringId: { type: string, format: uuid }
+              nameFa: { type: string }
+              reason:
+                type: string
+                enum: [REORDER_OFFERING_UNAVAILABLE, REORDER_QUANTITY_REDUCED]
+              quantity: { type: integer, minimum: 0 }
+    Favourite:
+      type: object
+      required: [offeringId, productVariantId, nameFa, slug, priceAmount, available]
+      properties:
+        offeringId: { type: string, format: uuid }
+        productVariantId: { type: string, format: uuid }
+        nameFa: { type: string }
+        slug: { type: string }
+        priceAmount: { type: string }
+        available: { type: boolean }
+    PaymentMethod:
+      type: string
+      enum: [ONLINE_GATEWAY, CASH_ON_DELIVERY]
+      description: >-
+        How an order is paid for. Cash is checked on the server against the
+        city's own policy — whether it is offered there at all, a ceiling on the
+        order total, and how many completed orders the customer needs first.
+    CourierCashPosition:
+      type: object
+      required: [courierId, courierName, orderCount, outstanding]
+      properties:
+        courierId: { type: string, format: uuid }
+        courierName: { type: string }
+        orderCount: { type: integer, minimum: 0 }
+        outstanding: { $ref: '#/components/schemas/Money' }
+    CashRemittanceCommand:
+      type: object
+      required: [courierId, orderIds, declaredAmount, idempotencyKey]
+      properties:
+        courierId: { type: string, format: uuid }
+        orderIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string, format: uuid }
+          description: >-
+            The orders being settled, named rather than implied. "Everything
+            this courier has" is exactly the instruction that settles an order
+            nobody actually handed over.
+        declaredAmount:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+          description: Rial counted onto the desk. Checked against what those orders come to.
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    DeliveryWindow:
+      type: object
+      required: [serviceDate, startsAt, endsAt, remaining, available]
+      properties:
+        serviceDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        remaining: { type: integer, minimum: 0 }
+        available: { type: boolean }
+    DeliveryWindowListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/DeliveryWindow' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     CommerceItemSnapshot:
       type: object
       required:
@@ -643,6 +2395,20 @@ components:
         subtotal: { $ref: '#/components/schemas/Money' }
         deliveryFee: { $ref: '#/components/schemas/Money' }
         discount: { $ref: '#/components/schemas/Money' }
+        promotion:
+          type: object
+          required: [nameFa, basis]
+          properties:
+            nameFa: { type: string }
+            basis: { type: string, enum: [SUBTOTAL, DELIVERY_FEE] }
+        promotionRefusal: { type: string, minLength: 1, maxLength: 64 }
+        deliveryWindow:
+          type: object
+          required: [startsAt, endsAt]
+          properties:
+            startsAt: { type: string, format: date-time }
+            endsAt: { type: string, format: date-time }
+        deliveryWindowRefusal: { type: string, minLength: 1, maxLength: 64 }
         total: { $ref: '#/components/schemas/Money' }
         items:
           type: array
@@ -884,6 +2650,1048 @@ components:
         governanceVersion: { type: integer, minimum: 1 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    ProviderCredentialReference:
+      type: string
+      minLength: 12
+      maxLength: 500
+      pattern: '^(vault|aws-sm|gcp-sm|local-encrypted)://[A-Za-z0-9/_:.-]+$'
+      description: >-
+        Opaque pointer into the deployment's secret store. The value it points at is
+        never accepted, stored, or returned by this API.
+    GovernanceReason:
+      type: string
+      minLength: 4
+      maxLength: 500
+      description: Human-readable justification recorded in the audit trail.
+    IdempotencyKey:
+      type: string
+      minLength: 16
+      maxLength: 128
+    AdminProviderCredentialCreate:
+      type: object
+      required: [providerCode, reference, keyVersion, idempotencyKey]
+      additionalProperties: false
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        reference: { $ref: '#/components/schemas/ProviderCredentialReference' }
+        keyVersion: { type: string, minLength: 1, maxLength: 64 }
+        metadata:
+          type: object
+          additionalProperties: { type: string, maxLength: 200 }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+    AdminProviderCredentialSummary:
+      type: object
+      required: [id, providerCode, keyVersion, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        keyVersion: { type: string, minLength: 1, maxLength: 64 }
+        createdAt: { type: string, format: date-time }
+    AdminProviderCredentialEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminProviderCredentialSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminPaymentProviderConfigurationCreate:
+      type: object
+      required:
+        [
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          merchantReference,
+          environment,
+          paymentContext,
+          currency,
+          callbackPolicy,
+          capabilities,
+          credentialReferenceId,
+          idempotencyKey,
+          reason,
+        ]
+      additionalProperties: false
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion:
+          { type: string, maxLength: 64, pattern: '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        merchantReference: { type: string, minLength: 1, maxLength: 128 }
+        environment: { $ref: '#/components/schemas/PaymentProviderEnvironment' }
+        paymentContext: { type: string, const: CHECKOUT }
+        currency: { type: string, const: IRR }
+        callbackPolicy: { type: string, const: SIGNED_ONLY }
+        capabilities:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/PaymentProviderCapability' }
+        credentialReferenceId: { type: string, format: uuid }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminPaymentProviderGovernance:
+      type: object
+      required: [targetActive, makeDefault, idempotencyKey, reason]
+      additionalProperties: false
+      properties:
+        targetActive: { type: boolean }
+        makeDefault: { type: boolean }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminPaymentProviderHealth:
+      type: object
+      required: [healthStatus, reason]
+      additionalProperties: false
+      properties:
+        healthStatus: { $ref: '#/components/schemas/ProviderHealthStatus' }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminPaymentProviderConfigurationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/PaymentProviderConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminPaymentProviderConfigurationListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentProviderConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminAuthDeliveryConfigurationCreate:
+      type: object
+      required:
+        [
+          providerCode,
+          adapterVersion,
+          environment,
+          credentialReference,
+          senderReference,
+          templateReference,
+          enabled,
+          isDefault,
+          reason,
+        ]
+      additionalProperties: false
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion:
+          { type: string, maxLength: 64, pattern: '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' }
+        environment: { $ref: '#/components/schemas/PaymentProviderEnvironment' }
+        credentialReference:
+          type: string
+          minLength: 8
+          maxLength: 250
+          pattern: '^(env|vault|aws-sm|gcp-sm|azure-kv)://[A-Za-z0-9_./:-]{1,240}$'
+        senderReference: { type: string, minLength: 1, maxLength: 128 }
+        templateReference: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminAuthDeliveryHealth:
+      type: object
+      required: [healthStatus, reason]
+      additionalProperties: false
+      properties:
+        healthStatus: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        reason: { $ref: '#/components/schemas/GovernanceReason' }
+    AdminAuthDeliveryConfigurationSummary:
+      type: object
+      required:
+        [
+          id,
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          environment,
+          senderReference,
+          templateReference,
+          enabled,
+          isDefault,
+          priority,
+          healthStatus,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion:
+          { type: string, maxLength: 64, pattern: '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        environment: { $ref: '#/components/schemas/PaymentProviderEnvironment' }
+        senderReference: { type: string, minLength: 1, maxLength: 128 }
+        templateReference: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        healthStatus: { $ref: '#/components/schemas/ProviderHealthStatus' }
+        createdAt: { type: string, format: date-time }
+    AdminAuthDeliveryConfigurationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminAuthDeliveryConfigurationListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminAuthDeliveryConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    OrderState:
+      type: string
+      enum:
+        [
+          DRAFT,
+          PENDING_CONFIRMATION,
+          CONFIRMED,
+          IN_FULFILLMENT,
+          CANCEL_REQUESTED,
+          DELIVERY_FAILED,
+          COMPLETED,
+          CANCELLED,
+        ]
+    PaymentState:
+      type: string
+      enum: [NOT_STARTED, PENDING, PAID, REFUND_PENDING, REFUNDED]
+    ProductionState:
+      type: string
+      enum: [NOT_REQUIRED, UNSCHEDULED, SCHEDULED, IN_PRODUCTION, READY, HANDED_OFF]
+    DeliveryState:
+      type: string
+      enum: [NOT_REQUIRED, UNASSIGNED, ASSIGNED, PICKED_UP, OUT_FOR_DELIVERY, DELIVERED, FAILED]
+    SalesTotals:
+      type: object
+      required:
+        [
+          placedOrders,
+          placedValue,
+          paidOrders,
+          paidValue,
+          cancelledOrders,
+          cancelledValue,
+          averageOrderValue,
+          deliveryFees,
+          discounts,
+        ]
+      properties:
+        placedOrders: { type: integer, minimum: 0 }
+        placedValue: { $ref: '#/components/schemas/Money' }
+        paidOrders:
+          type: integer
+          minimum: 0
+          description: >-
+            Orders the payment pipeline marked PAID. Nothing reaches that state until
+            capture is implemented, so this reads zero by design rather than by accident.
+        paidValue: { $ref: '#/components/schemas/Money' }
+        cancelledOrders: { type: integer, minimum: 0 }
+        cancelledValue: { $ref: '#/components/schemas/Money' }
+        averageOrderValue: { $ref: '#/components/schemas/Money' }
+        deliveryFees: { $ref: '#/components/schemas/Money' }
+        discounts: { $ref: '#/components/schemas/Money' }
+    SalesDailyPoint:
+      type: object
+      required: [date, placedOrders, placedValue]
+      properties:
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        placedOrders: { type: integer, minimum: 0 }
+        placedValue: { $ref: '#/components/schemas/Money' }
+    TopProduct:
+      type: object
+      required: [sku, productNameFa, variantNameFa, quantity, revenue]
+      properties:
+        sku: { type: string, minLength: 1, maxLength: 64 }
+        productNameFa: { type: string, minLength: 1 }
+        variantNameFa: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 0 }
+        revenue: { $ref: '#/components/schemas/Money' }
+    ConversionFunnel:
+      type: object
+      required: [carts, quotes, orders, quoteToOrderRate]
+      properties:
+        carts: { type: integer, minimum: 0 }
+        quotes: { type: integer, minimum: 0 }
+        orders: { type: integer, minimum: 0 }
+        quoteToOrderRate: { type: [number, 'null'], minimum: 0, maximum: 1 }
+    SalesReport:
+      type: object
+      required: [range, totals, ordersByState, ordersByPaymentState, daily, topProducts, conversion]
+      properties:
+        range:
+          type: object
+          required: [from, to]
+          properties:
+            from: { type: string, format: date-time }
+            to: { type: string, format: date-time }
+        totals: { $ref: '#/components/schemas/SalesTotals' }
+        ordersByState:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        ordersByPaymentState:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        daily:
+          type: array
+          items: { $ref: '#/components/schemas/SalesDailyPoint' }
+        topProducts:
+          type: array
+          items: { $ref: '#/components/schemas/TopProduct' }
+        conversion: { $ref: '#/components/schemas/ConversionFunnel' }
+    SalesReportEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/SalesReport' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminOrderSummary:
+      type: object
+      required:
+        [
+          id,
+          publicId,
+          state,
+          paymentState,
+          productionState,
+          deliveryState,
+          customerId,
+          recipientNameSnapshot,
+          bakeryNameSnapshot,
+          totalAmount,
+          itemCount,
+          requestedDeliveryAt,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        publicId: { type: string, minLength: 1, maxLength: 32 }
+        state: { $ref: '#/components/schemas/OrderState' }
+        paymentState: { $ref: '#/components/schemas/PaymentState' }
+        productionState: { $ref: '#/components/schemas/ProductionState' }
+        deliveryState: { $ref: '#/components/schemas/DeliveryState' }
+        customerId: { type: string, format: uuid }
+        recipientNameSnapshot: { type: string, minLength: 1 }
+        bakeryNameSnapshot: { type: string, minLength: 1 }
+        totalAmount: { $ref: '#/components/schemas/Money' }
+        itemCount: { type: integer, minimum: 0 }
+        requestedDeliveryAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    AdminOrderItem:
+      type: object
+      required: [sku, productNameFa, variantNameFa, quantity, unitPrice, lineTotal]
+      properties:
+        sku: { type: string, minLength: 1, maxLength: 64 }
+        productNameFa: { type: string, minLength: 1 }
+        variantNameFa: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 1 }
+        unitPrice: { $ref: '#/components/schemas/Money' }
+        lineTotal: { $ref: '#/components/schemas/Money' }
+    AdminOrderTransition:
+      type: object
+      required: [fromState, toState, reasonCode, occurredAt]
+      properties:
+        fromState:
+          oneOf: [{ $ref: '#/components/schemas/OrderState' }, { type: 'null' }]
+        toState: { $ref: '#/components/schemas/OrderState' }
+        reasonCode: { type: [string, 'null'], maxLength: 64 }
+        occurredAt: { type: string, format: date-time }
+    AdminOrderDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminOrderSummary'
+        - type: object
+          required:
+            [
+              subtotalAmount,
+              deliveryFeeAmount,
+              discountAmount,
+              recipientPhoneSnapshot,
+              deliveryAddressSnapshot,
+              items,
+              transitions,
+              updatedAt,
+            ]
+          properties:
+            subtotalAmount: { $ref: '#/components/schemas/Money' }
+            deliveryFeeAmount: { $ref: '#/components/schemas/Money' }
+            discountAmount: { $ref: '#/components/schemas/Money' }
+            recipientPhoneSnapshot:
+              type: string
+              minLength: 1
+              maxLength: 16
+              description: >-
+                Present on detail only, never in the list. An operator handling a failed
+                delivery has no other way to reach the recipient, but a browsed list has
+                no reason to carry it.
+            deliveryAddressSnapshot: { type: string, minLength: 1 }
+            deliveryInstructionsSnapshot: { type: [string, 'null'] }
+            customerNotes: { type: [string, 'null'] }
+            cancellationReasonCode: { type: [string, 'null'], maxLength: 64 }
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/AdminOrderItem' }
+            transitions:
+              type: array
+              items: { $ref: '#/components/schemas/AdminOrderTransition' }
+            updatedAt: { type: string, format: date-time }
+    AdminOrderDetailEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminOrderDetail' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminOrderPage:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminOrderSummary' }
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/ResponseMeta'
+            - type: object
+              required: [pagination]
+              properties:
+                pagination: { $ref: '#/components/schemas/PaginationMeta' }
+    ProductLifecycle:
+      type: string
+      enum: [DRAFT, ACTIVE, SUSPENDED, RETIRED]
+    OfferingAvailability:
+      type: string
+      enum: [DRAFT, AVAILABLE, PAUSED, SOLD_OUT, RETIRED]
+    ProductFulfillmentClass:
+      type: string
+      enum:
+        [SIGNATURE_FRESH, PACKAGED_TRADITIONAL, PACKAGED_FANTASY, PACKAGED_DIETARY, LIMITED_EDITION]
+    FreshnessClaim:
+      type: string
+      enum: [FRESHLY_PRODUCED, PACKAGED, SHELF_STABLE, NONE]
+    ProductionMode:
+      type: string
+      enum: [MADE_TO_ORDER, SCHEDULED_BATCH, READY_STOCK, EXTERNAL_PACKAGED_SUPPLY]
+    FulfillmentControl:
+      type: string
+      enum: [CONTROLLED_PICKUP, PARTNER_HANDOFF, PLATFORM_STOCK, THIRD_PARTY_SUPPLY]
+    PackagingType:
+      type: string
+      enum: [ALO_NOON_SEALED, PARTNER_SEALED, MANUFACTURER_PACKAGED]
+    CatalogCategory:
+      type: object
+      required: [id, code, nameFa, productCount]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, maxLength: 32 }
+        nameFa: { type: string, maxLength: 200 }
+        productCount: { type: integer, minimum: 0 }
+    CreateCatalogCategoryCommand:
+      type: object
+      additionalProperties: false
+      required: [code, nameFa]
+      properties:
+        code: { type: string, pattern: '^[A-Z0-9]+(?:_[A-Z0-9]+)*$', maxLength: 32 }
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+    CatalogCategoryEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/CatalogCategory' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    CatalogCategoryListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogCategory' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminVariant:
+      type: object
+      required:
+        [
+          id,
+          productId,
+          sku,
+          nameFa,
+          fulfillmentClass,
+          freshnessClaim,
+          productionMode,
+          fulfillmentControl,
+          packagingType,
+          shelfLifeMinutes,
+          productionWindowMinutes,
+          pickupWithinMinutes,
+          freshnessWindowMinutes,
+          ingredients,
+          allergens,
+          dietaryAttributes,
+          lifecycle,
+          offeringCount,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        sku: { type: string, maxLength: 64 }
+        nameFa: { type: string, maxLength: 200 }
+        fulfillmentClass: { $ref: '#/components/schemas/ProductFulfillmentClass' }
+        freshnessClaim: { $ref: '#/components/schemas/FreshnessClaim' }
+        productionMode: { $ref: '#/components/schemas/ProductionMode' }
+        fulfillmentControl: { $ref: '#/components/schemas/FulfillmentControl' }
+        packagingType:
+          oneOf:
+            - $ref: '#/components/schemas/PackagingType'
+            - type: 'null'
+        shelfLifeMinutes: { type: [integer, 'null'], minimum: 1 }
+        productionWindowMinutes: { type: [integer, 'null'], minimum: 1 }
+        pickupWithinMinutes: { type: [integer, 'null'], minimum: 1 }
+        freshnessWindowMinutes: { type: [integer, 'null'], minimum: 1 }
+        ingredients: { type: array, items: { type: string } }
+        allergens: { type: array, items: { type: string } }
+        dietaryAttributes: { type: array, items: { type: string } }
+        lifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        offeringCount:
+          type: integer
+          minimum: 0
+          description: Branches currently offering this variant, in any availability.
+    AdminProduct:
+      type: object
+      required:
+        [
+          id,
+          categoryId,
+          categoryNameFa,
+          slug,
+          nameFa,
+          descriptionFa,
+          mediaRef,
+          lifecycle,
+          variants,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        categoryId: { type: string, format: uuid }
+        categoryNameFa: { type: string, maxLength: 200 }
+        slug: { type: string, maxLength: 100 }
+        nameFa: { type: string, maxLength: 200 }
+        descriptionFa: { type: [string, 'null'] }
+        mediaRef: { type: [string, 'null'], maxLength: 500 }
+        lifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/AdminVariant' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateProductCommand:
+      type: object
+      additionalProperties: false
+      required: [categoryId, slug, nameFa]
+      properties:
+        categoryId: { type: string, format: uuid }
+        slug:
+          type: string
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          minLength: 3
+          maxLength: 100
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+        descriptionFa: { type: string, maxLength: 2000 }
+        mediaRef: { type: string, maxLength: 500 }
+    UpdateProductCommand:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >-
+        At least one field other than `reason` must be present. A request that changes
+        nothing and reports success is how an operator concludes they saved work they
+        did not save.
+      properties:
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+        descriptionFa: { type: [string, 'null'], maxLength: 2000 }
+        mediaRef: { type: [string, 'null'], maxLength: 500 }
+        lifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    CreateVariantCommand:
+      type: object
+      additionalProperties: false
+      required: [sku, nameFa, fulfillmentClass, freshnessClaim, productionMode, fulfillmentControl]
+      properties:
+        sku:
+          type: string
+          pattern: '^[A-Z0-9]+(?:-[A-Z0-9]+)*$'
+          minLength: 3
+          maxLength: 64
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+        fulfillmentClass: { $ref: '#/components/schemas/ProductFulfillmentClass' }
+        freshnessClaim: { $ref: '#/components/schemas/FreshnessClaim' }
+        productionMode: { $ref: '#/components/schemas/ProductionMode' }
+        fulfillmentControl: { $ref: '#/components/schemas/FulfillmentControl' }
+        packagingType: { $ref: '#/components/schemas/PackagingType' }
+        shelfLifeMinutes: { type: integer, minimum: 1, maximum: 525600 }
+        productionWindowMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        pickupWithinMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        freshnessWindowMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        ingredients: { type: array, items: { type: string, maxLength: 120 }, maxItems: 100 }
+        allergens: { type: array, items: { type: string, maxLength: 120 }, maxItems: 50 }
+        dietaryAttributes: { type: array, items: { type: string, maxLength: 80 }, maxItems: 50 }
+    UpdateVariantCommand:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nameFa: { type: string, minLength: 1, maxLength: 200 }
+        ingredients: { type: array, items: { type: string, maxLength: 120 }, maxItems: 100 }
+        allergens: { type: array, items: { type: string, maxLength: 120 }, maxItems: 50 }
+        dietaryAttributes: { type: array, items: { type: string, maxLength: 80 }, maxItems: 50 }
+        lifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminProductEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminProduct' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminVariantEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminVariant' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminProductPage:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminProduct' }
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/ResponseMeta'
+            - type: object
+              required: [pagination]
+              properties:
+                pagination: { $ref: '#/components/schemas/PaginationMeta' }
+    AdminBranch:
+      type: object
+      required:
+        [
+          id,
+          bakeryId,
+          bakeryNameFa,
+          cityId,
+          code,
+          nameFa,
+          operationalStatus,
+          qualityStatus,
+          offeringCount,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        bakeryId: { type: string, format: uuid }
+        bakeryNameFa: { type: string, maxLength: 200 }
+        cityId: { type: string, format: uuid }
+        code: { type: string, maxLength: 32 }
+        nameFa: { type: string, maxLength: 200 }
+        operationalStatus:
+          type: string
+          enum: [ONBOARDING, ACTIVE, TEMPORARILY_SUSPENDED, CLOSED]
+        qualityStatus:
+          type: string
+          enum: [PENDING_REVIEW, APPROVED, WATCHLIST, SUSPENDED]
+        offeringCount: { type: integer, minimum: 0 }
+    AdminBranchListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminBranch' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminOffering:
+      type: object
+      required:
+        [
+          id,
+          bakeryBranchId,
+          branchNameFa,
+          productVariantId,
+          sku,
+          productNameFa,
+          variantNameFa,
+          variantLifecycle,
+          price,
+          availability,
+          dailyCapacity,
+          preparationMinutes,
+          stockTracked,
+          stockOnHand,
+          availableFrom,
+          availableUntil,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        bakeryBranchId: { type: string, format: uuid }
+        branchNameFa: { type: string, maxLength: 200 }
+        productVariantId: { type: string, format: uuid }
+        sku: { type: string, maxLength: 64 }
+        productNameFa: { type: string, maxLength: 200 }
+        variantNameFa: { type: string, maxLength: 200 }
+        variantLifecycle: { $ref: '#/components/schemas/ProductLifecycle' }
+        price: { $ref: '#/components/schemas/Money' }
+        availability: { $ref: '#/components/schemas/OfferingAvailability' }
+        dailyCapacity: { type: [integer, 'null'], minimum: 1 }
+        preparationMinutes: { type: [integer, 'null'], minimum: 1 }
+        stockTracked: { type: boolean }
+        stockOnHand: { type: [integer, 'null'], minimum: 0 }
+        availableFrom: { type: [string, 'null'], format: date-time }
+        availableUntil: { type: [string, 'null'], format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateOfferingCommand:
+      type: object
+      additionalProperties: false
+      required: [bakeryBranchId, productVariantId, price, reason]
+      properties:
+        bakeryBranchId: { type: string, format: uuid }
+        productVariantId: { type: string, format: uuid }
+        price:
+          type: string
+          pattern: '^[1-9][0-9]{0,17}$'
+          description: >-
+            A positive whole number of Rial. Zero is refused rather than treated as free.
+        dailyCapacity: { type: integer, minimum: 1, maximum: 100000 }
+        preparationMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        stockTracked: { type: boolean, default: false }
+        stockOnHand:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+          description: Required exactly when stockTracked is true, and forbidden otherwise.
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    UpdateOfferingCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        price: { type: string, pattern: '^[1-9][0-9]{0,17}$' }
+        availability: { $ref: '#/components/schemas/OfferingAvailability' }
+        dailyCapacity: { type: [integer, 'null'], minimum: 1, maximum: 100000 }
+        preparationMinutes: { type: [integer, 'null'], minimum: 1, maximum: 1440 }
+        stock:
+          type: object
+          additionalProperties: false
+          required: [stockTracked, stockOnHand]
+          properties:
+            stockTracked: { type: boolean }
+            stockOnHand: { type: [integer, 'null'], minimum: 0, maximum: 1000000 }
+        availableFrom: { type: [string, 'null'], format: date-time }
+        availableUntil: { type: [string, 'null'], format: date-time }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminOfferingEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminOffering' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminOfferingPage:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminOffering' }
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/ResponseMeta'
+            - type: object
+              required: [pagination]
+              properties:
+                pagination: { $ref: '#/components/schemas/PaginationMeta' }
+    AdminRoleSummary:
+      type: object
+      required: [code, name, permissions, grantable]
+      properties:
+        code: { type: string, maxLength: 64 }
+        name: { type: string, maxLength: 120 }
+        permissions: { type: array, items: { type: string, maxLength: 100 } }
+        grantable:
+          type: boolean
+          description: False when the role carries a permission the caller does not hold.
+    StaffMember:
+      type: object
+      required: [accountId, mobileE164, status, roles, permissions, isSelf]
+      properties:
+        accountId: { type: string, format: uuid }
+        mobileE164: { type: string, maxLength: 16 }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, CLOSED] }
+        roles:
+          type: array
+          items:
+            type: object
+            required: [grantId, code, name, grantedAt, expiresAt]
+            properties:
+              grantId: { type: string, format: uuid }
+              code: { type: string, maxLength: 64 }
+              name: { type: string, maxLength: 120 }
+              grantedAt: { type: string, format: date-time }
+              expiresAt: { type: [string, 'null'], format: date-time }
+        permissions:
+          type: array
+          items: { type: string, maxLength: 100 }
+          description: Union of every permission this account's live grants carry.
+        isSelf:
+          type: boolean
+          description: True for the account making the request, which may not revoke itself.
+    GrantRoleCommand:
+      type: object
+      additionalProperties: false
+      required: [mobileE164, roleCode, reason]
+      properties:
+        mobileE164: { type: string, pattern: '^\+989\d{9}$' }
+        roleCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$' }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    RevokeRoleCommand:
+      type: object
+      additionalProperties: false
+      required: [grantId, reason]
+      properties:
+        grantId: { type: string, format: uuid }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminRoleListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminRoleSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    StaffMemberEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/StaffMember' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    StaffMemberListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/StaffMember' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    SignedMoney:
+      type: object
+      required: [amount, currency]
+      description: Money that may legitimately be negative — a ledger balance, or a gap.
+      properties:
+        amount: { type: string, pattern: '^-?\d+$' }
+        currency: { type: string, enum: [IRR] }
+    TrialBalanceRow:
+      type: object
+      required: [accountCode, accountName, accountType, debits, credits, balance, entryCount]
+      properties:
+        accountCode: { type: string, maxLength: 64 }
+        accountName: { type: string }
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        debits: { $ref: '#/components/schemas/Money' }
+        credits: { $ref: '#/components/schemas/Money' }
+        balance:
+          allOf:
+            - $ref: '#/components/schemas/SignedMoney'
+            - description: >-
+                Signed by what the account type means: assets and expenses are positive
+                when debited, everything else when credited.
+        entryCount: { type: integer, minimum: 0 }
+    TrialBalance:
+      type: object
+      required: [asOf, rows, totalDebits, totalCredits, balanced]
+      properties:
+        asOf: { type: string, format: date-time }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/TrialBalanceRow' }
+        totalDebits: { $ref: '#/components/schemas/Money' }
+        totalCredits: { $ref: '#/components/schemas/Money' }
+        balanced:
+          type: boolean
+          description: >-
+            False means a posting landed with unequal sides, which database constraints
+            are meant to make impossible. Surfaced rather than asserted, because an
+            operator finding out beats a report that refuses to render.
+    SettlementReconciliation:
+      type: object
+      required:
+        [
+          capturedValue,
+          capturedCount,
+          paidOrders,
+          paidOrderValue,
+          captureToOrderGap,
+          paymentsByState,
+          receipts,
+        ]
+      properties:
+        capturedValue: { $ref: '#/components/schemas/Money' }
+        capturedCount: { type: integer, minimum: 0 }
+        paidOrders: { type: integer, minimum: 0 }
+        paidOrderValue: { $ref: '#/components/schemas/Money' }
+        captureToOrderGap:
+          allOf:
+            - $ref: '#/components/schemas/SignedMoney'
+            - description: >-
+                Non-zero means money moved that the order side does not acknowledge.
+        paymentsByState:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        receipts:
+          type: object
+          required: [total, awaitingProcessing, processed, rejected, oldestAwaitingAt]
+          properties:
+            total: { type: integer, minimum: 0 }
+            awaitingProcessing:
+              type: integer
+              minimum: 0
+              description: Received but not yet settled — the recovery sweep's backlog.
+            processed: { type: integer, minimum: 0 }
+            rejected:
+              type: integer
+              minimum: 0
+              description: >-
+                Refused settlement. Each is either an attack or a bug; the reason is on
+                the audit trail under payment.callback_settlement_decided.
+            oldestAwaitingAt: { type: [string, 'null'], format: date-time }
+    ProviderFunnelRow:
+      type: object
+      required:
+        [
+          providerCode,
+          environment,
+          attempts,
+          verified,
+          rejected,
+          failed,
+          inFlight,
+          verificationRate,
+        ]
+      properties:
+        providerCode: { type: string, maxLength: 64 }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        attempts: { type: integer, minimum: 0 }
+        verified: { type: integer, minimum: 0 }
+        rejected: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        inFlight:
+          type: integer
+          minimum: 0
+          description: Started but not concluded — still mid-flight, or abandoned.
+        verificationRate: { type: [number, 'null'], minimum: 0, maximum: 1 }
+    FinancialReport:
+      type: object
+      required: [range, trialBalance, settlement, providers]
+      properties:
+        range:
+          type: object
+          required: [from, to]
+          properties:
+            from: { type: string, format: date-time }
+            to: { type: string, format: date-time }
+        trialBalance: { $ref: '#/components/schemas/TrialBalance' }
+        settlement: { $ref: '#/components/schemas/SettlementReconciliation' }
+        providers:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderFunnelRow' }
+    FinancialReportEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/FinancialReport' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    OrderTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      description: >-
+        The destination is not in the body: each step has its own route, because
+        accepting an order and cancelling one are different acts with different
+        consequences and should not differ by one enum value in a payload.
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    ProductionTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [to, reason]
+      properties:
+        to: { $ref: '#/components/schemas/ProductionState' }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    OrderOperationOutcome:
+      type: object
+      required: [orderId, publicId, state, paymentState, productionState, deliveryState, updatedAt]
+      properties:
+        orderId: { type: string, format: uuid }
+        publicId: { type: string, minLength: 8, maxLength: 32 }
+        state: { $ref: '#/components/schemas/OrderState' }
+        paymentState: { $ref: '#/components/schemas/PaymentState' }
+        productionState: { $ref: '#/components/schemas/ProductionState' }
+        deliveryState: { $ref: '#/components/schemas/DeliveryState' }
+        updatedAt: { type: string, format: date-time }
+    OrderOperationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/OrderOperationOutcome' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    OrderListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/OrderSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    CancellationOutcome:
+      allOf:
+        - $ref: '#/components/schemas/OrderOperationOutcome'
+        - type: object
+          required: [refundDecision, refundReasonCode]
+          properties:
+            refundDecision:
+              type: string
+              enum: [REFUND, NOTHING_TO_REFUND, ALREADY_REFUNDED, QUARANTINE]
+            refundReasonCode: { type: string, maxLength: 64 }
+    CancellationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/CancellationOutcome' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentAttemptSummary:
       type: object
       required:
@@ -926,6 +3734,20 @@ components:
       properties:
         paymentId: { type: string, format: uuid }
         idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    PaymentCheckoutStart:
+      type: object
+      additionalProperties: false
+      required: [orderId, idempotencyKey]
+      properties:
+        orderId: { type: string, format: uuid }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    PaymentEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/PaymentSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
     PaymentExecutionSummary:
       type: object
       required:
@@ -1194,4 +4016,372 @@ components:
             uptime: { type: number, minimum: 0 }
             version: { type: string }
             checks: { type: array, items: { type: object } }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    GrantableBranch:
+      type: object
+      required: [id, nameFa, bakeryNameFa]
+      properties:
+        id: { type: string, format: uuid }
+        nameFa: { type: string, minLength: 1 }
+        bakeryNameFa: { type: string, minLength: 1 }
+    GrantableBranchListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/GrantableBranch' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    SettlementParty:
+      type: string
+      enum: [BAKERY, COURIER]
+    PartnerBalance:
+      type: object
+      required: [party, partnerId, partnerName, amount, orderCount, oldestAt]
+      properties:
+        party: { $ref: '#/components/schemas/SettlementParty' }
+        partnerId: { type: string, format: uuid }
+        partnerName: { type: string, minLength: 1 }
+        amount: { $ref: '#/components/schemas/Money' }
+        orderCount: { type: integer, minimum: 0 }
+        oldestAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When the oldest unpaid order was delivered. The figure a total alone hides:
+            two partners owed the same amount are in very different positions if one has
+            been waiting since last month.
+    PartnerBalanceListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/PartnerBalance' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    PartnerPayoutSummary:
+      type: object
+      required:
+        [
+          id,
+          party,
+          partnerId,
+          partnerName,
+          state,
+          amount,
+          orderCount,
+          periodStart,
+          periodEnd,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        party: { $ref: '#/components/schemas/SettlementParty' }
+        partnerId: { type: string, format: uuid }
+        partnerName: { type: string, minLength: 1 }
+        state: { type: string, enum: [DRAFT, PAID, CANCELLED] }
+        amount: { $ref: '#/components/schemas/Money' }
+        orderCount: { type: integer, minimum: 1 }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+        bankReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: What the bank called the transfer. Present once somebody sent the money.
+        createdAt: { type: string, format: date-time }
+        paidAt: { type: string, format: date-time }
+    PartnerPayoutEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/PartnerPayoutSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    PartnerPayoutListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/PartnerPayoutSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    PreparePayoutCommand:
+      type: object
+      additionalProperties: false
+      required: [party, partnerId, idempotencyKey]
+      description: >-
+        No amount. It is whatever the partner has earned and not been paid at the instant
+        the transaction reads it; a staff-supplied figure would be a staff-chosen payout,
+        and the one thing a payout must not be is a number somebody typed.
+      properties:
+        party: { $ref: '#/components/schemas/SettlementParty' }
+        partnerId: { type: string, format: uuid }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+    BankReferenceCommand:
+      type: object
+      additionalProperties: false
+      required: [bankReference]
+      properties:
+        bankReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The bank's own reference. Required, because a transfer recorded with nothing
+            to look it up by cannot be reconciled against a statement, and reconciling
+            against a statement is the entire point of recording it.
+    RejectWithdrawalCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+          description: >-
+            The customer reads this verbatim. A rejection with no reason is a phone call
+            they have to make to find out anything, and their money is already back.
+    WalletWithdrawalSummary:
+      type: object
+      required: [id, amount, state, cardLastFour, cardHolderName, requestedAt]
+      properties:
+        id: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Money' }
+        state: { type: string, enum: [REQUESTED, PAID, REJECTED] }
+        cardLastFour:
+          type: string
+          pattern: '^[0-9]{4}$'
+          description: >-
+            Four digits and no more. The customer sends a full card number once; the API
+            keeps these and forgets the rest before the row is written.
+        cardHolderName: { type: string, minLength: 1, maxLength: 120 }
+        iban: { type: string, pattern: '^IR[0-9]{24}$' }
+        bankReference: { type: string, minLength: 1, maxLength: 128 }
+        rejectionReason: { type: string, minLength: 1, maxLength: 500 }
+        requestedAt: { type: string, format: date-time }
+        settledAt: { type: string, format: date-time }
+    WalletWithdrawalEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/WalletWithdrawalSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    StaffWithdrawalSummary:
+      allOf:
+        - $ref: '#/components/schemas/WalletWithdrawalSummary'
+        - type: object
+          required: [customerId, customerMobileE164]
+          properties:
+            customerId: { type: string, format: uuid }
+            customerMobileE164: { type: string, pattern: '^\+989\d{9}$' }
+    StaffWithdrawalListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/StaffWithdrawalSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminProviderHealthCommand:
+      type: object
+      additionalProperties: false
+      required: [healthStatus, reason]
+      description: >-
+        UNKNOWN is absent deliberately: nothing may reset a service to "never observed"
+        once it has been.
+      properties:
+        healthStatus: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminRoutingConfigurationCreate:
+      type: object
+      additionalProperties: false
+      required:
+        [providerCode, adapterVersion, environment, credentialReference, enabled, isDefault, reason]
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        credentialReference:
+          $ref: '#/components/schemas/ProviderCredentialReference'
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminRoutingConfigurationSummary:
+      type: object
+      required:
+        [
+          id,
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          environment,
+          credentialReference,
+          enabled,
+          isDefault,
+          priority,
+          healthStatus,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        credentialReference:
+          type: string
+          description: >-
+            The reference, never the value. An operator debugging dead distances needs to
+            know which variable the engine reads from; what is in it stays in the
+            deployment's secret store.
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        healthStatus: { type: string, enum: [UNKNOWN, HEALTHY, DEGRADED, UNHEALTHY] }
+        createdAt: { type: string, format: date-time }
+    AdminRoutingConfigurationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminRoutingConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminRoutingConfigurationListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminRoutingConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminEmailConfigurationCreate:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          providerCode,
+          adapterVersion,
+          environment,
+          credentialReference,
+          senderAddress,
+          senderName,
+          enabled,
+          isDefault,
+          reason,
+        ]
+      properties:
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        credentialReference:
+          $ref: '#/components/schemas/ProviderCredentialReference'
+        senderAddress: { type: string, format: email, minLength: 3, maxLength: 254 }
+        senderName: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminEmailConfigurationSummary:
+      type: object
+      required:
+        [
+          id,
+          providerCode,
+          adapterVersion,
+          adapterSpiVersion,
+          environment,
+          credentialReference,
+          senderAddress,
+          senderName,
+          enabled,
+          isDefault,
+          priority,
+          healthStatus,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        providerCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,31}$' }
+        adapterVersion: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        adapterSpiVersion: { type: integer, const: 1 }
+        environment: { type: string, enum: [TEST, PRODUCTION] }
+        credentialReference: { type: string }
+        senderAddress: { type: string, format: email }
+        senderName: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        priority: { type: integer, minimum: 1, maximum: 1000 }
+        healthStatus: { type: string, enum: [UNKNOWN, HEALTHY, DEGRADED, UNHEALTHY] }
+        createdAt: { type: string, format: date-time }
+    AdminEmailConfigurationEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminEmailConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminEmailConfigurationListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminEmailConfigurationSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminAlertRecipientCreate:
+      type: object
+      additionalProperties: false
+      required: [address, displayName, criticalOnly, reason]
+      properties:
+        address: { type: string, format: email, minLength: 3, maxLength: 254 }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        criticalOnly:
+          type: boolean
+          description: >-
+            So that somebody who should hear about an outage at two in the morning is not
+            also woken by every routine notice.
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminAlertRecipientEnabledCommand:
+      type: object
+      additionalProperties: false
+      required: [enabled, reason]
+      properties:
+        enabled: { type: boolean }
+        reason: { type: string, minLength: 3, maxLength: 280 }
+    AdminAlertRecipientSummary:
+      type: object
+      required: [id, address, displayName, enabled, criticalOnly, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        address: { type: string, format: email }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        criticalOnly: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    AdminAlertRecipientEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminAlertRecipientSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminAlertRecipientListEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminAlertRecipientSummary' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }

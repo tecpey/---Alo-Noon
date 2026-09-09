@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { CartSummary, QuoteSummary, SessionContext } from '@alo-noon/contracts'
+import type { CartSummary, DeliveryWindow, QuoteSummary, SessionContext } from '@alo-noon/contracts'
 
 import { buildApp } from './app'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
@@ -63,6 +63,7 @@ const quote: QuoteSummary = {
   subtotal: cart.subtotal,
   deliveryFee: { amount: '0', currency: 'IRR' },
   discount: { amount: '0', currency: 'IRR' },
+  paymentMethod: 'ONLINE_GATEWAY',
   total: cart.subtotal,
   items: [item],
   createdAt: now.toISOString(),
@@ -73,6 +74,18 @@ class MemoryCommerceRepository implements CommerceRepository {
   quote: QuoteSummary = quote
   customerIds: string[] = []
   failure?: CommerceError
+
+  windows: DeliveryWindow[] = []
+
+  async listDeliveryWindows(
+    tenant: string,
+    customer: string,
+    _now: Date,
+  ): Promise<DeliveryWindow[]> {
+    this.customerIds.push(`${tenant}:${customer}`)
+    if (this.failure) throw this.failure
+    return this.windows
+  }
 
   async getCart(tenant: string, customer: string): Promise<CartSummary | null> {
     this.customerIds.push(`${tenant}:${customer}`)

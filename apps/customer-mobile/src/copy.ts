@@ -1,4 +1,12 @@
 export const customerCopy = {
+  /**
+   * The brand's name and line, spelled as the wordmark spells them.
+   *
+   * Kept here rather than imported from @alo-noon/config: that package pulls
+   * Zod and process.env with it, neither of which belongs in a phone bundle.
+   */
+  brandName: 'الو نون',
+  brandTagline: 'نان تازه، زندگی گرم',
   title: 'نان مناسب امروز، نزدیک شما',
   subtitle: 'محدوده ارسال را بررسی کنید و محصولات واقعی نانوایی‌های فعال را ببینید.',
   phoneTitle: 'ورود با شماره موبایل',
@@ -8,4 +16,8 @@ export const customerCopy = {
   locationHint: 'فقط برای بررسی امکان ارسال، موقعیت فعلی دستگاه خوانده می‌شود.',
   noCities: 'در حال حاضر شهر فعالی برای سفارش عمومی نشده است.',
   emptyCatalog: 'در این محدوده محصول قابل سفارشی پیدا نشد.',
+  paymentRefused: 'درگاه پرداخت این تراکنش را نپذیرفت. کمی بعد دوباره تلاش کنید.',
+  paymentUnavailable: 'در حال حاضر درگاه پرداختی در دسترس نیست. کمی بعد دوباره تلاش کنید.',
+  paymentReturn:
+    'اگر پرداخت را انجام داده‌اید، وضعیت را بررسی کنید. تأیید نهایی با پاسخ خود درگاه انجام می‌شود، نه با بازگشت مرورگر.',
 } as const

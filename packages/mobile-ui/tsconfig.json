@@ -1,0 +1,12 @@
+{
+  "extends": "@alo-noon/typescript-config/base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "composite": false,
+    "noEmit": true,
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
+}

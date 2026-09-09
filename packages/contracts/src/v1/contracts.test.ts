@@ -16,6 +16,7 @@ import {
   orderDraftInputSchema,
   orderCreateSchema,
   orderEnvelopeSchema,
+  paymentCheckoutStartSchema,
   paymentCreatedEventPayloadSchema,
   paymentStateChangedEventPayloadSchema,
   financialTransactionPostedEventPayloadSchema,
@@ -244,6 +245,30 @@ describe('v1 payment and ledger foundation contracts', () => {
   })
 })
 
+describe('v1 payment checkout contract', () => {
+  const base = {
+    orderId: '719f89ae-84bf-4f57-83a6-573ffe0ac9c6',
+    idempotencyKey: 'checkout-idempotency-0001',
+  }
+
+  /**
+   * A client written before balances existed still works, and still means the
+   * gateway. Defaulting the other way would silently spend somebody's balance
+   * because their app had not been updated.
+   */
+  it('treats an unstated source as the gateway', () => {
+    expect(paymentCheckoutStartSchema.parse(base).source).toBe('GATEWAY')
+    expect(paymentCheckoutStartSchema.parse({ ...base, source: 'BALANCE' }).source).toBe('BALANCE')
+  })
+
+  it('refuses a source it does not have, and an amount it was never given', () => {
+    expect(() => paymentCheckoutStartSchema.parse({ ...base, source: 'CASH' })).toThrow()
+    // The price comes from the order. A request that carries one is a request
+    // to choose one.
+    expect(() => paymentCheckoutStartSchema.parse({ ...base, amount: '1' })).toThrow()
+  })
+})
+
 describe('v1 identity contracts', () => {
   it('accepts E.164 OTP input and a scoped session context', () => {
     expect(otpRequestSchema.parse({ mobileE164: '+989111234567' })).toEqual({
@@ -328,10 +353,14 @@ describe('v1 catalog response contracts', () => {
             offeringId: '0d908503-5bd2-41e6-a627-b7165e3956e0',
             variantId: 'e42c44e3-f380-4544-875b-ec95f06f1ba2',
             sku: 'ALO-SIGNATURE-001',
+            slug: 'barbari-vizhe',
             nameFa: 'بربری ویژه',
+            categoryCode: 'BARBARI',
+            categoryNameFa: 'بربری',
             fulfillmentClass: 'SIGNATURE_FRESH',
             freshnessClaim: 'FRESHLY_PRODUCED',
             price: { amount: '250000', currency: 'IRR' },
+            operationalZoneId: '9f1b6a2c-1b2c-4d3e-8f4a-5b6c7d8e9f01',
             lifecycle: 'ACTIVE',
           },
         ],
@@ -419,6 +448,7 @@ describe('v1 cart and quote contracts', () => {
           cartId: cart.id,
           cartVersion: cart.version,
           status: 'ACTIVE',
+          paymentMethod: 'ONLINE_GATEWAY',
           expiresAt: '2026-07-29T12:10:00.000Z',
           deliveryAddressId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           deliveryServiceAreaId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',

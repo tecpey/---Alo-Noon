@@ -9,7 +9,12 @@ const tenantB = randomUUID()
 const roleName = `alo_noon_ai_audit_${randomUUID().replaceAll('-', '')}`
 const eventId = randomUUID()
 const proposalId = randomUUID()
-const digest = (character: string): string => `sha256:${character.repeat(64)}`
+// Digests are globally unique in this ledger — deliberately, since a repeated
+// digest means a forged or replayed event. So they have to differ between runs
+// too: a fixed one makes the second run against a database collide with the
+// first and fail an append it was never testing.
+const runToken = randomUUID().replaceAll('-', '')
+const digest = (label: string): string => `sha256:${(label.repeat(32) + runToken).slice(0, 64)}`
 
 databaseDescribe('governed AI durable audit G6B', () => {
   beforeAll(async () => {

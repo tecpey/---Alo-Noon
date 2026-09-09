@@ -63,14 +63,21 @@ service receives traffic when a required dependency is unavailable.
 
 The execution orchestrator prepares an attempt transactionally, invokes only a
 registered compatible adapter outside PostgreSQL, and persists a normalized
-initialization result in a second transaction. The production composition does
-not register a real adapter or secret resolver, so real payment execution fails
-closed. Callback processing, inquiry, capture, settlement, reconciliation, and
-refunds remain deferred. Authentication delivery likewise has no approved real
-SMS adapter, so production SMS remains unavailable by design.
+initialization result in a second transaction. The production composition
+registers five Iranian gateway adapters, an SMS adapter, an email adapter and a
+routing adapter, together with the secret resolver each of them reads from.
+Callback processing, capture, partner settlement, refunds and wallet withdrawals
+are implemented and covered by tests against PostgreSQL.
 
-Bakery onboarding/production operations, courier dispatch/tracking, notification
-delivery, CRM/admin interfaces, and external commerce integrations remain
+What is absent is credentials, not code. No adapter here has ever been pointed
+at a live provider: until a deployment holds a real SMS key, a real gateway
+merchant account and a real routing key, provider selection finds nothing and
+every one of these paths fails closed — which is the correct behaviour and the
+reason it is stated here rather than left to be discovered.
+
+Courier dispatch and tracking, notification delivery, the operator panel and the
+bakery partner's own branch panel are implemented. CRM interfaces, automatic
+printing, bakery onboarding and external commerce integrations remain
 foundation-only or planned. Target documents describing those areas are not
 runtime evidence.
 

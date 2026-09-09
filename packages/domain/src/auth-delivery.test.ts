@@ -45,6 +45,7 @@ describe('authentication delivery domain', () => {
         maxPhoneSendsPerHour: 5,
         maxIpSendsPerTenMinutes: 20,
         maxTenantSendsPerHour: 500,
+        maxTenantSendsPerDay: 5_000,
         maxProviderSendsPerMinute: 300,
         circuitFailureThreshold: 5,
         circuitOpenMs: 300_000,
@@ -61,6 +62,7 @@ describe('authentication delivery domain', () => {
         maxPhoneSendsPerHour: 5,
         maxIpSendsPerTenMinutes: 20,
         maxTenantSendsPerHour: 500,
+        maxTenantSendsPerDay: 5_000,
         maxProviderSendsPerMinute: 300,
         circuitFailureThreshold: 5,
         circuitOpenMs: 300_000,
@@ -68,6 +70,33 @@ describe('authentication delivery domain', () => {
         maxPersistenceAttempts: 3,
       }),
     ).toThrow('OTP TTL')
+  })
+
+  it('bounds the daily send ceiling and keeps it reachable from the hourly limit', () => {
+    const policy = (overrides: Record<string, number>) =>
+      createAuthenticationDeliveryPolicy({
+        environment: 'TEST',
+        otpTtlMs: 300_000,
+        resendCooldownMs: 60_000,
+        maxVerificationAttempts: 5,
+        maxPhoneSendsPerHour: 5,
+        maxIpSendsPerTenMinutes: 20,
+        maxTenantSendsPerHour: 500,
+        maxTenantSendsPerDay: 5_000,
+        maxProviderSendsPerMinute: 300,
+        circuitFailureThreshold: 5,
+        circuitOpenMs: 300_000,
+        invocationTimeoutMs: 5_000,
+        maxPersistenceAttempts: 3,
+        ...overrides,
+      })
+
+    expect(policy({}).maxTenantSendsPerDay).toBe(5_000)
+    // A day that cannot hold even one hour of sending is always a mistake.
+    expect(() => policy({ maxTenantSendsPerDay: 100 })).toThrow(
+      'daily send limit must be at least the hourly',
+    )
+    expect(() => policy({ maxTenantSendsPerDay: 0 })).toThrow('Tenant daily send limit')
   })
 
   it('uses a deterministic versioned registry and blocks test adapters in production', () => {

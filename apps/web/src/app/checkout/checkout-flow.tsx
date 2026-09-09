@@ -1,0 +1,475 @@
+'use client'
+
+import { useRouter } from 'next/navigation'
+import { useState, useTransition } from 'react'
+
+import type { AddressSummary, CartSummary, DeliveryWindow, QuoteSummary } from '@alo-noon/contracts'
+import { formatDeliveryWindow } from '@alo-noon/domain'
+
+import { AddressForm } from './address-form'
+import {
+  CheckIcon,
+  ChevronIcon,
+  CourierIcon,
+  PinIcon,
+  ShieldIcon,
+  WalletIcon,
+} from '../components/icons'
+import { formatToman, toPersianDigits } from '../../lib/persian'
+import { payAction, quoteAction } from '../../lib/checkout-actions'
+import { translateProviderError } from '../../lib/admin-format'
+import { balanceCovers, shortfallRial, suggestedTopUpRial } from '../../lib/wallet-view'
+
+/**
+ * The three questions checkout asks, in the order they can be answered.
+ *
+ * Where it goes, what it costs, and paying for it — and the second cannot be
+ * answered before the first, because the fare is measured to the address. They
+ * are one page rather than three routes: a bread order is small enough that
+ * three navigations would be most of the work, and a customer who has to go
+ * back to change an address should not lose their place.
+ *
+ * The total is never computed here. It comes from a quote the API cut, which is
+ * priced against a cart version and expires — the number on screen is the
+ * number that will be charged, and if this component did the arithmetic itself
+ * it would eventually disagree with the ledger.
+ */
+export function CheckoutFlow({
+  cart,
+  addresses,
+  windows,
+  walletBalance,
+}: {
+  cart: CartSummary
+  addresses: readonly AddressSummary[]
+  windows: readonly DeliveryWindow[]
+  /**
+   * The balance, in Rial, or null when it could not be read.
+   *
+   * Null means the choice is not offered rather than offered and broken. A
+   * customer told "pay from balance" and then told the balance is unknown has
+   * been asked a question nobody can answer.
+   */
+  walletBalance: string | null
+}) {
+  const [saved, setSaved] = useState<readonly AddressSummary[]>(addresses)
+  const [selected, setSelected] = useState<string | null>(addresses[0]?.id ?? null)
+  const [adding, setAdding] = useState(addresses.length === 0)
+  const [quote, setQuote] = useState<QuoteSummary | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [code, setCode] = useState('')
+  // Null is "as soon as you can", which is what every order was before windows
+  // existed and what a branch with no recorded hours still offers.
+  const [chosenWindow, setChosenWindow] = useState<string | null>(null)
+  const [source, setSource] = useState<'GATEWAY' | 'BALANCE'>('GATEWAY')
+  const [shortBy, setShortBy] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+  // Fixed for the life of the page. Recomputing it per render would make
+  // "امروز" flip to "فردا" underneath a customer at midnight, mid-checkout.
+  const [openedAt] = useState(() => new Date())
+
+  const bookable = windows.filter((entry) => entry.available)
+
+  function priceIt(addressId: string) {
+    setError(null)
+    setQuote(null)
+    startTransition(async () => {
+      const result = await quoteAction(
+        addressId,
+        code.trim() || undefined,
+        chosenWindow ?? undefined,
+      )
+      if (result.ok) setQuote(result.quote)
+      else setError(result.message)
+    })
+  }
+
+  function pay() {
+    if (!quote) return
+    setError(null)
+    setShortBy(null)
+    startTransition(async () => {
+      const result = await payAction(quote.id, source)
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+      if (result.kind === 'paid') {
+        // Nothing to wait for. The order is placed and paid in one call, so the
+        // customer goes where a paid order lives rather than to a result page
+        // that would poll a gateway nobody called.
+        router.push('/orders')
+        return
+      }
+      if (result.kind === 'short') {
+        // The order is real and unpaid, and the number it is short by is what
+        // the top-up link carries. Staying here would strand them: the basket
+        // has been consumed, so this page has nothing left to show.
+        setShortBy(result.shortfallRial)
+        return
+      }
+      if (result.kind === 'redirect') {
+        // A full navigation, not a router push: this address belongs to the
+        // gateway, not to this application.
+        window.location.href = result.url
+        return
+      }
+      // The order is real and placed; only the gateway declined to open.
+      //
+      // The customer goes to the result page rather than staying here with a
+      // message. Two reasons, and the second is the one that matters: their
+      // basket has just been consumed into the order, so this page would say
+      // "سبد خرید خالی است" on the next refresh — and a notice held in client
+      // state does not survive the re-render that placing the order triggers,
+      // which left a customer looking at a checkout page that silently did
+      // nothing while their order sat waiting to be paid.
+      router.push('/payments/result')
+    })
+  }
+
+  const chosen = saved.find((address) => address.id === selected) ?? null
+  // Recomputed from the quote rather than remembered, so a re-priced basket
+  // cannot leave a "pay from balance" button enabled against an old total.
+  const enoughBalance =
+    walletBalance !== null && quote !== null && balanceCovers(walletBalance, quote.total.amount)
+  const missing =
+    walletBalance !== null && quote !== null
+      ? shortfallRial(walletBalance, quote.total.amount)
+      : null
+
+  return (
+    <div className="checkout__grid">
+      <div className="checkout__main">
+        <h1>تکمیل سفارش</h1>
+
+        <section className="checkout__step" aria-labelledby="address-step">
+          <h2 id="address-step">
+            <span className="checkout__num">{toPersianDigits('1')}</span>
+            نشانی تحویل
+          </h2>
+
+          {saved.length > 0 && (
+            <ul className="address-list">
+              {saved.map((address) => (
+                <li key={address.id}>
+                  <label className={`address${address.id === selected ? ' address--on' : ''}`}>
+                    <input
+                      type="radio"
+                      name="address"
+                      value={address.id}
+                      checked={address.id === selected}
+                      onChange={() => {
+                        setSelected(address.id)
+                        setQuote(null)
+                      }}
+                    />
+                    <span className="address__glyph">
+                      <PinIcon duotone width={20} height={20} />
+                    </span>
+                    <span className="address__body">
+                      <span className="address__label">{address.label}</span>
+                      <span className="address__line">{address.addressLine}</span>
+                      <span className="address__who">
+                        {address.recipientName} — {toPersianDigits(address.recipientPhone)}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {adding ? (
+            <AddressForm
+              onSaved={(address) => {
+                setSaved((current) => [address, ...current])
+                setSelected(address.id)
+                setAdding(false)
+                setQuote(null)
+              }}
+              {...(saved.length > 0 && { onCancel: () => setAdding(false) })}
+            />
+          ) : (
+            <button
+              type="button"
+              className="an-button an-button--quiet"
+              onClick={() => setAdding(true)}
+            >
+              افزودن نشانی تازه
+            </button>
+          )}
+        </section>
+
+        <section className="checkout__step" aria-labelledby="price-step">
+          <h2 id="price-step">
+            <span className="checkout__num">{toPersianDigits('2')}</span>
+            هزینه و کرایه
+          </h2>
+          {chosen ? (
+            <>
+              <p className="checkout__hint">
+                کرایه بر اساس مسیر واقعی تا «{chosen.label}» اندازه‌گیری می‌شود.
+              </p>
+
+              {/*
+                When, before how much. Bread is the one product where the time
+                matters more than the speed — nobody wants barbari at eleven at
+                night, they want it on the table at seven — so the choice comes
+                before the price rather than being buried under it.
+
+                A branch with no hours recorded offers nothing here, and the
+                section disappears rather than showing an empty control that
+                looks broken.
+              */}
+              {bookable.length > 0 && (
+                <fieldset className="window">
+                  <legend className="window__legend">زمان تحویل</legend>
+                  <ul className="window__list">
+                    <li>
+                      <label
+                        className={`window__slot${chosenWindow === null ? ' window__slot--on' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="deliveryWindow"
+                          checked={chosenWindow === null}
+                          onChange={() => {
+                            setChosenWindow(null)
+                            setQuote(null)
+                          }}
+                        />
+                        <span>در اولین فرصت</span>
+                      </label>
+                    </li>
+                    {bookable.map((entry) => (
+                      <li key={entry.startsAt}>
+                        <label
+                          className={`window__slot${chosenWindow === entry.startsAt ? ' window__slot--on' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="deliveryWindow"
+                            value={entry.startsAt}
+                            checked={chosenWindow === entry.startsAt}
+                            onChange={() => {
+                              setChosenWindow(entry.startsAt)
+                              setQuote(null)
+                            }}
+                          />
+                          <span>
+                            {formatDeliveryWindow(entry.startsAt, entry.endsAt, openedAt)}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                  {quote?.deliveryWindowRefusal && (
+                    <p className="promo__refused" role="status">
+                      این زمان دیگر در دسترس نیست؛ زمان دیگری انتخاب کنید.
+                    </p>
+                  )}
+                </fieldset>
+              )}
+
+              {/*
+                The code goes in beside the price button rather than at the end
+                of checkout. A customer holding a code wants to see it work
+                before they commit, and one who finds the field after paying
+                has a complaint rather than an order.
+              */}
+              <div className="promo">
+                <label className="promo__label" htmlFor="promotionCode">
+                  کد تخفیف (اختیاری)
+                </label>
+                <div className="promo__row">
+                  <input
+                    id="promotionCode"
+                    name="promotionCode"
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    maxLength={64}
+                    autoComplete="off"
+                    placeholder="مثلاً NOON10"
+                  />
+                </div>
+                {quote?.promotionRefusal && (
+                  <p className="promo__refused" role="status">
+                    {translateProviderError(quote.promotionRefusal, 'این کد اعمال نشد.')}
+                  </p>
+                )}
+                {quote?.promotion && (
+                  <p className="promo__applied" role="status">
+                    <CheckIcon width={16} height={16} />«{quote.promotion.nameFa}» اعمال شد
+                    {quote.promotion.basis === 'DELIVERY_FEE' && ' — کرایه رایگان'}.
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                className="an-button an-button--quiet"
+                disabled={pending}
+                onClick={() => priceIt(chosen.id)}
+              >
+                {pending && !quote ? 'در حال محاسبه…' : quote ? 'محاسبهٔ دوباره' : 'محاسبهٔ هزینه'}
+              </button>
+            </>
+          ) : (
+            <p className="checkout__hint">اول یک نشانی انتخاب کنید.</p>
+          )}
+        </section>
+      </div>
+
+      <aside className="checkout__summary" aria-label="خلاصهٔ سفارش">
+        <h2>خلاصهٔ سفارش</h2>
+        <ul className="summary__lines">
+          {cart.items.map((item) => (
+            <li key={item.id}>
+              <span>
+                {item.nameFa}
+                <span className="summary__times"> × {toPersianDigits(String(item.quantity))}</span>
+              </span>
+              <strong>{formatToman(item.lineTotal.amount)}</strong>
+            </li>
+          ))}
+        </ul>
+
+        <dl className="summary__totals">
+          <div>
+            <dt>جمع نان‌ها</dt>
+            <dd>{formatToman(quote ? quote.subtotal.amount : cart.subtotal.amount)}</dd>
+          </div>
+          <div>
+            <dt>کرایهٔ پیک</dt>
+            <dd>{quote ? formatToman(quote.deliveryFee.amount) : '—'}</dd>
+          </div>
+          {quote && quote.discount.amount !== '0' && (
+            <div>
+              <dt>تخفیف</dt>
+              <dd>−{formatToman(quote.discount.amount)}</dd>
+            </div>
+          )}
+          {quote?.deliveryWindow && (
+            <div>
+              <dt>زمان تحویل</dt>
+              <dd>
+                {formatDeliveryWindow(
+                  quote.deliveryWindow.startsAt,
+                  quote.deliveryWindow.endsAt,
+                  openedAt,
+                )}
+              </dd>
+            </div>
+          )}
+          <div className="summary__grand">
+            <dt>مبلغ قابل پرداخت</dt>
+            <dd>{quote ? formatToman(quote.total.amount) : '—'}</dd>
+          </div>
+        </dl>
+
+        {!quote && (
+          <p className="checkout__hint">
+            <CourierIcon width={16} height={16} />
+            کرایه پس از انتخاب نشانی محاسبه می‌شود.
+          </p>
+        )}
+
+        {walletBalance !== null && quote && (
+          <fieldset className="paysource">
+            <legend className="paysource__legend">پرداخت از</legend>
+
+            <label className={`paysource__option${source === 'GATEWAY' ? ' is-chosen' : ''}`}>
+              <input
+                type="radio"
+                name="paysource"
+                value="GATEWAY"
+                checked={source === 'GATEWAY'}
+                onChange={() => setSource('GATEWAY')}
+                disabled={pending}
+              />
+              <ShieldIcon width={18} height={18} />
+              <span className="paysource__label">درگاه بانکی</span>
+            </label>
+
+            <label
+              className={`paysource__option${source === 'BALANCE' ? ' is-chosen' : ''}${
+                enoughBalance ? '' : ' is-short'
+              }`}
+            >
+              <input
+                type="radio"
+                name="paysource"
+                value="BALANCE"
+                checked={source === 'BALANCE'}
+                onChange={() => setSource('BALANCE')}
+                disabled={pending}
+              />
+              <WalletIcon width={18} height={18} />
+              <span className="paysource__label">
+                کیف پول
+                <span className="paysource__balance">موجودی {formatToman(walletBalance)}</span>
+              </span>
+            </label>
+
+            {/* Said before they choose, not after they are refused. The number
+                is what to add, not what they lack — that is the sentence a
+                top-up button can act on. */}
+            {!enoughBalance && missing !== null && (
+              <p className="paysource__short">
+                برای پرداخت از کیف پول {formatToman(missing.toString())} کم دارید.{' '}
+                <a href={`/wallet?need=${suggestedTopUpRial(missing).toString()}`}>شارژ کیف پول</a>
+              </p>
+            )}
+          </fieldset>
+        )}
+
+        {error && (
+          <p className="checkout__error" role="alert">
+            {error}
+          </p>
+        )}
+
+        {/* The order was placed and the balance turned out not to cover it. The
+            basket is gone, so the only useful thing left on this page is the
+            way to finish paying. */}
+        {shortBy && (
+          <p className="checkout__error" role="alert">
+            سفارش ثبت شد اما موجودی کیف پول کافی نبود.{' '}
+            <a href={`/wallet?need=${suggestedTopUpRial(BigInt(shortBy)).toString()}`}>
+              کیف پول را شارژ کنید
+            </a>{' '}
+            و از بخش سفارش‌ها پرداخت را کامل کنید.
+          </p>
+        )}
+
+        <button
+          type="button"
+          className="an-button checkout__pay"
+          disabled={!quote || pending || (source === 'BALANCE' && !enoughBalance)}
+          onClick={pay}
+        >
+          {pending && quote ? (
+            source === 'BALANCE' ? (
+              'در حال پرداخت…'
+            ) : (
+              'در حال اتصال به درگاه…'
+            )
+          ) : (
+            <>
+              <CheckIcon width={18} height={18} />
+              {source === 'BALANCE' ? 'پرداخت از کیف پول' : 'پرداخت'}
+              <ChevronIcon width={18} height={18} />
+            </>
+          )}
+        </button>
+
+        <p className="checkout__trust">
+          <ShieldIcon width={16} height={16} />
+          {source === 'BALANCE'
+            ? 'مبلغ از موجودی کیف پول شما کم می‌شود و سفارش بی‌درنگ قطعی می‌شود.'
+            : 'پرداخت در درگاه بانکی انجام می‌شود و تأیید نهایی با پاسخ خود درگاه است.'}
+        </p>
+      </aside>
+    </div>
+  )
+}

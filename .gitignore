@@ -67,3 +67,7 @@ apps/courier-mobile/.expo/
 # Temporary files
 *.tmp
 *.temp
+
+# Skills installed by the `skills` CLI at an operator request. The skills
+# themselves live in the ignored .agents/ tree, so their lock file is local too.
+skills-lock.json
