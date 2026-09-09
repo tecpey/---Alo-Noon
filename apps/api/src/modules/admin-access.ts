@@ -99,7 +99,9 @@ export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAcces
     listRoles(actor) {
       return ADMIN_ROLES.map((role) => ({
         code: role.code,
-        name: role.name,
+        // The Persian name, because the only thing that reads this list is a
+        // screen. The code beside it stays English and stays the identifier.
+        name: role.nameFa,
         scope: role.scope,
         permissions: [...role.permissions],
         grantable: permissionsBeyond(role, actor.permissions).length === 0,
@@ -325,8 +327,12 @@ async function ensureRole(
 ): Promise<{ id: string }> {
   const role = await transaction.authorizationRole.upsert({
     where: { code: definition.code },
-    update: { name: definition.name, updatedAt: now },
-    create: { code: definition.code, name: definition.name, createdAt: now, updatedAt: now },
+    // The stored name is a display name — `code` is the identifier everything
+    // else keys on — so it is the Persian one. The staff list reads it back
+    // straight from here, and an operator reading who holds what should not be
+    // shown two different languages depending on which query answered.
+    update: { name: definition.nameFa, updatedAt: now },
+    create: { code: definition.code, name: definition.nameFa, createdAt: now, updatedAt: now },
     select: { id: true },
   })
   for (const code of definition.permissions) {

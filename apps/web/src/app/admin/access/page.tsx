@@ -28,7 +28,7 @@ const ROLE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   OPERATIONS_ANALYST: 'فقط دیدن گزارش‌ها و سفارش‌ها.',
   CATALOG_MANAGER: 'مدیریت کاتالوگ، قیمت‌ها و موجودی.',
   ACCESS_ADMIN: 'فقط دادن و گرفتن دسترسی، بدون هیچ دسترسی عملیاتی دیگر.',
-  ORDER_OPERATOR: 'صف سفارش‌های کل tenant: پذیرش، تولید و تحویل.',
+  ORDER_OPERATOR: 'صف سفارش‌های کل مجموعه: پذیرش، تولید و تحویل.',
   FINANCE_ADMIN: 'تسویه با شرکا، پرداخت به آن‌ها و برداشت مشتری‌ها.',
   BRANCH_OPERATOR: 'پشت پیشخوانِ یک شعبه: صف همان شعبه و بس.',
   BRANCH_OWNER: 'همان بالا، به‌علاوهٔ درآمد و مانده‌ی همان شعبه.',
@@ -74,7 +74,7 @@ export default async function AdminAccessPage() {
       <AdminNav
         active="/admin/access"
         title="دسترسی‌ها"
-        subtitle="چه کسی این tenant را اداره می‌کند، و با چه اختیاری"
+        subtitle="چه کسی این مجموعه را اداره می‌کند، و با چه اختیاری"
       />
 
       <aside className="note">
@@ -196,7 +196,7 @@ export default async function AdminAccessPage() {
                 {roleList.map((role) => (
                   <tr key={role.code}>
                     <td>{role.name}</td>
-                    <td>{role.scope === 'BAKERY_BRANCH' ? 'یک شعبه' : 'کل tenant'}</td>
+                    <td>{role.scope === 'BAKERY_BRANCH' ? 'یک شعبه' : 'کل مجموعه'}</td>
                     <td>{ROLE_DESCRIPTIONS[role.code] ?? '—'}</td>
                     <td>
                       {role.permissions
@@ -246,7 +246,7 @@ function StaffRow({ member }: Readonly<{ member: StaffMember }>) {
             <dd>{member.roles.map(roleLabel).join('، ')}</dd>
           </div>
           <div>
-            <dt>اختیارات در کل tenant</dt>
+            <dt>اختیارات در کل مجموعه</dt>
             <dd>
               {member.permissions.length === 0
                 ? // Every grant this account holds is branch-scoped. Saying so

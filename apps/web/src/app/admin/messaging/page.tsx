@@ -6,7 +6,7 @@ import {
   listMessageTemplates,
   type MessageTemplate,
 } from '../../../lib/admin-api'
-import { formatDateTime } from '../../../lib/admin-format-display'
+import { formatDateTime, toPersianDigits } from '../../../lib/admin-format-display'
 import { ActionForm, SelectField, TextAreaField } from '../action-form'
 import { AdminNav } from '../admin-nav'
 import { readFailureMessage } from '../failure-message'
@@ -74,7 +74,7 @@ function TemplateCard({ template }: Readonly<{ template: MessageTemplate }>) {
           <dt>وضعیت</dt>
           <dd>
             {template.customized
-              ? `متن اختصاصی این tenant (نسخهٔ ${template.version})`
+              ? `متن اختصاصی این مجموعه (نسخهٔ ${toPersianDigits(String(template.version))})`
               : 'متن پیش‌فرض سیستم'}
           </dd>
         </div>

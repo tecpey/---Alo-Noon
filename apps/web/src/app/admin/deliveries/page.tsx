@@ -13,7 +13,7 @@ import {
   type CourierSummary,
   type DeliveryTask,
 } from '../../../lib/admin-api'
-import { formatDateTime, formatMoney } from '../../../lib/admin-format-display'
+import { formatCount, formatDateTime, formatMoney } from '../../../lib/admin-format-display'
 import { ActionForm, Field, SelectField } from '../action-form'
 import { AdminNav } from '../admin-nav'
 import { readFailureMessage } from '../failure-message'
@@ -184,7 +184,7 @@ function DeliveryRow({
                   value: courier.courierId,
                   // How loaded someone is, so five orders do not all go to the
                   // first name in the list.
-                  label: `${courier.displayName} (${courier.activeTasks} سفارش فعال)`,
+                  label: `${courier.displayName} (${formatCount(courier.activeTasks)} سفارش فعال)`,
                 }))}
               />
             </ActionForm>
@@ -220,7 +220,7 @@ function CourierRow({ courier }: Readonly<{ courier: CourierSummary }>) {
       <p className="muted">
         {courier.activeTasks === 0
           ? 'الان سفارشی دستش نیست.'
-          : `${courier.activeTasks} سفارش دستش است.`}
+          : `${formatCount(courier.activeTasks)} سفارش دستش است.`}
       </p>
 
       {gone ? (

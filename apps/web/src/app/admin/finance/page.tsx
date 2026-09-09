@@ -34,6 +34,33 @@ const ACCOUNT_TYPE_LABELS: Readonly<Record<string, string>> = {
   EXPENSE: 'هزینه',
 }
 
+/**
+ * The chart of accounts, in the language of the person reading the report.
+ *
+ * The names the database stores are English — «Cash clearing», «Bakery
+ * payable» — because the chart is seeded by a migration and its codes are
+ * machine identifiers that never change. That is right for the code column and
+ * wrong for the one beside it: this is the page a bakery's accountant opens to
+ * find out what the platform owes them, and every other word on it is Persian.
+ *
+ * Keyed on the code rather than translating the stored name, so a tenant that
+ * renames an account keeps their own wording, and an account added to the chart
+ * later shows the name it was given rather than nothing at all.
+ */
+const ACCOUNT_NAME_LABELS: Readonly<Record<string, string>> = {
+  A_1100_CASH_CLEARING: 'تسویهٔ نقدی',
+  L_2100_PAYMENT_CLEARING: 'تسویهٔ پرداخت',
+  L_2200_BAKERY_PAYABLE: 'بدهی به نانوایی',
+  L_2300_COURIER_PAYABLE: 'بدهی به شرکت پیک',
+  L_2400_CUSTOMER_WALLET: 'کیف پول مشتریان',
+  E_3100_RETAINED_EARNINGS: 'سود انباشته',
+  R_4100_PRODUCT_SALES: 'درآمد فروش نان',
+  R_4200_DELIVERY: 'درآمد ارسال',
+  X_5100_DELIVERY: 'هزینهٔ ارسال',
+  X_5200_PAYMENT_PROCESSING: 'کارمزد درگاه',
+  X_5300_PROMOTION: 'هزینهٔ تخفیف',
+}
+
 const PAYMENT_STATE_LABELS: Readonly<Record<string, string>> = {
   CREATED: 'ایجادشده',
   PENDING: 'در انتظار',
@@ -126,7 +153,7 @@ function FinancialSections({ report }: Readonly<{ report: FinancialReport }>) {
                 {trialBalance.rows.map((row) => (
                   <tr key={row.accountCode}>
                     <td dir="ltr">{row.accountCode}</td>
-                    <td>{row.accountName}</td>
+                    <td>{ACCOUNT_NAME_LABELS[row.accountCode] ?? row.accountName}</td>
                     <td>{ACCOUNT_TYPE_LABELS[row.accountType] ?? row.accountType}</td>
                     <td>{formatMoney(row.debits)}</td>
                     <td>{formatMoney(row.credits)}</td>

@@ -30,7 +30,7 @@ export function readFailureMessage(code: string): string {
     case 'REPORT_RANGE_TOO_WIDE':
       return 'بازهٔ انتخابی بیش از حد طولانی است.'
     case 'ORDER_NOT_FOUND':
-      return 'چنین سفارشی در این tenant وجود ندارد.'
+      return 'چنین سفارشی در این مجموعه وجود ندارد.'
     default:
       return `خواندن اطلاعات ناموفق بود (${code}).`
   }

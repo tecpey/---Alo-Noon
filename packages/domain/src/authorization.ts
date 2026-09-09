@@ -91,7 +91,23 @@ export type AdminRoleScope = 'TENANT' | 'BAKERY_BRANCH'
 
 export interface AdminRoleDefinition {
   code: string
+  /**
+   * The English name, for a terminal and a log.
+   *
+   * The provisioning CLI prints it, and technical documentation uses it. It is
+   * not what anybody reads on a screen.
+   */
   name: string
+  /**
+   * The name on the screen where somebody decides who can move money.
+   *
+   * A role's *code* is the stable identifier and stays English forever, because
+   * grants, tests and the CLI are all keyed on it. The name beside it is read
+   * by a bakery owner in Sari deciding whether to hand a clerk the counter or
+   * the bank account, and «Finance administrator» is not a sentence they should
+   * have to parse to make that decision correctly.
+   */
+  nameFa: string
   scope: AdminRoleScope
   permissions: readonly AdminPermission[]
 }
@@ -110,6 +126,7 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     code: 'PROVIDER_GOVERNOR',
     scope: 'TENANT',
     name: 'Provider governor',
+    nameFa: 'مدیر سرویس‌دهنده‌ها',
     permissions: [
       ADMIN_PERMISSIONS.paymentProviderGovern,
       ADMIN_PERMISSIONS.authDeliveryProviderGovern,
@@ -121,12 +138,14 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     code: 'OPERATIONS_ANALYST',
     scope: 'TENANT',
     name: 'Operations analyst',
+    nameFa: 'کارشناس عملیات',
     permissions: [ADMIN_PERMISSIONS.reportsRead, ADMIN_PERMISSIONS.ordersRead],
   },
   {
     code: 'ORDER_OPERATOR',
     scope: 'TENANT',
     name: 'Order operator',
+    nameFa: 'اپراتور سفارش',
     // The person in the shop: they see the queue and move it. Deliberately
     // without reports — accepting orders and reading revenue are different
     // jobs, and the first is the one a counter needs.
@@ -136,12 +155,14 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     code: 'CATALOG_MANAGER',
     scope: 'TENANT',
     name: 'Catalog manager',
+    nameFa: 'مدیر کاتالوگ',
     permissions: [ADMIN_PERMISSIONS.catalogManage, ADMIN_PERMISSIONS.reportsRead],
   },
   {
     code: 'ACCESS_ADMIN',
     scope: 'TENANT',
     name: 'Access administrator',
+    nameFa: 'مدیر دسترسی‌ها',
     permissions: [ADMIN_PERMISSIONS.accessManage],
   },
   {
@@ -153,12 +174,14 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     code: 'FINANCE_ADMIN',
     scope: 'TENANT',
     name: 'Finance administrator',
+    nameFa: 'مدیر مالی',
     permissions: [ADMIN_PERMISSIONS.financeSettle, ADMIN_PERMISSIONS.reportsRead],
   },
   {
     code: 'TENANT_ADMIN',
     scope: 'TENANT',
     name: 'Tenant administrator',
+    nameFa: 'مدیر مجموعه',
     permissions: [
       ADMIN_PERMISSIONS.paymentProviderGovern,
       ADMIN_PERMISSIONS.authDeliveryProviderGovern,
@@ -184,6 +207,7 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     code: 'BRANCH_OPERATOR',
     scope: 'BAKERY_BRANCH',
     name: 'Branch operator',
+    nameFa: 'اپراتور شعبه',
     // The counter: see the queue, accept it, bake it, hand it over. No reports,
     // for the same reason ORDER_OPERATOR has none — taking orders and reading
     // revenue are different jobs.
@@ -193,6 +217,7 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     code: 'BRANCH_OWNER',
     scope: 'BAKERY_BRANCH',
     name: 'Branch owner',
+    nameFa: 'صاحب شعبه',
     // The person whose money it is: everything the counter can do, plus what
     // the branch has earned and what has been paid out against it. Never
     // financeSettle — reading what one is owed and deciding to pay it are

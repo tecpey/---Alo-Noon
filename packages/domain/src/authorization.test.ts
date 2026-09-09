@@ -143,3 +143,52 @@ describe('privilege escalation guard', () => {
     expect(permissionsBeyond(analyst, ['session.self.read'])).toEqual(analyst.permissions)
   })
 })
+
+/**
+ * The names on the screen where somebody decides who can move money.
+ *
+ * A role's code is the identifier and stays English forever — grants, tests and
+ * the provisioning CLI are all keyed on it. The name beside it is read by a
+ * bakery owner in Sari deciding whether to hand a clerk the counter or the bank
+ * account, and «Finance administrator» is not a sentence they should have to
+ * parse to get that decision right.
+ */
+describe('roles, as an operator reads them', () => {
+  it('gives every role a Persian name', () => {
+    for (const role of ADMIN_ROLES) {
+      // Persian script, not merely non-empty: a Latin string here would pass a
+      // length check and still be the bug.
+      expect(`${role.code}: ${role.nameFa}`).toMatch(/: [؀-ۿ]/)
+    }
+  })
+
+  it('keeps the code an ASCII identifier, because everything is keyed on it', () => {
+    for (const role of ADMIN_ROLES) {
+      expect(role.code).toMatch(/^[A-Z][A-Z_]*$/)
+    }
+  })
+
+  it('keeps the English name too, for a terminal and a log', () => {
+    // The provisioning CLI prints it, and technical documentation uses it.
+    // Dropping it would push Persian into places that are deliberately English.
+    for (const role of ADMIN_ROLES) {
+      expect(role.name).toMatch(/^[\x20-\x7E]+$/)
+    }
+  })
+
+  it('names no two roles the same thing', () => {
+    // Two roles reading identically in the grant dropdown is a way to hand out
+    // the wrong one and never notice.
+    const names = ADMIN_ROLES.map((role) => role.nameFa)
+    expect(new Set(names).size).toBe(names.length)
+  })
+
+  it('says «شعبه» in the name of every role confined to one', () => {
+    // Scope is a separate column, and a name that does not carry it is a name
+    // that gets granted tenant-wide by somebody skimming.
+    for (const role of ADMIN_ROLES) {
+      if (role.scope !== 'BAKERY_BRANCH') continue
+      expect(`${role.code}: ${role.nameFa}`).toContain('شعبه')
+    }
+  })
+})
