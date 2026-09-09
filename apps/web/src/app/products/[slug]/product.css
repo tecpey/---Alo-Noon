@@ -9,7 +9,7 @@
  */
 
 .product-page {
-  padding: 1.25rem 1.5rem 3rem;
+  padding: 1rem 1rem 2.5rem;
 }
 
 .crumbs {
@@ -32,20 +32,21 @@
   opacity: 0.55;
 }
 
+/* Photograph above the words on a phone; beside them once there is room. */
 .product {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
   align-items: start;
 }
 
-@media (max-width: 900px) {
+@media (min-width: 56.25rem) {
   .product-page {
-    padding: 1rem 1rem 2.5rem;
+    padding: 1.25rem 1.5rem 3rem;
   }
   .product {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1.25rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem;
   }
 }
 

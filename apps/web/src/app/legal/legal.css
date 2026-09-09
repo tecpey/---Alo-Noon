@@ -29,7 +29,12 @@
   gap: 1rem;
   font-size: 0.9rem;
 }
+/* Standalone navigation, so it carries the touch floor the same way the
+   footer's copy of these four links does. */
 .legal__nav a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--touch-min);
   color: var(--ink-muted);
   text-decoration: none;
 }

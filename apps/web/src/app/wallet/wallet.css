@@ -152,7 +152,8 @@
   border-radius: var(--radius-md);
   background: var(--surface-sunken);
   color: var(--ink-strong);
-  font: inherit;
+  font-family: inherit;
+  font-size: 1rem;
   font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
   /* Numbers read left to right even inside a right-to-left page. */

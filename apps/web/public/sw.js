@@ -27,7 +27,16 @@
  * That restraint is also what makes the update strategy safe below.
  */
 
-const VERSION = 'v1'
+/*
+ * Bumped when a cached asset is replaced rather than merely added to.
+ *
+ * v2: the three subset font files were deleted and one variable file put in
+ * their place. Anybody who had already installed the shop was holding all three
+ * of the old ones under `/fonts/`, and nothing would ever have evicted them —
+ * the activate step below drops every cache that is not this version's, which
+ * is the whole upgrade mechanism and the reason it has to be turned.
+ */
+const VERSION = 'v2'
 const CACHE = `alo-noon-${VERSION}`
 const OFFLINE_URL = '/offline'
 

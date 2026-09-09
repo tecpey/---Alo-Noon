@@ -9,6 +9,14 @@
  * moving between the storefront and this tool is looking at one product rather
  * than two — and a colour retuned on the brand reaches here without anybody
  * remembering to come and edit it.
+ *
+ * Dense is also not the same as small. This panel is read on a phone far more
+ * often than the word "admin" suggests — a bakery owner checking a settlement
+ * on the shop floor, a dispatcher reassigning a courier from the pavement, an
+ * operator woken at four in the morning — and the sizes here used to assume a
+ * desk: nav pills 31px tall, disclosure arrows 27px, filter fields that made
+ * iOS zoom the page on focus. Everything below is written for the phone first;
+ * `min-width: 56.25rem` restores what a desk can afford.
  */
 .admin-shell {
   --surface: var(--surface-card);
@@ -32,7 +40,16 @@
   min-height: 100vh;
   background: var(--ground);
   color: var(--ink);
-  padding: 2rem 1rem 4rem;
+  /* Tighter at the top on a phone, and clear of the notch and the home
+     indicator on both edges. */
+  padding: 1rem max(0.75rem, env(safe-area-inset-right))
+    calc(3rem + env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left));
+}
+
+@media (min-width: 56.25rem) {
+  .admin-shell {
+    padding: 2rem 1rem 4rem;
+  }
 }
 
 .admin,
@@ -71,13 +88,33 @@
   z-index: var(--z-sticky);
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
   align-items: center;
   justify-content: space-between;
-  margin-inline: -1rem;
-  padding: 0.9rem 1rem;
+  /* Bleeds to the shell's edges so the nav strip inside it can scroll off the
+     side of the screen rather than stopping short of it. */
+  margin-inline: max(-0.75rem, calc(env(safe-area-inset-right) * -1))
+    max(-0.75rem, calc(env(safe-area-inset-left) * -1));
+  padding: 0.75rem max(0.75rem, env(safe-area-inset-right)) 0.75rem
+    max(0.75rem, env(safe-area-inset-left));
   border-bottom: 1px solid var(--line);
   background: var(--glass-bar-fallback);
+}
+/* The title takes the row and the sign-out button sits at its end, rather than
+   the button being pushed onto a line of its own. */
+.admin-header > div:first-child {
+  flex: 1 1 12rem;
+}
+.admin-header form {
+  flex: none;
+}
+
+@media (min-width: 56.25rem) {
+  .admin-header {
+    gap: 1rem;
+    margin-inline: -1rem;
+    padding: 0.9rem 1rem;
+  }
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .admin-header {
@@ -148,7 +185,13 @@
   background: var(--surface);
   padding: 1.1rem 1.25rem;
 }
+/* A disclosure arrow is a control, and at 27px tall it was the smallest thing
+   in the panel. `display: flex` because a `list-item` box ignores the height
+   this needs, and the marker is kept by the `::marker` it still has. */
 .card > summary {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--touch-min);
   cursor: pointer;
   font-weight: 700;
   color: var(--accent);
@@ -185,7 +228,7 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0.15rem 0.6rem;
-  font-size: 0.78rem;
+  font-size: 0.8125rem;
   background: var(--surface-sunken);
 }
 .badge.on {
@@ -211,12 +254,16 @@
 
 .row-meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  /* `min(…, 100%)` throughout this file: with plain `minmax(14rem, 1fr)` a
+     single track is laid out at 14rem even when its container is narrower, so
+     the track — and the row around it — hangs off the side of a small phone.
+     Capping the minimum at the container's own width is what lets it collapse. */
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
   gap: 0.5rem 1rem;
   margin: 0 0 0.9rem;
 }
 .row-meta dt {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--ink-muted);
 }
 .row-meta dd {
@@ -227,7 +274,7 @@
 
 .row-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
   gap: 1rem;
   border-top: 1px dashed var(--line);
   padding-top: 0.9rem;
@@ -248,9 +295,22 @@
   font-size: 0.85rem;
   font-weight: 600;
 }
+/*
+ * `font-family: inherit`, never `font: inherit`.
+ *
+ * The shorthand also set the size, and these fields sit inside tables and rows
+ * that are 0.9rem — so every filter and every action field in this panel came
+ * out at 14.4px. Under 16px, iOS Safari zooms the page when the field takes
+ * focus and does not zoom back out afterwards, which left an operator holding a
+ * magnified panel scrolled off to one side. It reads as the tool breaking, and
+ * the cause is one notch of type.
+ */
 .field input,
-.field select {
-  font: inherit;
+.field select,
+.field textarea {
+  font-family: inherit;
+  font-size: 1rem;
+  min-block-size: var(--touch-min);
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: 0.5rem;
@@ -264,7 +324,7 @@ button:focus-visible {
   outline-offset: 2px;
 }
 .field small {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--ink-muted);
   line-height: 1.8;
 }
@@ -323,20 +383,44 @@ button.ghost:hover:not(:disabled) {
 }
 
 /* Navigation and reporting surfaces. */
-/* Pills rather than underlined links: nine sections in a row of underlines is
-   nine things that look the same, and the one you are on has to be findable at
-   a glance. */
+/*
+ * Pills rather than underlined links: ten sections in a row of underlines is
+ * ten things that look the same, and the one you are on has to be findable at
+ * a glance.
+ *
+ * On a phone they are one strip that scrolls sideways, not a block that wraps.
+ * Wrapped, ten pills took four rows and about a third of the screen on every
+ * page the operator opened, so the panel began with a menu and the thing they
+ * came to read started below the fold. A strip costs one row, and a pill cut
+ * off at the edge is what says there is more of it.
+ */
 .admin-nav {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.3rem;
   margin-top: 0.6rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  /* Bleeds to the screen edge, then pads itself back, so the first pill lines
+     up with the title while the last can still run off the side. */
+  margin-inline: max(-0.75rem, calc(env(safe-area-inset-right) * -1))
+    max(-0.75rem, calc(env(safe-area-inset-left) * -1));
+  padding-inline: max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-left));
+}
+.admin-nav::-webkit-scrollbar {
+  display: none;
 }
 .admin-nav a {
-  padding: 0.35rem 0.75rem;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--touch-min);
+  padding: 0.35rem 0.85rem;
   border-radius: var(--radius-full);
   color: var(--ink-muted);
   font-size: 0.88rem;
+  white-space: nowrap;
+  scroll-snap-align: start;
   text-decoration: none;
   transition:
     background var(--duration-base) var(--easing-standard),
@@ -352,12 +436,28 @@ button.ghost:hover:not(:disabled) {
   font-weight: 700;
 }
 
+@media (min-width: 56.25rem) {
+  .admin-nav {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    margin-inline: 0;
+    padding-inline: 0;
+  }
+}
+
+/*
+ * The date range and the pager. Links, but not links in prose: they are the
+ * controls that change what the page is showing, and at 16px tall they were
+ * two lines of text apart and one thumb wide.
+ */
 .range-picker a,
 .pager a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--touch-min);
   color: var(--accent);
   text-decoration: none;
   font-size: 0.9rem;
-  padding: 0.15rem 0;
   border-bottom: 2px solid transparent;
 }
 .range-picker a.current {
@@ -369,14 +469,23 @@ button.ghost:hover:not(:disabled) {
   text-decoration: underline;
 }
 
+/* Six ranges scroll rather than wrap, for the same reason the nav does. */
 .range-picker {
   display: flex;
   gap: 1rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.range-picker::-webkit-scrollbar {
+  display: none;
+}
+.range-picker a {
+  flex: none;
 }
 
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
   gap: 0.75rem;
 }
 .tile {
@@ -389,18 +498,21 @@ button.ghost:hover:not(:disabled) {
   gap: 0.35rem;
 }
 .tile span {
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   color: var(--ink-muted);
 }
 .tile strong {
   font-size: 1.15rem;
+  /* A column of figures an operator compares down the page. Proportional digits
+     put the same number at two different widths in two tiles. */
+  font-variant-numeric: tabular-nums;
   /* Long Rial figures must wrap rather than widen the grid past the viewport. */
   overflow-wrap: anywhere;
 }
 
 .split {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
   gap: 1.5rem;
   align-items: start;
 }
@@ -418,20 +530,39 @@ td {
   vertical-align: top;
 }
 thead th {
-  font-size: 0.78rem;
+  font-size: 0.8125rem;
   color: var(--ink-muted);
   font-weight: 700;
 }
 td small {
   color: var(--ink-muted);
 }
+/*
+ * The order code, which is the only way into an order from this table.
+ *
+ * Inline it was a 16px line of text in a 40px cell — the primary action on the
+ * busiest screen in the panel, and the smallest target on it. Filling the cell
+ * makes the row itself the thing a thumb aims at.
+ */
 td a {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--touch-min);
+  margin-block: -0.5rem;
   color: var(--accent);
 }
 
 /* Wide tables scroll inside their own box; the page itself never does. */
 .table-scroll {
   overflow-x: auto;
+  /*
+   * A table on a phone is dragged sideways with a thumb, and a drag that runs
+   * past the end of the table is handed to the browser, which reads it as the
+   * back gesture. An operator scrolling to the last column of an order list
+   * would find themselves on the previous page. The scroll stops at the edge of
+   * the thing being scrolled.
+   */
+  overscroll-behavior-x: contain;
   border: 1px solid var(--line);
   border-radius: 0.9rem;
   background: var(--surface);
@@ -456,12 +587,32 @@ td a {
   flex-direction: column;
   gap: 0.4rem;
 }
+/*
+ * A label, a bar, and a figure. On a phone the label and the figure take the
+ * row and the bar runs the full width underneath, because a bar squeezed into
+ * the 45px left between a name and a Toman figure has stopped being a chart.
+ */
 .bars li {
   display: grid;
-  grid-template-columns: 5rem 1fr auto;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.35rem 0.75rem;
   font-size: 0.85rem;
+}
+.bars .bar-track {
+  grid-column: 1 / -1;
+  order: 1;
+}
+
+@media (min-width: 35rem) {
+  .bars li {
+    grid-template-columns: 5rem 1fr auto;
+    gap: 0.75rem;
+  }
+  .bars .bar-track {
+    grid-column: auto;
+    order: 0;
+  }
 }
 .bar-track {
   block-size: 0.7rem;
@@ -477,6 +628,7 @@ td a {
 .bar-value {
   color: var(--ink-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .filters {
@@ -489,8 +641,11 @@ td a {
   background: var(--surface);
   padding: 1rem;
 }
+/* Grows to fill a wide filter bar, and takes the whole row on a phone rather
+   than holding a 14rem minimum a 320px screen cannot pay. */
 .filters .field {
-  min-inline-size: 14rem;
+  flex: 1 1 14rem;
+  min-inline-size: 0;
 }
 
 .pager {
@@ -541,7 +696,7 @@ td a {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0.15rem 0.65rem;
-  font-size: 0.78rem;
+  font-size: 0.8125rem;
   background: var(--surface-sunken);
 }
 .chips code {
@@ -559,7 +714,6 @@ td a {
 }
 
 .field textarea {
-  font: inherit;
   line-height: 1.7;
   resize: vertical;
 }
@@ -568,6 +722,7 @@ td a {
    money is still out on the road — then the counting, order by order. */
 .figure {
   font-size: 1.9rem;
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
   margin: 0;
   color: var(--accent);
@@ -598,7 +753,9 @@ td a {
    run a finger down while counting notes. The code stays LTR because it is. */
 .cash-order {
   display: grid;
-  grid-template-columns: auto minmax(6rem, auto) 1fr auto;
+  /* The time drops to its own line on a phone; the code and the amount are what
+     the operator is matching against the notes in their hand. */
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 0.6rem;
   padding: 0.4rem 0.35rem;
@@ -616,21 +773,25 @@ td a {
   font-size: 0.85rem;
 }
 .cash-order__when {
+  grid-column: 2 / -1;
   color: var(--ink-muted);
   font-size: 0.82rem;
 }
 .cash-order__amount {
   font-weight: 700;
+  /* The point of this row is that the amounts line up into a column somebody
+     runs a finger down while counting notes. */
+  font-variant-numeric: tabular-nums;
   justify-self: end;
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 30rem) {
+@media (min-width: 30rem) {
   .cash-order {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(6rem, auto) 1fr auto;
   }
   .cash-order__when {
-    grid-column: 2 / -1;
+    grid-column: auto;
   }
 }
 

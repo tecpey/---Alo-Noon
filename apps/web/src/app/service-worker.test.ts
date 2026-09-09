@@ -295,14 +295,33 @@ describe('being offline', () => {
   })
 })
 
+/**
+ * The cache the worker currently writes to, read out of the worker itself.
+ *
+ * Named rather than hard-coded, because the version is *meant* to be turned —
+ * it is the entire upgrade mechanism, and it moves whenever a cached asset is
+ * replaced rather than merely added to. A test that pins it fails on the one
+ * change it is supposed to be protecting, which teaches whoever hits it that
+ * turning the version breaks the build rather than that it works.
+ */
+const CURRENT_CACHE = /const VERSION = '([^']+)'/.exec(source)?.[1]
+
 describe('upgrading', () => {
+  it('names a version at all, since dropping stale assets depends on it', () => {
+    expect(CURRENT_CACHE).toMatch(/^v\d+$/)
+  })
+
   it('drops its own old versions and nothing else', async () => {
+    const current = `alo-noon-${CURRENT_CACHE}`
     const { harness, dispatch } = load({
-      cacheNames: ['alo-noon-v0', 'alo-noon-v1', 'workbox-precache', 'some-other-app-v3'],
+      cacheNames: ['alo-noon-v0', current, 'workbox-precache', 'some-other-app-v3'],
     })
     await dispatch('activate', {})
 
+    // Every one of ours that is not the current one, whatever the current one
+    // happens to be today.
     expect(harness.deletedCaches).toEqual(['alo-noon-v0'])
+    expect(harness.deletedCaches).not.toContain(current)
     // Somebody else's storage on a shared origin is not ours to clear.
     expect(harness.deletedCaches).not.toContain('some-other-app-v3')
     expect(harness.claimCalled).toBe(true)

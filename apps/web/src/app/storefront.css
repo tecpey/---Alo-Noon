@@ -23,26 +23,33 @@
 }
 
 /*
- * The application sits on the page as a raised sheet rather than filling it.
- * That is the brand's own instinct — an arch, a tile, a rounded mark — and it
- * gives the warm paper somewhere to show.
+ * On a phone the application *is* the page: edge to edge, no margin, no corner.
+ * Somebody holding a 320px screen has no pixels to spend on a shadow proving
+ * the shop is a sheet of paper.
+ *
+ * The raised sheet — which is the brand's own instinct, an arch, a tile, a
+ * rounded mark — is what a wide screen gets, where there is ground to show it
+ * against.
+ *
+ * `overflow: clip` stays, but it is a frame, not a fix. It hid a search box off
+ * the side of every phone for as long as this file was written desktop-first,
+ * so the audit that runs over every route now measures elements against the
+ * viewport rather than trusting the page's own scroll width.
  */
 .app-frame {
   position: relative;
   max-width: 1180px;
   margin-inline: auto;
-  margin-block: clamp(0px, 2vw, 28px);
+  margin-block: 0;
   background: var(--surface-base);
-  border-radius: var(--radius-3xl);
-  box-shadow: var(--shadow-lg);
   overflow: clip;
 }
 
-@media (max-width: 900px) {
+@media (min-width: 56.25rem) {
   .app-frame {
-    margin-block: 0;
-    border-radius: 0;
-    box-shadow: none;
+    margin-block: clamp(0px, 2vw, 28px);
+    border-radius: var(--radius-3xl);
+    box-shadow: var(--shadow-lg);
   }
 }
 
@@ -119,9 +126,13 @@
 
 .site-header__inner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
+  gap: 0.75rem;
+  /* `env()` rather than a flat inset: in landscape on a notched phone the bar
+     otherwise runs under the sensor housing, and in RTL it is the *right* edge
+     that loses the brand. Zero everywhere else. */
+  padding: 0.9rem max(1rem, env(safe-area-inset-right)) 0.9rem max(1rem, env(safe-area-inset-left));
   transition: padding var(--duration-base) var(--easing-standard);
 }
 /* Gives back a few pixels of reading height once a customer is scrolling. */
@@ -151,16 +162,35 @@
 }
 .brand-lockup__tagline {
   color: var(--ink-muted);
-  font-size: 0.72rem;
+  /* 11.5px of Persian under a wordmark is a smudge rather than a tagline. */
+  font-size: 0.8rem;
 }
 
-/* Address and search share one raised bar: together they are the question of
-   what this shop can sell you, and separating them made two half-questions. */
+/*
+ * Address and search share one raised bar: together they are the question of
+ * what this shop can sell you, and separating them made two half-questions.
+ *
+ * On a phone the bar takes the whole second row of the header. It is the widest
+ * thing in the bar and the first to run out of room, so it is written to give
+ * way rather than to hold its size.
+ */
 .site-header__controls {
-  flex: 1;
+  order: 3;
+  flex: 1 1 100%;
+  /*
+   * The bug this whole pass started from.
+   *
+   * A flex item's automatic minimum size is its min-content, and the address
+   * inside never wraps, so this bar refused to shrink below 490px however
+   * narrow the phone was. `flex-shrink` cannot go under an automatic minimum;
+   * only saying so can. The excess ran off the *left* edge in RTL, straight
+   * into the app frame's `overflow: clip`, which meant the search box was
+   * missing from every phone screen and present on every desktop one.
+   */
+  min-inline-size: 0;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   padding: 0.35rem;
   background: var(--surface-card);
   border: 1px solid var(--line-subtle);
@@ -174,14 +204,27 @@
     0 0 0 3px color-mix(in srgb, var(--primary-600) 22%, transparent);
 }
 
+/*
+ * The city, which is also the question of whether this shop can reach you.
+ *
+ * It shrinks and truncates rather than pushing the search off the bar. A city
+ * name clipped to "ساری…" still tells you which city you are in; a search box
+ * that is not on the screen tells you nothing.
+ */
 .site-header__address {
-  flex: none;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  max-inline-size: 45%;
   border: 0;
   background: transparent;
   color: var(--ink-base);
   font-weight: 600;
-  white-space: nowrap;
   transition: transform var(--duration-fast) var(--easing-standard);
+}
+.site-header__address span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .site-header__address:active {
   transform: scale(0.97);
@@ -191,23 +234,31 @@
 }
 
 .site-header__search {
-  flex: 1;
+  /* A basis rather than zero: the search is the half of this bar somebody
+     actually types into, so it claims room instead of being what is left. */
+  flex: 1 1 8rem;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-  padding-inline: 1rem;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  padding-inline: 0.75rem;
   border-inline-start: 1px solid var(--line-subtle);
   color: var(--ink-faint);
 }
+.site-header__search svg {
+  flex: none;
+}
 .site-header__search input {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 0;
+  /* An input carries an intrinsic width from its `size` attribute — twenty
+     characters of it — and that becomes its automatic minimum too. */
+  min-inline-size: 0;
+  inline-size: 100%;
   padding-block: 0.55rem;
   border: 0;
   background: transparent;
   color: var(--ink-base);
-  font: inherit;
+  font-family: inherit;
 }
 .site-header__search input::placeholder {
   color: var(--ink-faint);
@@ -228,7 +279,12 @@
 .site-header__link {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
+  /* Icon-only on a phone, so the square matters as much as the height: a 39px
+     circle holding a cart glyph is a target people miss with a thumb. */
+  min-block-size: var(--touch-min);
+  min-inline-size: var(--touch-min);
   padding: 0.6rem 0.9rem;
   border-radius: var(--radius-full);
   color: var(--ink-base);
@@ -295,46 +351,72 @@
   }
 }
 
-@media (max-width: 900px) {
+/*
+ * The words beside the two account icons.
+ *
+ * Hidden by default and restored on a wide screen, rather than the other way
+ * round. On a phone the header has one row to give the brand, the account and
+ * the basket, and "حساب من" beside a person icon is the first thing that can
+ * go: the icon already says it, and the label survives for screen readers in
+ * the `aria-label` and the visually-hidden count.
+ */
+.site-header__account span:not(.site-header__count) {
+  display: none;
+}
+
+/* ---------------------------------------------------------- lap (56.25rem+) */
+
+@media (min-width: 56.25rem) {
   .site-header__inner {
-    flex-wrap: wrap;
-    padding: 0.9rem 1rem;
+    flex-wrap: nowrap;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
   }
   .site-header__controls {
-    order: 3;
-    flex-basis: 100%;
+    order: 0;
+    flex: 1 1 auto;
+    gap: 0.75rem;
+  }
+  .site-header__address {
+    max-inline-size: none;
+  }
+  .site-header__search {
+    padding-inline: 1rem;
+    gap: 0.6rem;
   }
   .site-header__account span:not(.site-header__count) {
-    display: none;
+    display: inline;
   }
 }
 
 /* --------------------------------------------------------------------- hero */
 
+/*
+ * One column, photograph first, on a phone. The picture is the shop window and
+ * it should be the first thing on the screen — but only a band of it: the
+ * customer came to order bread, and a hero tall enough to be a poster puts the
+ * one button that starts an order below the fold.
+ */
 .hero {
   position: relative;
   display: grid;
-  grid-template-columns: 1.05fr 1fr;
+  grid-template-columns: 1fr;
   align-items: center;
   gap: 1rem;
-  padding: 0 1.5rem 1.5rem;
+  padding: 0 1rem 1.5rem;
 }
 
 .hero__art {
   position: relative;
   align-self: stretch;
-  min-height: 340px;
-  /* Runs the full height of the hero, both rows, so the delivery bar sits on
-     the photograph rather than under it — which is what the artwork does, and
-     what stops the bar reading as a separate strip bolted below the hero. */
-  grid-row: 1 / 3;
-  grid-column: 1;
-  /* Bleeds past the frame's padding so the bread reaches its edge, the way it
-     does on a bakery's own window. Inline-start, which in Persian is the right:
-     bleeding to `end` sent it across the page and over the top bar. */
-  margin-inline-start: -1.5rem;
-  /* Sits under the pinned bar, never over it. */
-  margin-block-start: calc(var(--header-overlap, 0px) * -1);
+  /* A band, sized against the screen rather than fixed, so it is a header on a
+     small phone and a picture on a large one — and never the whole first
+     screen on either. */
+  min-height: clamp(180px, 30vh, 260px);
+  /* Full bleed: on a phone the frame has no margin to respect, and a photograph
+     inset by a gutter reads as an image in a document rather than a window. */
+  margin-inline: -1rem;
+  order: -1;
 }
 .hero__art img {
   width: 100%;
@@ -342,16 +424,21 @@
   object-fit: cover;
   object-position: center 42%;
 }
+/* Vertical on a phone, because the copy sits *under* the photograph rather than
+   beside it, and a sideways fade would leave the headline on a hard edge. */
 .hero__veil {
   position: absolute;
   inset: 0;
-  background: var(--gradient-heroVeil);
+  background: var(--gradient-heroVeilVertical);
 }
 
 .hero__copy {
   position: relative;
   z-index: 1;
-  padding-block: 2.5rem;
+  /* Rides up into the foot of the photograph so the headline starts inside the
+     picture, which is what keeps the two reading as one hero. */
+  margin-block-start: -3rem;
+  padding-block: 0 0.5rem;
 }
 .hero__eyebrow {
   display: inline-flex;
@@ -387,12 +474,12 @@
   position: relative;
   z-index: 2;
   grid-column: 1 / -1;
-  grid-row: 2;
-  /* Held off both edges the way the artwork holds it: clear of the frame on the
-     left, and clear of the photograph's un-faded half on the right. */
-  margin-inline: clamp(0px, 14%, 190px) clamp(0px, 10%, 140px);
+  margin-inline: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Stacked on a phone: three delivery facts across a 320px screen is three
+     truncated fragments, and every one of them is a thing the customer needs to
+     read in full before they know this shop can reach them. */
+  grid-template-columns: 1fr;
   background: var(--glass-panel-fallback);
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-xl);
@@ -412,16 +499,17 @@
   }
 }
 
+/* Stacked, so the rule between two of them runs across rather than down. */
 .condition {
   display: flex;
   align-items: center;
   gap: 0.85rem;
   padding: 0.9rem 1.1rem;
-  border-inline-start: 1px solid var(--line-subtle);
+  border-block-start: 1px solid var(--line-subtle);
   text-align: start;
 }
-.condition:last-child {
-  border-inline-start: 0;
+.condition:first-child {
+  border-block-start: 0;
 }
 /* No hover or press state: these describe how ordering works and are not
    controls. Styling them as though they respond would be the same lie the
@@ -455,47 +543,70 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-@media (max-width: 900px) {
+/*
+ * The wide hero: photograph and words side by side, with the delivery bar
+ * floating across the foot of both. This is the artwork's own composition, and
+ * it needs two columns to exist at all — which is why it lives up here rather
+ * than in the base.
+ */
+@media (min-width: 56.25rem) {
   .hero {
-    grid-template-columns: 1fr;
-    padding-inline: 1rem;
+    grid-template-columns: 1.05fr 1fr;
+    padding-inline: 1.5rem;
   }
   .hero__art {
-    order: -1;
-    grid-row: auto;
-    grid-column: auto;
-    margin: 0 -1rem;
-    min-height: 240px;
+    order: 0;
+    /* Runs the full height of the hero, both rows, so the delivery bar sits on
+       the photograph rather than under it — which is what stops the bar reading
+       as a separate strip bolted below the hero. */
+    grid-row: 1 / 3;
+    grid-column: 1;
+    min-height: 340px;
+    /* Bleeds past the frame's padding so the bread reaches its edge, the way it
+       does on a bakery's own window. Inline-start, which in Persian is the
+       right: bleeding to `end` sent it across the page and over the top bar. */
+    margin-inline: 0 0;
+    margin-inline-start: -1.5rem;
+    /* Sits under the pinned bar, never over it. */
+    margin-block-start: calc(var(--header-overlap, 0px) * -1);
   }
   .hero__veil {
-    background: var(--gradient-heroVeilVertical);
+    background: var(--gradient-heroVeil);
   }
   .hero__copy {
-    padding-block: 0 0.5rem;
-    margin-block-start: -3rem;
+    margin-block-start: 0;
+    padding-block: 2.5rem;
   }
   .conditions {
-    grid-row: auto;
-    margin-inline: 0;
-    grid-template-columns: 1fr;
+    grid-row: 2;
+    grid-template-columns: repeat(3, 1fr);
+    /* Held off both edges the way the artwork holds it: clear of the frame on
+       the left, and clear of the photograph's un-faded half on the right. */
+    margin-inline: clamp(0px, 14%, 190px) clamp(0px, 10%, 140px);
   }
   .condition {
-    border-inline-start: 0;
-    border-block-start: 1px solid var(--line-subtle);
-  }
-  .condition:first-child {
     border-block-start: 0;
+    border-inline-start: 1px solid var(--line-subtle);
+  }
+  .condition:last-child {
+    border-inline-start: 0;
   }
 }
 
 /* -------------------------------------------------------------------- trust */
 
 .trust-wrap {
-  padding: 1.5rem 1.5rem 0;
+  padding: 1.5rem 1rem 0;
 }
+/*
+ * One promise per row on a phone, two side by side once there is room for two,
+ * and all four across on a wide screen. Each of these is a sentence somebody
+ * reads to decide whether to trust the shop with money; a column narrow enough
+ * to break "پرداخت امن" over two lines is not a promise, it is a puzzle.
+ */
 .trust {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr;
   gap: 0.75rem;
   margin: 0;
   padding: 0;
@@ -540,24 +651,24 @@
   line-height: 1.7;
 }
 
-@media (max-width: 900px) {
-  .trust-wrap {
-    padding-inline: 1rem;
-  }
+@media (min-width: 35rem) {
   .trust {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-@media (max-width: 560px) {
+@media (min-width: 56.25rem) {
+  .trust-wrap {
+    padding-inline: 1.5rem;
+  }
   .trust {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
 /* ------------------------------------------------------------ category rail */
 
 .rail {
-  padding: 1.5rem 1.5rem 0;
+  padding: 1.5rem 1rem 0;
 }
 /*
  * A rail rather than a wrapped block: on a phone the second row of a wrapped
@@ -568,9 +679,17 @@
   display: flex;
   gap: 0.5rem;
   overflow-x: auto;
+  /* A drag past the last chip belongs to the rail, not to the browser's back
+     gesture. Without this, flicking the category filter navigates away. */
+  overscroll-behavior-x: contain;
   padding-block-end: 0.35rem;
   scrollbar-width: none;
   scroll-snap-type: x proximity;
+  /* The rail bleeds to both edges of the phone so the cut-off chip is cut off
+     by the *screen*, which is what tells a thumb there is more to drag. Inset
+     by the same amount so the first chip still lines up with the headings. */
+  margin-inline: -1rem;
+  padding-inline: 1rem;
 }
 .rail__track::-webkit-scrollbar {
   display: none;
@@ -578,6 +697,9 @@
 
 .chip {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--touch-min);
   padding: 0.55rem 1.1rem;
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-full);
@@ -605,16 +727,20 @@
   box-shadow: var(--shadow-action);
 }
 
-@media (max-width: 900px) {
+@media (min-width: 56.25rem) {
   .rail {
-    padding-inline: 1rem;
+    padding-inline: 1.5rem;
+  }
+  .rail__track {
+    margin-inline: 0;
+    padding-inline: 0;
   }
 }
 
 /* ------------------------------------------------------------------ shelves */
 
 .shelf {
-  padding: 0 1.5rem;
+  padding: 0 1rem;
 }
 .shelf:last-of-type {
   padding-block-end: 2rem;
@@ -634,8 +760,13 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* The logo's own steam, stretched into a rule at the end of a section head. */
+/*
+ * The logo's own steam, stretched into a rule at the end of a section head.
+ * Ornament, and the first thing to go: on a phone the section head has exactly
+ * enough room for the mark and the title.
+ */
 .shelf__ribbon {
+  display: none;
   width: 116px;
   height: 28px;
   flex: none;
@@ -643,33 +774,37 @@
   opacity: 0.75;
 }
 
+/*
+ * One loaf per row on a phone, two once there is room.
+ *
+ * A bread card is a photograph, a name, a weight, a price and a button. Halved
+ * across a 320px screen it is a thumbnail with a truncated name, which is the
+ * wrong trade: this is a shop, and the picture is how somebody chooses.
+ */
 .shelf__grid {
   display: grid;
   gap: 1rem;
-}
-.shelf__grid--wide {
-  grid-template-columns: repeat(3, 1fr);
-}
-.shelf__grid--tall {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr;
 }
 
-@media (max-width: 900px) {
-  .shelf {
-    padding-inline: 1rem;
-  }
-  .shelf__ribbon {
-    display: none;
-  }
+@media (min-width: 35rem) {
   .shelf__grid--wide,
   .shelf__grid--tall {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-@media (max-width: 520px) {
-  .shelf__grid--wide,
+@media (min-width: 56.25rem) {
+  .shelf {
+    padding-inline: 1.5rem;
+  }
+  .shelf__ribbon {
+    display: block;
+  }
+  .shelf__grid--wide {
+    grid-template-columns: repeat(3, 1fr);
+  }
   .shelf__grid--tall {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
@@ -893,7 +1028,7 @@
 .steps {
   position: relative;
   margin-block-start: 1rem;
-  padding: 0 1.5rem 2.5rem;
+  padding: 0 1rem 2.5rem;
 }
 /* Barely there, on purpose. The first pass at this was twice as strong and read
    as wallpaper — texture you can see clearly has stopped being texture. */
@@ -914,9 +1049,11 @@
   position: relative;
 }
 
+/* Three numbered steps, stacked on a phone. Side by side they would be three
+   narrow columns of the same sentence broken differently. */
 .steps__list {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 1rem;
   margin: 0;
   padding: 0;
@@ -952,12 +1089,12 @@
   line-height: 1.8;
 }
 
-@media (max-width: 900px) {
+@media (min-width: 56.25rem) {
   .steps {
-    padding-inline: 1rem;
+    padding-inline: 1.5rem;
   }
   .steps__list {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
@@ -975,7 +1112,9 @@
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  padding: 1.75rem 1.5rem;
+  /* The foot of the page is where a phone's home indicator sits. */
+  padding: 1.75rem max(1rem, env(safe-area-inset-right))
+    calc(1.75rem + env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left));
 }
 .site-footer__texture {
   color: var(--primary-400);
@@ -992,9 +1131,9 @@
   font-size: 0.9rem;
 }
 
-@media (max-width: 900px) {
+@media (min-width: 56.25rem) {
   .site-footer__inner {
-    padding-inline: 1rem;
+    padding-inline: 1.5rem;
   }
 }
 
@@ -1097,6 +1236,10 @@
 .drawer__lines {
   flex: 1;
   overflow-y: auto;
+  /* Scrolling to the end of the basket must not start scrolling the shop
+     behind the sheet, which on a phone leaves the customer somewhere else in
+     the page when they close it. */
+  overscroll-behavior-y: contain;
   margin: 0;
   padding: 0.75rem;
   list-style: none;
@@ -1182,7 +1325,10 @@
 }
 
 .drawer__foot {
-  padding: 1rem 1.25rem 1.25rem;
+  /* The checkout button lives at the bottom of a full-height sheet, which on a
+     modern phone is exactly where the home indicator is. Without the inset it
+     sits under the gesture bar and the customer cannot press it. */
+  padding: 1rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
   border-block-start: 1px solid var(--line-subtle);
   background: color-mix(in srgb, var(--surface-card) 70%, transparent);
 }
@@ -1350,7 +1496,14 @@
   gap: 0.35rem 1.1rem;
   font-size: 0.85rem;
 }
+/* Four standalone links, not links in a sentence: the terms, the refund policy
+   and the privacy notice are what somebody goes looking for before they trust
+   the shop with money, and at 23px tall they were the hardest thing on the page
+   to hit. */
 .site-footer__links a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--touch-min);
   color: var(--neutral-300);
   text-decoration: none;
 }

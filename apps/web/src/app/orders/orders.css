@@ -236,7 +236,8 @@
   border-radius: var(--radius-md);
   background: var(--surface-base);
   color: var(--ink-base);
-  font: inherit;
+  font-family: inherit;
+  font-size: 1rem;
   font-weight: 400;
   resize: vertical;
 }
