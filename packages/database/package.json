@@ -20,7 +20,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0"
+    "@prisma/client": "^7.10.0"
   },
   "devDependencies": {
     "@alo-noon/eslint-config": "workspace:*",
