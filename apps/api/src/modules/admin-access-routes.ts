@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto'
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
-import { grantRoleCommandSchema, revokeRoleCommandSchema } from '@alo-noon/contracts'
+import {
+  grantableBranchQuerySchema,
+  grantRoleCommandSchema,
+  revokeRoleCommandSchema,
+} from '@alo-noon/contracts'
 import { ADMIN_PERMISSIONS } from '@alo-noon/domain'
 
 import {
@@ -54,8 +58,25 @@ export function registerAdminAccessRoutes(
     const actor = await authenticatedStaff(request, reply, dependencies, ACCESS_PERMISSION)
     if (!actor) return reply
     try {
-      const branches = await dependencies.service.listGrantableBranches(actor.tenantId)
-      return reply.send({ success: true, data: branches, meta: adminResponseMeta() })
+      // Bounded and narrowable: a national tenant has thousands of branches and
+      // a picker that loads all of them is a picker nobody can use on a phone.
+      const query = grantableBranchQuerySchema.safeParse(request.query)
+      if (!query.success) {
+        return reply
+          .code(400)
+          .send(errorEnvelope('INVALID_BRANCH_QUERY', 'Branch query is invalid.'))
+      }
+      // Spread only the keys that are present: under exactOptionalPropertyTypes
+      // an explicit `undefined` is not the same as an absent field.
+      const page = await dependencies.service.listGrantableBranches(actor.tenantId, {
+        ...(query.data.search !== undefined && { search: query.data.search }),
+        ...(query.data.limit !== undefined && { limit: query.data.limit }),
+      })
+      return reply.send({
+        success: true,
+        data: page.branches,
+        meta: { ...adminResponseMeta(), totalItems: page.totalItems },
+      })
     } catch (error) {
       return accessFailure(request, reply, error)
     }

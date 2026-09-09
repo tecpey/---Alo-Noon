@@ -640,3 +640,32 @@ td a {
 .overdue {
   color: var(--warn);
 }
+
+/*
+ * Narrowing a long list, on the phone somebody is holding in a bakery.
+ *
+ * The field and its button share a row on a wide screen and stack on a narrow
+ * one — `flex-wrap` rather than a media query, because the thing that decides
+ * is how much room the field needs, not how wide the device is.
+ */
+.branch-search {
+  display: grid;
+  gap: 0.4rem;
+  margin-block-end: 1rem;
+}
+.branch-search label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.branch-search__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.branch-search__row input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.branch-search__row button {
+  flex: 0 0 auto;
+}
