@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
+import { generateOrderCode } from '@alo-noon/domain'
 import type {
   AuthenticationDeliveryResult,
   PushMessageProvider,
@@ -373,6 +374,7 @@ async function seedTenant(): Promise<Fixture> {
   for (let index = 0; index < 8; index += 1) {
     const order = await prisma.order.create({
       data: {
+        publicId: generateOrderCode((length) => randomBytes(length)),
         tenantId,
         idempotencyKey: `push-${suffix}-${index}`,
         customerId: customer.id,

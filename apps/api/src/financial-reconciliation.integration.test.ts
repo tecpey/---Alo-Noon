@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
 import {
   ADMIN_PERMISSIONS,
   CUSTOMER_WALLET_ACCOUNT,
+  generateOrderCode,
   walletEntryDirection,
   type WalletEntryKind,
 } from '@alo-noon/domain'
@@ -466,6 +467,7 @@ async function seed(): Promise<Fixture> {
   const order = async (key: string): Promise<string> => {
     const created = await prisma.order.create({
       data: {
+        publicId: generateOrderCode((length) => randomBytes(length)),
         tenantId,
         idempotencyKey: key,
         customerId: buyer.id,

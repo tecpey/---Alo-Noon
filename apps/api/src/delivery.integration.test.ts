@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
-import { ADMIN_PERMISSIONS } from '@alo-noon/domain'
+import { ADMIN_PERMISSIONS, generateOrderCode } from '@alo-noon/domain'
 
 import { createPrismaDeliveryService, type DeliveryService } from './modules/delivery'
 import { createPrismaFinancialOperationsService } from './modules/financial-operations'
@@ -608,6 +608,7 @@ async function seedOrder(fixture: Pick<Fixture, 'tenantId'>, key: string): Promi
   const place = context.get(fixture.tenantId)!
   const order = await prisma.order.create({
     data: {
+      publicId: generateOrderCode((length) => randomBytes(length)),
       tenantId: fixture.tenantId,
       idempotencyKey: key,
       customerId: place.customerId,

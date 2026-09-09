@@ -92,7 +92,17 @@ function OrderCard({ order }: { order: OrderRow }) {
         <div className="order__title">
           <p className="order__headline">{progress.headline}</p>
           <p className="order__meta">
-            کد {toPersianDigits(order.publicId)} · {formatDate(order.createdAt)}
+            {/*
+              The code as it is stored, not with its digits converted.
+              «۲۵AB۹AD۹» is half Persian and half Latin, which is a thing a
+              customer cannot type back and an operator's exact-match search
+              will never find. An order code is a token, not a quantity.
+            */}
+            کد{' '}
+            <span dir="ltr" className="order__code">
+              {order.publicId}
+            </span>{' '}
+            · {formatDate(order.createdAt)}
           </p>
         </div>
         <span className="order__total">{formatToman(order.total.amount)}</span>

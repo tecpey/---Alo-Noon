@@ -12,7 +12,7 @@ import { CheckIcon, ClockIcon, ShieldIcon } from '../../components/icons'
 import { EmptyBasketArt } from '../../components/brand-art'
 import { RetryButton } from '../../components/retry-button'
 import { isUnauthenticated } from '../../../lib/api-core'
-import { formatToman, toPersianDigits } from '../../../lib/persian'
+import { formatToman } from '../../../lib/persian'
 import { listOrders } from '../../../lib/shop-api'
 import { orderProgress } from '@alo-noon/domain'
 
@@ -108,7 +108,9 @@ function Outcome({ order }: { order: OrderSummary }) {
       <dl className="result__facts">
         <div>
           <dt>شمارهٔ سفارش</dt>
-          <dd>{toPersianDigits(order.publicId)}</dd>
+          {/* Latin and left to right: this is the code they will read back
+              to support, and half-converting its digits makes it unmatchable. */}
+          <dd dir="ltr">{order.publicId}</dd>
         </div>
         <div>
           <dt>مبلغ</dt>

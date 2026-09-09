@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
+import { generateOrderCode } from '@alo-noon/domain'
 
 import {
   EngagementError,
@@ -190,7 +191,7 @@ async function completedOrder(
     const order = await t.order.create({
       data: {
         tenantId: fixture.tenantId,
-        publicId: randomUUID().slice(0, 10).toUpperCase(),
+        publicId: generateOrderCode((length) => randomBytes(length)),
         idempotencyKey: randomUUID(),
         customerId,
         cityId: fixture.cityId,

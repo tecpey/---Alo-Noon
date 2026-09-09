@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
 import {
   createPaymentProviderAdapterRegistry,
+  generateOrderCode,
   type PaymentProviderAdapter,
   type ProviderVerificationResult,
 } from '@alo-noon/domain'
@@ -516,6 +517,7 @@ async function buildScenario(
     ? null
     : await prisma.order.create({
         data: {
+          publicId: generateOrderCode((length) => randomBytes(length)),
           tenantId,
           idempotencyKey: `settle-order-${suffix}`,
           customerId: customer.id,

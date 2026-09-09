@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
-import { URBAN_DETOUR_FACTOR } from '@alo-noon/domain'
+import { generateOrderCode, URBAN_DETOUR_FACTOR } from '@alo-noon/domain'
 
 import { createPrismaAdminLogisticsService } from './modules/admin-logistics'
 
@@ -329,6 +329,7 @@ async function buildWorld(label: string) {
       })
       const order = await prisma.order.create({
         data: {
+          publicId: generateOrderCode((length) => randomBytes(length)),
           tenantId,
           idempotencyKey: `lg-order-${key}`,
           customerId: customer.id,

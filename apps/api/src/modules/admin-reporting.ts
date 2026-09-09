@@ -10,7 +10,7 @@ import {
   type ReportRangeQuery,
   type SalesReport,
 } from '@alo-noon/contracts'
-import { ADMIN_PERMISSIONS } from '@alo-noon/domain'
+import { ADMIN_PERMISSIONS, parseIranianMobile, toLatinDigits } from '@alo-noon/domain'
 
 import {
   adminResponseMeta,
@@ -245,9 +245,36 @@ function orderFilter(tenantId: string, query: AdminOrderListQuery): Prisma.Order
     }),
     // Exact match only. A prefix or contains search over a phone column invites
     // an operator to enumerate customers one digit at a time.
-    ...(query.search && {
-      OR: [{ publicId: query.search }, { recipientPhoneSnapshot: query.search }],
-    }),
+    //
+    // Exact on a *normalised* form, which is not the same as loose. An Iranian
+    // keyboard produces Persian digits by default, so «۲۵AB۹AD۹» is what an
+    // operator types and «25AB9AD9» is what is stored — and a phone arrives as
+    // ۰۹۱۲…, 0912…, or +98912… depending on whether it was typed, pasted from a
+    // contact card, or read off this panel. Matching the raw string finds none
+    // of those, and the failure looks like a missing order rather than a search
+    // that cannot read its own language.
+    ...(query.search && searchMatches(query.search)),
+  }
+}
+
+/**
+ * The forms of an order code and a phone number a person actually types.
+ *
+ * Each branch stays an equality: the point is to recognise the same value
+ * written differently, never to match part of one. A code is upper-cased
+ * because its alphabet is, and a phone is put through the domain's own parser
+ * so the panel agrees with the column, which holds E.164.
+ */
+function searchMatches(search: string): Prisma.OrderWhereInput {
+  const latin = toLatinDigits(search).trim()
+  const mobile = parseIranianMobile(latin)
+
+  return {
+    OR: [
+      { publicId: latin.toUpperCase() },
+      { recipientPhoneSnapshot: latin },
+      ...(mobile && mobile !== latin ? [{ recipientPhoneSnapshot: mobile }] : []),
+    ],
   }
 }
 

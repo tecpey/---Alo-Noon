@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
+import { generateOrderCode } from '@alo-noon/domain'
 
 import { createPrismaDeliveryTripService } from './modules/delivery-trips'
 
@@ -246,6 +247,7 @@ async function buildWorld(label: string) {
       const target = options.secondBranch ? otherBranch : branch
       const order = await prisma.order.create({
         data: {
+          publicId: generateOrderCode((length) => randomBytes(length)),
           tenantId,
           idempotencyKey: `tp-order-${key}`,
           customerId: customer.id,

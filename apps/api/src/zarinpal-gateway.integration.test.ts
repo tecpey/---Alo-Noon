@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 
 import Fastify, { type FastifyInstance } from 'fastify'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { PrismaClient } from '@alo-noon/database'
 import {
   createPaymentProviderAdapterRegistry,
+  generateOrderCode,
   normalizeInitializationResult,
   type ProviderConfigurationView,
 } from '@alo-noon/domain'
@@ -288,6 +289,7 @@ async function buildWorld(
   })
   const order = await prisma.order.create({
     data: {
+      publicId: generateOrderCode((length) => randomBytes(length)),
       tenantId,
       idempotencyKey: `zp-order-${suffix}`,
       customerId: customer.id,

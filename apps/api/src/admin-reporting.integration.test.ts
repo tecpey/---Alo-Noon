@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
+import { generateOrderCode } from '@alo-noon/domain'
 
 import { createPrismaAdminReportingService } from './modules/admin-reporting'
 
@@ -156,6 +157,77 @@ databaseDescribe('admin reporting over PostgreSQL', () => {
       search: publicId!.slice(0, 6),
     })
     expect(partial.totalItems).toBe(0)
+  })
+
+  /**
+   * The same code, typed the way an Iranian keyboard types it.
+   *
+   * Persian digits are the default on a phone and on most desktops here, so
+   * «۲۵AB۹AD۹» is what an operator produces and «25AB9AD9» is what is stored.
+   * Matching the raw string finds nothing, and the failure reads as a missing
+   * order rather than as a search that cannot read its own language.
+   */
+  it('finds an order by a code typed in Persian digits, or in lower case', async () => {
+    const listed = await service.listOrders(seeded.tenantId, { page: 1, pageSize: 20 })
+    // A code that actually contains a digit, or the Persian rendering below is
+    // the same string and this proves nothing. The alphabet is ten digits in
+    // thirty-two symbols, so an all-letter code turns up about one time in
+    // twenty — often enough to have made this test flaky rather than wrong.
+    const publicId = listed.orders.find((order) => /\d/.test(order.publicId))?.publicId
+    expect(publicId).toBeDefined()
+
+    const persian = publicId!.replace(/\d/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)]!)
+    expect(persian).not.toBe(publicId)
+
+    for (const typed of [persian, publicId!.toLowerCase(), ` ${publicId} `]) {
+      const found = await service.listOrders(seeded.tenantId, {
+        page: 1,
+        pageSize: 20,
+        search: typed,
+      })
+      expect(`${typed} → ${found.totalItems}`).toBe(`${typed} → 1`)
+    }
+  })
+
+  it('still refuses a prefix, however it was typed', async () => {
+    // Normalising is not loosening: every branch stays an equality, or the
+    // phone column becomes something an operator can walk a digit at a time.
+    const listed = await service.listOrders(seeded.tenantId, { page: 1, pageSize: 20 })
+    const publicId = listed.orders[0]!.publicId
+    const persianPrefix = publicId
+      .slice(0, 6)
+      .replace(/\d/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)]!)
+
+    const partial = await service.listOrders(seeded.tenantId, {
+      page: 1,
+      pageSize: 20,
+      search: persianPrefix,
+    })
+    expect(partial.totalItems).toBe(0)
+  })
+
+  /**
+   * A phone number arrives in whichever form the person had it: typed on a
+   * Persian keyboard, pasted from a contact card as `0912…`, or read back off
+   * this panel as `+98912…`. The column holds E.164 and only one of those is
+   * it.
+   */
+  it('finds an order by the recipient’s number, however it was written', async () => {
+    const detail = await service.findOrder(seeded.tenantId, seeded.orderIds[0]!)
+    const stored = detail!.recipientPhoneSnapshot
+    expect(stored).toMatch(/^\+989/)
+
+    const national = `0${stored.slice(3)}`
+    const persian = national.replace(/\d/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)]!)
+
+    for (const typed of [stored, national, persian]) {
+      const found = await service.listOrders(seeded.tenantId, {
+        page: 1,
+        pageSize: 20,
+        search: typed,
+      })
+      expect(`${typed} → ${found.totalItems > 0}`).toBe(`${typed} → true`)
+    }
   })
 
   it('returns order detail with items and transitions, and nothing for another tenant', async () => {
@@ -325,6 +397,7 @@ async function createOrder(input: {
 }): Promise<string> {
   const order = await prisma.order.create({
     data: {
+      publicId: generateOrderCode((length) => randomBytes(length)),
       tenantId: input.tenantId,
       idempotencyKey: `reporting-${suffix}-${input.index}`,
       customerId: input.customerId,

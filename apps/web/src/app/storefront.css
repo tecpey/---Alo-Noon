@@ -1368,3 +1368,14 @@
   border-radius: var(--radius-sm);
   padding: 0.3rem;
 }
+
+/* An order code is a token to be read back, so it stays Latin and left to
+   right even inside a Persian line, and in a face where a zero cannot be
+   mistaken for an O. The alphabet already excludes O, I, L and U; the typeface
+   is what stops the remaining pairs looking alike. */
+.order__code {
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', 'Cascadia Mono', monospace);
+  font-size: 0.95em;
+  letter-spacing: 0.04em;
+  unicode-bidi: isolate;
+}

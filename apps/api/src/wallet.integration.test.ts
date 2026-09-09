@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
+import { generateOrderCode } from '@alo-noon/domain'
 
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
 import { createPrismaWalletService, type WalletService } from './modules/wallet'
@@ -356,6 +357,7 @@ databaseDescribe('customer wallet over PostgreSQL', () => {
 async function placeOrder(total: bigint) {
   return prisma.order.create({
     data: {
+      publicId: generateOrderCode((length) => randomBytes(length)),
       tenantId: fixture.tenantId,
       idempotencyKey: `wallet-order-${randomUUID()}`,
       customerId: fixture.customerId,

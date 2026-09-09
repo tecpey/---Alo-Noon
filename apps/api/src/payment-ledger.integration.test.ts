@@ -1,8 +1,13 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
-import { LedgerEntrySide, PaymentAggregateState, PaymentTransitionActor } from '@alo-noon/domain'
+import {
+  generateOrderCode,
+  LedgerEntrySide,
+  PaymentAggregateState,
+  PaymentTransitionActor,
+} from '@alo-noon/domain'
 
 import { createPrismaPaymentLedgerService } from './modules/payment-ledger'
 
@@ -435,6 +440,7 @@ async function createOrderFixture(suffix: string) {
   })
   const order = await prisma.order.create({
     data: {
+      publicId: generateOrderCode((length) => randomBytes(length)),
       tenantId,
       idempotencyKey: `order-payment-${suffix}`,
       customerId: customer.id,

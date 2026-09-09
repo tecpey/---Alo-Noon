@@ -1,8 +1,12 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { PrismaClient } from '@alo-noon/database'
-import { createPaymentProviderAdapterRegistry, type PaymentProviderAdapter } from '@alo-noon/domain'
+import {
+  createPaymentProviderAdapterRegistry,
+  generateOrderCode,
+  type PaymentProviderAdapter,
+} from '@alo-noon/domain'
 
 import {
   AdminFinancialReportingError,
@@ -426,6 +430,7 @@ async function createOrder(
 ): Promise<string> {
   const order = await prisma.order.create({
     data: {
+      publicId: generateOrderCode((length) => randomBytes(length)),
       tenantId,
       idempotencyKey: input.key,
       customerId: input.customerId,
