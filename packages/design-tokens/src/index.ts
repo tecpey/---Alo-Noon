@@ -369,6 +369,19 @@ export const touch = {
   min: '2.75rem',
   /** Primary actions, and anything a courier presses while holding a bag. */
   comfortable: '3rem',
+  /**
+   * The same two measurements, in the density-independent pixels React Native
+   * lays out in.
+   *
+   * Two units rather than one because the two platforms genuinely count
+   * differently, and a `rem` string handed to a React Native `minHeight` is
+   * not a smaller control — it is a style the runtime discards, which is worse.
+   * They are the same distance: `min` × the 16px root is `minPoints`, and a
+   * test in this package holds them to it, so nobody can move one and leave the
+   * phone applications a size behind the web.
+   */
+  minPoints: 44,
+  comfortablePoints: 48,
 } as const
 
 /**
@@ -514,7 +527,11 @@ export function cssVariables(): string {
     for (const [part, value] of Object.entries(values)) push(`tint-${state}-${part}`, value)
   }
   for (const [name, value] of Object.entries(borderRadius)) push(`radius-${name}`, value)
-  for (const [name, value] of Object.entries(touch)) push(`touch-${name}`, value)
+  // The rem pair only: `minPoints` is React Native's unit, and emitting it as
+  // `--touch-minPoints: 44` would put a unitless number where a length belongs,
+  // which every rule reading it would silently drop.
+  push('touch-min', touch.min)
+  push('touch-comfortable', touch.comfortable)
   for (const [name, value] of Object.entries(shadows)) push(`shadow-${name}`, value)
   for (const [name, value] of Object.entries(motion.duration)) push(`duration-${name}`, value)
   for (const [name, value] of Object.entries(motion.easing)) push(`easing-${name}`, value)

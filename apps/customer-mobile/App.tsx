@@ -46,7 +46,15 @@ import {
   validateTransferAmount,
   withdrawalRefusalMessage,
 } from '@alo-noon/domain'
-import { GlassSurface, OvenIcon, PlusIcon, PressScale, SteamIcon } from '@alo-noon/mobile-ui'
+import {
+  GlassSurface,
+  hitSlopTo,
+  OvenIcon,
+  PlusIcon,
+  PressScale,
+  SteamIcon,
+  touchTarget,
+} from '@alo-noon/mobile-ui'
 
 import brandMark from './assets/logo-mark.png'
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
@@ -1282,7 +1290,7 @@ function Header({ session, onLogout }: { session: SessionContext | null; onLogou
       <View style={styles.sessionBadge}>
         <Text style={styles.sessionBadgeText}>نشست امن فعال</Text>
       </View>
-      <Pressable accessibilityRole="button" onPress={onLogout}>
+      <Pressable accessibilityRole="button" onPress={onLogout} style={touchTarget.min}>
         <Text style={styles.logoutText}>خروج</Text>
       </Pressable>
     </View>
@@ -1563,6 +1571,10 @@ function CartCard({
               accessibilityRole="button"
               disabled={busy}
               onPress={() => onRemove(item.bakeryProductOfferingId)}
+              // Cannot grow: it shares a fixed row with the item's name and
+              // price, and a 44-point box here would push that line apart. The
+              // touchable area reaches past the word instead.
+              hitSlop={hitSlopTo(18)}
             >
               <Text style={styles.removeText}>حذف</Text>
             </Pressable>
@@ -1940,6 +1952,8 @@ const styles = StyleSheet.create({
   loadingText: { color: colors.neutral[700], textAlign: 'center' },
   cityList: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
   cityChip: {
+    ...touchTarget.min,
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderWidth: 1,

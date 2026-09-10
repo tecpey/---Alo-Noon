@@ -8,6 +8,7 @@ import type {
   WalletWithdrawalSummary,
 } from '@alo-noon/contracts'
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
+import { touchTarget } from '@alo-noon/mobile-ui'
 
 import { formatMoney } from '../presentation'
 import { sharedStyles } from '../theme'
@@ -478,6 +479,7 @@ const styles = StyleSheet.create({
 
   presets: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
   preset: {
+    ...touchTarget.min,
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
@@ -494,6 +496,7 @@ const styles = StyleSheet.create({
     borderColor: line.subtle,
     borderRadius: 16,
     backgroundColor: surface.card,
+    ...touchTarget.comfortable,
     paddingVertical: 12,
     paddingHorizontal: 14,
     fontSize: 16,

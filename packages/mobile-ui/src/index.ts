@@ -9,4 +9,6 @@
  */
 export * from './icons'
 export * from './press-scale'
+export * from './touch-target'
+export * from './hit-slop'
 export * from './glass-surface'

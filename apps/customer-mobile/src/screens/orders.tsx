@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native'
 import type { OrderSummary } from '@alo-noon/contracts'
 import { ink, line } from '@alo-noon/design-tokens'
 import { orderProgress } from '@alo-noon/domain'
+import { touchTarget } from '@alo-noon/mobile-ui'
 
 import { formatMoney } from '../presentation'
 import { sharedStyles } from '../theme'
@@ -56,7 +57,7 @@ export function OrdersScreen({
     <View style={sharedStyles.card}>
       <View style={sharedStyles.rowBetween}>
         <Text style={sharedStyles.title}>سفارش‌های من</Text>
-        <Pressable accessibilityRole="button" onPress={onRefresh}>
+        <Pressable accessibilityRole="button" onPress={onRefresh} style={touchTarget.min}>
           <Text style={sharedStyles.linkText}>به‌روزرسانی</Text>
         </Pressable>
       </View>
@@ -132,7 +133,7 @@ export function OrderDetailScreen({
     <View style={sharedStyles.card}>
       <View style={sharedStyles.rowBetween}>
         <Text style={sharedStyles.title}>سفارش</Text>
-        <Pressable accessibilityRole="button" onPress={onBack}>
+        <Pressable accessibilityRole="button" onPress={onBack} style={touchTarget.min}>
           <Text style={sharedStyles.linkText}>بازگشت</Text>
         </Pressable>
       </View>
@@ -181,7 +182,7 @@ export function OrderDetailScreen({
         accessibilityRole="button"
         disabled={reordering}
         onPress={onReorder}
-        style={{ paddingVertical: 8 }}
+        style={touchTarget.min}
       >
         <Text style={sharedStyles.linkText}>
           {reordering ? 'در حال آماده‌سازی…' : 'همین را دوباره سفارش بده'}
