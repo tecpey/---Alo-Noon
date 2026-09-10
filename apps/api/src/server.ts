@@ -386,7 +386,10 @@ const courierAssignments = {
 
 const app = await buildApp({
   logger: true,
-  ...(env.API_TRUST_PROXY_HOPS !== undefined && { trustProxyHops: env.API_TRUST_PROXY_HOPS }),
+  // "none" is how an operator says "the API is exposed directly" out loud,
+  // rather than by leaving the variable out and hoping that was deliberate.
+  ...(env.API_TRUST_PROXY !== undefined &&
+    env.API_TRUST_PROXY !== 'none' && { trustProxy: env.API_TRUST_PROXY }),
   readinessCheck: async () => {
     await prisma.$queryRaw`SELECT 1`
     return env.NODE_ENV !== 'production' || authenticationDatabaseRoleIsSafe(prisma)

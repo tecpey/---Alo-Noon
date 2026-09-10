@@ -60,9 +60,15 @@ Phone and source-IP dimensions are HMAC-tokenized before abuse records are
 written. Counters are checked and written in `SERIALIZABLE` transactions.
 Throttling and cooldown decisions return the same generic acceptance envelope;
 they do not expose account existence or the private policy decision. Fastify
-trusts no forwarded proxy hop by default. `API_TRUST_PROXY_HOPS` may be set only
-to the reviewed number of reverse-proxy hops (0–3); an unavailable reliable
-source IP fails closed.
+trusts no forwarded address by default. `API_TRUST_PROXY` names the reviewed
+reverse proxy itself — `loopback`, or its IP or CIDR block — and a forwarded
+address is believed only when the immediate peer matches it; an unavailable
+reliable source IP fails closed.
+
+This replaces a hop count. Counting hops cannot identify the peer that handed
+the header over, so a client connecting to the API directly could supply an
+`X-Forwarded-For` of its own invention and be treated as that address — which is
+the input to every per-IP control here, OTP abuse counting included.
 
 Authentication HMAC inputs use explicit `otp`, `session`, `mobile`, `source-ip`,
 and `request-fingerprint` purpose namespaces. Production additionally rejects

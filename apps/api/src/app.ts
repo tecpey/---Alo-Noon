@@ -125,7 +125,19 @@ export interface AppOptions {
   engagement?: Omit<EngagementDependencies, 'auth'>
   corsOrigins?: string[]
   logger?: boolean
-  trustProxyHops?: number
+  /**
+   * Which upstream addresses may say who the client is: an IP, a CIDR block, a
+   * comma-separated list of either, or one of `proxy-addr`'s presets such as
+   * `loopback`. Absent means no proxy is trusted.
+   *
+   * Was a hop count. Fastify 5.12 stopped honouring numbers here — a count
+   * cannot identify the immediate peer, so a direct client could forge
+   * `X-Forwarded-For` with enough entries and be believed — and now silently
+   * trusts nothing when given one. Passing a number would have left this
+   * service configured for a proxy, apparently healthy, and attributing every
+   * request to the load balancer's address.
+   */
+  trustProxy?: string
 }
 
 const RATE_LIMIT_WINDOW = '1 minute'
@@ -171,8 +183,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
         }
       : false,
     logController: new LogController({ disableRequestLogging: options.logger === true }),
-    trustProxy:
-      options.trustProxyHops && options.trustProxyHops > 0 ? options.trustProxyHops : false,
+    trustProxy: options.trustProxy ?? false,
   })
   const readinessCheck = options.readinessCheck ?? (async () => true)
 
@@ -180,13 +191,13 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // API sits behind a proxy that was never declared. Every request then reports
   // the proxy's address, so rate limiting and OTP abuse control silently share
   // one bucket across all users. Warn once rather than per request.
-  if (!options.trustProxyHops) {
+  if (!options.trustProxy) {
     let warned = false
     app.addHook('onRequest', async (request) => {
       if (warned || !request.headers['x-forwarded-for']) return
       warned = true
       request.log.warn(
-        'Received X-Forwarded-For while proxy trust is disabled: per-IP rate limiting and OTP abuse control are keying on the proxy address, not the client. Set API_TRUST_PROXY_HOPS to the number of trusted hops.',
+        'Received X-Forwarded-For while proxy trust is disabled: per-IP rate limiting and OTP abuse control are keying on the proxy address, not the client. Set API_TRUST_PROXY to the proxy\'s address — "loopback" when it runs on this host, otherwise its IP or CIDR block.',
       )
     })
   }

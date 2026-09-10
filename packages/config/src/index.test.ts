@@ -31,7 +31,7 @@ describe('environment configuration', () => {
       AUTH_OTP_PEPPER: 'o'.repeat(32),
       AUTH_SESSION_PEPPER: 's'.repeat(32),
       AUTH_ABUSE_PEPPER: 'a'.repeat(32),
-      API_TRUST_PROXY_HOPS: '0',
+      API_TRUST_PROXY: 'none',
     })
     expect(configured.success).toBe(true)
 
@@ -44,9 +44,30 @@ describe('environment configuration', () => {
     expect(reused.success).toBe(false)
   })
 
-  it('bounds explicitly trusted proxy hops', () => {
-    expect(validateEnv({ API_TRUST_PROXY_HOPS: '3' }).success).toBe(true)
-    expect(validateEnv({ API_TRUST_PROXY_HOPS: '4' }).success).toBe(false)
+  it('takes an address for the trusted proxy, not a count of them', () => {
+    expect(validateEnv({ API_TRUST_PROXY: 'loopback' }).success).toBe(true)
+    expect(validateEnv({ API_TRUST_PROXY: '10.0.0.0/8' }).success).toBe(true)
+    expect(validateEnv({ API_TRUST_PROXY: '' }).success).toBe(false)
+  })
+
+  it('refuses to boot on the old hop-count variable rather than ignoring it', () => {
+    // The dangerous case, and the reason this is an error and not a warning: a
+    // server still carrying `API_TRUST_PROXY_HOPS=1` would otherwise start with
+    // proxy trust apparently configured and *nothing* actually trusted, because
+    // Fastify 5.12 stopped honouring numbers here. Every request would then be
+    // attributed to the load balancer, collapsing per-IP rate limiting and OTP
+    // abuse control into a single bucket — invisibly, since the service answers
+    // normally throughout.
+    const carried = validateEnv({ API_TRUST_PROXY_HOPS: '1' })
+    expect(carried.success).toBe(false)
+    if (!carried.success) {
+      expect(carried.errors.join(' ')).toContain('API_TRUST_PROXY')
+      // The message has to say what to write instead, not just what is wrong.
+      expect(carried.errors.join(' ')).toContain('loopback')
+    }
+    // Refused outside production too: a developer reading their own logs is
+    // just as misled by an IP that is really the proxy's.
+    expect(validateEnv({ NODE_ENV: 'development', API_TRUST_PROXY_HOPS: '0' }).success).toBe(false)
   })
 
   it('refuses to start in production until the proxy topology is stated', () => {
@@ -62,12 +83,13 @@ describe('environment configuration', () => {
     const unset = validateEnv(productionSecrets)
     expect(unset.success).toBe(false)
     if (!unset.success) {
-      expect(unset.errors.join(' ')).toContain('API_TRUST_PROXY_HOPS')
+      expect(unset.errors.join(' ')).toContain('API_TRUST_PROXY')
     }
 
-    // Both answers are acceptable, as long as the operator gave one.
-    expect(validateEnv({ ...productionSecrets, API_TRUST_PROXY_HOPS: '0' }).success).toBe(true)
-    expect(validateEnv({ ...productionSecrets, API_TRUST_PROXY_HOPS: '1' }).success).toBe(true)
+    // Both answers are acceptable, as long as the operator gave one — including
+    // "none", which is how "exposed directly" is said out loud.
+    expect(validateEnv({ ...productionSecrets, API_TRUST_PROXY: 'none' }).success).toBe(true)
+    expect(validateEnv({ ...productionSecrets, API_TRUST_PROXY: 'loopback' }).success).toBe(true)
   })
 
   it('requires a valid URL for the payment callback base when provided', () => {

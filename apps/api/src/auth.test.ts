@@ -276,7 +276,7 @@ describe('OTP authentication API', () => {
         }
       },
     }
-    const proxiedApp = await buildApp({ auth: proxied.dependencies, trustProxyHops: 1 })
+    const proxiedApp = await buildApp({ auth: proxied.dependencies, trustProxy: 'loopback' })
     apps.push(proxiedApp)
     await proxiedApp.inject({
       method: 'POST',
@@ -285,6 +285,47 @@ describe('OTP authentication API', () => {
       payload: { mobileE164: '+989111234567' },
     })
     expect(proxiedIp).toBe('203.0.113.20')
+  })
+
+  it('believes a forwarded IP only from an address it was told to trust', async () => {
+    // The reason proxy trust is an address list and not a hop count any more.
+    //
+    // A count says "believe the last N entries" without ever asking who handed
+    // them over, so a client talking to the API directly could send an
+    // X-Forwarded-For of its own invention and be taken at its word — and every
+    // per-IP control in this service, the OTP abuse limiter most of all, keys on
+    // the answer. Fastify 5.12 removed that mode; this asserts the replacement
+    // actually distinguishes the two cases rather than trusting either always or
+    // never.
+    const impersonator = fixture()
+    let seenIp = ''
+    impersonator.dependencies.deliveryService = {
+      request: async (command) => {
+        seenIp = command.sourceIp
+        return {
+          challengeId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          expiresAt: new Date(command.now.getTime() + 5 * 60_000),
+          retryAfterSeconds: 60,
+          replayed: false,
+          uncertain: false,
+        }
+      },
+    }
+    // Trust names a proxy that is not the peer: injected requests arrive from
+    // 127.0.0.1, so this connection is not coming from anything trusted.
+    const app = await buildApp({
+      auth: impersonator.dependencies,
+      trustProxy: '203.0.113.7',
+    })
+    apps.push(app)
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/request',
+      headers: { ...otpHeaders, 'x-forwarded-for': '198.51.100.99' },
+      payload: { mobileE164: '+989111234567' },
+    })
+    // The header is discarded and the real peer is charged for the request.
+    expect(seenIp).toBe('127.0.0.1')
   })
 
   it('verifies once, creates an opaque cookie session, and rejects replay', async () => {
