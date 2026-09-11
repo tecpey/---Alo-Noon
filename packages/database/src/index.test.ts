@@ -1,11 +1,16 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-
-import { Prisma } from './index'
 
 describe('database package', () => {
   it('exports the generated Phase 1 Prisma model', () => {
-    expect(Prisma.dmmf.datamodel.models.map((model) => model.name)).toEqual(
+    // Read off the generated directory rather than `Prisma.dmmf`, which version
+    // 7 removed along with the Rust engine that populated it. Same assertion,
+    // same source of truth: the client is now a directory of TypeScript, one
+    // file per model, so a generator that skipped a model still fails here.
+    const generated = readdirSync(new URL('../generated/client/models', import.meta.url)).map(
+      (file) => file.replace(/\.ts$/, ''),
+    )
+    expect(generated).toEqual(
       expect.arrayContaining([
         'City',
         'OperationalZone',

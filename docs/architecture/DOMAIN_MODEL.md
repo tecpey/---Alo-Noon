@@ -25,7 +25,7 @@
   strings to avoid precision loss.
 - Address, bakery, SKU, classification, packaging, and price facts are copied to
   orders/items. Mutable source records therefore cannot corrupt history.
-- GeoJSON is bounded to service-area geometry because Prisma 5 has no portable
+- GeoJSON is bounded to service-area geometry because Prisma has no portable
   polygon type. Important searchable geography remains normalized.
 - Arrays hold ingredients/allergens/dietary tags until governed vocabularies are
   approved; they are not arbitrary JSON.

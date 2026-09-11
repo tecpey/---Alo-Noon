@@ -5,6 +5,7 @@ import {
   type FinancialTransactionSummary,
   type PaymentSummary,
 } from '@alo-noon/contracts'
+import { isRetryableDatabaseFailure } from '@alo-noon/database'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   evaluateRefund,
@@ -1205,15 +1206,9 @@ export function isRetryablePaymentConflict(error: unknown): boolean {
 function isRetryableConflict(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const code = Reflect.get(error, 'code')
-  if (code === 'P2034' || code === '40001') return true
+  if (isRetryableDatabaseFailure(error)) return true
   if (code === 'P2002') return isRetryablePaymentUniqueRace(error)
-  const meta = Reflect.get(error, 'meta')
-  return (
-    code === 'P2010' &&
-    typeof meta === 'object' &&
-    meta !== null &&
-    Reflect.get(meta, 'code') === '40001'
-  )
+  return false
 }
 
 const retryablePaymentUniqueTargets = new Set([

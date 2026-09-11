@@ -367,7 +367,7 @@ sequenceDiagram
 | API            | Fastify 5، Zod runtime contracts، OpenAPI 3.1           |
 | Web            | Next.js 16، React 19                                    |
 | Mobile         | Expo 57، React Native 0.86، RTL/Persian design tokens   |
-| Data           | PostgreSQL 16، Prisma 5، migrationهای forward-only      |
+| Data           | PostgreSQL 16، Prisma 7، migrationهای forward-only      |
 | Tooling        | pnpm 11.17، Turborepo 2، Vitest 4، ESLint 9، Prettier 3 |
 | CI             | GitHub Actions با PostgreSQL 16 service                 |
 

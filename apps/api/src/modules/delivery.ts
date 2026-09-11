@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { Prisma, type PrismaClient } from '@alo-noon/database'
+import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   ADMIN_PERMISSIONS,
   DomainError,
@@ -147,7 +147,18 @@ export interface DeliveryService {
   ): Promise<DeliveryTaskView>
 }
 
-const TASK_INCLUDE = Prisma.validator<Prisma.DeliveryTaskInclude>()({
+/**
+ * What a delivery task is loaded with, checked against Prisma's own include
+ * type at compile time.
+ *
+ * `satisfies` rather than `Prisma.validator`, which version 7 removed. The
+ * helper existed to check an object against a type while keeping its literal
+ * shape, which is what TypeScript's own operator has done natively since 4.9 —
+ * and it does it better here: `validator` widened the result to the index
+ * signature on `DeliveryTaskInclude`, so every read of `TASK_INCLUDE.fulfillment`
+ * below was going through a string index rather than a known property.
+ */
+const TASK_INCLUDE = {
   fulfillment: {
     include: {
       order: {
@@ -168,7 +179,7 @@ const TASK_INCLUDE = Prisma.validator<Prisma.DeliveryTaskInclude>()({
     include: { courier: { select: { id: true, displayName: true } } },
     take: 1,
   },
-})
+} satisfies Prisma.DeliveryTaskInclude
 
 type TaskRecord = Prisma.DeliveryTaskGetPayload<{ include: typeof TASK_INCLUDE }>
 

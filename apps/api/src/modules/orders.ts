@@ -10,6 +10,7 @@ import {
   type OrderSummary,
   type ResponseMeta,
 } from '@alo-noon/contracts'
+import { isRetryableDatabaseFailure, readDatabaseFailure } from '@alo-noon/database'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   authorizeQuoteToOrder,
@@ -591,17 +592,10 @@ async function serializableWithRetry<T>(
 }
 
 export function isSerializationFailure(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const code = Reflect.get(error, 'code')
-  if (code === 'P2034' || code === 'P2002' || code === '40001') return true
-
-  const meta = Reflect.get(error, 'meta')
-  return (
-    code === 'P2010' &&
-    typeof meta === 'object' &&
-    meta !== null &&
-    Reflect.get(meta, 'code') === '40001'
-  )
+  if (isRetryableDatabaseFailure(error)) return true
+  // A unique violation counts here too: the orders path arbitrates its races on
+  // indexes, so the loser retries rather than failing the customer's request.
+  return readDatabaseFailure(error).code === 'P2002'
 }
 
 /**

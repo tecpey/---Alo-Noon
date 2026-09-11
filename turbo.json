@@ -5,14 +5,20 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "!.dist/cache/**", "tsconfig.tsbuildinfo"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "!.dist/cache/**", "tsconfig.tsbuildinfo", "generated/**"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
-    "lint": { "outputs": [] },
-    "typecheck": { "outputs": [] },
+    "lint": {
+      "outputs": [],
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "outputs": [],
+      "dependsOn": ["^build"]
+    },
     "test": {
       "dependsOn": ["^build"],
       "env": ["DATABASE_URL"],
@@ -35,6 +41,19 @@
     },
     "db:migrate": {
       "cache": false
+    },
+    "@alo-noon/database#typecheck": {
+      "dependsOn": ["^build", "build"],
+      "outputs": []
+    },
+    "@alo-noon/database#lint": {
+      "dependsOn": ["^build", "build"],
+      "outputs": []
+    },
+    "@alo-noon/database#test": {
+      "dependsOn": ["^build", "build"],
+      "env": ["DATABASE_URL"],
+      "outputs": []
     }
   }
 }

@@ -5,16 +5,20 @@ import { PrismaClient } from '@alo-noon/database'
 import { assertDeferredConstraints } from './modules/deferred-constraints'
 
 /**
- * The client defect that `assertDeferredConstraints` exists for.
+ * What the client does when COMMIT is refused.
  *
- * This is pinned as a test rather than left as a comment because the workaround
- * looks like a redundant statement — the kind of line somebody removes while
- * tidying, on the reasonable belief that COMMIT already checks what COMMIT
- * checks. The first test below is what would then be true again, and it is not
- * a bug the next person would find by reading code: everything reports success.
+ * This file used to assert the opposite. Under Prisma 5.22 an interactive
+ * `$transaction` whose COMMIT was refused by a deferred trigger resolved as
+ * though it had succeeded: the database rolled back correctly and the caller
+ * was told the reverse, which for money is the worst failure mode there is.
+ * `assertDeferredConstraints` was written for that, and the test said so —
+ * "if the first test starts failing, the client has been fixed".
  *
- * If the first test starts failing, the client has been fixed and every
- * `assertDeferredConstraints` call can go.
+ * It started failing on Prisma 7. Ten runs of a deferred trigger that refuses
+ * at COMMIT: ten refusals reported to the caller, none swallowed, no rows
+ * written. So the first test now pins the *fixed* behaviour rather than the
+ * defect — a test that asserts a bug which no longer exists is worse than no
+ * test, because the day it starts passing again nobody will know why.
  */
 const databaseDescribe = process.env['DATABASE_URL'] ? describe : describe.skip
 const prisma = new PrismaClient()
@@ -38,19 +42,19 @@ databaseDescribe('deferred constraints over PostgreSQL', () => {
     await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS zz_deferred_probe_guard()`)
   }
 
-  it('reports success when a deferred trigger refuses the commit', async () => {
+  it('reports the refusal to the caller, rather than resolving as a success', async () => {
     await setUp()
     try {
-      let resolved = false
-      await prisma.$transaction(async (transaction) => {
-        await transaction.$executeRawUnsafe(`INSERT INTO "zz_deferred_probe" VALUES (1)`)
-        resolved = true
-      })
+      // The behaviour this whole file was written because the client lacked.
+      await expect(
+        prisma.$transaction(async (transaction) => {
+          await transaction.$executeRawUnsafe(`INSERT INTO "zz_deferred_probe" VALUES (1)`)
+        }),
+      ).rejects.toThrow(/probe refused/)
 
-      // The transaction resolved. The row is not there. Both of those are true
-      // at once, which is the whole problem: the database did the right thing
-      // and the caller was told the opposite.
-      expect(resolved).toBe(true)
+      // And the database agrees: nothing was written. Both halves matter — a
+      // caller told the truth about a rollback that did not happen would be a
+      // different bug with the same shape.
       const rows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
         `SELECT COUNT(*) AS count FROM "zz_deferred_probe"`,
       )

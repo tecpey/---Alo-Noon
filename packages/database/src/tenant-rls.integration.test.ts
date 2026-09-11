@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from './index'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const databaseDescribe = process.env['DATABASE_URL'] ? describe : describe.skip

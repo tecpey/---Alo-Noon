@@ -1,3 +1,4 @@
+import { isRetryableDatabaseFailure } from '@alo-noon/database'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 
 /**
@@ -392,8 +393,7 @@ async function serializableWithRetry<T>(
         { isolationLevel: 'Serializable' },
       )
     } catch (error) {
-      const code = error && typeof error === 'object' ? Reflect.get(error, 'code') : undefined
-      const retryable = code === 'P2034' || code === '40001'
+      const retryable = isRetryableDatabaseFailure(error)
       if (!retryable || attempt === maxAttempts) throw error
     }
   }

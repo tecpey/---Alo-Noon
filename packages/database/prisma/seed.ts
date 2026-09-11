@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '../src/index'
 
 const prisma = new PrismaClient()
 const internalTenantId = '00000000-0000-4000-8000-000000000001'

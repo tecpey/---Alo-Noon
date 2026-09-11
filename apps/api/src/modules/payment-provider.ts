@@ -12,6 +12,7 @@ import {
   type PaymentCallbackReceiptSummary,
   type PaymentProviderConfigurationSummary,
 } from '@alo-noon/contracts'
+import { isRetryableDatabaseFailure, readDatabaseFailure } from '@alo-noon/database'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   canonicalProviderRequest,
@@ -1486,18 +1487,10 @@ async function serializableWithRetry<T>(
 export function isRetryableProviderConflict(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const code = Reflect.get(error, 'code')
-  if (code === 'P2034' || code === '40001') return true
+  if (isRetryableDatabaseFailure(error)) return true
   const meta = Reflect.get(error, 'meta')
-  if (
-    code === 'P2010' &&
-    meta &&
-    typeof meta === 'object' &&
-    Reflect.get(meta, 'code') === '40001'
-  ) {
-    return true
-  }
   if (code !== 'P2002' || !meta || typeof meta !== 'object') return false
-  const value = constraintIdentity(meta)
+  const value = constraintIdentity(error)
   return [
     'ProviderCredential_tenant_idempotency_key',
     'PaymentProvider_tenant_idempotency_key',
@@ -1517,7 +1510,7 @@ function deterministicProviderConflict(error: unknown): string | null {
   if (!error || typeof error !== 'object' || Reflect.get(error, 'code') !== 'P2002') return null
   const meta = Reflect.get(error, 'meta')
   if (!meta || typeof meta !== 'object') return null
-  const identity = constraintIdentity(meta)
+  const identity = constraintIdentity(error)
   if (
     [
       'ProviderCredential_tenant_provider_reference_key',
@@ -1554,19 +1547,12 @@ function isDefaultConflict(error: unknown): boolean {
     [
       'PaymentProvider_one_active_default_key',
       'currency|environment|paymentContext|tenantId',
-    ].includes(constraintIdentity(meta))
+    ].includes(constraintIdentity(error))
   )
 }
 
-function constraintIdentity(meta: object): string {
-  const constraint = Reflect.get(meta, 'constraint')
-  if (typeof constraint === 'string') return constraint
-  const target = Reflect.get(meta, 'target')
-  if (Array.isArray(target)) {
-    return target
-      .filter((value): value is string => typeof value === 'string')
-      .sort()
-      .join('|')
-  }
-  return typeof target === 'string' ? target : ''
+function constraintIdentity(error: unknown): string {
+  const { constraint, fields } = readDatabaseFailure(error)
+  if (constraint) return constraint
+  return fields ? [...fields].sort().join('|') : ''
 }

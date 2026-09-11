@@ -4,6 +4,7 @@ import {
   type LedgerAccountSummary,
   type TenantFinancialBootstrapSummary,
 } from '@alo-noon/contracts'
+import { isRetryableDatabaseFailure } from '@alo-noon/database'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import { governLedgerAccount } from '@alo-noon/domain'
 
@@ -347,16 +348,8 @@ export function isRetryableFinancialOperationsConflict(error: unknown): boolean 
 function isRetryableConflict(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const code = Reflect.get(error, 'code')
-  if (code === 'P2034' || code === '40001') return true
+  if (isRetryableDatabaseFailure(error)) return true
   const meta = Reflect.get(error, 'meta')
-  if (
-    code === 'P2010' &&
-    typeof meta === 'object' &&
-    meta !== null &&
-    Reflect.get(meta, 'code') === '40001'
-  ) {
-    return true
-  }
   if (code !== 'P2002' || !meta || typeof meta !== 'object') return false
   const target = Reflect.get(meta, 'target')
   const constraint = Reflect.get(meta, 'constraint')
