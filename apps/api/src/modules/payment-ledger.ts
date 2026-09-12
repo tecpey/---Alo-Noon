@@ -5,6 +5,7 @@ import {
   type FinancialTransactionSummary,
   type PaymentSummary,
 } from '@alo-noon/contracts'
+import { isRetryableDatabaseFailure, readDatabaseFailure } from '@alo-noon/database'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   evaluateRefund,
@@ -1203,17 +1204,9 @@ export function isRetryablePaymentConflict(error: unknown): boolean {
 }
 
 function isRetryableConflict(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const code = Reflect.get(error, 'code')
-  if (code === 'P2034' || code === '40001') return true
-  if (code === 'P2002') return isRetryablePaymentUniqueRace(error)
-  const meta = Reflect.get(error, 'meta')
-  return (
-    code === 'P2010' &&
-    typeof meta === 'object' &&
-    meta !== null &&
-    Reflect.get(meta, 'code') === '40001'
-  )
+  if (isRetryableDatabaseFailure(error)) return true
+  const { code } = readDatabaseFailure(error)
+  return code === 'P2002' && isRetryablePaymentUniqueRace(error)
 }
 
 const retryablePaymentUniqueTargets = new Set([
@@ -1234,18 +1227,22 @@ const retryablePaymentUniqueConstraints = new Set([
   'FinancialTransaction_tenant_idempotency_key',
 ])
 
-function isRetryablePaymentUniqueRace(error: object): boolean {
-  const meta = Reflect.get(error, 'meta')
-  if (!meta || typeof meta !== 'object') return false
-
-  const target = Reflect.get(meta, 'target')
-  if (Array.isArray(target) && target.every((field) => typeof field === 'string')) {
-    return retryablePaymentUniqueTargets.has([...target].sort().join('|'))
-  }
-  if (typeof target === 'string') {
-    return retryablePaymentUniqueConstraints.has(target)
-  }
-
-  const constraint = Reflect.get(meta, 'constraint')
-  return typeof constraint === 'string' && retryablePaymentUniqueConstraints.has(constraint)
+/**
+ * Whether this unique violation is one of the races the payment path arbitrates
+ * on an index, and therefore converges by retrying rather than failing.
+ *
+ * Read through `readDatabaseFailure`, which is the only thing that knows all
+ * three shapes the client has reported this in. Prisma 7 names the index and
+ * says nothing about the columns; 5 and 6 named the columns and left the caller
+ * to work out the index. Reading only the older shape here — which is what this
+ * did until a review caught it — means a losing writer on
+ * `Payment_tenant_customer_idempotency_key` stops being recognised as a race
+ * and escapes as a raw database error instead of returning the idempotent
+ * result the first writer already produced.
+ */
+function isRetryablePaymentUniqueRace(error: unknown): boolean {
+  const { constraint, fields } = readDatabaseFailure(error)
+  if (constraint) return retryablePaymentUniqueConstraints.has(constraint)
+  if (fields) return retryablePaymentUniqueTargets.has([...fields].sort().join('|'))
+  return false
 }

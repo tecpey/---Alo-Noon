@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomInt, randomUUID } from 'node:crypto'
 import { isIP } from 'node:net'
 
+import { isRetryableDatabaseFailure, readDatabaseFailure } from '@alo-noon/database'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   authenticationDeliveryEventPayloadSchema,
@@ -911,28 +912,25 @@ export function isRetryableAuthenticationConflict(
 ): boolean {
   if (!error || typeof error !== 'object') return false
   const code = Reflect.get(error, 'code')
-  if (code === 'P2034' || code === '40001') return true
-  const meta = Reflect.get(error, 'meta')
-  if (
-    code === 'P2010' &&
-    meta &&
-    typeof meta === 'object' &&
-    Reflect.get(meta, 'code') === '40001'
-  ) {
-    return true
-  }
-  return code === 'P2002' && allowedUniqueConstraints.has(constraintIdentity(meta))
+  if (isRetryableDatabaseFailure(error)) return true
+  return code === 'P2002' && allowedUniqueConstraints.has(constraintIdentity(error))
 }
 
-function constraintIdentity(meta: unknown): string {
-  if (!meta || typeof meta !== 'object') return ''
-  const constraint = Reflect.get(meta, 'constraint')
-  if (typeof constraint === 'string') return constraint
-  const target = Reflect.get(meta, 'target')
-  if (!Array.isArray(target)) return ''
-  const fields = target.join(',')
-  if (fields === 'tenantId,requestIdempotencyKey') return 'auth_challenge_idempotency_key'
-  if (fields === 'tenantId,mobileDigest') return 'auth_challenge_one_active_mobile_key'
+/**
+ * Which unique index a write collided with.
+ *
+ * Prisma 7 reports the index by name, which is what this wanted all along. The
+ * field-list translation below is what versions 5 and 6 forced — they reported
+ * the model's columns and left the caller to work out which index that was —
+ * and it stays for the unit tests that still fabricate that shape.
+ */
+function constraintIdentity(error: unknown): string {
+  const { constraint, fields } = readDatabaseFailure(error)
+  if (constraint) return constraint
+  if (!fields) return ''
+  const joined = fields.join(',')
+  if (joined === 'tenantId,requestIdempotencyKey') return 'auth_challenge_idempotency_key'
+  if (joined === 'tenantId,mobileDigest') return 'auth_challenge_one_active_mobile_key'
   return ''
 }
 

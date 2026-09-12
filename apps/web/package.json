@@ -17,7 +17,7 @@
     "@alo-noon/contracts": "workspace:*",
     "@alo-noon/design-tokens": "workspace:*",
     "@alo-noon/domain": "workspace:*",
-    "next": "16.2.11",
+    "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -25,8 +25,8 @@
     "@alo-noon/eslint-config": "workspace:*",
     "@alo-noon/typescript-config": "workspace:*",
     "@types/node": "^24.0.0",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "eslint": "^9.24.0",
     "typescript": "^5.8.3",
     "vitest": "^4.1.10"

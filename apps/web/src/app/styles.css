@@ -5,45 +5,55 @@
  * Colours are not written here. They arrive as custom properties emitted by
  * @alo-noon/design-tokens, which is also what the mobile apps read — so a
  * change to the brand happens in one file and reaches every surface.
+ *
+ * Mobile-first, and meant literally: every rule in this stylesheet and the ones
+ * beside it describes a phone, and the only media queries that change layout
+ * are `min-width`. This is not a preference. Almost everybody who will ever use
+ * this service is holding a phone, and the previous arrangement — a desktop
+ * layout with a list of undo rules underneath it — is how the storefront's
+ * search box came to sit 190 pixels off the left edge of every phone screen,
+ * hidden by an `overflow: clip` and invisible to anyone testing on a laptop.
+ *
+ * The two widths, from @alo-noon/design-tokens `breakpoints`:
+ *   35rem     (wide) — past a large phone; a second column becomes affordable
+ *   56.25rem  (lap)  — tablet and up; the full desktop layout
+ * Written as literals because a custom property cannot be read inside `@media`.
  */
 
 /*
- * Vazirmatn, self-hosted.
+ * Vazirmatn, self-hosted, complete, and variable.
  *
- * Not from a font CDN. This is a service for customers in Iran, where a
- * request to a foreign font host is a coin toss, and a headline that arrives in
- * Tahoma is a headline nobody designed. The Arabic subset is what ships,
- * because it is what Persian needs; Latin falls back deliberately.
+ * Not from a font CDN. This is a service for customers in Iran, where a request
+ * to a foreign font host is a coin toss, and a headline that arrives in Tahoma
+ * is a headline nobody designed.
+ *
+ * It used to ship as three static weights subset to the Arabic block, on the
+ * reasoning that Arabic is what Persian needs and Latin could fall back. That
+ * reasoning had a hole in it: the subset did not contain **the space**. Nor the
+ * em dash, the ellipsis, the guillemets, or any Latin letter or ASCII digit. So
+ * every space in every Persian sentence in this product was drawn by Tahoma or
+ * Liberation Sans — a different face, with different metrics — and the browser
+ * reported it plainly when asked: sixty-three glyphs from Vazirmatn and
+ * thirteen from a system font, in a single paragraph of body copy. Word spacing
+ * across the whole shop was being set by a font nobody chose.
+ *
+ * So the whole face ships, with no `unicode-range` to fall out of. One variable
+ * file at 111KB replaces three static ones at 64KB and covers 100–900 rather
+ * than three fixed weights — one request instead of three, every weight
+ * available, and Persian and Latin drawn by the same hand.
+ *
+ * Vazirmatn over the alternatives on the evidence: set beside Shabnam and Sahel
+ * at the sizes this interface actually uses, it is the tightest of the three,
+ * the most current, and the only one with a variable axis — and its Latin is
+ * designed against its Persian rather than borrowed. SIL Open Font License,
+ * which is why `OFL.txt` sits beside the file: the licence travels with it.
  */
 @font-face {
   font-family: 'Vazirmatn';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/vazirmatn-400.woff2') format('woff2');
-  unicode-range:
-    U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1, U+08E3-08FF, U+200C-200E,
-    U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
-}
-@font-face {
-  font-family: 'Vazirmatn';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('/fonts/vazirmatn-600.woff2') format('woff2');
-  unicode-range:
-    U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1, U+08E3-08FF, U+200C-200E,
-    U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
-}
-@font-face {
-  font-family: 'Vazirmatn';
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-  src: url('/fonts/vazirmatn-800.woff2') format('woff2');
-  unicode-range:
-    U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1, U+08E3-08FF, U+200C-200E,
-    U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+  src: url('/fonts/vazirmatn-variable.woff2') format('woff2-variations');
 }
 
 *,
@@ -67,6 +77,38 @@ body {
   background: var(--surface-page);
   font-size: 1rem;
   line-height: 1.7;
+}
+
+/*
+ * A control anybody is expected to hit is at least `--touch-min` tall.
+ *
+ * Set on the types rather than on each component so a new form inherits it
+ * without anybody remembering. Inline links in running text are deliberately
+ * not included: a 44px line box inside a paragraph tears the paragraph apart,
+ * and WCAG exempts inline links for exactly that reason. Standalone links that
+ * act as controls carry the floor themselves, in the stylesheet that owns them.
+ */
+button,
+select,
+textarea,
+input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
+summary,
+[role='button'] {
+  min-block-size: var(--touch-min);
+}
+
+/*
+ * Never smaller than 16px, on any field, anywhere.
+ *
+ * Below that iOS Safari zooms the page on focus and does not zoom back out, so
+ * somebody filling in a delivery address is left with the form off the side of
+ * a magnified screen. It reads as the site breaking, and it is caused entirely
+ * by the field being one notch smaller than the body copy.
+ */
+input,
+select,
+textarea {
+  font-size: max(1rem, 1em);
 }
 
 h1,
@@ -126,6 +168,9 @@ button {
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
+  /* The one thing on the screen somebody came to press. It gets the roomier of
+     the two floors, not the minimum. */
+  min-block-size: var(--touch-comfortable);
   padding: 0.85rem 1.6rem;
   border: 0;
   border-radius: var(--radius-md);
@@ -167,6 +212,9 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  /* A pill that is a button is a target; one that is a chip is not, and the
+     floor costs a static chip nothing but a little air. */
+  min-block-size: var(--touch-min);
   padding: 0.55rem 1rem;
   border-radius: var(--radius-full);
   background: var(--surface-card);

@@ -13,15 +13,17 @@
 .checkout__head {
   display: flex;
   align-items: center;
-  padding: 1rem 1.5rem;
+  padding: 1rem;
   border-block-end: 1px solid var(--line-subtle);
 }
 
+/* One column, questions then money. The second column is what a wide screen
+   earns, not what a phone has taken away from it. */
 .checkout__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: 2rem;
-  padding: 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  padding: 1rem;
   align-items: start;
 }
 
@@ -32,11 +34,14 @@
   color: var(--ink-strong);
 }
 
-@media (max-width: 900px) {
+@media (min-width: 56.25rem) {
+  .checkout__head {
+    padding-inline: 1.5rem;
+  }
   .checkout__grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1.25rem;
-    padding: 1rem;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 2rem;
+    padding: 1.5rem;
   }
 }
 
@@ -161,14 +166,16 @@
   border-radius: var(--radius-lg);
   background: var(--surface-card);
 }
+/* Address fields run one per row until there is room for two. Two half-width
+   fields on a phone is how a house number ends up in the postcode. */
 .address-form__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.9rem;
 }
-@media (max-width: 640px) {
+@media (min-width: 35rem) {
   .address-form__row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 .address-form__locate {
@@ -202,7 +209,8 @@
   border-radius: var(--radius-md);
   background: var(--surface-base);
   color: var(--ink-base);
-  font: inherit;
+  font-family: inherit;
+  font-size: 1rem;
   resize: vertical;
 }
 .field input:focus,
@@ -214,9 +222,17 @@
 
 /* --------------------------------------------------------------- summary */
 
+/*
+ * The money.
+ *
+ * Static on a phone, where it is the last block on a single column and there is
+ * nothing beside it to stay level with — a sticky box in a one-column layout
+ * only ever pins itself over its own neighbours. It becomes sticky in the wide
+ * layout, where the customer is filling in the left column and the total needs
+ * to stay in view.
+ */
 .checkout__summary {
-  position: sticky;
-  inset-block-start: 5rem;
+  position: static;
   display: grid;
   gap: 0.9rem;
   padding: 1.1rem;
@@ -225,11 +241,14 @@
   background: var(--surface-card);
   box-shadow: var(--shadow-sm);
 }
-@media (max-width: 900px) {
+
+@media (min-width: 56.25rem) {
   .checkout__summary {
-    position: static;
+    position: sticky;
+    inset-block-start: 5rem;
   }
 }
+
 .checkout__summary h2 {
   font-size: 1rem;
   font-weight: 700;
@@ -425,7 +444,8 @@
   border-radius: var(--radius-md);
   background: var(--surface-base);
   color: var(--ink-base);
-  font: inherit;
+  font-family: inherit;
+  font-size: 1rem;
   /* Codes are Latin even in a Persian interface, so the field reads
      left-to-right while the label beside it stays right-to-left. */
   direction: ltr;

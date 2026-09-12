@@ -34,9 +34,11 @@ jobs:
       NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.17.0
+      # No `version` input: from v6 the action reads the root `packageManager`
+      # field, which is already the single place this repository states its pnpm
+      # version. Repeating it here is a second source of truth that can disagree
+      # with the first, and the action fails when it does.
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version

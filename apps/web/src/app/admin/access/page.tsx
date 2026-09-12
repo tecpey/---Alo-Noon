@@ -10,7 +10,7 @@ import {
   type GrantableBranch,
   type StaffMember,
 } from '../../../lib/admin-api'
-import { formatDateTime } from '../../../lib/admin-format-display'
+import { branchHint, formatDateTime } from '../../../lib/admin-format-display'
 import { ActionForm, Field, SelectField } from '../action-form'
 import { AdminNav } from '../admin-nav'
 import { readFailureMessage } from '../failure-message'
@@ -47,11 +47,17 @@ const PERMISSION_LABELS: Readonly<Record<string, string>> = {
   'routing-provider.configuration.govern': 'سرویس مسیریاب',
 }
 
-export default async function AdminAccessPage() {
+export default async function AdminAccessPage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
+  const params = await searchParams
+  const rawSearch = params['branch']
+  const branchSearch = (Array.isArray(rawSearch) ? rawSearch[0] : rawSearch)?.trim() ?? ''
+
   const [staff, roles, branches] = await Promise.all([
     listStaff(),
     listAccessRoles(),
-    listGrantableBranches(),
+    listGrantableBranches(branchSearch),
   ])
   if (
     (!staff.ok && isUnauthenticated(staff.error)) ||
@@ -67,7 +73,11 @@ export default async function AdminAccessPage() {
   // whole city by leaving a select alone.
   const tenantRoles = grantable.filter((role) => role.scope === 'TENANT')
   const branchRoles = grantable.filter((role) => role.scope === 'BAKERY_BRANCH')
-  const branchList: GrantableBranch[] = branches.ok ? branches.data : []
+  const branchList: GrantableBranch[] = branches.ok ? branches.data.branches : []
+  const branchTotal = branches.ok ? branches.data.totalItems : 0
+  // More matched than came back, so the list on screen is a page rather than
+  // the answer and the operator needs to narrow it.
+  const branchesTruncated = branchTotal > branchList.length
 
   return (
     <main className="admin">
@@ -140,6 +150,30 @@ export default async function AdminAccessPage() {
             نانوایی از <code dir="ltr">/bakery</code> وارد می‌شوند، نه از پنل مدیریت. آن‌ها هم باید
             یک بار با همان شماره وارد شده باشند.
           </p>
+          {/*
+            Narrowing lives outside the grant form, because a form cannot nest
+            inside another and because these are two acts: finding the branch,
+            then granting against it. A plain GET reloads the page with a
+            shorter list, so it works with no JavaScript at all — which on a
+            panel somebody opens on a phone in a bakery is not a small thing.
+          */}
+          {(branchesTruncated || branchSearch) && (
+            <form className="branch-search" method="get">
+              <label htmlFor="branch-search">جست‌وجوی شعبه</label>
+              <div className="branch-search__row">
+                <input
+                  id="branch-search"
+                  name="branch"
+                  type="search"
+                  defaultValue={branchSearch}
+                  placeholder="نام شعبه یا نانوایی"
+                  autoComplete="off"
+                  enterKeyHint="search"
+                />
+                <button type="submit">جست‌وجو</button>
+              </div>
+            </form>
+          )}
           <ActionForm action={grantRoleAction} submitLabel="اعطای دسترسی شعبه">
             <Field
               label="شمارهٔ موبایل"
@@ -167,11 +201,7 @@ export default async function AdminAccessPage() {
                 value: branch.id,
                 label: `${branch.nameFa} — ${branch.bakeryNameFa}`,
               }))}
-              hint={
-                branchList.length === 0
-                  ? 'هنوز شعبه‌ای ثبت نشده است.'
-                  : 'این حساب فقط همین شعبه را می‌بیند.'
-              }
+              hint={branchHint(branchList.length, branchTotal, branchSearch)}
             />
             <Field label="دلیل" name="reason" required placeholder="صاحب نانوایی، شعبهٔ مرکزی" />
           </ActionForm>

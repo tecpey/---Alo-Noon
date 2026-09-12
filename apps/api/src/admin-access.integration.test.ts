@@ -233,10 +233,53 @@ databaseDescribe('admin access management over PostgreSQL', () => {
     // The role whose entire job is issuing grants holds admin.access.manage and
     // nothing else. If this listing answered to the catalogue's permission, that
     // role could not fill in the one field a branch grant needs.
-    const branches = await service.listGrantableBranches(fixture.tenantId)
-    expect(branches.map((branch) => branch.id)).toContain(fixture.branchId)
-    expect(branches.map((branch) => branch.id)).not.toContain(fixture.foreignBranchId)
-    expect(branches[0]?.bakeryNameFa).toContain('نانوایی')
+    const page = await service.listGrantableBranches(fixture.tenantId)
+    expect(page.branches.map((branch) => branch.id)).toContain(fixture.branchId)
+    expect(page.branches.map((branch) => branch.id)).not.toContain(fixture.foreignBranchId)
+    expect(page.branches[0]?.bakeryNameFa).toContain('نانوایی')
+    // The count is the tenant's, not the page's — it is what tells a screen
+    // whether the list it is holding is the whole answer.
+    expect(page.totalItems).toBe(page.branches.length)
+  })
+
+  /**
+   * The picker at a size no pilot has and a province does.
+   *
+   * A tenant with one city has a handful of branches and the whole list is the
+   * right control. Thousands of them in a dropdown is a wall — slowest and
+   * least usable on the phone an operator is most likely holding.
+   */
+  it('bounds the listing and says how many it did not send', async () => {
+    const page = await service.listGrantableBranches(fixture.tenantId, { limit: 1 })
+    expect(page.branches).toHaveLength(1)
+    // What was returned is a page; what matched is the whole tenant.
+    expect(page.totalItems).toBeGreaterThanOrEqual(1)
+  })
+
+  it('narrows by the branch name or the bakery it belongs to', async () => {
+    const all = await service.listGrantableBranches(fixture.tenantId)
+    const target = all.branches[0]!
+
+    for (const term of [target.nameFa.slice(0, 4), target.bakeryNameFa.slice(0, 4)]) {
+      const found = await service.listGrantableBranches(fixture.tenantId, { search: term })
+      expect(`${term}: ${found.branches.some((branch) => branch.id === target.id)}`).toBe(
+        `${term}: true`,
+      )
+    }
+
+    // An operator granting access thinks in one name or the other and rarely
+    // knows which the row was filed under, so both have to find it.
+    const nothing = await service.listGrantableBranches(fixture.tenantId, {
+      search: 'نانوایی‌ای که وجود ندارد',
+    })
+    expect(nothing.branches).toHaveLength(0)
+    expect(nothing.totalItems).toBe(0)
+  })
+
+  it('never narrows past the tenant', async () => {
+    // Search is a filter inside a tenant, never a way out of one.
+    const foreign = await service.listGrantableBranches(fixture.tenantId, { search: 'شعبه' })
+    expect(foreign.branches.map((branch) => branch.id)).not.toContain(fixture.foreignBranchId)
   })
 
   it('treats re-granting what someone already holds as a no-op', async () => {

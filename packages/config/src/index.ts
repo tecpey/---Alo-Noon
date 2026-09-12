@@ -37,12 +37,36 @@ export const envSchema = z
     AUTH_SESSION_PEPPER: z.string().min(32).optional(),
     AUTH_ABUSE_PEPPER: z.string().min(32).optional(),
     // Deliberately not defaulted: production must state its topology explicitly.
-    // Rate limiting and OTP abuse control both key on request.ip, so leaving this
-    // at 0 behind a load balancer silently collapses every user into one shared
-    // bucket — throttling real customers while giving an attacker no per-IP limit
-    // at all. Absent means "no trusted proxy", which is only correct when the API
-    // is exposed directly.
-    API_TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).optional(),
+    /**
+     * Which upstream addresses are allowed to say who the client is.
+     *
+     * Rate limiting and OTP abuse control both key on `request.ip`, so getting
+     * this wrong silently collapses every user into one shared bucket —
+     * throttling real customers while giving an attacker no per-IP limit at all.
+     *
+     * An address list, not a hop count. This used to be `API_TRUST_PROXY_HOPS`,
+     * a number of proxies to trust, and Fastify 5.12 removed that mode for a
+     * good reason: counting hops cannot tell you *who* the immediate peer is, so
+     * a client connecting directly could forge `X-Forwarded-For` with enough
+     * entries and be believed. Fastify now refuses to trust anything when given
+     * a number — which would have left this service with proxy trust configured,
+     * apparently working, and every request attributed to the load balancer.
+     *
+     * Accepts what `proxy-addr` accepts: one or more comma-separated IPs or
+     * CIDR blocks, or the presets `loopback`, `linklocal` and `uniquelocal`.
+     * `loopback` is right for a reverse proxy on the same host, which is the
+     * usual single-server deployment. Absent means no proxy is trusted, which is
+     * only correct when the API is exposed directly.
+     */
+    API_TRUST_PROXY: z.string().min(1).optional(),
+    /**
+     * A tombstone, declared only so it can be refused.
+     *
+     * Zod drops keys the schema does not name, so without this the old variable
+     * would be invisible to the check below and a deployment carrying it would
+     * boot with no proxy trusted at all.
+     */
+    API_TRUST_PROXY_HOPS: z.string().optional(),
     // Payment provider adapters resolve this to build each gateway's callback URL;
     // no adapter can initialize a payment without it.
     PAYMENT_CALLBACK_BASE_URL: z.string().url().optional(),
@@ -127,12 +151,32 @@ export const envSchema = z
         message: 'Authentication peppers must be independent production secrets',
       })
     }
-    if (env.API_TRUST_PROXY_HOPS === undefined) {
+    if (env.API_TRUST_PROXY === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['API_TRUST_PROXY'],
+        message:
+          'API_TRUST_PROXY must be set explicitly in production. Give the address of the reverse proxy in front of the API — "loopback" when it runs on the same host, otherwise its IP or CIDR block — or "none" only when the API is exposed directly. Guessing wrong disables per-IP rate limiting and OTP abuse control.',
+      })
+    }
+  })
+  .superRefine((env, context) => {
+    /**
+     * The old variable, refused loudly rather than ignored — in every
+     * environment, not only production.
+     *
+     * A deployment carrying `API_TRUST_PROXY_HOPS=1` from before this changed
+     * would otherwise start cleanly with *no* proxy trusted at all: the exact
+     * failure the setting exists to prevent, and invisible from the outside
+     * because the service still answers every request. Better to refuse to boot
+     * and say what to write instead.
+     */
+    if (env.API_TRUST_PROXY_HOPS !== undefined) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['API_TRUST_PROXY_HOPS'],
         message:
-          'API_TRUST_PROXY_HOPS must be set explicitly in production. Use the number of trusted reverse-proxy hops in front of the API, or 0 only when it is exposed directly. Guessing wrong disables per-IP rate limiting and OTP abuse control.',
+          'API_TRUST_PROXY_HOPS is no longer supported: a hop count cannot identify the immediate peer, so a client connecting directly could forge X-Forwarded-For and be believed. Replace it with API_TRUST_PROXY naming the proxy itself — "loopback" for a proxy on the same host, otherwise its IP or CIDR block.',
       })
     }
   })

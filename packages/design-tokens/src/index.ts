@@ -283,17 +283,43 @@ export const spacing = {
 
 export const typography = {
   /**
-   * Vazirmatn, self-hosted.
+   * Vazirmatn, self-hosted and complete.
    *
    * Not loaded from a font CDN: this is a service for Iranian customers, and a
    * font that fails to arrive leaves the whole interface in a fallback that was
-   * never designed for. The Arabic subset is what ships; Latin falls back,
-   * which is what the fallback stack is for.
+   * never designed for. The whole face ships — Persian, Latin, punctuation and
+   * the space — because the Arabic-only subset this used to carry meant every
+   * space in every sentence was drawn by Tahoma.
+   *
+   * `Tahoma` stays ahead of `Arial` in the fallback for the seconds before the
+   * file lands: it is the one face on a Windows machine with real Persian
+   * shaping, and Arial's Persian is a lookalike that joins letters wrongly.
    */
   fontFamily: {
     body: ['Vazirmatn', 'Tahoma', 'Arial', 'sans-serif'],
     heading: ['Vazirmatn', 'Tahoma', 'Arial', 'sans-serif'],
-    mono: ['Consolas', 'Monaco', 'monospace'],
+    /**
+     * Order codes, bank references and provider identifiers, which are read one
+     * character at a time down a telephone.
+     *
+     * `Consolas, Monaco, monospace` used to be the whole stack, and neither of
+     * those exists on Android, iOS or Linux — which is every device a customer
+     * or a courier holds. So the code that somebody is reading out loud was
+     * drawn by whatever the platform's unnamed default `monospace` happened to
+     * be. `ui-monospace` picks the system's real UI mono (SF Mono on Apple),
+     * and the rest name a face that actually exists on each platform before the
+     * generic is reached at all.
+     */
+    mono: [
+      'ui-monospace',
+      'SFMono-Regular',
+      'SF Mono',
+      'Menlo',
+      'Consolas',
+      'Roboto Mono',
+      'Liberation Mono',
+      'monospace',
+    ],
   },
   fontSize: {
     xs: '0.75rem',
@@ -327,6 +353,68 @@ export const typography = {
 } as const
 
 /**
+ * How small a thing anybody is expected to hit is allowed to be.
+ *
+ * This product is used one-handed, on a phone, by somebody standing up —
+ * a customer on a pavement, a baker with flour on their hands, a courier at a
+ * door. `min` is the floor every control answers to; `comfortable` is what the
+ * things pressed under time pressure get.
+ *
+ * Shared with the phone applications on purpose. A control that is comfortable
+ * in the Android app and cramped in the installed web app is the same product
+ * disagreeing with itself, and the customer cannot tell which one they are in.
+ */
+export const touch = {
+  /** WCAG 2.5.8 and Apple's HIG land in the same place: 44 CSS pixels. */
+  min: '2.75rem',
+  /** Primary actions, and anything a courier presses while holding a bag. */
+  comfortable: '3rem',
+  /**
+   * The same two measurements, in the density-independent pixels React Native
+   * lays out in.
+   *
+   * Two units rather than one because the two platforms genuinely count
+   * differently, and a `rem` string handed to a React Native `minHeight` is
+   * not a smaller control — it is a style the runtime discards, which is worse.
+   * They are the same distance: `min` × the 16px root is `minPoints`, and a
+   * test in this package holds them to it, so nobody can move one and leave the
+   * phone applications a size behind the web.
+   */
+  minPoints: 44,
+  comfortablePoints: 48,
+} as const
+
+/**
+ * Where the layout is allowed to change its mind.
+ *
+ * There are only two, and they are both `min-width`: this product is designed
+ * at phone width and *widens*. Every stylesheet here used to be written the
+ * other way round — a desktop layout with a list of undo rules for phones —
+ * which is how the storefront's search box came to spend every phone screen
+ * off the left edge of the viewport with nobody noticing.
+ *
+ * In `rem`, so a customer who has turned their text up gets the simpler layout
+ * rather than the wide one crushed into a narrow column.
+ *
+ * Not emitted as CSS custom properties, unlike everything else here: a custom
+ * property cannot be read inside an `@media` condition, so a `--bp-lap` would
+ * be a variable that silently fails in the only place it was wanted. The
+ * stylesheets write the literal and name it in a comment; this export is what
+ * the phone applications and the tests read.
+ *
+ * These replace a `sm`/`md`/`lg`/`xl`/`2xl` scale that used to sit further down
+ * this file. Nothing ever imported it and none of its five widths appeared in
+ * any stylesheet — it was a generic scale copied in, not a description of this
+ * product, and a token that no layout obeys is worse than no token at all.
+ */
+export const breakpoints = {
+  /** Past a large phone: two columns become affordable. */
+  wide: '35rem',
+  /** Tablet and up: the desktop layout, with the frame floating on its ground. */
+  lap: '56.25rem',
+} as const
+
+/**
  * Corner radii.
  *
  * Generous, and matched to the artwork: cards are `lg`, the pills in the top
@@ -357,14 +445,6 @@ export const shadows = {
   xl: '0 24px 48px -20px rgb(38 31 23 / 0.24)',
   /** For the action colour, so a button glows rather than casts. */
   action: '0 10px 22px -10px rgb(228 82 13 / 0.55)',
-} as const
-
-export const breakpoints = {
-  sm: '640px',
-  md: '768px',
-  lg: '1024px',
-  xl: '1280px',
-  '2xl': '1536px',
 } as const
 
 export const zIndex = {
@@ -447,6 +527,11 @@ export function cssVariables(): string {
     for (const [part, value] of Object.entries(values)) push(`tint-${state}-${part}`, value)
   }
   for (const [name, value] of Object.entries(borderRadius)) push(`radius-${name}`, value)
+  // The rem pair only: `minPoints` is React Native's unit, and emitting it as
+  // `--touch-minPoints: 44` would put a unitless number where a length belongs,
+  // which every rule reading it would silently drop.
+  push('touch-min', touch.min)
+  push('touch-comfortable', touch.comfortable)
   for (const [name, value] of Object.entries(shadows)) push(`shadow-${name}`, value)
   for (const [name, value] of Object.entries(motion.duration)) push(`duration-${name}`, value)
   for (const [name, value] of Object.entries(motion.easing)) push(`easing-${name}`, value)
@@ -460,11 +545,22 @@ export function cssVariables(): string {
   push('warning', colors.warning)
   push('error', colors.error)
   push('info', colors.info)
-  push('font-body', typography.fontFamily.body.join(', '))
+  /**
+   * A font stack, with the multi-word names quoted.
+   *
+   * `SF Mono` and `Roboto Mono` are legal unquoted — CSS accepts a family as a
+   * run of identifiers — but only until one of them starts with a digit or
+   * collides with a keyword, at which point the whole declaration is dropped
+   * and the interface silently loses its type. Quoting costs nothing.
+   */
+  const fontStack = (families: readonly string[]) =>
+    families.map((family) => (family.includes(' ') ? `'${family}'` : family)).join(', ')
+
+  push('font-body', fontStack(typography.fontFamily.body))
   // Order codes, references and provider identifiers are always Latin and are
   // read character by character, so they need the tabular face rather than the
   // Persian body one. Emitted here so a panel does not have to name its own.
-  push('font-mono', typography.fontFamily.mono.join(', '))
+  push('font-mono', fontStack(typography.fontFamily.mono))
 
   return `:root {\n${entries.join('\n')}\n}`
 }
@@ -483,6 +579,7 @@ export const config = {
   typography,
   borderRadius,
   shadows,
+  touch,
   breakpoints,
   zIndex,
   motion,

@@ -62,6 +62,27 @@ export const staffMemberSchema = z.object({
   isSelf: z.boolean(),
 })
 
+/**
+ * What a branch picker may ask for.
+ *
+ * A tenant with one city has a handful of branches; a national one has
+ * thousands, and a dropdown holding all of them is a wall rather than a list —
+ * worst on the phone an operator is most likely holding. So the listing is
+ * bounded and can be narrowed, and the response says how many matched.
+ */
+export const grantableBranchQuerySchema = z.object({
+  // Two characters is where narrowing starts being narrowing. One would return
+  // most of the tenant and read as a broken filter.
+  search: z.string().trim().min(2).max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+})
+
+export const grantableBranchSchema = z.object({
+  id: z.string().uuid(),
+  nameFa: z.string().min(1).max(160),
+  bakeryNameFa: z.string().min(1).max(160),
+})
+
 export const grantRoleCommandSchema = z
   .object({
     mobileE164: mobileE164Schema,
@@ -85,6 +106,8 @@ export const revokeRoleCommandSchema = z
   })
   .strict()
 
+export type GrantableBranchQuery = z.infer<typeof grantableBranchQuerySchema>
+export type GrantableBranch = z.infer<typeof grantableBranchSchema>
 export type AdminRoleSummary = z.infer<typeof adminRoleSummarySchema>
 export type StaffMember = z.infer<typeof staffMemberSchema>
 export type GrantRoleCommand = z.infer<typeof grantRoleCommandSchema>

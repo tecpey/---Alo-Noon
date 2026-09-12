@@ -5,6 +5,7 @@ import {
   isUnauthenticated,
   isUuid,
   request,
+  requestRaw,
   requestWithPagination,
   upstreamHeaders,
   type ApiFailure,
@@ -482,8 +483,30 @@ export interface GrantableBranch {
  * Not the catalogue's listing: that one answers to `admin.catalog.manage`, and
  * the role whose whole job is issuing grants does not hold it.
  */
-export async function listGrantableBranches(): Promise<ApiResult<GrantableBranch[]>> {
-  return request<GrantableBranch[]>('/api/v1/admin/access/branches', { method: 'GET' })
+export interface GrantableBranchPage {
+  branches: GrantableBranch[]
+  /** How many match in total, whether or not they all came back. */
+  totalItems: number
+}
+
+export async function listGrantableBranches(
+  search?: string,
+): Promise<ApiResult<GrantableBranchPage>> {
+  // Two characters is where narrowing starts being narrowing; below that the
+  // API refuses the query and the screen would show an error for a keystroke.
+  const term = search?.trim() ?? ''
+  const path =
+    term.length >= 2
+      ? `/api/v1/admin/access/branches?search=${encodeURIComponent(term)}`
+      : '/api/v1/admin/access/branches'
+
+  const { result, meta } = await requestRaw<GrantableBranch[]>(path, { method: 'GET' })
+  if (!result.ok) return result
+  const totalItems = (meta as { totalItems?: number } | undefined)?.totalItems
+  return {
+    ok: true,
+    data: { branches: result.data, totalItems: totalItems ?? result.data.length },
+  }
 }
 
 export async function listStaff(): Promise<ApiResult<StaffMember[]>> {

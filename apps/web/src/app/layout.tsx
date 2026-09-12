@@ -43,6 +43,24 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html lang="fa" dir="rtl">
       <head>
         {/*
+          The one font, fetched as early as the browser will allow.
+
+          Every character on every screen of this product comes out of this
+          file. Discovered the normal way it is a third-level request — HTML,
+          then stylesheet, then font — and on a phone on a slow connection in
+          Iran that is a shop rendered in Tahoma for the first second, then
+          reflowed. `crossOrigin` is required even for a same-origin font:
+          fonts are fetched in anonymous CORS mode, and a preload without it is
+          a second download rather than a warm cache.
+        */}
+        <link
+          rel="preload"
+          href="/fonts/vazirmatn-variable.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+        {/*
           The palette is emitted from the token package rather than written into
           a stylesheet, so the web and the two mobile apps cannot drift apart:
           all three read the same constants, and this is the only bridge. The

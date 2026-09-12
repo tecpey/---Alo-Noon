@@ -225,3 +225,20 @@ export function availableProductionSteps(current: string): readonly string[] {
   }
   return next[current] ?? []
 }
+
+/**
+ * What the picker says about itself.
+ *
+ * A dropdown that quietly holds the first twenty of six hundred branches is a
+ * dropdown somebody will scroll to the bottom of and conclude their branch is
+ * not registered. So it says so, and says how to fix it.
+ */
+export function branchHint(shown: number, total: number, search: string): string {
+  if (total === 0) {
+    return search ? 'هیچ شعبه‌ای با این نام پیدا نشد.' : 'هنوز شعبه‌ای ثبت نشده است.'
+  }
+  if (shown < total) {
+    return `${formatCount(shown)} شعبه از ${formatCount(total)} نشان داده شده — برای پیدا کردن بقیه، نامش را جست‌وجو کنید.`
+  }
+  return 'این حساب فقط همین شعبه را می‌بیند.'
+}

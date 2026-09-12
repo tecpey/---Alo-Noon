@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { brand, colors, cssVariables, gradients, ink, mix, surface, tint } from './index'
+import { brand, colors, cssVariables, gradients, ink, mix, surface, tint, touch } from './index'
 
 /**
  * The tokens are data, so most of them are not worth a test. What is worth one
@@ -67,6 +67,30 @@ describe('the bridge to CSS', () => {
     expect(css.startsWith(':root {')).toBe(true)
     expect(css.trimEnd().endsWith('}')).toBe(true)
     expect(css.match(/:root/g)).toHaveLength(1)
+  })
+})
+
+describe('the touch floor', () => {
+  it('is the same distance on the web and on a phone', () => {
+    // The two platforms count in different units, so the token carries both.
+    // Nothing stops someone raising one and forgetting the other except this:
+    // the failure would be a control that is comfortable in the browser and
+    // cramped in the Android app, which nobody would think to go looking for.
+    const points = (rem: string) => Number.parseFloat(rem) * 16
+    expect(points(touch.min)).toBe(touch.minPoints)
+    expect(points(touch.comfortable)).toBe(touch.comfortablePoints)
+  })
+
+  it('is at least the 44px both WCAG and Apple settled on', () => {
+    expect(touch.minPoints).toBeGreaterThanOrEqual(44)
+    expect(touch.comfortablePoints).toBeGreaterThan(touch.minPoints)
+  })
+
+  it('reaches CSS as a length, and only the halves that are lengths', () => {
+    const css = cssVariables()
+    expect(css).toContain(`--touch-min: ${touch.min};`)
+    // A unitless 44 in a `min-block-size` is a declaration the browser drops.
+    expect(css).not.toContain('--touch-minPoints')
   })
 })
 

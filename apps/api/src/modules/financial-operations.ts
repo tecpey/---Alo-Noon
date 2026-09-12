@@ -4,6 +4,7 @@ import {
   type LedgerAccountSummary,
   type TenantFinancialBootstrapSummary,
 } from '@alo-noon/contracts'
+import { isRetryableDatabaseFailure, readDatabaseFailure } from '@alo-noon/database'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
 import { governLedgerAccount } from '@alo-noon/domain'
 
@@ -344,34 +345,29 @@ export function isRetryableFinancialOperationsConflict(error: unknown): boolean 
   return isRetryableConflict(error)
 }
 
+/** The indexes the governance path arbitrates its races on, as Postgres names them. */
+const retryableGovernanceConstraints = new Set([
+  'LedgerGovernance_tenant_idempotency_key',
+  'LedgerGovernance_account_version_key',
+])
+
+/** The same two, as the columns Prisma 5 and 6 reported instead of a name. */
+const retryableGovernanceTargets = new Set(['idempotencyKey|tenantId', 'ledgerAccountId|version'])
+
+/**
+ * Whether two governance requests collided on an index, which converges by
+ * retrying, rather than the database refusing the data outright.
+ *
+ * Through `readDatabaseFailure` for the reason spelled out in `payment-ledger`:
+ * Prisma 7 reports the index name in a nested driver-adapter cause and nothing
+ * at `meta.target`, so a reader that only knows the older shape silently stops
+ * recognising every race it was written for.
+ */
 function isRetryableConflict(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const code = Reflect.get(error, 'code')
-  if (code === 'P2034' || code === '40001') return true
-  const meta = Reflect.get(error, 'meta')
-  if (
-    code === 'P2010' &&
-    typeof meta === 'object' &&
-    meta !== null &&
-    Reflect.get(meta, 'code') === '40001'
-  ) {
-    return true
-  }
-  if (code !== 'P2002' || !meta || typeof meta !== 'object') return false
-  const target = Reflect.get(meta, 'target')
-  const constraint = Reflect.get(meta, 'constraint')
-  const normalized = Array.isArray(target)
-    ? target
-        .filter((value): value is string => typeof value === 'string')
-        .sort()
-        .join('|')
-    : target
-  return (
-    normalized === 'idempotencyKey|tenantId' ||
-    normalized === 'ledgerAccountId|version' ||
-    normalized === 'LedgerGovernance_tenant_idempotency_key' ||
-    normalized === 'LedgerGovernance_account_version_key' ||
-    constraint === 'LedgerGovernance_tenant_idempotency_key' ||
-    constraint === 'LedgerGovernance_account_version_key'
-  )
+  if (isRetryableDatabaseFailure(error)) return true
+  const { code, constraint, fields } = readDatabaseFailure(error)
+  if (code !== 'P2002') return false
+  if (constraint) return retryableGovernanceConstraints.has(constraint)
+  if (fields) return retryableGovernanceTargets.has([...fields].sort().join('|'))
+  return false
 }

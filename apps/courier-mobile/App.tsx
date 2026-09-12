@@ -15,7 +15,7 @@ import {
 import type { DeliveryTaskView } from '@alo-noon/contracts'
 import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
 import { colors, ink, surface } from '@alo-noon/design-tokens'
-import { CheckIcon, CourierIcon, PressScale } from '@alo-noon/mobile-ui'
+import { CheckIcon, CourierIcon, hitSlopTo, PressScale, touchTarget } from '@alo-noon/mobile-ui'
 
 import { createCourierApiClient, CourierApiError, type CourierReport } from './src/api'
 import { courierCopy } from './src/copy'
@@ -335,7 +335,7 @@ export default function App() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>سفارش‌های شما</Text>
-        <PressScale onPress={() => void signOut()} hitSlop={12}>
+        <PressScale onPress={() => void signOut()} hitSlop={hitSlopTo(17)}>
           <Text style={styles.headerAction}>خروج</Text>
         </PressScale>
       </View>
@@ -588,8 +588,10 @@ const styles = StyleSheet.create({
   primaryButtonInner: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
   primaryButtonText: { color: ink.onAction, fontSize: 18, fontWeight: '700' },
   secondaryButton: {
-    minHeight: 48,
-    justifyContent: 'center',
+    // The shared floor's comfortable step. The buttons below it are taller
+    // still, deliberately: this app is used one-handed, outdoors, often in the
+    // rain, by somebody holding a bag of bread in the other hand.
+    ...touchTarget.comfortable,
     alignItems: 'center',
     borderRadius: 14,
     borderWidth: 1,

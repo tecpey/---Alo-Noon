@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
+import { touchTarget } from '@alo-noon/mobile-ui'
 
 /**
  * Four tabs, hand-rolled.
@@ -86,7 +87,12 @@ const styles = StyleSheet.create({
     // sitting underneath it.
     paddingBottom: 20,
   },
-  tab: { flex: 1, alignItems: 'center', gap: 6, paddingVertical: 6 },
+  /**
+   * The four destinations of the whole application, and until this carried the
+   * shared floor they were about 37 points tall — under the 44 both WCAG and
+   * Apple settle on, in the one bar somebody uses on every screen.
+   */
+  tab: { flex: 1, alignItems: 'center', gap: 6, paddingVertical: 6, ...touchTarget.min },
   label: { color: ink.muted, fontSize: 14, fontWeight: '600' },
   labelActive: { color: colors.primary[700], fontWeight: '800' },
   indicator: { height: 2, width: 22, borderRadius: 2, backgroundColor: 'transparent' },

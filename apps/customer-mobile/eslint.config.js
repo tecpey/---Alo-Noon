@@ -1,10 +1,11 @@
 import reactNative from '@alo-noon/eslint-config/react-native'
 
 /**
- * The shared React Native configuration, plus the one test that lives outside
- * the app's TypeScript project.
+ * The shared React Native configuration, plus the tests that live outside the
+ * app's TypeScript project.
  *
- * `release-config.test.ts` sits at the app root rather than under `src/`
+ * `release-config.test.ts` and `touch-targets.test.ts` sit at the app root
+ * rather than under `src/`
  * because it reads files, which means `node:fs`, and `src/env.d.ts` exists to
  * keep Node's types out of this app — telling TypeScript that `fs` and `Buffer`
  * are available on a phone is how somebody ships code that crashes on a device
@@ -18,7 +19,7 @@ import reactNative from '@alo-noon/eslint-config/react-native'
 export default [
   ...reactNative,
   {
-    files: ['release-config.test.ts'],
+    files: ['release-config.test.ts', 'touch-targets.test.ts'],
     languageOptions: {
       parserOptions: { project: false },
     },

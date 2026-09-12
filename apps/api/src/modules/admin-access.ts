@@ -14,6 +14,7 @@ import {
   findAdminRole,
   grantScopeMatchesRole,
   permissionsBeyond,
+  toLatinDigits,
   type AdminRoleDefinition,
 } from '@alo-noon/domain'
 
@@ -70,7 +71,10 @@ export interface AdminAccessService {
    * Deliberately three fields. Everything else about a branch is the
    * catalogue's business and none of it helps somebody pick one from a list.
    */
-  listGrantableBranches(tenantId: string): Promise<GrantableBranch[]>
+  listGrantableBranches(
+    tenantId: string,
+    query?: GrantableBranchQuery,
+  ): Promise<GrantableBranchPage>
   listStaff(tenantId: string, actor: AccessActor): Promise<StaffMember[]>
   grantRole(
     tenantId: string,
@@ -88,11 +92,43 @@ export interface AdminAccessService {
   ): Promise<StaffMember>
 }
 
+/**
+ * What a branch picker asks for.
+ *
+ * A tenant with one city has a handful of branches and the whole list is the
+ * right answer. A tenant with a province has hundreds and a national one has
+ * thousands, and «load them all into a dropdown» stops being a list and becomes
+ * a wall — slowest and least usable on the phone an operator is most likely
+ * holding. So the listing is bounded and can be narrowed, and says how many it
+ * did not send.
+ */
+export interface GrantableBranchQuery {
+  /** Matches a branch name or the bakery's, anywhere in it. */
+  search?: string
+  limit?: number
+}
+
+export interface GrantableBranchPage {
+  branches: GrantableBranch[]
+  /** How many match, whether or not they fit in this page. */
+  totalItems: number
+}
+
 export interface GrantableBranch {
   id: string
   nameFa: string
   bakeryNameFa: string
 }
+
+/**
+ * How many branches a picker gets at once.
+ *
+ * Twenty is about where a native dropdown stops being a pleasant thing to
+ * thumb through on a phone and starts being a scroll. Below that the whole
+ * list is the best control there is; above it, narrowing beats paging.
+ */
+const BRANCH_PAGE_SIZE = 20
+const MAX_BRANCH_PAGE_SIZE = 100
 
 export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAccessService {
   return {
@@ -108,20 +144,48 @@ export function createPrismaAdminAccessService(prisma: PrismaClient): AdminAcces
       }))
     },
 
-    async listGrantableBranches(tenantId) {
+    async listGrantableBranches(tenantId, query) {
+      const limit = Math.min(Math.max(query?.limit ?? BRANCH_PAGE_SIZE, 1), MAX_BRANCH_PAGE_SIZE)
+      const search = query?.search?.trim()
+      // A branch is found by its own name or by the bakery's, because an
+      // operator granting access thinks in one or the other and rarely knows
+      // which the row was filed under. Persian digits fold to Latin: a keyboard
+      // here produces them by default, and «شعبهٔ ۲» would otherwise never find
+      // «شعبه 2».
+      const where: Prisma.BakeryBranchWhereInput = {
+        tenantId,
+        ...(search && {
+          OR: [
+            { nameFa: { contains: toLatinDigits(search), mode: 'insensitive' } },
+            { nameFa: { contains: search, mode: 'insensitive' } },
+            { bakery: { displayNameFa: { contains: search, mode: 'insensitive' } } },
+          ],
+        }),
+      }
+
       return readTransaction(prisma, tenantId, async (transaction) => {
         // ownership-established: a staff surface gated on admin.access.manage;
         // the tenant comes from the session and is restated on top of RLS.
-        const branches = await transaction.bakeryBranch.findMany({
-          where: { tenantId },
-          select: { id: true, nameFa: true, bakery: { select: { displayNameFa: true } } },
-          orderBy: { nameFa: 'asc' },
-        })
-        return branches.map((branch) => ({
-          id: branch.id,
-          nameFa: branch.nameFa,
-          bakeryNameFa: branch.bakery.displayNameFa,
-        }))
+        const [branches, totalItems] = await Promise.all([
+          transaction.bakeryBranch.findMany({
+            where,
+            select: { id: true, nameFa: true, bakery: { select: { displayNameFa: true } } },
+            orderBy: { nameFa: 'asc' },
+            take: limit,
+          }),
+          // The count is what lets the screen say «۲۰ از ۳۴۰», which is the
+          // difference between a short list and a list somebody should narrow.
+          transaction.bakeryBranch.count({ where }),
+        ])
+
+        return {
+          branches: branches.map((branch) => ({
+            id: branch.id,
+            nameFa: branch.nameFa,
+            bakeryNameFa: branch.bakery.displayNameFa,
+          })),
+          totalItems,
+        }
       })
     },
 

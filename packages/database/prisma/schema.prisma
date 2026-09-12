@@ -1,10 +1,17 @@
 generator client {
-  provider = "prisma-client-js"
+  // Prisma 7's generator. The old `prisma-client-js` wrote into
+  // `node_modules/.prisma`, which meant the client was a side effect of an
+  // install; this one writes where it is told and is imported by path.
+  provider = "prisma-client"
+  output   = "../generated/client"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // No `url` here any more: version 7 refuses it. The connection is the
+  // application's business, handed to the client as a driver adapter, and the
+  // CLI reads its own from `prisma.config.ts`. One fewer place for a schema
+  // file checked into git to imply it knows a production connection string.
 }
 
 enum Currency {

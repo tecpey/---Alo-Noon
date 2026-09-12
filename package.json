@@ -32,7 +32,7 @@
     "@alo-noon/prettier-config": "workspace:*",
     "@alo-noon/typescript-config": "workspace:*",
     "prettier": "^3.5.3",
-    "turbo": "^2.5.3",
+    "turbo": "^2.10.12",
     "typescript": "^5.8.3",
     "vitest": "^4.1.10"
   }

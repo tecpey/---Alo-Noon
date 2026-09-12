@@ -1,37 +1,99 @@
 <p align="center"><a href="./README.md">فارسی</a> · <strong>English</strong></p>
 
-<!--
-Production README logo slot remains unpopulated.
-Founder-approved JPEG raster sources are preserved under assets/brand/source/,
-but none is an approved transparent, slogan-free horizontal hero export.
--->
+<div align="center">
+  <img src="./apps/web/public/brand/logo-lockup.png" width="168" alt="Alo Noon · الو نون" />
+</div>
 
 <div align="center">
   <h1>Alo Noon · الو نون</h1>
-  <p><strong>An API-first, multi-tenant commerce and operations platform for fresh, packaged, premium, and bakery-specific food products—starting with bread in Iran.</strong></p>
+  <p><strong>An API-first, multi-tenant commerce and operations platform for fresh, packaged, premium, and bakery-specific food products — starting with bread in Iran.</strong></p>
   <p>Alo Noon unifies bakery discovery, delivery pricing, production capacity, ordering, financial controls, and a Persian-first customer experience on an auditable, city-aware core.</p>
-  <p><strong>Maturity:</strong> controlled-MVP engineering foundation; not production-ready and not capable of real payments yet.</p>
 </div>
 
 <p align="center">
-  <img src="./docs/assets/badges/api-first.png" width="176" alt="API First capability label" />
-  <img src="./docs/assets/badges/multi-tenant.png" width="176" alt="Multi-Tenant capability label" />
-  <img src="./docs/assets/badges/rls-secured.png" width="176" alt="RLS Secured capability label" />
-  <img src="./docs/assets/badges/atomic-checkout.png" width="176" alt="Atomic Checkout capability label" />
-  <img src="./docs/assets/badges/double-entry-ledger.png" width="176" alt="Double-Entry Ledger capability label" />
-  <img src="./docs/assets/badges/provider-agnostic.png" width="176" alt="Provider Agnostic capability label" />
+  <img src="./docs/assets/badges/api-first.png" width="164" alt="API First capability label" />
+  <img src="./docs/assets/badges/multi-tenant.png" width="164" alt="Multi-Tenant capability label" />
+  <img src="./docs/assets/badges/rls-secured.png" width="164" alt="RLS Secured capability label" />
+  <img src="./docs/assets/badges/atomic-checkout.png" width="164" alt="Atomic Checkout capability label" />
+  <img src="./docs/assets/badges/double-entry-ledger.png" width="164" alt="Double-Entry Ledger capability label" />
+  <img src="./docs/assets/badges/provider-agnostic.png" width="164" alt="Provider Agnostic capability label" />
 </p>
+
+<div align="center">
+
+|                        |                                                                                  |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| **Status**             | Controlled-MVP engineering foundation, tested — not yet running on a server      |
+| **Left before launch** | Live payment and SMS credentials, and a first deployment                         |
+| **Green tests**        | 1,597, including 721 integration tests against real PostgreSQL                   |
+| **Tenant isolation**   | 74 tables under `FORCE ROW LEVEL SECURITY`, with a negative cross-tenant test    |
+| **Ledger**             | Double-entry, enforced by a database trigger; balances are derived, never stored |
+| **Licence**            | Proprietary — no use without written permission                                  |
+
+</div>
 
 > [!IMPORTANT] The product promise is **fresh bread**, never “hot bread.” Only
 > validated, bakery-specific `SIGNATURE_FRESH` variants may claim freshly
-> produced. Four founder-approved raster sources are preserved for provenance,
-> but none is an approved transparent, slogan-free horizontal hero export; the
-> heading above is not a permanent logo substitute. The
-> [brand-asset policy](assets/brand/README.md) records their status and usage
-> limits.
+> produced. The [brand-asset policy](assets/brand/README.md) records the status
+> and usage limits of the founder-approved raster sources.
+
+---
+
+<a id="screens"></a>
+
+## The product, as it runs today
+
+Every image below was taken from this repository: the service running against
+real PostgreSQL, with demonstration data driven through the same domain paths
+production uses — the ledger, capacity reservation, the order state machine —
+and the pages captured untouched. None of it is a mock-up.
+
+<div align="center">
+
+### Customer storefront
+
+<img src="./docs/assets/screenshots/storefront.png" alt="Alo Noon storefront: hero, delivery conditions and bread shelves" />
+
+<sub>Persian and RTL from the ground up; prices in Toman with Persian numerals;
+“fresh from the oven” only on variants the domain permits it for.</sub>
+
+</div>
+
+<table align="center">
+<tr>
+<td width="33%" align="center"><img src="./docs/assets/screenshots/mobile-storefront.png" alt="Storefront on a phone" /><br /><sub><b>Storefront, mobile-first</b></sub></td>
+<td width="33%" align="center"><img src="./docs/assets/screenshots/mobile-signin.png" alt="One-time-code sign-in" /><br /><sub><b>OTP sign-in, no passwords</b></sub></td>
+<td width="33%" align="center"><img src="./docs/assets/screenshots/mobile-admin.png" alt="Operations panel on a phone" /><br /><sub><b>Operations panel, on a phone</b></sub></td>
+</tr>
+</table>
+
+<div align="center">
+
+### Operations panel
+
+<img src="./docs/assets/screenshots/admin-finance.png" alt="Financial report: trial balance, settlement reconciliation and gateway performance" />
+
+<sub>A real trial balance off the double-entry ledger: debits and credits agree,
+and the accounts come from a versioned chart of accounts.</sub>
+
+</div>
+
+<table align="center">
+<tr>
+<td width="50%" align="center"><img src="./docs/assets/screenshots/admin-dashboard.png" alt="Sales dashboard" /><br /><sub><b>Sales dashboard and conversion funnel</b></sub></td>
+<td width="50%" align="center"><img src="./docs/assets/screenshots/admin-orders.png" alt="Order list" /><br /><sub><b>Orders, with a readable public code</b></sub></td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="./docs/assets/screenshots/admin-settlement.png" alt="Partner settlement" /><br /><sub><b>Bakery and courier settlement</b></sub></td>
+<td width="50%" align="center"><img src="./docs/assets/screenshots/admin-deliveries.png" alt="Courier dispatch" /><br /><sub><b>Courier dispatch and trip planning</b></sub></td>
+</tr>
+</table>
+
+---
 
 ## Contents
 
+- [The product, as it runs today](#screens)
 - [Product vision](#product-vision)
 - [Why Alo Noon](#why-alo-noon)
 - [Verified current status](#verified-status)
@@ -364,7 +426,7 @@ credentials, or payment data in public issues.
 | API              | Fastify 5, Zod runtime contracts, OpenAPI 3.1           |
 | Web              | Next.js 16, React 19                                    |
 | Mobile           | Expo 57, React Native 0.86, Persian/RTL design tokens   |
-| Data             | PostgreSQL 16, Prisma 5, forward-only migrations        |
+| Data             | PostgreSQL 16, Prisma 7, forward-only migrations        |
 | Tooling          | pnpm 11.17, Turborepo 2, Vitest 4, ESLint 9, Prettier 3 |
 | CI               | GitHub Actions with a PostgreSQL 16 service             |
 
@@ -378,10 +440,11 @@ apps/
   courier-mobile/      Early Expo courier surface
 packages/
   contracts/           Zod v1 contracts and OpenAPI 3.1
-  database/            Prisma schema, client, 16 migrations, DB tests
+  database/            Prisma schema, client, 39 migrations, DB tests
   domain/              Framework/Prisma-independent invariants
   config/              Validated runtime configuration
   design-tokens/       Shared Persian/RTL visual tokens
+  mobile-ui/           Icons, press feedback and touch targets both apps share
 docs/
   architecture/        Boundaries, ownership, phase records
   decisions/           ADR-0001 through ADR-0010

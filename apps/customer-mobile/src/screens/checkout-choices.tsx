@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 
 import type { DeliveryWindow, QuoteSummary } from '@alo-noon/contracts'
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
+import { touchTarget } from '@alo-noon/mobile-ui'
 import { formatDeliveryWindow, promotionRefusalMessage } from '@alo-noon/domain'
 
 /**
@@ -139,6 +140,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 10,
+    // A radio row landed at about 43 points, a hair under the floor. Stated
+    // rather than left to the sum of a padding and a line height, which is the
+    // kind of arithmetic that quietly changes when the type scale moves.
+    ...touchTarget.min,
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderWidth: 1,
@@ -162,6 +167,7 @@ const styles = StyleSheet.create({
     borderColor: line.subtle,
     borderRadius: 16,
     backgroundColor: surface.card,
+    ...touchTarget.comfortable,
     paddingVertical: 12,
     paddingHorizontal: 14,
     fontSize: 15,
