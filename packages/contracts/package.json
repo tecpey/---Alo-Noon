@@ -17,7 +17,7 @@
     "clean": "rm -f tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "zod": "^3.25.76"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@alo-noon/eslint-config": "workspace:*",

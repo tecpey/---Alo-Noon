@@ -20,17 +20,17 @@
     "clean": "rm -f *.tsbuildinfo"
   },
   "dependencies": {
-    "@eslint/js": "^9.24.0",
-    "@next/eslint-plugin-next": "^15.2.4",
-    "@typescript-eslint/eslint-plugin": "^8.28.0",
-    "@typescript-eslint/parser": "^8.28.0",
+    "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^16.3.4",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
     "eslint-config-prettier": "^10.1.0",
-    "eslint-plugin-perfectionist": "^4.10.0",
+    "eslint-plugin-perfectionist": "^5.11.0",
     "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-unicorn": "^58.0.0",
-    "globals": "^16.0.0",
-    "typescript-eslint": "^8.28.0"
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-unicorn": "^74.0.0",
+    "globals": "^17.12.0",
+    "typescript-eslint": "^8.70.0"
   },
   "peerDependencies": {
     "eslint": "^9.0.0"
