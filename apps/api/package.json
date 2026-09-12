@@ -30,12 +30,12 @@
   "devDependencies": {
     "@alo-noon/eslint-config": "workspace:*",
     "@alo-noon/typescript-config": "workspace:*",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.5.0",
     "@types/nodemailer": "^8.0.1",
     "esbuild": "0.28.2",
-    "eslint": "^9.24.0",
+    "eslint": "^10.10.0",
     "tsx": "^4.23.13",
-    "typescript": "^5.8.3",
-    "vitest": "^4.1.10"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
   }
 }

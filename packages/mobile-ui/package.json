@@ -29,12 +29,12 @@
     "@alo-noon/eslint-config": "workspace:*",
     "@alo-noon/typescript-config": "workspace:*",
     "@types/react": "^19.2.0",
-    "eslint": "^9.24.0",
+    "eslint": "^10.10.0",
     "expo-blur": "~57.0.2",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-svg": "15.15.4",
-    "typescript": "^5.8.3",
-    "vitest": "^4.1.10"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
   }
 }
