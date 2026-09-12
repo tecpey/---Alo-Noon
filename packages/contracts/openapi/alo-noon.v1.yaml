@@ -1586,13 +1586,38 @@ paths:
         exactly that role unable to fill in the one field a branch grant needs. Three
         fields, because everything else about a branch is the catalogue's business and
         none of it helps somebody pick one from a list.
+
+
+        **Bounded, not complete.** A national tenant has thousands of branches and a
+        picker that loads all of them is a picker nobody can use on a phone, so this
+        returns at most `limit` of them — twenty by default. `meta.totalItems` is how
+        many exist in total, and a client that shows the array without comparing the
+        two is telling somebody their branch is not registered. `search` is the only
+        way to reach a branch outside the first page.
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: >-
+            Narrows by branch name or bakery name, case-insensitively, matching
+            Persian and Latin digits alike. At least two characters: one would return
+            most of the tenant and read as a filter that does not work.
+          schema: { type: string, minLength: 2, maxLength: 120 }
+        - name: limit
+          in: query
+          required: false
+          description: How many to return. Twenty when absent.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
       responses:
         '200':
-          description: Branches in this tenant, by name.
+          description: >-
+            Up to `limit` branches in this tenant, by name, with `meta.totalItems`
+            giving the number that match in full.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GrantableBranchListEnvelope' }
+        '400': { description: The search or limit parameter is out of range. }
         '401': { description: A valid staff session is required. }
         '403': { description: The account may not manage access. }
         '503': { description: Access management is temporarily unavailable. }
@@ -4030,9 +4055,21 @@ components:
       properties:
         success: { type: boolean, const: true }
         data:
+          description: At most `limit` branches. Compare its length with meta.totalItems.
           type: array
           items: { $ref: '#/components/schemas/GrantableBranch' }
-        meta: { $ref: '#/components/schemas/ResponseMeta' }
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/ResponseMeta'
+            - type: object
+              required: [totalItems]
+              properties:
+                totalItems:
+                  description: >-
+                    How many branches match in total, which is what tells a client the
+                    array it received is a page rather than the whole list.
+                  type: integer
+                  minimum: 0
     SettlementParty:
       type: string
       enum: [BAKERY, COURIER]
