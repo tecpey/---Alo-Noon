@@ -1,37 +1,99 @@
 <p align="center"><strong>فارسی</strong> · <a href="./README.en.md">English</a></p>
 
-<!--
-Production README logo slot remains unpopulated.
-Founder-approved JPEG raster sources are preserved under assets/brand/source/,
-but none is an approved transparent, slogan-free horizontal hero export.
--->
+<div align="center">
+  <img src="./apps/web/public/brand/logo-lockup.png" width="168" alt="الو نون · Alo Noon" />
+</div>
 
 <div align="center" dir="rtl">
   <h1>الو نون · Alo Noon</h1>
-  <p><strong>پلتفرم API-first و چندمستاجریِ تجارت و عملیات برای نان تازه، بسته‌بندی‌شده و محصولات ویژه نانوایی—با شروع از بازار ایران.</strong></p>
+  <p><strong>پلتفرم API-first و چندمستاجریِ تجارت و عملیات برای نان تازه، بسته‌بندی‌شده و محصولات ویژه نانوایی — با شروع از بازار ایران.</strong></p>
   <p>الو نون کشف نانوایی، قیمت‌گذاری ارسال، ظرفیت تولید، سفارش، عملیات مالی و تجربهٔ فارسی مشتری را روی یک هستهٔ قابل‌ممیزی و شهرمحور یکپارچه می‌کند.</p>
-  <p><strong>وضعیت بلوغ:</strong> زیرساخت مهندسی MVP کنترل‌شده؛ هنوز آمادهٔ بهره‌برداری production یا پرداخت واقعی نیست.</p>
 </div>
 
 <p align="center">
-  <img src="./docs/assets/badges/api-first.png" width="176" alt="برچسب قابلیت API First" />
-  <img src="./docs/assets/badges/multi-tenant.png" width="176" alt="برچسب قابلیت Multi-Tenant" />
-  <img src="./docs/assets/badges/rls-secured.png" width="176" alt="برچسب قابلیت RLS Secured" />
-  <img src="./docs/assets/badges/atomic-checkout.png" width="176" alt="برچسب قابلیت Atomic Checkout" />
-  <img src="./docs/assets/badges/double-entry-ledger.png" width="176" alt="برچسب قابلیت Double-Entry Ledger" />
-  <img src="./docs/assets/badges/provider-agnostic.png" width="176" alt="برچسب قابلیت Provider Agnostic" />
+  <img src="./docs/assets/badges/api-first.png" width="164" alt="برچسب قابلیت API First" />
+  <img src="./docs/assets/badges/multi-tenant.png" width="164" alt="برچسب قابلیت Multi-Tenant" />
+  <img src="./docs/assets/badges/rls-secured.png" width="164" alt="برچسب قابلیت RLS Secured" />
+  <img src="./docs/assets/badges/atomic-checkout.png" width="164" alt="برچسب قابلیت Atomic Checkout" />
+  <img src="./docs/assets/badges/double-entry-ledger.png" width="164" alt="برچسب قابلیت Double-Entry Ledger" />
+  <img src="./docs/assets/badges/provider-agnostic.png" width="164" alt="برچسب قابلیت Provider Agnostic" />
 </p>
+
+<div align="center" dir="rtl">
+
+| &nbsp;                   | &nbsp;                                                            |
+| ------------------------ | ----------------------------------------------------------------- |
+| **وضعیت**                | زیرساخت مهندسی MVP، کنترل‌شده و تست‌شده — هنوز روی سرور اجرا نشده |
+| **آنچه می‌ماند تا لانچ** | اتصال به درگاه و پیامک واقعی، و اولین استقرار روی سرور            |
+| **تست‌های سبز**          | ۱٬۵۹۷ تست، شامل ۷۲۱ تست یکپارچگی روی PostgreSQL واقعی             |
+| **جداییِ مستاجرها**      | ۷۴ جدول با `FORCE ROW LEVEL SECURITY` و تست منفیِ cross-tenant    |
+| **دفتر مالی**            | دوطرفه، با trigger پایگاه داده؛ مانده مشتق می‌شود، ذخیره نمی‌شود  |
+| **پروانهٔ استفاده**      | اختصاصی — بدون مجوز کتبی قابل استفاده نیست                        |
+
+</div>
 
 > [!IMPORTANT] وعدهٔ محصول «نان تازه» است، نه «نان داغ». فقط variantهای
 > نانوایی‌محور و اعتبارسنجی‌شدهٔ `SIGNATURE_FRESH` می‌توانند ادعای تولید تازه
-> داشته باشند. چهار منبع رستریِ تأییدشده توسط بنیان‌گذار برای ثبت منشأ در مخزن
-> نگهداری می‌شوند، اما هیچ‌کدام خروجی شفاف، افقی و بدون شعارِ مناسب بخش آغازین
-> README نیستند؛ عنوان بالا جایگزین دائمی لوگو نیست.
-> [سیاست دارایی‌های برند](assets/brand/README.md) وضعیت و محدودیت استفاده را
-> مشخص می‌کند.
+> داشته باشند. [سیاست دارایی‌های برند](assets/brand/README.md) وضعیت و محدودیت
+> استفادهٔ منابع رستریِ تأییدشدهٔ بنیان‌گذار را مشخص می‌کند.
+
+---
+
+<a id="screens"></a>
+
+## محصول، همان‌طور که امروز اجرا می‌شود
+
+تصاویر زیر از همین مخزن گرفته شده‌اند: سرویس روی PostgreSQL واقعی بالا آمده،
+دادهٔ نمایشی از میان همان مسیرهای دامنه‌ای عبور کرده که production استفاده
+می‌کند — ledger، رزرو ظرفیت، ماشین وضعیت سفارش — و صفحه‌ها بدون هیچ دست‌کاری
+عکس‌برداری شده‌اند. هیچ‌کدام mockup نیست.
+
+<div align="center" dir="rtl">
+
+### ویترین مشتری
+
+<img src="./docs/assets/screenshots/storefront.png" alt="ویترین الو نون: هیرو، شرایط تحویل و قفسه‌های نان" />
+
+<sub>فارسی و RTL از پایه؛ قیمت‌ها به تومان با ارقام فارسی؛ «تازه از تنور» فقط
+روی variantهایی که دامنه اجازه‌اش را می‌دهد.</sub>
+
+</div>
+
+<table align="center">
+<tr>
+<td width="33%" align="center"><img src="./docs/assets/screenshots/mobile-storefront.png" alt="ویترین روی گوشی" /><br /><sub><b>ویترین، موبایل‌فرست</b></sub></td>
+<td width="33%" align="center"><img src="./docs/assets/screenshots/mobile-signin.png" alt="ورود با کد یک‌بارمصرف" /><br /><sub><b>ورود با OTP، بدون رمز عبور</b></sub></td>
+<td width="33%" align="center"><img src="./docs/assets/screenshots/mobile-admin.png" alt="پنل عملیات روی گوشی" /><br /><sub><b>پنل عملیات، روی گوشی</b></sub></td>
+</tr>
+</table>
+
+<div align="center" dir="rtl">
+
+### پنل عملیات
+
+<img src="./docs/assets/screenshots/admin-finance.png" alt="گزارش مالی: تراز آزمایشی، تطبیق تسویه و عملکرد درگاه‌ها" />
+
+<sub>تراز آزمایشی واقعی از دفتر دوطرفه: جمع بدهکار و بستانکار برابرند، و حساب‌ها
+از chart of accounts نسخه‌دار می‌آیند.</sub>
+
+</div>
+
+<table align="center">
+<tr>
+<td width="50%" align="center"><img src="./docs/assets/screenshots/admin-dashboard.png" alt="داشبورد فروش" /><br /><sub><b>داشبورد فروش و قیف تبدیل</b></sub></td>
+<td width="50%" align="center"><img src="./docs/assets/screenshots/admin-orders.png" alt="فهرست سفارش‌ها" /><br /><sub><b>سفارش‌ها، با شناسهٔ قابل‌خواندن</b></sub></td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="./docs/assets/screenshots/admin-settlement.png" alt="تسویه با شرکا" /><br /><sub><b>تسویه با نانوایی و پیک</b></sub></td>
+<td width="50%" align="center"><img src="./docs/assets/screenshots/admin-deliveries.png" alt="اعزام پیک" /><br /><sub><b>اعزام پیک و برنامهٔ سفر</b></sub></td>
+</tr>
+</table>
+
+---
 
 ## فهرست مطالب
 
+- [محصول، همان‌طور که امروز اجرا می‌شود](#screens)
 - [چشم‌انداز محصول](#product-vision)
 - [چرا الو نون](#why-alo-noon)
 - [وضعیت فعلیِ تأییدشده](#verified-status)
@@ -100,9 +162,20 @@ automation آن هنوز ساخته نشده. اتصال فروشگاه‌ها �
 
 ## وضعیت فعلیِ تأییدشده
 
-این جدول وضعیت `main` پس از merge شدن Payment Execution Orchestrator را نشان
-می‌دهد. «بنیاد» یعنی invariant و persistence وجود دارد، اما جریان production
-کامل یا UI عملیاتی هنوز موجود نیست.
+«کامل» در این جدول یعنی مسیر ساخته شده، تست دارد و روی PostgreSQL واقعی اجرا
+می‌شود. «بنیاد» یعنی invariant و persistence وجود دارد اما جریان production کامل
+یا UI عملیاتی هنوز نه. هیچ ردیفی بر اساس قصد علامت نخورده است.
+
+آنچه این ادعاها را پشتیبانی می‌کند، و در هر CI قابل بازتولید است:
+
+| شاهد                        | عدد                                                            |
+| --------------------------- | -------------------------------------------------------------- |
+| تست‌های خودکار              | ۱٬۵۹۷ — که ۷۲۱ تای آن یکپارچگی روی PostgreSQL واقعی است        |
+| migrationهای forward-only   | ۳۹                                                             |
+| مدل‌های دامنه در schema     | ۸۴                                                             |
+| جداول با forced RLS         | ۷۴ (تنها استثنا `TenantDomain` است که بوت‌استرپ از آن می‌گذرد) |
+| مسیرهای HTTP نسخه‌دار       | ۷۰، همه پشت قرارداد Zod و OpenAPI 3.1                          |
+| gateهای اجباری پیش از merge | ۵ — typecheck، lint، test، format و build                      |
 
 | حوزه                           | وضعیت                                | شواهد و مرز دقیق                                                                                                               |
 | ------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -381,10 +454,11 @@ apps/
   courier-mobile/      Early Expo courier surface
 packages/
   contracts/           Zod v1 contracts and OpenAPI 3.1
-  database/            Prisma schema, client, 16 migrations, DB tests
+  database/            Prisma schema, client, 39 migrations, DB tests
   domain/              Framework/Prisma-independent invariants
   config/              Validated runtime configuration
   design-tokens/       Shared Persian/RTL visual tokens
+  mobile-ui/           Icons, press feedback and touch targets both apps share
 docs/
   architecture/        Boundaries, ownership, phase records
   decisions/           ADR-0001 through ADR-0010
