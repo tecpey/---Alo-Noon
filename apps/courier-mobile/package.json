@@ -33,8 +33,8 @@
   "devDependencies": {
     "@alo-noon/eslint-config": "workspace:*",
     "@types/react": "^19.2.0",
-    "eslint": "^9.24.0",
-    "typescript": "^5.8.3",
-    "vitest": "^4.1.10"
+    "eslint": "^10.10.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
   }
 }
