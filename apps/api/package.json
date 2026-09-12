@@ -25,7 +25,7 @@
     "@prisma/client": "^7.10.0",
     "@sentry/node": "^10.73.0",
     "fastify": "^5.12.3",
-    "nodemailer": "^7.0.13"
+    "nodemailer": "^10.0.1"
   },
   "devDependencies": {
     "@alo-noon/eslint-config": "workspace:*",
