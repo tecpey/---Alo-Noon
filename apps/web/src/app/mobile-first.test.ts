@@ -137,6 +137,20 @@ describe('the phone the shop is held in', () => {
     expect(insetUsers.length).toBeGreaterThan(2)
   })
 
+  it('asks the browser for the insets, without which the rule above is decorative', () => {
+    // The test above passed for as long as the insets existed, and they did
+    // nothing. Safari's default viewport is `viewport-fit=auto`: it fits the
+    // page inside the safe area itself and reports all four `env()` values as
+    // `0px`. So every rule written for a notched iPhone — each one commented
+    // as such — computed to zero on a notched iPhone, and the only way to see
+    // it was to hold one.
+    //
+    // Checking the stylesheet and the viewport separately is what let them
+    // disagree, so they are checked together here.
+    const layout = readFileSync(join(STYLES_ROOT, 'app/layout.tsx'), 'utf8')
+    expect(layout).toMatch(/viewportFit:\s*'cover'/)
+  })
+
   it('stops a sideways drag on a scroller from being read as the back gesture', () => {
     // A table dragged past its last column, or a chip rail flicked past its last
     // chip, hands the gesture to the browser — which navigates away from the

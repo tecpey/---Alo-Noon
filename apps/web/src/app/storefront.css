@@ -45,6 +45,25 @@
   overflow: clip;
 }
 
+/*
+  Held sideways, a notched iPhone puts 44px of sensor housing over one edge of
+  the page.
+
+  The header and the footer each carry their own inset rather than inheriting
+  one, because their backgrounds are full-bleed and have to stay that way — a
+  sticky bar padded by its parent leaves a strip of the wrong colour beside it.
+  Everything between them is ordinary content, so it is enough to push it clear
+  here, once, instead of on each section.
+
+  Physical properties on purpose: `inline-start` follows the writing direction
+  and this page is RTL, but the notch is on whichever side the hardware puts
+  it. Both are `0px` in portrait and on every desktop.
+*/
+.app-frame > main {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
 @media (min-width: 56.25rem) {
   .app-frame {
     margin-block: clamp(0px, 2vw, 28px);

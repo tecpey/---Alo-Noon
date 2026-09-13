@@ -36,6 +36,22 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: colors.paper,
   colorScheme: 'light',
+  /**
+   * The switch that makes every `env(safe-area-inset-*)` in the stylesheets
+   * mean something.
+   *
+   * Safari's default is `auto`, which insets the whole page inside the safe
+   * area and reports all four values as `0px`. So the header's inset, the
+   * footer's clearance over the home indicator and the basket's checkout
+   * button — all written against a notched iPhone, all commented as such —
+   * computed to zero on exactly the device they were written for, and the
+   * stylesheet looked correct while doing nothing. `cover` hands the page the
+   * full screen and the real inset values, which is what that CSS expects.
+   *
+   * It is only safe to set because every edge-pinned surface already carries
+   * its own inset; `main` gains one below for the content between them.
+   */
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
@@ -60,6 +76,20 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
           type="font/woff2"
           crossOrigin="anonymous"
         />
+        {/*
+          Deprecated, and still load-bearing on the one platform it names.
+
+          `appleWebApp.capable` above no longer emits this: Next.js switched to
+          the standard `mobile-web-app-capable` to silence a Chrome warning, and
+          iOS does not read that name. Standalone display survives the change
+          because Safari takes it from the manifest instead — but two things do
+          not. iOS paints a launch image only when this tag is present, and this
+          tag is also what Safari falls back to when the manifest fails to load,
+          which on a slow Iranian connection is not a hypothetical.
+
+          Written by hand because the framework will not write it.
+        */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
         {/*
           The palette is emitted from the token package rather than written into
           a stylesheet, so the web and the two mobile apps cannot drift apart:
