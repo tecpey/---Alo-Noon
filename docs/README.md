@@ -28,7 +28,8 @@ and its factually equivalent English edition [`README.en.md`](../README.en.md).
 5. [Bakery partner model](./product/BAKERY_PARTNER_MODEL.md)
 6. [Courier and delivery model](./product/COURIER_AND_DELIVERY_MODEL.md)
 7. [CRM foundation](./product/CRM_FOUNDATION.md)
-8. [MVP roadmap](./07-roadmap/MVP_ROADMAP_FA.md)
+8. [Alo Noon on iPhone](./product/IOS_DISTRIBUTION.md)
+9. [MVP roadmap](./07-roadmap/MVP_ROADMAP_FA.md)
 
 ### Running the service
 
