@@ -23,6 +23,7 @@ import {
   type CommerceRepository,
 } from './modules/commerce.js'
 import { registerAddressRoutes, type AddressRepository } from './modules/addresses.js'
+import type { RoutingService } from './modules/routing.js'
 import { registerPushDeviceRoutes, type PushDeviceDependencies } from './modules/push-devices.js'
 import { registerWalletRoutes, type WalletDependencies } from './modules/wallet.js'
 import {
@@ -102,6 +103,17 @@ export interface AppOptions {
   auth?: AuthDependencies
   commerceRepository?: CommerceRepository
   addressRepository?: AddressRepository
+  /**
+   * Place search and reverse geocoding for the address form. Optional: a tenant
+   * without mapping still takes orders from the satellite position, and the
+   * routes answer `available: false` rather than disappearing, so the interface
+   * knows to stop offering a search box instead of showing one that fails.
+   */
+  placesService?: RoutingService
+  cityBias?: (
+    tenantId: string,
+    cityId: string,
+  ) => Promise<{ latitude: number; longitude: number } | null>
   pushDevices?: Omit<PushDeviceDependencies, 'auth'>
   wallet?: Omit<WalletDependencies, 'auth'>
   walletTransfers?: Omit<WalletTransferDependencies, 'auth'>
@@ -300,7 +312,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     registerCommerceRoutes(app, commerce)
   }
   if (options.auth && options.addressRepository) {
-    registerAddressRoutes(app, { repository: options.addressRepository, auth: options.auth })
+    registerAddressRoutes(app, {
+      repository: options.addressRepository,
+      auth: options.auth,
+      ...(options.placesService && { places: options.placesService }),
+      ...(options.cityBias && { cityBias: options.cityBias }),
+    })
   }
   if (options.auth && options.orderRepository) {
     registerOrderRoutes(app, { repository: options.orderRepository, auth: options.auth })

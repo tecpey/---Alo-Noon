@@ -116,13 +116,130 @@ export interface RouteResult {
   readonly reasonCode?: string
 }
 
+/* ------------------------------------------------------------------ places */
+
+/**
+ * Turning what somebody types into somewhere a courier can be sent.
+ *
+ * This exists because of a gap that does not show up in a feature list: a
+ * customer's coordinates were only ever obtainable from `navigator.geolocation`.
+ * Deny the permission, or stand inside a building where the fix never arrives,
+ * and there was no second way to give an address — the order could not be
+ * placed at all. Search closes that, and reverse geocoding is what makes a
+ * coordinate reviewable before somebody commits to it: a pin nobody can read
+ * back as a street name is a pin nobody can check.
+ *
+ * Both are capabilities of the same mapping provider that already does routing,
+ * under the same key, so they hang off `RoutingProvider` rather than
+ * introducing a second configuration for an operator to keep in step.
+ */
+
+/** Somewhere the customer might mean, as the provider describes it. */
+export interface PlaceCandidate {
+  /** What the provider calls it — a shop, a square, a street. */
+  readonly title: string
+  /** The readable address line, when the provider gives one separately. */
+  readonly address: string | null
+  readonly coordinates: DeliveryCoordinates
+  /**
+   * How far from the bias point, when the provider reports it. Kept because it
+   * is the one number that lets a customer tell two identically-named streets
+   * apart, and every Iranian city has several.
+   */
+  readonly distanceMetres: number | null
+}
+
+export type PlaceSearchOutcome =
+  /** The provider answered, with at least one candidate. */
+  | 'FOUND'
+  /** The provider answered, and knows nowhere by that name. */
+  | 'EMPTY'
+  /** No verdict: unreachable, timed out, rate limited, or unreadable. */
+  | 'UNAVAILABLE'
+  /** This provider does not do search at all. Distinct from an outage. */
+  | 'UNSUPPORTED'
+
+export interface PlaceSearchResult {
+  readonly outcome: PlaceSearchOutcome
+  readonly candidates?: readonly PlaceCandidate[]
+  /** Stable, non-secret code, safe to show an operator. */
+  readonly reasonCode?: string
+}
+
+export interface PlaceSearchRequest {
+  /** What the customer typed. */
+  readonly term: string
+  /**
+   * Where to look first. Without it a search for a common street name answers
+   * with the one in Tehran, whichever city the customer is ordering in.
+   */
+  readonly bias?: DeliveryCoordinates
+  readonly timeoutMs: number
+  readonly configuration: RoutingProviderConfigurationView
+  readonly credential: ResolvedRoutingCredential
+}
+
+export type ReverseGeocodeOutcome = 'RESOLVED' | 'EMPTY' | 'UNAVAILABLE' | 'UNSUPPORTED'
+
+export interface ReverseGeocodeResult {
+  readonly outcome: ReverseGeocodeOutcome
+  /** One line, already assembled by the provider, for a human to check. */
+  readonly formattedAddress?: string
+  readonly reasonCode?: string
+}
+
+export interface ReverseGeocodeRequest {
+  readonly coordinates: DeliveryCoordinates
+  readonly timeoutMs: number
+  readonly configuration: RoutingProviderConfigurationView
+  readonly credential: ResolvedRoutingCredential
+}
+
+/**
+ * `searchPlaces` and `reverseGeocode` are optional, and the SPI version stays
+ * at 1 rather than moving to 2.
+ *
+ * That is deliberate, and it is about stored state rather than taste. Each
+ * tenant's `RoutingProviderConfiguration` row records the SPI version it was
+ * configured against, and the registry key is built from it — so raising the
+ * constant would stop every existing configuration resolving, and the failure
+ * would not be loud. `distanceFor` treats an unresolvable adapter as an outage,
+ * which is correct for an outage: every tenant would quietly drop to
+ * straight-line estimates and keep selling bread at slightly wrong fares.
+ *
+ * An added optional method breaks no existing adapter, so version 1 still
+ * describes them accurately. A caller asks whether the capability is there.
+ */
 export interface RoutingProvider {
   readonly code: string
   readonly adapterVersion: string
   readonly spiVersion: RoutingAdapterSpiVersion
   readonly testOnly?: boolean
   route(request: RouteRequest): Promise<RouteResult>
+  searchPlaces?(request: PlaceSearchRequest): Promise<PlaceSearchResult>
+  reverseGeocode?(request: ReverseGeocodeRequest): Promise<ReverseGeocodeResult>
 }
+
+/**
+ * The shortest term worth sending to a paid API.
+ *
+ * One or two characters match most of a city and cost a call to say so. This is
+ * enforced at the edge as well; the constant lives here so the rule has one
+ * home rather than a number repeated in a route handler and a form.
+ */
+export const PLACE_SEARCH_MIN_TERM_LENGTH = 3
+
+/** Longer than any real Iranian address line, short enough to bound a query. */
+export const PLACE_SEARCH_MAX_TERM_LENGTH = 120
+
+/**
+ * How many candidates a customer is shown.
+ *
+ * Not a page size — there is no second page. Somebody choosing where their
+ * bread goes scans a short list and picks; a long one is answered by typing a
+ * better term, not by scrolling.
+ */
+export const PLACE_SEARCH_MAX_RESULTS = 8
 
 export interface RoutingProviderRegistry {
   resolve(request: {

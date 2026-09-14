@@ -13,6 +13,10 @@ import {
   type RoutingProvider,
   type RoutingProviderRegistry,
   type RoutingRestrictions,
+  type PlaceSearchResult,
+  type ResolvedRoutingCredential,
+  type ReverseGeocodeResult,
+  type RoutingProviderConfigurationView,
 } from '@alo-noon/domain'
 
 /**
@@ -44,6 +48,11 @@ export interface RouteQuery {
   restrictions?: RoutingRestrictions
 }
 
+export interface PlaceSearchQuery {
+  term: string
+  bias?: DeliveryCoordinates
+}
+
 export interface RoutingService {
   /**
    * Never throws for a routing problem. A caller pricing an order needs a
@@ -51,6 +60,20 @@ export interface RoutingService {
    * reason code rather than as an exception it would have to catch and guess at.
    */
   distanceFor(tenantId: string, query: RouteQuery, now: Date): Promise<Readonly<RouteDistance>>
+  /**
+   * Somewhere the customer might mean, from what they typed.
+   *
+   * Also never throws. Unlike a distance there is no fallback to compute — an
+   * unconfigured tenant genuinely has no way to search — so the absence comes
+   * back as UNSUPPORTED, and the caller's job is to leave the existing
+   * satellite-position path visible rather than to substitute a guess.
+   */
+  searchPlaces(tenantId: string, query: PlaceSearchQuery): Promise<Readonly<PlaceSearchResult>>
+  /** The address at a point, for a customer to read back before committing. */
+  reverseGeocode(
+    tenantId: string,
+    coordinates: DeliveryCoordinates,
+  ): Promise<Readonly<ReverseGeocodeResult>>
 }
 
 export interface PrismaRoutingOptions {
@@ -184,6 +207,109 @@ export function createPrismaRoutingService(
       await persistEstimate(prisma, tenantId, where, distance, now)
       return distance
     },
+
+    async searchPlaces(tenantId, query) {
+      return withProvider<PlaceSearchResult>(
+        prisma,
+        options,
+        tenantId,
+        (provider) => provider.searchPlaces !== undefined,
+        (unavailable) => ({ outcome: unavailable, reasonCode: `PLACES_${unavailable}` }),
+        async (provider, configuration, credential) =>
+          provider.searchPlaces!({
+            term: query.term,
+            ...(query.bias !== undefined && { bias: query.bias }),
+            timeoutMs,
+            configuration,
+            credential,
+          }),
+      )
+    },
+
+    async reverseGeocode(tenantId, coordinates) {
+      return withProvider<ReverseGeocodeResult>(
+        prisma,
+        options,
+        tenantId,
+        (provider) => provider.reverseGeocode !== undefined,
+        (unavailable) => ({ outcome: unavailable, reasonCode: `REVERSE_${unavailable}` }),
+        async (provider, configuration, credential) =>
+          provider.reverseGeocode!({ coordinates, timeoutMs, configuration, credential }),
+      )
+    },
+  }
+}
+
+/**
+ * Everything both place calls do before and after the provider itself.
+ *
+ * Resolve the tenant's configuration, resolve the adapter, resolve the
+ * credential, invoke, and dispose — the same sequence `distanceFor` runs
+ * inline. It is factored out here rather than copied twice because the step
+ * that matters is the last one: the credential holds the tenant's API key in
+ * memory and is wiped in a `finally`. Two hand-written copies of that is two
+ * chances to forget it in one of them.
+ *
+ * The distinction this preserves is between a tenant that has not bought
+ * mapping (UNSUPPORTED — there is nothing to offer, and the interface should
+ * stop offering it) and one whose provider is momentarily unreachable
+ * (UNAVAILABLE — worth saying so and worth trying again). Collapsing them would
+ * make an outage look like a missing feature to the customer.
+ */
+async function withProvider<T>(
+  prisma: PrismaClient,
+  options: PrismaRoutingOptions,
+  tenantId: string,
+  supports: (provider: RoutingProvider) => boolean,
+  refuse: (outcome: 'UNSUPPORTED' | 'UNAVAILABLE') => T,
+  invoke: (
+    provider: RoutingProvider,
+    configuration: RoutingProviderConfigurationView,
+    credential: ResolvedRoutingCredential,
+  ) => Promise<T>,
+): Promise<Readonly<T>> {
+  const configuration = await loadConfiguration(prisma, tenantId, options.environment)
+  if (!configuration) return Object.freeze(refuse('UNSUPPORTED'))
+
+  let provider: RoutingProvider
+  try {
+    provider = options.registry.resolve({
+      providerCode: configuration.providerCode,
+      adapterVersion: configuration.adapterVersion,
+      adapterSpiVersion: configuration.adapterSpiVersion as RoutingAdapterSpiVersion,
+      environment: options.environment,
+    })
+  } catch {
+    return Object.freeze(refuse('UNAVAILABLE'))
+  }
+  if (!supports(provider)) return Object.freeze(refuse('UNSUPPORTED'))
+
+  const credential = await options.credentialResolver
+    .resolve(configuration.credentialReference, tenantId, configuration.providerCode)
+    .catch(() => null)
+  if (!credential) return Object.freeze(refuse('UNAVAILABLE'))
+
+  try {
+    return Object.freeze(
+      await invoke(
+        provider,
+        {
+          id: configuration.id,
+          tenantId,
+          providerCode: configuration.providerCode,
+          adapterVersion: configuration.adapterVersion,
+          adapterSpiVersion: configuration.adapterSpiVersion as RoutingAdapterSpiVersion,
+          environment: options.environment,
+          credentialReference: configuration.credentialReference,
+        },
+        credential,
+      ),
+    )
+  } catch {
+    // An adapter that threw rather than answering is still just an outage.
+    return Object.freeze(refuse('UNAVAILABLE'))
+  } finally {
+    credential.dispose()
   }
 }
 

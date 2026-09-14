@@ -2,7 +2,12 @@
 
 import { revalidatePath } from 'next/cache'
 
-import type { AddressSummary, OrderSummary, QuoteSummary } from '@alo-noon/contracts'
+import type {
+  AddressSummary,
+  OrderSummary,
+  PlaceCandidate,
+  QuoteSummary,
+} from '@alo-noon/contracts'
 
 import { derivedIdempotencyKey, translateProviderError } from './admin-format'
 import { normalizeMobile } from './shop-format'
@@ -13,6 +18,8 @@ import {
   initializePayment,
   placeOrder,
   readCart,
+  reverseGeocode,
+  searchPlaces,
 } from './shop-api'
 import { resolveCheckoutCity } from './storefront-data'
 
@@ -244,4 +251,57 @@ function shortfallFrom(details: unknown): string | null {
   if (!shortfall || typeof shortfall !== 'object') return null
   const amount = (shortfall as { amount?: unknown }).amount
   return typeof amount === 'string' && /^\d+$/.test(amount) ? amount : null
+}
+
+/**
+ * Looking a place up by name, on behalf of the address form.
+ *
+ * A server action rather than a call from the browser, for the same reason
+ * every other read here is: the session cookie is HTTP-only and the API origin
+ * is not public. The city comes from the checkout session rather than the
+ * caller, so a client cannot bias a search towards a city this tenant does not
+ * serve.
+ *
+ * The three outcomes stay distinct all the way to the form, because each asks
+ * something different of the customer: `unsupported` means stop offering search
+ * (nothing they do will help), an empty list means try different words, and a
+ * failure means try again shortly.
+ */
+export type PlaceSearchOutcome =
+  | { state: 'results'; candidates: PlaceCandidate[] }
+  | { state: 'unsupported' }
+  | { state: 'failed'; message: string }
+
+export async function searchPlacesAction(term: string): Promise<PlaceSearchOutcome> {
+  const trimmed = term.trim()
+  // The same floor the contract and the provider enforce. Checked here too so a
+  // keystroke short of it never becomes a request at all.
+  if (trimmed.length < 3) return { state: 'results', candidates: [] }
+
+  const city = await resolveCheckoutCity()
+  const result = await searchPlaces({
+    term: trimmed,
+    ...(city && { cityId: city.id }),
+  })
+  if (!result.ok) {
+    return { state: 'failed', message: 'جست‌وجوی نشانی در دسترس نیست. کمی بعد دوباره تلاش کنید.' }
+  }
+  if (!result.data.available) return { state: 'unsupported' }
+  return { state: 'results', candidates: result.data.candidates }
+}
+
+/**
+ * What is at this point, for the customer to check before saving it.
+ *
+ * Returns null rather than a message on every failure: this is a convenience
+ * shown beside a position the customer already has, and an error about it would
+ * be an alarm about something that does not block them.
+ */
+export async function reverseGeocodeAction(
+  latitude: number,
+  longitude: number,
+): Promise<string | null> {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+  const result = await reverseGeocode({ latitude, longitude })
+  return result.ok ? result.data.formattedAddress : null
 }

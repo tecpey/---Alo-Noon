@@ -216,6 +216,72 @@ paths:
               schema: { $ref: '#/components/schemas/AddressEnvelope' }
         '409': { description: Idempotency key payload conflict. }
         '422': { description: Coordinates are unserviceable or ambiguous. }
+  /api/v1/places/search:
+    get:
+      operationId: searchPlaces
+      summary: Find a delivery point by name, for customers without a satellite fix.
+      description: >
+        The second way to obtain coordinates. Where `navigator.geolocation` is
+        refused or never resolves, this is what lets an address be given at all.
+        Every call spends the tenant's mapping quota, so the term has a floor and
+        the route is rate limited well below the global allowance.
+        `data.available` false means the tenant has no mapping provider
+        configured and the search should not be offered; it is not the same as an
+        empty `candidates`, which means the provider knows nowhere by that name.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: term
+          required: true
+          schema: { type: string, minLength: 3, maxLength: 120 }
+          description: What the customer typed, trimmed before it is measured.
+        - in: query
+          name: cityId
+          required: false
+          schema: { type: string, format: uuid }
+          description: >
+            Biases results towards the tenant's branches in that city. Without
+            it a common street name answers with the one in Tehran.
+      responses:
+        '200':
+          description: Candidates, possibly none, or the capability being absent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaceSearchEnvelope' }
+        '400': { description: The term is shorter or longer than the allowed range. }
+        '401': { description: A valid customer session is required. }
+        '429': { description: Too many searches; the mapping quota is protected. }
+        '503': { description: The mapping provider is configured but unreachable. }
+  /api/v1/places/reverse:
+    get:
+      operationId: reverseGeocodePoint
+      summary: The address at a point, for the customer to check before saving it.
+      description: >
+        `formattedAddress` is null whenever the provider did not return a whole
+        line. Nothing is assembled from parts: the customer reads this back to
+        decide whether the pin is their house, so a plausible but wrong sentence
+        is worse than an honest blank. Coordinates outside the serviceable box
+        are refused here rather than paid for.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: latitude
+          required: true
+          schema: { type: number, minimum: 35, maximum: 38.5 }
+        - in: query
+          name: longitude
+          required: true
+          schema: { type: number, minimum: 49, maximum: 54.5 }
+      responses:
+        '200':
+          description: The address line, or null, or the capability being absent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReverseGeocodeEnvelope' }
+        '400': { description: Coordinates are missing or outside the serviceable box. }
+        '401': { description: A valid customer session is required. }
+        '429': { description: Too many lookups; the mapping quota is protected. }
+        '503': { description: The mapping provider is configured but unreachable. }
   /api/v1/cart/items/{offeringId}:
     parameters:
       - in: path
@@ -2521,6 +2587,63 @@ components:
         data:
           type: array
           items: { $ref: '#/components/schemas/AddressSummary' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    PlaceCandidate:
+      type: object
+      additionalProperties: false
+      required: [title, address, latitude, longitude, distanceMetres]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        address:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 500
+        latitude: { type: number, minimum: 35, maximum: 38.5 }
+        longitude: { type: number, minimum: 49, maximum: 54.5 }
+        distanceMetres:
+          type: [integer, 'null']
+          minimum: 0
+          description: >
+            From the search bias, when the provider reports it. The one number
+            that separates two identically-named streets.
+    PlaceSearchResult:
+      type: object
+      additionalProperties: false
+      required: [available, candidates]
+      properties:
+        available:
+          type: boolean
+          description: >
+            False when the tenant has no mapping provider configured, which the
+            interface should treat as "do not offer search" rather than as "no
+            results".
+        candidates:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/PlaceCandidate' }
+    PlaceSearchEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/PlaceSearchResult' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    ReverseGeocodeResult:
+      type: object
+      additionalProperties: false
+      required: [available, formattedAddress]
+      properties:
+        available: { type: boolean }
+        formattedAddress:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 500
+    ReverseGeocodeEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/ReverseGeocodeResult' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
     OrderCreate:
       type: object

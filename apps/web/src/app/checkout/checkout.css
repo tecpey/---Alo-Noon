@@ -178,6 +178,68 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
+/* The way in that always works, so it reads as the primary one: the position
+   button below needs a permission the customer may refuse. */
+.address-form__search {
+  display: grid;
+  gap: 0.4rem;
+}
+.address-form__hint {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+/*
+  A short list, never a scroller.
+
+  On a phone this sits between the field being typed into and the rest of the
+  form, and a fixed-height scrolling box there traps the page scroll under a
+  thumb that was trying to reach the button below it. The provider is capped at
+  eight results for the same reason: the answer to a list that is too long is a
+  better search term, not a taller box.
+*/
+.address-form__results {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.address-form__results button {
+  /* Full width so the target is the row, not the words in it. */
+  inline-size: 100%;
+  display: grid;
+  gap: 0.15rem;
+  /* Comfortably past the 44px floor even for a one-line result. */
+  min-block-size: var(--touch-comfortable);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--duration-base) var(--easing-standard);
+}
+.address-form__results button:hover,
+.address-form__results button:focus-visible {
+  background: var(--surface-sunken);
+}
+.address-form__result-title {
+  font-weight: 600;
+}
+.address-form__result-address,
+.address-form__result-distance {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+}
+/* The distance is a digit string inside a right-to-left row; without this the
+   unit and the number swap places. */
+.address-form__result-distance {
+  unicode-bidi: plaintext;
+}
+
 .address-form__locate {
   display: grid;
   gap: 0.45rem;
@@ -186,6 +248,14 @@
   color: var(--success);
   font-size: 0.85rem;
   font-weight: 600;
+}
+/* The street the coordinate turned out to be on. Its own line because it is a
+   whole address and wrapping it into the sentence above makes both unreadable. */
+.address-form__fix-label {
+  display: block;
+  margin-block-start: 0.15rem;
+  color: var(--ink-muted);
+  font-weight: 500;
 }
 .address-form__actions {
   display: flex;

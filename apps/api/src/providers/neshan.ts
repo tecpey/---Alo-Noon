@@ -1,9 +1,15 @@
-import type {
-  ResolvedRoutingCredential,
-  RouteLeg,
-  RouteRequest,
-  RouteResult,
-  RoutingProvider,
+import {
+  PLACE_SEARCH_MAX_RESULTS,
+  type PlaceCandidate,
+  type PlaceSearchRequest,
+  type PlaceSearchResult,
+  type ResolvedRoutingCredential,
+  type ReverseGeocodeRequest,
+  type ReverseGeocodeResult,
+  type RouteLeg,
+  type RouteRequest,
+  type RouteResult,
+  type RoutingProvider,
 } from '@alo-noon/domain'
 
 /**
@@ -34,6 +40,30 @@ import type {
  * then costs a fallback to the straight-line estimate, which is a slightly wrong
  * fare on one order; guessing at a number would be a confidently wrong fare on
  * every order, which is worse and harder to notice.
+ *
+ * ## Search and reverse geocoding
+ *
+ * Re-verified against the same client, version 1.1.1, so these rest on the same
+ * evidence as the routing above rather than on the documentation site — which
+ * is unreachable from here, exactly as it was when the routing was written:
+ *
+ *     GET /v1/search?term=<text>[&lat=<lat>&lng=<lng>]   (neshan/places.py)
+ *     GET /v2/reverse?lat=<lat>&lng=<lng>                (neshan/geocoding.py)
+ *
+ * both with the same `Api-Key` header and the same error envelope — a 200 whose
+ * `status` is not "ok", carrying `code` and `message` (`client.py:_get_body`).
+ *
+ * The client's own docstring states the search reply's top level: `count` and
+ * `items`. It states nothing reliable about the fields inside an item, nor about
+ * the reverse reply — its `reverse_geocode` docstring promises a list while the
+ * code returns the whole object, so the two disagree and neither is evidence.
+ *
+ * Both readers here are therefore written to survive being wrong. The search
+ * reader accepts several plausible spellings per field, keeps only candidates
+ * carrying a usable coordinate, and reports EMPTY rather than inventing one. The
+ * reverse reader assembles nothing: it returns a line only if the provider
+ * supplies one whole, because an address stitched together from guessed fields
+ * is a confident-looking sentence that sends bread to the wrong door.
  */
 const PRODUCTION_ORIGIN = 'https://api.neshan.org'
 
@@ -151,7 +181,167 @@ export function createNeshanAdapter(options: CreateNeshanAdapterOptions = {}): R
         clearTimeout(timeout)
       }
     },
+
+    async searchPlaces(request: PlaceSearchRequest): Promise<PlaceSearchResult> {
+      const apiKey = readApiKey(request.credential)
+      if (!apiKey) {
+        return { outcome: 'UNAVAILABLE', reasonCode: 'NESHAN_CREDENTIAL_INVALID' }
+      }
+
+      const url = new URL(`${origin}/v1/search`)
+      url.searchParams.set('term', request.term)
+      // Sent as two parameters, not one joined pair — this endpoint takes `lat`
+      // and `lng` separately, unlike `/v2/direction` which takes `lat,lng`.
+      if (request.bias) {
+        url.searchParams.set('lat', String(request.bias.latitude))
+        url.searchParams.set('lng', String(request.bias.longitude))
+      }
+
+      const body = await getJson(url, apiKey, request.timeoutMs)
+      if (body.outcome !== 'OK') {
+        return { outcome: 'UNAVAILABLE', reasonCode: body.reasonCode }
+      }
+
+      const failure = readEnvelopeFailure(body.value)
+      if (failure) {
+        return { outcome: 'UNAVAILABLE', reasonCode: failure }
+      }
+
+      const candidates: PlaceCandidate[] = []
+      for (const item of readArray(body.value, 'items')) {
+        const candidate = readCandidate(item)
+        if (candidate) candidates.push(candidate)
+        if (candidates.length === PLACE_SEARCH_MAX_RESULTS) break
+      }
+      if (candidates.length === 0) {
+        // Either the provider knows nowhere by that name, or every item it sent
+        // was unreadable. Both leave the customer with nothing to choose, and
+        // the distinction is not one they can act on.
+        return { outcome: 'EMPTY', reasonCode: 'NESHAN_NO_PLACES' }
+      }
+      return { outcome: 'FOUND', candidates }
+    },
+
+    async reverseGeocode(request: ReverseGeocodeRequest): Promise<ReverseGeocodeResult> {
+      const apiKey = readApiKey(request.credential)
+      if (!apiKey) {
+        return { outcome: 'UNAVAILABLE', reasonCode: 'NESHAN_CREDENTIAL_INVALID' }
+      }
+
+      const url = new URL(`${origin}/v2/reverse`)
+      url.searchParams.set('lat', String(request.coordinates.latitude))
+      url.searchParams.set('lng', String(request.coordinates.longitude))
+
+      const body = await getJson(url, apiKey, request.timeoutMs)
+      if (body.outcome !== 'OK') {
+        return { outcome: 'UNAVAILABLE', reasonCode: body.reasonCode }
+      }
+
+      const failure = readEnvelopeFailure(body.value)
+      if (failure) {
+        return { outcome: 'UNAVAILABLE', reasonCode: failure }
+      }
+
+      // Only a line the provider assembled itself. Nothing is concatenated from
+      // separate fields here: the customer reads this back to decide whether the
+      // pin is their house, so a plausible sentence that is subtly wrong is
+      // worse than no sentence at all.
+      const formattedAddress =
+        readString(body.value, 'formatted_address') ?? readString(body.value, 'formattedAddress')
+      if (!formattedAddress) {
+        return { outcome: 'EMPTY', reasonCode: 'NESHAN_NO_ADDRESS' }
+      }
+      return { outcome: 'RESOLVED', formattedAddress }
+    },
   }
+}
+
+/**
+ * One GET, one JSON body, and every failure flattened into a reason code.
+ *
+ * Shared by search and reverse because the two differ only in path and
+ * parameters; routing keeps its own copy because it has to tell UNROUTABLE from
+ * UNAVAILABLE, a distinction neither of these has.
+ */
+type JsonFetch = { outcome: 'OK'; value: unknown } | { outcome: 'FAILED'; reasonCode: string }
+
+async function getJson(url: URL, apiKey: string, timeoutMs: number): Promise<JsonFetch> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Api-Key': apiKey, Accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      return { outcome: 'FAILED', reasonCode: `NESHAN_HTTP_${response.status}` }
+    }
+    const value = (await response.json().catch(() => null)) as unknown
+    return { outcome: 'OK', value }
+  } catch {
+    return { outcome: 'FAILED', reasonCode: 'NESHAN_REQUEST_FAILED' }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+/**
+ * Neshan reports failure inside a 200 by setting `status` to something other
+ * than "ok", so the HTTP status alone never decides this. Returns the reason
+ * code for a failure, or null when the envelope is fine.
+ */
+function readEnvelopeFailure(body: unknown): string | null {
+  const status = readString(body, 'status')
+  if (status === null || status.toLowerCase() === 'ok') return null
+  return neshanReasonCode(status, readCode(body))
+}
+
+/**
+ * Reads one search item, accepting the spellings a place API plausibly uses.
+ *
+ * A candidate without a usable coordinate is dropped rather than shown: its only
+ * purpose is to become a delivery address, and one that cannot is a row the
+ * customer can select and then not order from.
+ */
+function readCandidate(item: unknown): PlaceCandidate | null {
+  const location = readObject(item, 'location') ?? item
+  const latitude = readNumber(location, 'y') ?? readNumber(location, 'latitude')
+  const longitude = readNumber(location, 'x') ?? readNumber(location, 'longitude')
+  if (latitude === null || longitude === null) return null
+  // Iran spans roughly 25–40N, 44–64E. The check is the whole planet's range
+  // rather than the country's: the failure it exists to catch is x and y
+  // arriving the other way round, which puts a Babol address in the Indian
+  // Ocean, not a customer legitimately ordering from an unexpected place.
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null
+
+  const title = readString(item, 'title') ?? readString(item, 'name')
+  const address = readString(item, 'address') ?? readString(item, 'region')
+  if (!title && !address) return null
+
+  return {
+    title: title ?? address!,
+    address: title ? address : null,
+    coordinates: { latitude, longitude },
+    distanceMetres: readNonNegativeInteger(item, 'distance'),
+  }
+}
+
+function readObject(source: unknown, field: string): unknown {
+  if (!source || typeof source !== 'object') return null
+  const value = (source as Record<string, unknown>)[field]
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+}
+
+function readNumber(source: unknown, field: string): number | null {
+  if (!source || typeof source !== 'object') return null
+  const value = (source as Record<string, unknown>)[field]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readNonNegativeInteger(source: unknown, field: string): number | null {
+  const value = readNumber(source, field)
+  return value === null || value < 0 ? null : Math.round(value)
 }
 
 /**

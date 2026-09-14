@@ -55,7 +55,7 @@ import { createPrismaEmailProviderService } from './modules/email-provider.js'
 import { createPrismaOperatorAlertService } from './modules/operator-alerts.js'
 import { createSmtpAdapter } from './providers/smtp.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
-import { createPrismaAddressRepository } from './modules/addresses.js'
+import { createPrismaAddressRepository, createPrismaCityBiasResolver } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
 import { createPrismaPaymentExecutionService } from './modules/payment-execution.js'
 import { createPrismaEngagementService } from './modules/engagement.js'
@@ -403,6 +403,8 @@ const app = await buildApp({
   corsOrigins: parseCorsOrigins(env.CORS_ORIGINS),
   auth,
   commerceRepository: createPrismaCommerceRepository(prisma, { routingService }),
+  placesService: routingService,
+  cityBias: createPrismaCityBiasResolver(prisma),
   addressRepository: createPrismaAddressRepository(prisma),
   pushDevices: { service: pushDeviceService },
   walletTransfers: { service: walletTransferService },

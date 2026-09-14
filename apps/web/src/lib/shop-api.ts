@@ -11,9 +11,11 @@ import type {
   ReorderResult,
   PaymentExecutionSummary,
   PaymentSummary,
+  PlaceSearchResult,
   ProductDetail,
   ProductSummary,
   QuoteSummary,
+  ReverseGeocodeResult,
   ServiceabilityResponse,
   SessionContext,
   WalletEntrySummary,
@@ -210,6 +212,39 @@ export async function createAddress(input: {
   deliveryInstructions?: string
 }): Promise<ApiResult<AddressSummary>> {
   return request<AddressSummary>('/api/v1/addresses', { method: 'POST', body: input })
+}
+
+/**
+ * Finding an address by typing it, for the customer who will not or cannot hand
+ * over a satellite position.
+ *
+ * `available: false` means this tenant has no mapping configured at all — the
+ * search box should not be shown — and is quite different from an empty
+ * `candidates`, which means the provider answered and knows nowhere by that
+ * name. A failed request is neither: it leaves the position button as the way
+ * through, so it is reported as unavailable rather than as an empty answer.
+ */
+export async function searchPlaces(input: {
+  term: string
+  cityId?: string
+}): Promise<ApiResult<PlaceSearchResult>> {
+  const query = new URLSearchParams({ term: input.term })
+  if (input.cityId) query.set('cityId', input.cityId)
+  return request<PlaceSearchResult>(`/api/v1/places/search?${query.toString()}`, { method: 'GET' })
+}
+
+/** The address at a point, so a customer can read back where the pin landed. */
+export async function reverseGeocode(input: {
+  latitude: number
+  longitude: number
+}): Promise<ApiResult<ReverseGeocodeResult>> {
+  const query = new URLSearchParams({
+    latitude: String(input.latitude),
+    longitude: String(input.longitude),
+  })
+  return request<ReverseGeocodeResult>(`/api/v1/places/reverse?${query.toString()}`, {
+    method: 'GET',
+  })
 }
 
 /* ------------------------------------------------------- quote and order */
