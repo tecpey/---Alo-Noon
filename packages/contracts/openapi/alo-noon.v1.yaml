@@ -2481,6 +2481,23 @@ components:
         deliveryServiceAreaId: { type: string, format: uuid }
         deliveryOperationalZoneId: { type: string, format: uuid }
         deliveryDistanceMeters: { type: integer, minimum: 0 }
+        deliveryVehicleProfile:
+          type: string
+          enum: [MOTORCYCLE, CAR]
+          description: >
+            What the order has to go out in, derived from its item count and the
+            road distance rather than chosen by the customer. A school ordering
+            by the hundred needs a car however close it is; two loaves to a unit
+            on the ring road needs one however few they are. Absent on quotes
+            written before the rule existed.
+        deliveryVehicleReason:
+          type: string
+          enum: [LOAD, DISTANCE, LOAD_AND_DISTANCE]
+          description: >
+            Why a car was required. Absent whenever a motorcycle was fine, so
+            its presence alone answers the question. The two single reasons
+            suggest different remedies — fewer items changes a LOAD verdict and
+            nothing changes a DISTANCE one — which is why they are not collapsed.
         deliveryPricingRuleId: { type: string, format: uuid }
         deliveryPricingRuleVersion: { type: integer, minimum: 1 }
         subtotal: { $ref: '#/components/schemas/Money' }

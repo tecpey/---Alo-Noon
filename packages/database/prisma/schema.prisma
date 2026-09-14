@@ -1334,6 +1334,16 @@ model Quote {
   /// Why the distance is an estimate. Set only when the source is ESTIMATED,
   /// so its presence alone answers "what went wrong when this was priced?".
   deliveryDistanceReasonCode        String?               @db.VarChar(64)
+  /// What this order has to go out in, derived from its item count and the
+  /// distance above rather than chosen by the customer. Snapshotted with the
+  /// rest of the quote: dispatch reads it when the order is already placed, and
+  /// a tenant that later widens its thresholds must not retroactively put a
+  /// promised car back on a motorcycle.
+  deliveryVehicleProfile            RoutingProfile?
+  /// LOAD, DISTANCE or LOAD_AND_DISTANCE. Null when a motorcycle was fine.
+  /// Kept because a customer told their order needs a car will ask why, and
+  /// because an operator tuning a threshold needs to know which one bit.
+  deliveryVehicleReason             String?               @db.VarChar(32)
   bakeryNameSnapshot                String?
   bakeryPickupSnapshot              String?
   recipientNameSnapshot             String?

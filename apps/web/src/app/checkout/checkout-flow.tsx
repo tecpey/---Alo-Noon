@@ -343,6 +343,29 @@ export function CheckoutFlow({
             <dt>کرایهٔ پیک</dt>
             <dd>{quote ? formatToman(quote.deliveryFee.amount) : '—'}</dd>
           </div>
+          {/*
+            Shown only when the answer is a car, and shown as a statement rather
+            than a choice. The customer is not being asked to pick a vehicle —
+            the order already requires one — but they are owed the reason,
+            because it is the first thing anyone asks and because the two
+            reasons suggest completely different things to do about it: fewer
+            loaves changes a LOAD verdict, and nothing changes a DISTANCE one.
+          */}
+          {quote?.deliveryVehicleProfile === 'CAR' && (
+            <div>
+              <dt>وسیلهٔ ارسال</dt>
+              <dd>
+                خودرو
+                <span className="checkout__vehicle-reason">
+                  {quote.deliveryVehicleReason === 'LOAD'
+                    ? 'تعداد سفارش برای موتور زیاد است.'
+                    : quote.deliveryVehicleReason === 'DISTANCE'
+                      ? 'مقصد بیرون از محدودهٔ موتور است.'
+                      : 'هم تعداد سفارش زیاد است و هم مقصد دور.'}
+                </span>
+              </dd>
+            </div>
+          )}
           {quote && quote.discount.amount !== '0' && (
             <div>
               <dt>تخفیف</dt>

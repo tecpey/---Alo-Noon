@@ -105,6 +105,21 @@ export const quoteSummarySchema = z.object({
   deliveryServiceAreaId: uuidSchema,
   deliveryOperationalZoneId: uuidSchema,
   deliveryDistanceMeters: z.number().int().min(0),
+  /**
+   * What the order has to go out in, and why.
+   *
+   * Derived from the item count and the road distance, never chosen: a school
+   * ordering three hundred loaves needs a car however close it is, and two
+   * loaves to a unit on the ring road needs one however few they are. The
+   * customer is told, not asked — asking invites the cheaper answer, and the
+   * person who discovers it was wrong is a courier at a gate with a fifth of
+   * the order.
+   *
+   * `deliveryVehicleReason` is absent whenever a motorcycle was fine, so its
+   * presence alone answers the first question a customer asks about a car.
+   */
+  deliveryVehicleProfile: z.enum(['MOTORCYCLE', 'CAR']).optional(),
+  deliveryVehicleReason: z.enum(['LOAD', 'DISTANCE', 'LOAD_AND_DISTANCE']).optional(),
   deliveryPricingRuleId: uuidSchema,
   deliveryPricingRuleVersion: z.number().int().min(1),
   subtotal: moneySchema,

@@ -22,6 +22,7 @@ import {
   assertCartMutationContext,
   calculateDeliveryDistanceMeters,
   calculateDeliveryFee,
+  requiredDeliveryVehicle,
   calculateCartLine,
   calculateQuoteExpiry,
   selectDeliveryPricingRule,
@@ -664,6 +665,27 @@ export function createPrismaCommerceRepository(
         )
         const delivery = calculateDeliveryFee(pricingRule, subtotal.amount, distanceMeters)
 
+        /**
+         * What this order has to go out in.
+         *
+         * Derived here rather than at dispatch because the customer is standing
+         * at a checkout and has to be told before they pay — and because by
+         * dispatch the thresholds may have moved, and an order already paid for
+         * must keep meaning what it meant when it was accepted.
+         *
+         * Taken after the distance is known, so a bulk order to a nearby school
+         * and a two-loaf order to a factory on the ring road are both caught.
+         * The routing profile above is not re-derived from this: Neshan's
+         * direction endpoint takes no vehicle parameter, so both profiles reach
+         * the same road network and re-routing would spend a second call to be
+         * told the same number. The day that endpoint gains one, this is where
+         * the order has to change.
+         */
+        const vehicle = requiredDeliveryVehicle({
+          itemCount: cart.items.reduce((total, item) => total + item.quantity, 0),
+          distanceMetres: distanceMeters,
+        })
+
         // A code the customer supplied. A refusal does not fail the quote: a
         // basket that will not price because a code expired is a basket that
         // gets abandoned. The quote comes back undiscounted and says why.
@@ -748,6 +770,10 @@ export function createPrismaCommerceRepository(
                 deliveryDistanceReasonCode: routeDistance.reasonCode,
               }),
             }),
+            deliveryVehicleProfile: vehicle.profile,
+            // Null when a motorcycle was fine, so its presence alone answers
+            // "why is this a car?" — which is the first thing a customer asks.
+            ...(vehicle.reason !== 'NONE' && { deliveryVehicleReason: vehicle.reason }),
             deliveryPricingRuleId: pricingRule.id,
             deliveryPricingRuleVersion: pricingRule.version,
             bakeryNameSnapshot: branch.bakery.displayNameFa,
@@ -983,6 +1009,13 @@ function mapQuote(quote: QuoteRecord): QuoteSummary {
     deliveryServiceAreaId: quote.deliveryServiceAreaIdSnapshot,
     deliveryOperationalZoneId: quote.deliveryOperationalZoneIdSnapshot,
     deliveryDistanceMeters: quote.deliveryDistanceMeters,
+    ...(quote.deliveryVehicleProfile && {
+      deliveryVehicleProfile: quote.deliveryVehicleProfile,
+    }),
+    ...(quote.deliveryVehicleReason && {
+      deliveryVehicleReason: quote.deliveryVehicleReason as
+        'LOAD' | 'DISTANCE' | 'LOAD_AND_DISTANCE',
+    }),
     deliveryPricingRuleId: quote.deliveryPricingRuleId,
     deliveryPricingRuleVersion: quote.deliveryPricingRuleVersion,
     subtotal: { amount: quote.subtotalAmount.toString(), currency: quote.currency },
