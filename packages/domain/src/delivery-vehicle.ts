@@ -97,6 +97,23 @@ export const DEFAULT_VEHICLE_POLICY: VehiclePolicy = Object.freeze({
   motorcycleRangeMetres: 12_000,
 })
 
+/**
+ * A city's own thresholds, or the documented defaults where it has none.
+ *
+ * Null is not "the tenant chose the default" — it is "nobody has measured this
+ * city yet". Keeping the two distinguishable is what lets a later correction to
+ * the defaults move the unmeasured cities and leave the measured ones alone.
+ */
+export function vehiclePolicyForCity(
+  city: { motorcycleItemLimit: number | null; motorcycleRangeMetres: number | null } | null,
+): VehiclePolicy {
+  return Object.freeze({
+    motorcycleItemLimit: city?.motorcycleItemLimit ?? DEFAULT_VEHICLE_POLICY.motorcycleItemLimit,
+    motorcycleRangeMetres:
+      city?.motorcycleRangeMetres ?? DEFAULT_VEHICLE_POLICY.motorcycleRangeMetres,
+  })
+}
+
 export function requiredDeliveryVehicle(
   input: { itemCount: number; distanceMetres: number },
   policy: VehiclePolicy = DEFAULT_VEHICLE_POLICY,

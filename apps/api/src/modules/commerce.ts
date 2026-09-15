@@ -23,6 +23,7 @@ import {
   calculateDeliveryDistanceMeters,
   calculateDeliveryFee,
   requiredDeliveryVehicle,
+  vehiclePolicyForCity,
   calculateCartLine,
   calculateQuoteExpiry,
   selectDeliveryPricingRule,
@@ -636,12 +637,42 @@ export function createPrismaCommerceRepository(
             { latitude: Number(branch.latitude), longitude: Number(branch.longitude) },
             { latitude: Number(address.latitude), longitude: Number(address.longitude) },
           )
+        /**
+         * What this order has to go out in.
+         *
+         * Derived before the tariff is chosen, because it decides which tariff
+         * applies: a car is a separate rate, not a surcharge on the motorcycle
+         * one. Derived at all because the customer is standing at a checkout and
+         * has to be told before they pay, and because by dispatch the thresholds
+         * may have moved and an order already paid for must keep meaning what it
+         * meant when it was accepted.
+         *
+         * Thresholds come from the city rather than from a constant: Babol is a
+         * few kilometres across with its estates on the ring road, and a city
+         * the size of Tehran has neither property.
+         */
+        const cityPolicy = await transaction.city.findFirst({
+          where: { id: cart.cityId, tenantId },
+          select: { motorcycleItemLimit: true, motorcycleRangeMetres: true },
+        })
+        const vehicle = requiredDeliveryVehicle(
+          {
+            itemCount: cart.items.reduce((total, item) => total + item.quantity, 0),
+            distanceMetres: distanceMeters,
+          },
+          vehiclePolicyForCity(cityPolicy),
+        )
+
         const pricingRules = await transaction.deliveryPricingRule.findMany({
           where: {
             tenantId,
             cityId: cart.cityId,
             isActive: true,
             effectiveFrom: { lte: now },
+            // Every vehicle's tariffs, not just the one needed. Narrowing here
+            // would make "this city has no pricing" and "this city has no car
+            // rate" arrive at selection as the same empty list, and they need
+            // different things said to the operator.
             AND: [
               { OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: now } }] },
               { OR: [{ operationalZoneId: cart.operationalZoneId }, { operationalZoneId: null }] },
@@ -653,6 +684,7 @@ export function createPrismaCommerceRepository(
           pricingRules.map((rule) => ({
             id: rule.id,
             operationalZoneId: rule.operationalZoneId,
+            vehicleProfile: rule.vehicleProfile,
             version: rule.version,
             mode: rule.calculationMode,
             baseFeeAmount: rule.baseFeeAmount,
@@ -662,29 +694,9 @@ export function createPrismaCommerceRepository(
             currency: rule.currency,
           })),
           cart.operationalZoneId,
+          vehicle.profile,
         )
         const delivery = calculateDeliveryFee(pricingRule, subtotal.amount, distanceMeters)
-
-        /**
-         * What this order has to go out in.
-         *
-         * Derived here rather than at dispatch because the customer is standing
-         * at a checkout and has to be told before they pay — and because by
-         * dispatch the thresholds may have moved, and an order already paid for
-         * must keep meaning what it meant when it was accepted.
-         *
-         * Taken after the distance is known, so a bulk order to a nearby school
-         * and a two-loaf order to a factory on the ring road are both caught.
-         * The routing profile above is not re-derived from this: Neshan's
-         * direction endpoint takes no vehicle parameter, so both profiles reach
-         * the same road network and re-routing would spend a second call to be
-         * told the same number. The day that endpoint gains one, this is where
-         * the order has to change.
-         */
-        const vehicle = requiredDeliveryVehicle({
-          itemCount: cart.items.reduce((total, item) => total + item.quantity, 0),
-          distanceMetres: distanceMeters,
-        })
 
         // A code the customer supplied. A refusal does not fail the quote: a
         // basket that will not price because a code expired is a basket that
@@ -1134,6 +1146,7 @@ function commerceFailure(
     if (
       [
         'DELIVERY_PRICING_RULE_MISSING',
+        'DELIVERY_VEHICLE_TARIFF_MISSING',
         'DELIVERY_PRICING_RULE_AMBIGUOUS',
         'MINIMUM_ORDER_NOT_MET',
         'INVALID_DELIVERY_PRICING_RULE',
@@ -1163,6 +1176,13 @@ function safeCommerceMessage(code: string): string {
     ADDRESS_NOT_FOUND: 'The delivery address was not found.',
     ADDRESS_CONTEXT_MISMATCH: 'The delivery address does not match the cart context.',
     DELIVERY_PRICING_RULE_MISSING: 'Delivery pricing is unavailable for this address.',
+    // Named separately from the line above because the remedy is different and
+    // specific: the address and the basket are both fine, and what is missing
+    // is a published car rate for this city. Refusing is deliberate — quoting
+    // the motorcycle rate for a car journey loses the bakery money on exactly
+    // its largest and longest orders, and does it silently until month end.
+    DELIVERY_VEHICLE_TARIFF_MISSING:
+      'This order needs a car, and no car delivery rate is published for this city yet.',
     DELIVERY_PRICING_RULE_AMBIGUOUS: 'Delivery pricing could not be resolved safely.',
     MINIMUM_ORDER_NOT_MET: 'The cart does not meet the minimum order amount.',
     IDEMPOTENCY_KEY_CONFLICT: 'The idempotency key was already used.',

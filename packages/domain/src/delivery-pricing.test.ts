@@ -11,6 +11,7 @@ function rule(overrides: Partial<DeliveryPricingRuleCandidate> = {}): DeliveryPr
   return {
     id: 'city-rule',
     operationalZoneId: null,
+    vehicleProfile: 'MOTORCYCLE',
     version: 1,
     mode: 'FLAT',
     baseFeeAmount: 50_000n,
@@ -69,5 +70,80 @@ describe('delivery pricing', () => {
     expect(() => selectDeliveryPricingRule(rules, 'zone-a')).toThrow(
       expect.objectContaining({ code }),
     )
+  })
+})
+
+/*
+ * Choosing a tariff once there are two vehicles.
+ *
+ * A car is a separate rate, not a surcharge, so picking the wrong one is not a
+ * rounding error — it is charging a motorcycle call-out for a car journey, on
+ * exactly the largest and longest orders the bakery takes.
+ */
+describe('choosing a tariff for the vehicle the order needs', () => {
+  const motorcycleCity = rule({ id: 'moto-city', vehicleProfile: 'MOTORCYCLE' })
+  const carCity = rule({ id: 'car-city', vehicleProfile: 'CAR', baseFeeAmount: 150_000n })
+  const motorcycleZone = rule({
+    id: 'moto-zone',
+    vehicleProfile: 'MOTORCYCLE',
+    operationalZoneId: 'zone-a',
+  })
+
+  it('picks the car tariff when the order needs a car', () => {
+    expect(selectDeliveryPricingRule([motorcycleCity, carCity], 'zone-a', 'CAR').id).toBe(
+      'car-city',
+    )
+  })
+
+  it('picks the motorcycle tariff when it does not', () => {
+    expect(selectDeliveryPricingRule([motorcycleCity, carCity], 'zone-a', 'MOTORCYCLE').id).toBe(
+      'moto-city',
+    )
+  })
+
+  it('never substitutes a zone’s motorcycle rate for a missing car rate', () => {
+    // The trap this ordering exists to avoid. Narrowing by zone first would
+    // find the zone's motorcycle tariff, see exactly one candidate, and price a
+    // car journey at motorcycle rates without anything looking wrong. Narrowing
+    // by vehicle first makes the absence visible instead.
+    expect(() => selectDeliveryPricingRule([motorcycleZone], 'zone-a', 'CAR')).toThrow(
+      expect.objectContaining({ code: 'DELIVERY_VEHICLE_TARIFF_MISSING' }),
+    )
+  })
+
+  it('falls back from a zone to the city, but only within the same vehicle', () => {
+    // A city-wide car rate is a reasonable stand-in for a zone that has not set
+    // its own. A zone's motorcycle rate never is.
+    expect(selectDeliveryPricingRule([carCity, motorcycleZone], 'zone-a', 'CAR').id).toBe(
+      'car-city',
+    )
+  })
+
+  it('prefers a zone’s own car rate over the city’s', () => {
+    const carZone = rule({ id: 'car-zone', vehicleProfile: 'CAR', operationalZoneId: 'zone-a' })
+    expect(selectDeliveryPricingRule([carCity, carZone], 'zone-a', 'CAR').id).toBe('car-zone')
+  })
+
+  it('still refuses two tariffs for the same vehicle and scope', () => {
+    // The ambiguity guard must survive the new dimension: two active car rates
+    // for one zone is a configuration error, not a choice to make silently.
+    const duplicate = rule({ id: 'car-city-2', vehicleProfile: 'CAR' })
+    expect(() => selectDeliveryPricingRule([carCity, duplicate], 'zone-a', 'CAR')).toThrow(
+      expect.objectContaining({ code: 'DELIVERY_PRICING_RULE_AMBIGUOUS' }),
+    )
+  })
+
+  it('says pricing is missing, not that the car rate is, when nothing is configured', () => {
+    // The two are different jobs for whoever reads the error: set this city up,
+    // against publish a car rate for a city that is otherwise working.
+    expect(() => selectDeliveryPricingRule([], 'zone-a', 'CAR')).toThrow(
+      expect.objectContaining({ code: 'DELIVERY_PRICING_RULE_MISSING' }),
+    )
+  })
+
+  it('defaults to the motorcycle tariff when no vehicle is named', () => {
+    // Every caller that predates the vehicle was pricing a motorcycle, so the
+    // default keeps them correct rather than merely compiling.
+    expect(selectDeliveryPricingRule([motorcycleCity, carCity], 'zone-a').id).toBe('moto-city')
   })
 })

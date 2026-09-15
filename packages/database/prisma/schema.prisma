@@ -618,6 +618,19 @@ model City {
   nameFa                      String
   timezone                    String                @default("Asia/Tehran") @db.VarChar(64)
   isActive                    Boolean               @default(false)
+  /// The most items one motorcycle carries here, and how far one may be sent.
+  ///
+  /// Per city because the geography is: Babol is a few kilometres across with
+  /// its industrial estates on the ring road, and a city the size of Tehran has
+  /// neither of those properties. A single number in the source would be right
+  /// for one city and quietly wrong for every other one the platform grows into.
+  ///
+  /// Null means "use the documented default", which is the honest state for a
+  /// city nobody has measured yet — it is not the same as a tenant having
+  /// deliberately chosen the default, and a later change to the default should
+  /// move the unmeasured cities and leave the measured ones alone.
+  motorcycleItemLimit         Int?
+  motorcycleRangeMetres       Int?
   operationalZones            OperationalZone[]
   addresses                   Address[]
   bakeryBranches              BakeryBranch[]
@@ -1237,6 +1250,14 @@ model DeliveryPricingRule {
   operationalZoneId     String?                        @db.Uuid
   operationalZone       OperationalZone?               @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
   version               Int
+  /// Which vehicle this tariff prices. A car costs more to run than a
+  /// motorcycle in both directions — a higher call-out and a higher rate per
+  /// kilometre — and the two are not a fixed ratio apart, so they are separate
+  /// tariffs with their own versioning rather than one tariff with a multiplier.
+  ///
+  /// Existing rows became MOTORCYCLE, which is what every one of them already
+  /// was: until the vehicle was derived, every delivery was assumed to be one.
+  vehicleProfile        RoutingProfile                 @default(MOTORCYCLE)
   calculationMode       DeliveryPricingCalculationMode @default(FLAT)
   baseFeeAmount         BigInt
   perKilometerFeeAmount BigInt                         @default(0)
@@ -1250,9 +1271,9 @@ model DeliveryPricingRule {
   createdAt             DateTime                       @default(now())
   updatedAt             DateTime                       @updatedAt
 
-  @@unique([tenantId, cityId, operationalZoneId, version], map: "DeliveryPricingRule_scope_version_key")
+  @@unique([tenantId, cityId, operationalZoneId, vehicleProfile, version], map: "DeliveryPricingRule_scope_version_key")
   @@unique([id, tenantId], map: "g3b_DeliveryPricingRule_id_tenant_key")
-  @@index([tenantId, cityId, operationalZoneId, isActive, effectiveFrom], map: "DeliveryPricingRule_active_scope_idx")
+  @@index([tenantId, cityId, operationalZoneId, vehicleProfile, isActive, effectiveFrom], map: "DeliveryPricingRule_active_scope_idx")
   @@index([cityId, tenantId], map: "g3b_DeliveryPricingRule_cityId_tenant_idx")
   @@index([operationalZoneId, tenantId], map: "g3b_DeliveryPricingRule_operationalZoneId_tenant_idx")
 }

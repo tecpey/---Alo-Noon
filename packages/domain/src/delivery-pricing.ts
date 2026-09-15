@@ -1,10 +1,19 @@
 import { DomainError } from './errors'
 
+/** Mirrors `RoutingProfile`, restated so this module keeps no import cycle. */
+export type DeliveryVehicleProfile = 'MOTORCYCLE' | 'CAR'
+
 export type DeliveryPricingMode = 'FLAT' | 'DISTANCE_BANDED'
 
 export interface DeliveryPricingRuleCandidate {
   id: string
   operationalZoneId: string | null
+  /**
+   * Which vehicle this tariff prices. A car and a motorcycle are separate
+   * tariffs rather than one rate with a surcharge, because they differ in both
+   * the call-out and the rate per kilometre and the two do not move together.
+   */
+  vehicleProfile: DeliveryVehicleProfile
   version: number
   mode: DeliveryPricingMode
   baseFeeAmount: bigint
@@ -47,13 +56,45 @@ export function calculateDeliveryDistanceMeters(
   return Math.ceil(distance)
 }
 
+/**
+ * The tariff for this zone and this vehicle.
+ *
+ * The vehicle narrows first and the zone second, which is the order that keeps
+ * the fallback honest: a city-wide car tariff is a sensible thing to fall back
+ * to when a zone has not set its own, while a zone's motorcycle tariff is never
+ * an acceptable substitute for a car's. Filtering by zone first and vehicle
+ * second would have produced exactly that substitution whenever a zone had a
+ * motorcycle rate and the city had a car one.
+ *
+ * A missing tariff for the required vehicle is its own error rather than the
+ * generic one. It is the failure an operator will actually hit — the first
+ * factory order into a city whose car rate nobody has published — and it needs
+ * to say what to do, not that pricing is "missing".
+ */
 export function selectDeliveryPricingRule(
   rules: readonly DeliveryPricingRuleCandidate[],
   operationalZoneId: string,
+  vehicleProfile: DeliveryVehicleProfile = 'MOTORCYCLE',
 ): Readonly<DeliveryPricingRuleCandidate> {
-  const zoneRules = rules.filter((rule) => rule.operationalZoneId === operationalZoneId)
+  // Nothing at all and nothing-for-this-vehicle are different failures with
+  // different remedies — "pricing is not set up for this city" against "publish
+  // a car rate" — so they are separated before either is reported. This is why
+  // the caller hands over every vehicle's tariffs rather than pre-filtering:
+  // narrowing in the query would collapse the two back into one.
+  if (rules.length === 0) {
+    throw new DomainError('DELIVERY_PRICING_RULE_MISSING', 'No delivery pricing rule applies')
+  }
+  const forVehicle = rules.filter((rule) => rule.vehicleProfile === vehicleProfile)
+  if (forVehicle.length === 0) {
+    throw new DomainError(
+      'DELIVERY_VEHICLE_TARIFF_MISSING',
+      'No delivery tariff is published for the vehicle this order requires',
+      { vehicleProfile },
+    )
+  }
+  const zoneRules = forVehicle.filter((rule) => rule.operationalZoneId === operationalZoneId)
   const candidates =
-    zoneRules.length > 0 ? zoneRules : rules.filter((rule) => rule.operationalZoneId === null)
+    zoneRules.length > 0 ? zoneRules : forVehicle.filter((rule) => rule.operationalZoneId === null)
   if (candidates.length === 0) {
     throw new DomainError('DELIVERY_PRICING_RULE_MISSING', 'No delivery pricing rule applies')
   }
