@@ -678,6 +678,17 @@ model ServiceArea {
   nameFa            String
   boundaryGeoJson   Json
   isActive          Boolean         @default(false)
+  /// Whether a motorcycle may deliver here at all.
+  ///
+  /// The distance threshold already turns a far address into a car journey, and
+  /// this exists for the times "out of motorcycle range" is geography rather
+  /// than kilometres: a village eight kilometres away across a river with one
+  /// bridge, or up a track a loaded motorcycle should not take. Drawing the
+  /// outlying villages as their own area and marking them car-only is how this
+  /// platform reaches them.
+  ///
+  /// True everywhere by default, which is what every existing area already was.
+  motorcycleAllowed Boolean         @default(true)
   addresses         Address[]
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt

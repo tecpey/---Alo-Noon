@@ -38,6 +38,17 @@ export const quoteCreateSchema = z.object({
    * materialised yet — nothing exists to hold an id until somebody wants it.
    */
   deliveryWindowStartsAt: isoDateTimeSchema.optional(),
+  /**
+   * The vehicle the customer picked, when they picked one.
+   *
+   * Optional: leaving it out takes the cheapest option that is actually
+   * available, which is the motorcycle where one is on offer and the car where
+   * it is not. A choice the order does not permit — a motorcycle for four
+   * hundred loaves, or for a village that does not take them — is refused
+   * rather than quietly corrected, because a customer who chose the cheaper
+   * vehicle and got the dearer fare would reasonably call that a bait.
+   */
+  deliveryVehicleProfile: z.enum(['MOTORCYCLE', 'CAR']).optional(),
 })
 export type QuoteCreate = z.infer<typeof quoteCreateSchema>
 
@@ -120,6 +131,22 @@ export const quoteSummarySchema = z.object({
    */
   deliveryVehicleProfile: z.enum(['MOTORCYCLE', 'CAR']).optional(),
   deliveryVehicleReason: z.enum(['LOAD', 'DISTANCE', 'LOAD_AND_DISTANCE']).optional(),
+  /**
+   * Both vehicles and whether each can be chosen for this order, so the
+   * interface can show the one that is unavailable rather than hide it.
+   *
+   * A disabled option with a reason teaches the customer something about their
+   * address that a missing option cannot: that bread does reach them, by car.
+   */
+  deliveryVehicleOptions: z
+    .array(
+      z.object({
+        profile: z.enum(['MOTORCYCLE', 'CAR']),
+        available: z.boolean(),
+        blockedBy: z.enum(['LOAD', 'DISTANCE', 'LOAD_AND_DISTANCE', 'AREA']).optional(),
+      }),
+    )
+    .optional(),
   deliveryPricingRuleId: uuidSchema,
   deliveryPricingRuleVersion: z.number().int().min(1),
   subtotal: moneySchema,

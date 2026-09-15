@@ -22,7 +22,9 @@ import {
   assertCartMutationContext,
   calculateDeliveryDistanceMeters,
   calculateDeliveryFee,
+  deliveryVehicleOptions,
   requiredDeliveryVehicle,
+  vehicleChoiceAllowed,
   vehiclePolicyForCity,
   calculateCartLine,
   calculateQuoteExpiry,
@@ -655,13 +657,42 @@ export function createPrismaCommerceRepository(
           where: { id: cart.cityId, tenantId },
           select: { motorcycleItemLimit: true, motorcycleRangeMetres: true },
         })
-        const vehicle = requiredDeliveryVehicle(
-          {
-            itemCount: cart.items.reduce((total, item) => total + item.quantity, 0),
-            distanceMetres: distanceMeters,
-          },
-          vehiclePolicyForCity(cityPolicy),
-        )
+        // Whether this address's area takes motorcycles at all. Read from the
+        // area the address resolved to rather than from the city, because the
+        // village that does not take them and the city centre that does are
+        // both in the same city.
+        const serviceArea = address.serviceAreaId
+          ? await transaction.serviceArea.findFirst({
+              where: { id: address.serviceAreaId, tenantId },
+              select: { motorcycleAllowed: true },
+            })
+          : null
+
+        const availability = {
+          itemCount: cart.items.reduce((total, item) => total + item.quantity, 0),
+          distanceMetres: distanceMeters,
+          ...(serviceArea && { motorcycleAllowedInArea: serviceArea.motorcycleAllowed }),
+        }
+        const policy = vehiclePolicyForCity(cityPolicy)
+        const choice = deliveryVehicleOptions(availability, policy)
+
+        /**
+         * The customer's pick, checked rather than trusted.
+         *
+         * The interface disables an unavailable option; that is a courtesy, and
+         * this is the enforcement. Refused rather than silently corrected: a
+         * customer who chose the motorcycle and was quietly given the car fare
+         * would be right to call that a bait, and one whose four hundred loaves
+         * were quietly accepted onto a motorcycle would find out at the door.
+         */
+        if (
+          input.deliveryVehicleProfile &&
+          !vehicleChoiceAllowed(choice, input.deliveryVehicleProfile)
+        ) {
+          throw new CommerceError('DELIVERY_VEHICLE_UNAVAILABLE', 422)
+        }
+        const vehicle = requiredDeliveryVehicle(availability, policy)
+        const chosenProfile = input.deliveryVehicleProfile ?? choice.fallback
 
         const pricingRules = await transaction.deliveryPricingRule.findMany({
           where: {
@@ -694,7 +725,7 @@ export function createPrismaCommerceRepository(
             currency: rule.currency,
           })),
           cart.operationalZoneId,
-          vehicle.profile,
+          chosenProfile,
         )
         const delivery = calculateDeliveryFee(pricingRule, subtotal.amount, distanceMeters)
 
@@ -782,10 +813,13 @@ export function createPrismaCommerceRepository(
                 deliveryDistanceReasonCode: routeDistance.reasonCode,
               }),
             }),
-            deliveryVehicleProfile: vehicle.profile,
-            // Null when a motorcycle was fine, so its presence alone answers
-            // "why is this a car?" — which is the first thing a customer asks.
-            ...(vehicle.reason !== 'NONE' && { deliveryVehicleReason: vehicle.reason }),
+            deliveryVehicleProfile: chosenProfile,
+            // The reason is recorded only when the car was required rather than
+            // preferred. A customer who could have had a motorcycle and chose a
+            // car has no reason to record, and writing one would claim their
+            // order was too big or too far when it was neither.
+            ...(chosenProfile === 'CAR' &&
+              vehicle.reason !== 'NONE' && { deliveryVehicleReason: vehicle.reason }),
             deliveryPricingRuleId: pricingRule.id,
             deliveryPricingRuleVersion: pricingRule.version,
             bakeryNameSnapshot: branch.bakery.displayNameFa,
@@ -830,7 +864,7 @@ export function createPrismaCommerceRepository(
         // customer re-reading an old quote is told again about a code they have
         // long since replaced.
         return {
-          ...mapQuote(quote),
+          ...mapQuote(quote, [...choice.options]),
           ...(promotion && !promotion.applied && { promotionRefusal: promotion.reason }),
           ...(windowRefused && { deliveryWindowRefusal: 'DELIVERY_WINDOW_UNAVAILABLE' }),
         }
@@ -999,7 +1033,20 @@ function mapCart(cart: CartRecord): CartSummary {
   }
 }
 
-function mapQuote(quote: QuoteRecord): QuoteSummary {
+/**
+ * `vehicleOptions` is passed in rather than read off the quote, and only when a
+ * quote is being created.
+ *
+ * They describe what was on offer at that moment, not a property of the quote —
+ * the same reasoning the promotion refusal above is given. Re-reading an old
+ * quote from the orders page should not be told which vehicles it could have
+ * had, because the basket it was priced from is long gone and the answer would
+ * be about nothing the customer can now act on.
+ */
+function mapQuote(
+  quote: QuoteRecord,
+  vehicleOptions?: QuoteSummary['deliveryVehicleOptions'],
+): QuoteSummary {
   if (
     !quote.deliveryAddressId ||
     !quote.deliveryServiceAreaIdSnapshot ||
@@ -1028,6 +1075,7 @@ function mapQuote(quote: QuoteRecord): QuoteSummary {
       deliveryVehicleReason: quote.deliveryVehicleReason as
         'LOAD' | 'DISTANCE' | 'LOAD_AND_DISTANCE',
     }),
+    ...(vehicleOptions && { deliveryVehicleOptions: vehicleOptions }),
     deliveryPricingRuleId: quote.deliveryPricingRuleId,
     deliveryPricingRuleVersion: quote.deliveryPricingRuleVersion,
     subtotal: { amount: quote.subtotalAmount.toString(), currency: quote.currency },

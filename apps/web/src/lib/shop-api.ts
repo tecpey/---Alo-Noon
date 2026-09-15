@@ -257,6 +257,8 @@ export async function createQuote(input: {
   promotionCode?: string
   /** The chosen delivery window, named by the instant it starts. */
   deliveryWindowStartsAt?: string
+  /** The vehicle the customer picked. Checked server-side against the order. */
+  deliveryVehicleProfile?: 'MOTORCYCLE' | 'CAR'
   /** How the customer intends to pay. Checked server-side against the city. */
 }): Promise<ApiResult<QuoteSummary>> {
   return request<QuoteSummary>('/api/v1/cart/quote', { method: 'POST', body: input })

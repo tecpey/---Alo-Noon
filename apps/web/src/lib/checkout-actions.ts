@@ -128,6 +128,7 @@ export async function quoteAction(
   deliveryAddressId: string,
   promotionCode?: string,
   deliveryWindowStartsAt?: string,
+  deliveryVehicleProfile?: 'MOTORCYCLE' | 'CAR',
 ): Promise<QuoteResult> {
   const cart = await readCart()
   if (!cart.ok) return fail(cart.error.code, 'سبد خرید خوانده نشد.', true)
@@ -148,11 +149,32 @@ export async function quoteAction(
       deliveryAddressId,
       promotionCode ?? 'none',
       deliveryWindowStartsAt ?? 'asap',
+      // Part of what makes the quote unique for the same reason the code is:
+      // switching to a car changes the fare, and without this the customer
+      // would be replayed the motorcycle price they had already been quoted.
+      deliveryVehicleProfile ?? 'auto',
     ),
     ...(promotionCode && { promotionCode }),
     ...(deliveryWindowStartsAt && { deliveryWindowStartsAt }),
+    ...(deliveryVehicleProfile && { deliveryVehicleProfile }),
   })
-  if (!result.ok) return fail(result.error.code, 'محاسبهٔ هزینه ناموفق بود.', true)
+  if (!result.ok) {
+    if (result.error.code === 'DELIVERY_VEHICLE_UNAVAILABLE') {
+      return fail(
+        result.error.code,
+        'این وسیله برای این سفارش یا این نشانی قابل انتخاب نیست.',
+        false,
+      )
+    }
+    if (result.error.code === 'DELIVERY_VEHICLE_TARIFF_MISSING') {
+      return fail(
+        result.error.code,
+        'این سفارش به خودرو نیاز دارد و هنوز نرخ ارسال با خودرو برای این شهر ثبت نشده است.',
+        false,
+      )
+    }
+    return fail(result.error.code, 'محاسبهٔ هزینه ناموفق بود.', true)
+  }
   return { ok: true, quote: result.data }
 }
 

@@ -68,10 +68,18 @@ export function CheckoutFlow({
   // Fixed for the life of the page. Recomputing it per render would make
   // "امروز" flip to "فردا" underneath a customer at midnight, mid-checkout.
   const [openedAt] = useState(() => new Date())
+  /**
+   * The vehicle the customer picked, or null for "whatever is cheapest".
+   *
+   * Null rather than defaulting to MOTORCYCLE, because on a village address the
+   * motorcycle is not available and pre-selecting it would mean the first quote
+   * is refused before the customer has touched anything.
+   */
+  const [vehicle, setVehicle] = useState<'MOTORCYCLE' | 'CAR' | null>(null)
 
   const bookable = windows.filter((entry) => entry.available)
 
-  function priceIt(addressId: string) {
+  function priceIt(addressId: string, withVehicle: 'MOTORCYCLE' | 'CAR' | null = vehicle) {
     setError(null)
     setQuote(null)
     startTransition(async () => {
@@ -79,10 +87,25 @@ export function CheckoutFlow({
         addressId,
         code.trim() || undefined,
         chosenWindow ?? undefined,
+        withVehicle ?? undefined,
       )
       if (result.ok) setQuote(result.quote)
       else setError(result.message)
     })
+  }
+
+  /**
+   * Re-prices on the new vehicle immediately rather than waiting for the
+   * customer to press anything.
+   *
+   * The whole reason to show the choice is that it changes the fare, so a
+   * selection that leaves the old total on screen is showing a price that is no
+   * longer true. Passed explicitly rather than read from state, because the
+   * state update has not landed yet when this runs.
+   */
+  function chooseVehicle(profile: 'MOTORCYCLE' | 'CAR') {
+    setVehicle(profile)
+    if (selected) priceIt(selected, profile)
   }
 
   function pay() {
@@ -344,25 +367,51 @@ export function CheckoutFlow({
             <dd>{quote ? formatToman(quote.deliveryFee.amount) : '—'}</dd>
           </div>
           {/*
-            Shown only when the answer is a car, and shown as a statement rather
-            than a choice. The customer is not being asked to pick a vehicle —
-            the order already requires one — but they are owed the reason,
-            because it is the first thing anyone asks and because the two
-            reasons suggest completely different things to do about it: fewer
-            loaves changes a LOAD verdict, and nothing changes a DISTANCE one.
+            Both vehicles, always, with the unavailable one disabled and saying
+            why. Showing it disabled rather than hiding it is the point: a
+            customer in a village learns that bread does reach them, by car,
+            which a missing option would never have told them.
+
+            Buttons rather than a radio group because choosing re-prices the
+            basket — it is an action with a visible consequence, not a
+            preference collected now and applied later.
           */}
-          {quote?.deliveryVehicleProfile === 'CAR' && (
+          {quote?.deliveryVehicleOptions && (
             <div>
-              <dt>وسیلهٔ ارسال</dt>
+              <dt id="vehicleChoice">وسیلهٔ ارسال</dt>
               <dd>
-                خودرو
-                <span className="checkout__vehicle-reason">
-                  {quote.deliveryVehicleReason === 'LOAD'
-                    ? 'تعداد سفارش برای موتور زیاد است.'
-                    : quote.deliveryVehicleReason === 'DISTANCE'
-                      ? 'مقصد بیرون از محدودهٔ موتور است.'
-                      : 'هم تعداد سفارش زیاد است و هم مقصد دور.'}
-                </span>
+                <div
+                  className="checkout__vehicle-options"
+                  role="group"
+                  aria-labelledby="vehicleChoice"
+                >
+                  {quote.deliveryVehicleOptions.map((option) => {
+                    const chosen = quote.deliveryVehicleProfile === option.profile
+                    return (
+                      <button
+                        key={option.profile}
+                        type="button"
+                        disabled={!option.available || pending}
+                        aria-pressed={chosen}
+                        onClick={() => chooseVehicle(option.profile)}
+                        className={chosen ? 'is-chosen' : undefined}
+                      >
+                        <span>{option.profile === 'CAR' ? 'خودرو' : 'موتور'}</span>
+                        {!option.available && (
+                          <span className="checkout__vehicle-reason">
+                            {option.blockedBy === 'LOAD'
+                              ? 'تعداد سفارش زیاد است'
+                              : option.blockedBy === 'AREA'
+                                ? 'خارج از محدودهٔ پیک موتوری'
+                                : option.blockedBy === 'LOAD_AND_DISTANCE'
+                                  ? 'تعداد زیاد و مقصد دور'
+                                  : 'مقصد دور است'}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </dd>
             </div>
           )}

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_VEHICLE_POLICY,
+  deliveryVehicleOptions,
   requiredDeliveryVehicle,
+  vehicleChoiceAllowed,
   vehicleSatisfies,
   type VehiclePolicy,
 } from './delivery-vehicle'
@@ -127,5 +129,110 @@ describe('which couriers may take it', () => {
     // sold as fresh.
     expect(vehicleSatisfies('MOTORCYCLE', 'BICYCLE')).toBe(false)
     expect(vehicleSatisfies('MOTORCYCLE', 'ON_FOOT')).toBe(false)
+  })
+})
+
+/*
+ * Offering the choice rather than announcing the answer.
+ *
+ * Both vehicles are always shown. The one that cannot be used is shown disabled
+ * with a reason, because that teaches the customer something a missing option
+ * cannot: that bread does reach their village, by car.
+ */
+describe('what the customer may choose', () => {
+  const blocked = (input: Parameters<typeof deliveryVehicleOptions>[0]) =>
+    deliveryVehicleOptions(input, policy).options.find((o) => o.profile === 'MOTORCYCLE')!
+
+  it('offers both when nothing stands in the way', () => {
+    const choice = deliveryVehicleOptions({ itemCount: 4, distanceMetres: 1_800 }, policy)
+    expect(choice.options.map((o) => [o.profile, o.available])).toEqual([
+      ['MOTORCYCLE', true],
+      ['CAR', true],
+    ])
+    expect(choice.fallback).toBe('MOTORCYCLE')
+  })
+
+  it('never blocks the car, so nobody is offered nothing', () => {
+    // The state that matters most for the addresses this exists to serve: a
+    // village loses the motorcycle and must not lose the order with it.
+    const choice = deliveryVehicleOptions(
+      { itemCount: 900, distanceMetres: 80_000, motorcycleAllowedInArea: false },
+      policy,
+    )
+    expect(choice.options.find((o) => o.profile === 'CAR')).toEqual({
+      profile: 'CAR',
+      available: true,
+    })
+    expect(choice.fallback).toBe('CAR')
+  })
+
+  it('disables the motorcycle for an area that does not take them', () => {
+    // Not arithmetic: eight kilometres is inside the range, and the far side of
+    // a river with one bridge is still nowhere to send a loaded motorcycle.
+    expect(
+      blocked({ itemCount: 3, distanceMetres: 8_000, motorcycleAllowedInArea: false }),
+    ).toEqual({ profile: 'MOTORCYCLE', available: false, blockedBy: 'AREA' })
+  })
+
+  it('reports the area ahead of the thresholds, because only it is final', () => {
+    // A smaller basket fixes LOAD and a nearer address fixes DISTANCE. An area
+    // that refuses motorcycles refuses them at any size, so telling somebody
+    // their basket is too big would send them to shrink it for nothing.
+    expect(
+      blocked({ itemCount: 900, distanceMetres: 90_000, motorcycleAllowedInArea: false })
+        ?.blockedBy,
+    ).toBe('AREA')
+  })
+
+  it('treats an area that permits them as no obstacle at all', () => {
+    expect(
+      blocked({ itemCount: 3, distanceMetres: 1_000, motorcycleAllowedInArea: true }).available,
+    ).toBe(true)
+  })
+
+  it('defaults to permitting them when the area says nothing', () => {
+    // Every area predates the flag, and every one of them allowed motorcycles.
+    expect(blocked({ itemCount: 3, distanceMetres: 1_000 }).available).toBe(true)
+  })
+
+  it('falls back to the cheapest option that is actually available', () => {
+    expect(deliveryVehicleOptions({ itemCount: 4, distanceMetres: 100 }, policy).fallback).toBe(
+      'MOTORCYCLE',
+    )
+    expect(deliveryVehicleOptions({ itemCount: 4, distanceMetres: 99_000 }, policy).fallback).toBe(
+      'CAR',
+    )
+  })
+})
+
+describe('checking a choice the customer sent', () => {
+  it('refuses a motorcycle the order cannot use', () => {
+    // The interface disabling the option is a courtesy; this is the
+    // enforcement. Somebody who edits the request must not get a motorcycle
+    // fare for four hundred loaves.
+    const choice = deliveryVehicleOptions({ itemCount: 400, distanceMetres: 500 }, policy)
+    expect(vehicleChoiceAllowed(choice, 'MOTORCYCLE')).toBe(false)
+    expect(vehicleChoiceAllowed(choice, 'CAR')).toBe(true)
+  })
+
+  it('allows a car even when a motorcycle would have done', () => {
+    // Choosing the dearer vehicle is always the customer's to make — they may
+    // want it out of the rain.
+    const choice = deliveryVehicleOptions({ itemCount: 2, distanceMetres: 500 }, policy)
+    expect(vehicleChoiceAllowed(choice, 'CAR')).toBe(true)
+    expect(vehicleChoiceAllowed(choice, 'MOTORCYCLE')).toBe(true)
+  })
+})
+
+describe('the single answer, for callers that want one', () => {
+  it('reports an area refusal as DISTANCE, which is what a quote can record', () => {
+    // AREA describes where the order is going; the quote's reasons describe the
+    // order. "A motorcycle does not come out this far" is the truthful summary.
+    expect(
+      requiredDeliveryVehicle(
+        { itemCount: 2, distanceMetres: 3_000, motorcycleAllowedInArea: false },
+        policy,
+      ),
+    ).toMatchObject({ profile: 'CAR', reason: 'DISTANCE' })
   })
 })

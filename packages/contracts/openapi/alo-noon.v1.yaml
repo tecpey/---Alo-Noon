@@ -2269,6 +2269,16 @@ components:
         deliveryAddressId: { type: string, format: uuid }
         expectedCartVersion: { type: integer, minimum: 1 }
         idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+        deliveryVehicleProfile:
+          type: string
+          enum: [MOTORCYCLE, CAR]
+          description: >
+            The vehicle the customer picked. Optional: omitting it takes the
+            cheapest option actually available — the motorcycle where one is on
+            offer, the car where it is not. A choice the order does not permit
+            is refused with 422 rather than quietly corrected, because a
+            customer who picked the cheaper vehicle and was charged for the
+            dearer one would reasonably call that a bait.
         promotionCode:
           type: string
           minLength: 1
@@ -2498,6 +2508,30 @@ components:
             its presence alone answers the question. The two single reasons
             suggest different remedies — fewer items changes a LOAD verdict and
             nothing changes a DISTANCE one — which is why they are not collapsed.
+        deliveryVehicleOptions:
+          type: array
+          description: >
+            Both vehicles and whether each can be chosen for this order, so the
+            interface can show the unavailable one disabled rather than hide it.
+            A disabled option with a reason tells a customer in an outlying
+            village something a missing option cannot: that bread does reach
+            them, by car. Returned only when a quote is created — it describes
+            what was on offer at that moment, not a property of the quote.
+          items:
+            type: object
+            additionalProperties: false
+            required: [profile, available]
+            properties:
+              profile: { type: string, enum: [MOTORCYCLE, CAR] }
+              available: { type: boolean }
+              blockedBy:
+                type: string
+                enum: [LOAD, DISTANCE, LOAD_AND_DISTANCE, AREA]
+                description: >
+                  Why the option cannot be chosen. AREA is the one the customer
+                  cannot act on — a smaller basket fixes LOAD and a nearer
+                  address fixes DISTANCE, while an operational area marked
+                  car-only refuses a motorcycle at any size.
         deliveryPricingRuleId: { type: string, format: uuid }
         deliveryPricingRuleVersion: { type: integer, minimum: 1 }
         subtotal: { $ref: '#/components/schemas/Money' }

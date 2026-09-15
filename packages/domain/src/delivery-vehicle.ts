@@ -114,10 +114,69 @@ export function vehiclePolicyForCity(
   })
 }
 
-export function requiredDeliveryVehicle(
-  input: { itemCount: number; distanceMetres: number },
+/**
+ * Why a motorcycle is not on offer, when it is not.
+ *
+ * `AREA` is the one that is not arithmetic: an operational area can be marked
+ * car-only whatever its distance, because "out of motorcycle range" is
+ * sometimes geography rather than kilometres — a village eight kilometres away
+ * on the far side of a river, or up a track a loaded motorcycle should not
+ * take. The other three fall out of the thresholds.
+ */
+export type MotorcycleBlockedReason = Exclude<VehicleRequirementReason, 'NONE'> | 'AREA'
+
+export interface VehicleOption {
+  readonly profile: RoutingProfile
+  readonly available: boolean
+  /** Absent when the option is available. */
+  readonly blockedBy?: MotorcycleBlockedReason
+}
+
+export interface VehicleChoice {
+  /** Always both profiles, in the order they should be shown. */
+  readonly options: readonly VehicleOption[]
+  /**
+   * What to use when the customer expresses no preference — the cheapest
+   * option that is actually available, which is the motorcycle when it is on
+   * offer and the car when it is not.
+   */
+  readonly fallback: RoutingProfile
+}
+
+export interface VehicleAvailabilityInput {
+  readonly itemCount: number
+  readonly distanceMetres: number
+  /**
+   * Whether the operational area this address sits in permits motorcycles at
+   * all. Defaults to true, which is what every area was before areas could say
+   * otherwise.
+   */
+  readonly motorcycleAllowedInArea?: boolean
+}
+
+/**
+ * Both vehicles, each with whether it can actually be chosen.
+ *
+ * The customer picks. That is a change from deriving one answer and telling
+ * them, and it is a better interface for the same reason a disabled button with
+ * a reason beats a sentence explaining why there is no button: it shows the
+ * shape of the constraint. Somebody who can see "motorcycle — too far" learns
+ * something about their address that a paragraph would not have taught them.
+ *
+ * What does not change is that the constraint is real. A blocked option is
+ * blocked on the server too; the interface disabling it is a courtesy, not the
+ * enforcement.
+ *
+ * A car is never blocked. It can carry anything a motorcycle can and go
+ * anywhere a motorcycle can go, so there is no state in which a customer is
+ * offered nothing — which matters most precisely for the addresses this exists
+ * to serve, the villages and estates where the motorcycle is the option that
+ * disappears.
+ */
+export function deliveryVehicleOptions(
+  input: VehicleAvailabilityInput,
   policy: VehiclePolicy = DEFAULT_VEHICLE_POLICY,
-): Readonly<VehicleRequirement> {
+): Readonly<VehicleChoice> {
   const { itemCount, distanceMetres } = input
   if (!Number.isSafeInteger(itemCount) || itemCount < 0) {
     throw new DomainError('INVALID_VEHICLE_INPUT', 'Item count is invalid')
@@ -134,15 +193,62 @@ export function requiredDeliveryVehicle(
   // car, which is the expensive direction to be wrong in by accident.
   const overloaded = itemCount > policy.motorcycleItemLimit
   const tooFar = distanceMetres > policy.motorcycleRangeMetres
+  const areaRefuses = input.motorcycleAllowedInArea === false
 
-  const reason: VehicleRequirementReason =
-    overloaded && tooFar ? 'LOAD_AND_DISTANCE' : overloaded ? 'LOAD' : tooFar ? 'DISTANCE' : 'NONE'
+  // The area is reported first when it applies. It is the only reason the
+  // customer cannot do anything about — a smaller basket fixes LOAD and a
+  // nearer address fixes DISTANCE, while an area that does not take
+  // motorcycles will not take one at any size.
+  const blockedBy: MotorcycleBlockedReason | null = areaRefuses
+    ? 'AREA'
+    : overloaded && tooFar
+      ? 'LOAD_AND_DISTANCE'
+      : overloaded
+        ? 'LOAD'
+        : tooFar
+          ? 'DISTANCE'
+          : null
+
+  const motorcycle: VehicleOption = blockedBy
+    ? { profile: 'MOTORCYCLE', available: false, blockedBy }
+    : { profile: 'MOTORCYCLE', available: true }
 
   return Object.freeze({
-    profile: (reason === 'NONE' ? 'MOTORCYCLE' : 'CAR') satisfies RoutingProfile,
+    options: Object.freeze([motorcycle, Object.freeze({ profile: 'CAR', available: true })]),
+    fallback: blockedBy ? 'CAR' : 'MOTORCYCLE',
+  } satisfies VehicleChoice)
+}
+
+/** Whether a customer may choose this vehicle for this order. */
+export function vehicleChoiceAllowed(choice: VehicleChoice, profile: RoutingProfile): boolean {
+  return choice.options.some((option) => option.profile === profile && option.available)
+}
+
+/**
+ * The one vehicle this order would go out in if nobody chose.
+ *
+ * Kept as its own function because most callers want the answer rather than the
+ * menu, and expressed in terms of the menu so there is one place where a
+ * threshold is compared to a number.
+ */
+export function requiredDeliveryVehicle(
+  input: VehicleAvailabilityInput,
+  policy: VehiclePolicy = DEFAULT_VEHICLE_POLICY,
+): Readonly<VehicleRequirement> {
+  const choice = deliveryVehicleOptions(input, policy)
+  const motorcycle = choice.options.find((option) => option.profile === 'MOTORCYCLE')!
+  // `AREA` is not one of the reasons a quote records: those describe the order,
+  // and this one describes where it is going. It maps to DISTANCE, which is the
+  // truthful summary of "a motorcycle does not come out this far".
+  const blocked = motorcycle.blockedBy
+  const reason: VehicleRequirementReason =
+    blocked === undefined ? 'NONE' : blocked === 'AREA' ? 'DISTANCE' : blocked
+
+  return Object.freeze({
+    profile: choice.fallback,
     reason,
-    itemCount,
-    distanceMetres,
+    itemCount: input.itemCount,
+    distanceMetres: input.distanceMetres,
   })
 }
 

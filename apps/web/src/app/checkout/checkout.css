@@ -747,3 +747,86 @@
   font-weight: 400;
   line-height: 1.6;
 }
+
+/* Two vehicles side by side, wrapping to one column on the narrowest phones.
+   Not a radio group: pressing one re-prices the basket, so they are buttons. */
+.checkout__vehicle-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.checkout__vehicle-options button {
+  flex: 1 1 8rem;
+  /* A flex item's automatic minimum is its content, so without this the reason
+     text — which is a whole phrase — refuses to let the row wrap on a phone. */
+  min-inline-size: 0;
+  min-block-size: var(--touch-comfortable);
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-base) var(--easing-standard),
+    background var(--duration-base) var(--easing-standard);
+}
+.checkout__vehicle-options button.is-chosen {
+  border-color: var(--ink-action);
+  background: var(--tint-info-surface);
+}
+/* Dimmed, but never below the contrast a disabled control still has to meet:
+   the reason underneath is the most useful text on the row for the customer it
+   applies to, and greying it into illegibility would defeat showing it at all. */
+.checkout__vehicle-options button:disabled {
+  cursor: not-allowed;
+  border-style: dashed;
+  color: var(--ink-muted);
+  background: var(--surface-sunken);
+}
+
+/* Two vehicles side by side, wrapping to one column on the narrowest phones.
+   Not a radio group: pressing one re-prices the basket, so they are buttons. */
+.checkout__vehicle-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.checkout__vehicle-options button {
+  flex: 1 1 8rem;
+  /* A flex item's automatic minimum size is its content, and the reason text is
+     a whole phrase — without this the row refuses to shrink on a phone, which
+     is the same trap that put the storefront's search box off-screen. */
+  min-inline-size: 0;
+  min-block-size: var(--touch-comfortable);
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-base) var(--easing-standard),
+    background var(--duration-base) var(--easing-standard);
+}
+.checkout__vehicle-options button.is-chosen {
+  border-color: var(--ink-action);
+  background: var(--tint-info-surface);
+}
+/* Dimmed, but the reason underneath stays readable: it is the most useful text
+   on the row for the customer it applies to, and greying it into illegibility
+   would defeat the point of showing the disabled option at all. */
+.checkout__vehicle-options button:disabled {
+  cursor: not-allowed;
+  border-style: dashed;
+  color: var(--ink-muted);
+  background: var(--surface-sunken);
+}
