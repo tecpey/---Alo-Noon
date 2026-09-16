@@ -14,6 +14,14 @@ import {
   type PaginationMeta,
 } from './api-core'
 
+import type {
+  AdminDeliveryArea,
+  AdminDeliveryCity,
+  AdminDeliveryTariff,
+  PublishDeliveryTariffCommand,
+  SetCityVehicleThresholdsCommand,
+} from '@alo-noon/contracts'
+
 /**
  * The admin panel's view of the API.
  *
@@ -710,4 +718,51 @@ export interface StaffWithdrawalSummary {
 
 export async function readOpenWithdrawals(): Promise<ApiResult<StaffWithdrawalSummary[]>> {
   return request<StaffWithdrawalSummary[]>('/api/v1/admin/withdrawals', { method: 'GET' })
+}
+
+/* ------------------------------------------- delivery tariffs and vehicles */
+
+/**
+ * The three settings that decide what a delivery costs and what may carry it.
+ *
+ * Read together because they are set together: a city's motorcycle range
+ * decides which orders become car orders, and the car tariff decides whether
+ * those orders can be priced at all. A city with a tight range and no car
+ * tariff refuses every long delivery, and the screen has to be able to say so.
+ */
+export async function listDeliveryCities(): Promise<ApiResult<AdminDeliveryCity[]>> {
+  return request<AdminDeliveryCity[]>('/api/v1/admin/delivery/cities', { method: 'GET' })
+}
+
+export async function listDeliveryTariffs(
+  cityId?: string,
+): Promise<ApiResult<AdminDeliveryTariff[]>> {
+  const query = cityId ? `?${new URLSearchParams({ cityId }).toString()}` : ''
+  return request<AdminDeliveryTariff[]>(`/api/v1/admin/delivery/tariffs${query}`, { method: 'GET' })
+}
+
+export async function publishDeliveryTariff(
+  body: PublishDeliveryTariffCommand,
+): Promise<ApiResult<AdminDeliveryTariff>> {
+  return request<AdminDeliveryTariff>('/api/v1/admin/delivery/tariffs', { method: 'POST', body })
+}
+
+export async function setCityVehicleThresholds(
+  cityId: string,
+  body: SetCityVehicleThresholdsCommand,
+): Promise<ApiResult<AdminDeliveryCity>> {
+  return request<AdminDeliveryCity>(`/api/v1/admin/delivery/cities/${cityId}/thresholds`, {
+    method: 'POST',
+    body,
+  })
+}
+
+export async function setAreaMotorcycleAllowed(
+  areaId: string,
+  motorcycleAllowed: boolean,
+): Promise<ApiResult<AdminDeliveryArea>> {
+  return request<AdminDeliveryArea>(`/api/v1/admin/delivery/areas/${areaId}/motorcycle`, {
+    method: 'POST',
+    body: { motorcycleAllowed },
+  })
 }

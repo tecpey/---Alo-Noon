@@ -76,6 +76,10 @@ const ADMIN_OPERATIONS: ReadonlyArray<{
     path: '/api/v1/admin/email-providers/configurations/{configurationId}/health',
     methods: ['POST'],
   },
+  { path: '/api/v1/admin/delivery/cities', methods: ['GET'] },
+  { path: '/api/v1/admin/delivery/tariffs', methods: ['GET', 'POST'] },
+  { path: '/api/v1/admin/delivery/cities/{cityId}/thresholds', methods: ['POST'] },
+  { path: '/api/v1/admin/delivery/areas/{areaId}/motorcycle', methods: ['POST'] },
   { path: '/api/v1/admin/alert-recipients', methods: ['GET', 'POST'] },
   { path: '/api/v1/admin/alert-recipients/{recipientId}/enabled', methods: ['POST'] },
 ]
@@ -117,6 +121,7 @@ async function buildAdminApp() {
     },
     adminReporting: { service: {} as never, financialService: {} as never },
     adminCatalog: { service: {} as never },
+    adminDeliveryPricing: { service: {} as never },
     adminAccess: { service: {} as never },
     orderOperations: { service: {} as never },
     partnerSettlement: { service: {} as never },
@@ -256,6 +261,8 @@ describe('admin OpenAPI boundary', () => {
           .replace('{payoutId}', 'y1')
           .replace('{withdrawalId}', 'w1')
           .replace('{recipientId}', 'r1')
+          .replace('{cityId}', 'ci1')
+          .replace('{areaId}', 'ar1')
           .concat(operation.path.includes('/reports/') ? '?from=x&to=y' : '')
         for (const method of operation.methods) {
           const response = await app.inject({ method, url, payload: {} })

@@ -1863,6 +1863,141 @@ paths:
         '403': { description: The account may not settle customer withdrawals. }
         '404': { description: No such withdrawal request. }
         '503': { description: The withdrawal desk is temporarily unavailable. }
+  /api/v1/admin/delivery/cities:
+    get:
+      operationId: listDeliveryCities
+      summary: Cities with their motorcycle thresholds, areas, and whether a car can be quoted.
+      description: >
+        `hasActiveCarTariff` is the field an operator needs first. A city without
+        one refuses every order that requires a car — bulk orders, industrial
+        estates, villages and surrounding towns — with a message the customer
+        cannot act on. `motorcycleItemLimit` and `motorcycleRangeMetres` are null
+        where nobody has measured the city, which is deliberately distinct from a
+        tenant choosing a number that happens to equal the default; the effective
+        values say what the quote path would use today.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Every city this tenant serves.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminDeliveryCitiesEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: admin.delivery-pricing.manage is required. }
+  /api/v1/admin/delivery/tariffs:
+    get:
+      operationId: listDeliveryTariffs
+      summary: Delivery tariffs, newest version first, retired ones included.
+      description: >
+        Superseded versions are returned rather than hidden: an operator
+        checking what a fare used to be is the reason the versions exist.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: cityId
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Tariffs for the tenant, optionally narrowed to one city.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminDeliveryTariffsEnvelope' }
+        '401': { description: A valid staff session is required. }
+        '403': { description: admin.delivery-pricing.manage is required. }
+    post:
+      operationId: publishDeliveryTariff
+      summary: Publish a tariff version, retiring the one it replaces.
+      description: >
+        Both happen in one transaction. Only one tariff per city, zone and
+        vehicle may be active — a partial unique index enforces it — so
+        inserting without retiring the incumbent fails, and retiring without
+        inserting leaves the city unable to quote. Each vehicle versions from 1
+        in its own lineage, so publishing a car rate never renumbers the
+        motorcycle's.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishDeliveryTariffCommand' }
+      responses:
+        '201':
+          description: The published tariff.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminDeliveryTariffEnvelope' }
+        '400': { description: The command is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: admin.delivery-pricing.manage is required. }
+        '404': { description: The city was not found. }
+        '422':
+          description: >
+            The zone belongs to another city, a distance tariff charges nothing
+            per kilometre, or free delivery starts below the minimum order.
+  /api/v1/admin/delivery/cities/{cityId}/thresholds:
+    post:
+      operationId: setCityVehicleThresholds
+      summary: Set or clear a city's motorcycle thresholds.
+      description: >
+        Per city because the geography is: a Mazandaran city is a few kilometres
+        across with its estates on the ring road, and a city the size of Tehran
+        has neither property. Null clears the measurement and returns the city to
+        the documented default.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cityId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetCityVehicleThresholdsCommand' }
+      responses:
+        '200':
+          description: The city, with its effective thresholds recomputed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminDeliveryCityEnvelope' }
+        '400': { description: The thresholds are malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: admin.delivery-pricing.manage is required. }
+        '404': { description: The city was not found. }
+        '422': { description: A threshold was zero or negative. }
+  /api/v1/admin/delivery/areas/{areaId}/motorcycle:
+    post:
+      operationId: setAreaMotorcycleAllowed
+      summary: Whether an operational area takes motorcycles at all.
+      description: >
+        Independent of distance. A village eight kilometres out across a river
+        with one bridge is inside the threshold and still nowhere to send a
+        loaded motorcycle, and raising the whole city's range to reach it would
+        lose the protection everywhere else. Turning this off removes the
+        motorcycle from the customer's options for that area and leaves the car.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: areaId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetAreaMotorcycleCommand' }
+      responses:
+        '200':
+          description: The area, with its new setting.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminDeliveryAreaEnvelope' }
+        '400': { description: The request is malformed. }
+        '401': { description: A valid staff session is required. }
+        '403': { description: admin.delivery-pricing.manage is required. }
+        '404': { description: The service area was not found. }
+
   /api/v1/admin/routing-providers/configurations:
     get:
       operationId: listAdminRoutingConfigurations
@@ -2696,6 +2831,156 @@ components:
         success: { type: boolean, const: true }
         data: { $ref: '#/components/schemas/ReverseGeocodeResult' }
         meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminDeliveryTariff:
+      type: object
+      required:
+        [
+          id,
+          cityId,
+          cityNameFa,
+          operationalZoneId,
+          operationalZoneNameFa,
+          vehicleProfile,
+          version,
+          calculationMode,
+          baseFeeAmount,
+          perKilometerFeeAmount,
+          minimumOrderAmount,
+          freeDeliveryThreshold,
+          effectiveFrom,
+          effectiveUntil,
+          isActive,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        cityId: { type: string, format: uuid }
+        cityNameFa: { type: string, minLength: 1 }
+        operationalZoneId: { type: [string, 'null'], format: uuid }
+        operationalZoneNameFa: { type: [string, 'null'] }
+        vehicleProfile: { type: string, enum: [MOTORCYCLE, CAR] }
+        version: { type: integer, minimum: 1 }
+        calculationMode: { type: string, enum: [FLAT, DISTANCE_BANDED] }
+        baseFeeAmount:
+          type: string
+          pattern: '^\\d{1,18}$'
+          description: Whole Rial as a string; a JSON number would round it.
+        perKilometerFeeAmount: { type: string, pattern: '^\\d{1,18}$' }
+        minimumOrderAmount: { type: [string, 'null'], pattern: '^\\d{1,18}$' }
+        freeDeliveryThreshold: { type: [string, 'null'], pattern: '^\\d{1,18}$' }
+        effectiveFrom: { type: string, format: date-time }
+        effectiveUntil: { type: [string, 'null'], format: date-time }
+        isActive: { type: boolean }
+    AdminDeliveryArea:
+      type: object
+      required:
+        [id, nameFa, code, operationalZoneId, operationalZoneNameFa, motorcycleAllowed, isActive]
+      properties:
+        id: { type: string, format: uuid }
+        nameFa: { type: string, minLength: 1 }
+        code: { type: string, minLength: 1, maxLength: 32 }
+        operationalZoneId: { type: string, format: uuid }
+        operationalZoneNameFa: { type: string, minLength: 1 }
+        motorcycleAllowed: { type: boolean }
+        isActive: { type: boolean }
+    AdminDeliveryCity:
+      type: object
+      required:
+        [
+          id,
+          nameFa,
+          motorcycleItemLimit,
+          motorcycleRangeMetres,
+          effectiveItemLimit,
+          effectiveRangeMetres,
+          hasActiveCarTariff,
+          areas,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        nameFa: { type: string, minLength: 1 }
+        motorcycleItemLimit:
+          type: [integer, 'null']
+          minimum: 1
+          description: Null means nobody has measured this city; the default applies.
+        motorcycleRangeMetres: { type: [integer, 'null'], minimum: 1 }
+        effectiveItemLimit: { type: integer, minimum: 1 }
+        effectiveRangeMetres: { type: integer, minimum: 1 }
+        hasActiveCarTariff:
+          type: boolean
+          description: >
+            False means every order needing a car is refused in this city.
+        areas:
+          type: array
+          items: { $ref: '#/components/schemas/AdminDeliveryArea' }
+    PublishDeliveryTariffCommand:
+      type: object
+      additionalProperties: false
+      required: [cityId, vehicleProfile, calculationMode, baseFeeAmount, perKilometerFeeAmount]
+      properties:
+        cityId: { type: string, format: uuid }
+        operationalZoneId:
+          type: string
+          format: uuid
+          description: Absent means the city-wide tariff, the fallback for zones with none.
+        vehicleProfile: { type: string, enum: [MOTORCYCLE, CAR] }
+        calculationMode: { type: string, enum: [FLAT, DISTANCE_BANDED] }
+        baseFeeAmount: { type: string, pattern: '^\\d{1,18}$' }
+        perKilometerFeeAmount: { type: string, pattern: '^\\d{1,18}$' }
+        minimumOrderAmount: { type: string, pattern: '^\\d{1,18}$' }
+        freeDeliveryThreshold: { type: string, pattern: '^\\d{1,18}$' }
+    SetCityVehicleThresholdsCommand:
+      type: object
+      additionalProperties: false
+      required: [motorcycleItemLimit, motorcycleRangeMetres]
+      properties:
+        motorcycleItemLimit: { type: [integer, 'null'], minimum: 1 }
+        motorcycleRangeMetres: { type: [integer, 'null'], minimum: 1 }
+    SetAreaMotorcycleCommand:
+      type: object
+      additionalProperties: false
+      required: [motorcycleAllowed]
+      properties:
+        motorcycleAllowed: { type: boolean }
+    AdminDeliveryCitiesEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminDeliveryCity' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminDeliveryCityEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminDeliveryCity' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminDeliveryTariffsEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AdminDeliveryTariff' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminDeliveryTariffEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminDeliveryTariff' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+    AdminDeliveryAreaEnvelope:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/AdminDeliveryArea' }
+        meta: { $ref: '#/components/schemas/ResponseMeta' }
+
     OrderCreate:
       type: object
       additionalProperties: false

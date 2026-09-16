@@ -11,6 +11,7 @@ const SECTIONS = [
   { href: '/admin/settlement', label: 'تسویه با شرکا' },
   { href: '/admin/catalog', label: 'کاتالوگ' },
   { href: '/admin/pricing', label: 'قیمت‌گذاری' },
+  { href: '/admin/delivery', label: 'کرایه و محدودهٔ ارسال' },
   { href: '/admin/providers', label: 'سرویس‌دهنده‌ها' },
   { href: '/admin/messaging', label: 'متن پیام‌ها' },
   { href: '/admin/access', label: 'دسترسی‌ها' },

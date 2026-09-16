@@ -830,3 +830,39 @@ td a {
 .branch-search__row button {
   flex: 0 0 auto;
 }
+
+/*
+  A card that is reporting a problem rather than presenting a form.
+
+  Used by the delivery page for cities with no car tariff, which is not a
+  settings gap but an outage confined to the most valuable orders the shop
+  takes: every factory, school and village order is refused until one exists.
+  It reads as a warning so nobody scrolls past it looking for a form.
+*/
+.card--warning {
+  border-color: var(--tint-warning-ink);
+  background: var(--tint-warning-surface);
+}
+.card--warning strong {
+  color: var(--tint-warning-ink);
+}
+
+/* A list of names rather than a list of rows — city names under the warning
+   above. Inline and wrapping, because there may be one or there may be twelve. */
+.rows--chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.rows--chips li {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--tint-warning-ink);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+/* A superseded tariff. Kept visible rather than hidden: an operator checking
+   what a fare used to be is the reason the versions exist at all. */
+tr.is-retired {
+  color: var(--ink-muted);
+}

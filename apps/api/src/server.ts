@@ -28,6 +28,7 @@ import {
 import { createPrismaAdminReportingService } from './modules/admin-reporting.js'
 import { createPrismaAdminLogisticsService } from './modules/admin-logistics.js'
 import { createPrismaAdminFinancialReportingService } from './modules/admin-financial-reporting.js'
+import { createPrismaAdminDeliveryPricingService } from './modules/admin-delivery-pricing.js'
 import { createPrismaAdminCatalogService } from './modules/admin-catalog.js'
 import { createPrismaAdminAccessService } from './modules/admin-access.js'
 import { createPrismaAdminMessagingService } from './modules/admin-messaging.js'
@@ -272,6 +273,7 @@ const adminReporting = {
 // Catalogue writes re-check the acting account's permission inside their own
 // transaction, so this instance carries no ambient authority of its own.
 const adminCatalog = { service: createPrismaAdminCatalogService(prisma) }
+const adminDeliveryPricing = { service: createPrismaAdminDeliveryPricingService(prisma) }
 
 // Access management is its own service so that `admin.access.manage` can be
 // withheld from an otherwise fully privileged operator.
@@ -431,6 +433,7 @@ const app = await buildApp({
   adminReporting,
   adminLogistics: { service: createPrismaAdminLogisticsService(prisma) },
   adminCatalog,
+  adminDeliveryPricing,
   adminAccess,
   adminMessaging,
   orderOperations,

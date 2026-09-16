@@ -1,5 +1,6 @@
 export * from './admin-access'
 export * from './admin-catalog'
+export * from './admin-delivery-pricing'
 export * from './admin-financial'
 export * from './admin-messaging'
 export * from './admin-providers'

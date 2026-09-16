@@ -29,6 +29,16 @@ export const ADMIN_PERMISSIONS = {
   catalogManage: 'admin.catalog.manage',
   accessManage: 'admin.access.manage',
   financeSettle: 'admin.finance.settle',
+  /**
+   * Delivery tariffs, a city's motorcycle thresholds, and whether an
+   * operational area takes motorcycles at all.
+   *
+   * Separate from `catalogManage` because the two answer to different people:
+   * the catalogue is what the bakery sells, and this is what it costs to carry
+   * it and which vehicle may. A tariff published wrongly here does not change a
+   * single product and still underprices every long journey the shop takes.
+   */
+  deliveryPricingManage: 'admin.delivery-pricing.manage',
 } as const
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[keyof typeof ADMIN_PERMISSIONS]
@@ -66,6 +76,11 @@ export const ADMIN_PERMISSION_DEFINITIONS: readonly AdminPermissionDefinition[] 
   {
     code: ADMIN_PERMISSIONS.accessManage,
     description: 'Grant and revoke staff roles within the tenant',
+  },
+  {
+    code: ADMIN_PERMISSIONS.deliveryPricingManage,
+    description:
+      'Publish delivery tariffs, set a city\u2019s motorcycle thresholds, and mark areas car-only',
   },
   {
     code: ADMIN_PERMISSIONS.financeSettle,
@@ -157,6 +172,13 @@ export const ADMIN_ROLES: readonly AdminRoleDefinition[] = Object.freeze([
     name: 'Catalog manager',
     nameFa: 'مدیر کاتالوگ',
     permissions: [ADMIN_PERMISSIONS.catalogManage, ADMIN_PERMISSIONS.reportsRead],
+  },
+  {
+    code: 'DELIVERY_PRICING_MANAGER',
+    scope: 'TENANT',
+    name: 'Delivery pricing manager',
+    nameFa: 'مدیر کرایه و محدودهٔ ارسال',
+    permissions: [ADMIN_PERMISSIONS.deliveryPricingManage, ADMIN_PERMISSIONS.reportsRead],
   },
   {
     code: 'ACCESS_ADMIN',

@@ -1031,3 +1031,128 @@ export async function rejectWithdrawalAction(
   revalidatePath('/admin/settlement')
   return success('درخواست رد شد و مبلغ به کیف پول مشتری برگشت.')
 }
+
+/* ------------------------------------------- delivery tariffs and vehicles */
+
+/**
+ * Publishing a delivery tariff.
+ *
+ * Amounts are typed in Toman and stored in Rial, like every other price in the
+ * panel — an operator who types a Rial figure into a Toman field publishes a
+ * fare a tenth of what they meant, and the only defence against that is that
+ * every money field in this panel means the same thing.
+ *
+ * A zero base fee is allowed and deliberately not treated as an empty field: a
+ * city may legitimately charge nothing to call out and bill only by distance.
+ */
+export async function publishDeliveryTariffAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const baseFee = zeroablePriceField(form, 'baseFeeAmount')
+  if (baseFee === null) return failure('کرایهٔ پایه باید عددی به تومان باشد.')
+  const perKm = zeroablePriceField(form, 'perKilometerFeeAmount')
+  if (perKm === null) return failure('کرایهٔ هر کیلومتر باید عددی به تومان باشد.')
+
+  const mode = field(form, 'calculationMode')
+  if (mode === 'DISTANCE_BANDED' && BigInt(perKm) <= 0n) {
+    // The same rule the contract and the service enforce. Said here too because
+    // this is where somebody can still fix it without a round trip.
+    return failure('برای تعرفهٔ مسافتی، کرایهٔ هر کیلومتر باید بیشتر از صفر باشد.')
+  }
+
+  const minimumOrder = priceField(form, 'minimumOrderAmount')
+  const freeThreshold = priceField(form, 'freeDeliveryThreshold')
+  const zone = field(form, 'operationalZoneId')
+
+  const result = await post<{ id: string }>('/api/v1/admin/delivery/tariffs', {
+    cityId: field(form, 'cityId'),
+    ...(zone && { operationalZoneId: zone }),
+    vehicleProfile: field(form, 'vehicleProfile'),
+    calculationMode: mode,
+    baseFeeAmount: baseFee,
+    perKilometerFeeAmount: perKm,
+    ...(minimumOrder && { minimumOrderAmount: minimumOrder }),
+    ...(freeThreshold && { freeDeliveryThreshold: freeThreshold }),
+  })
+  if (!result.ok) {
+    return failure(translateProviderError(result.error.code, 'ثبت تعرفه ناموفق بود.'))
+  }
+  revalidatePath('/admin/delivery')
+  return success('تعرفهٔ تازه منتشر شد و نسخهٔ قبلی همان لحظه بازنشسته شد.')
+}
+
+/**
+ * A city's motorcycle thresholds.
+ *
+ * An empty field is not a validation failure — it clears the measurement and
+ * returns the city to the documented default, which is a real thing an operator
+ * may want. Sending null rather than omitting the key is what makes that
+ * distinguishable from "leave it as it is".
+ */
+export async function setCityThresholdsAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const cityId = field(form, 'cityId')
+  const limit = nullableCountField(form, 'motorcycleItemLimit')
+  if (limit === 'INVALID') return failure('سقف تعداد باید عددی مثبت باشد یا خالی بماند.')
+  const rangeKm = field(form, 'motorcycleRangeKm')
+  let range: number | null = null
+  if (rangeKm) {
+    const parsed = Number(rangeKm.replace(/[^\d.]/g, ''))
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return failure('محدودهٔ موتور باید عددی مثبت به کیلومتر باشد یا خالی بماند.')
+    }
+    // Typed in kilometres because that is how an operator thinks about a city;
+    // stored in metres because that is what the distance is measured in.
+    range = Math.round(parsed * 1_000)
+  }
+
+  const result = await post<{ id: string }>(`/api/v1/admin/delivery/cities/${cityId}/thresholds`, {
+    motorcycleItemLimit: limit,
+    motorcycleRangeMetres: range,
+  })
+  if (!result.ok) {
+    return failure(translateProviderError(result.error.code, 'ثبت محدودهٔ شهر ناموفق بود.'))
+  }
+  revalidatePath('/admin/delivery')
+  return success('محدودهٔ موتور برای این شهر ثبت شد.')
+}
+
+/** Whether an area takes motorcycles at all — the villages switch. */
+export async function setAreaMotorcycleAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const areaId = field(form, 'areaId')
+  const allowed = field(form, 'motorcycleAllowed') === 'true'
+  const result = await post<{ id: string }>(`/api/v1/admin/delivery/areas/${areaId}/motorcycle`, {
+    motorcycleAllowed: allowed,
+  })
+  if (!result.ok) {
+    return failure(translateProviderError(result.error.code, 'تغییر وضعیت منطقه ناموفق بود.'))
+  }
+  revalidatePath('/admin/delivery')
+  return success(
+    allowed
+      ? 'پیک موتوری برای این منطقه فعال شد.'
+      : 'پیک موتوری برای این منطقه غیرفعال شد؛ سفارش‌های این منطقه فقط با خودرو ارسال می‌شوند.',
+  )
+}
+
+/** Like `priceField`, but zero is a real answer rather than an empty one. */
+function zeroablePriceField(form: FormData, name: string): string | null {
+  const raw = field(form, name)
+  if (!raw) return '0'
+  const rial = parseTomanToRial(raw)
+  return rial !== null && rial >= 0n && rial.toString().length <= 18 ? rial.toString() : null
+}
+
+/** A positive integer, null for "clear it", or INVALID for anything else. */
+function nullableCountField(form: FormData, name: string): number | null | 'INVALID' {
+  const raw = field(form, name)
+  if (!raw) return null
+  const parsed = Number(raw.replace(/[^\d]/g, ''))
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 'INVALID'
+}
