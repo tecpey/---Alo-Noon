@@ -201,6 +201,56 @@ databaseDescribe('courier assignment over PostgreSQL', () => {
     expect(proposal.totalApproachMetres).toBe(0)
     expect(proposal.idleCourierCount).toBe(1)
   })
+
+  /*
+   * The vehicle requirement, from the quote all the way to the plan.
+   *
+   * The unit tests prove the matcher refuses correctly. These prove the two
+   * reads that feed it — order to quote for what the run needs, and the courier
+   * row for what they ride — because a matcher that is right about data it
+   * never receives is a matcher that changes nothing.
+   */
+  it('sends a car order past a nearer motorcycle to the only car', async () => {
+    const world = await buildWorld('VEHICLE')
+    const run = await world.delivery(400, { vehicleProfile: 'CAR' })
+    const rider = await world.courier('راکب موتور', {
+      lastDeliveryMetres: 100,
+      vehicleType: 'MOTORCYCLE',
+    })
+    const driver = await world.courier('رانندهٔ خودرو', {
+      lastDeliveryMetres: 9_000,
+      vehicleType: 'CAR',
+    })
+
+    const plan = await world.propose()
+    const pair = plan.pairs.find((entry) => entry.runId === run)
+    expect(pair?.courierId).toBe(driver)
+    expect(pair?.courierId).not.toBe(rider)
+  })
+
+  it('leaves a car order waiting when only motorcycles are free', async () => {
+    // Visible to a dispatcher as an unassigned run, which is a problem somebody
+    // can solve. The alternative was a rider arriving for four hundred loaves.
+    const world = await buildWorld('NOCAR')
+    const run = await world.delivery(400, { vehicleProfile: 'CAR' })
+    await world.courier('راکب موتور', { lastDeliveryMetres: 100, vehicleType: 'MOTORCYCLE' })
+
+    const plan = await world.propose()
+    expect(plan.pairs).toEqual([])
+    expect(plan.unassigned.map((entry) => entry.runId)).toContain(run)
+  })
+
+  it('still pairs an ordinary order with a courier whose vehicle nobody recorded', async () => {
+    // Every existing courier has a null vehicle. Refusing them would have
+    // stopped the board dead on the day this shipped.
+    const world = await buildWorld('UNKNOWNV')
+    const run = await world.delivery(400)
+    const courier = await world.courier('بدون وسیلهٔ ثبت‌شده', { lastDeliveryMetres: 100 })
+
+    const plan = await world.propose()
+    expect(plan.pairs.map((entry) => entry.courierId)).toEqual([courier])
+    expect(plan.unassigned.map((entry) => entry.runId)).not.toContain(run)
+  })
 })
 
 async function buildWorld(label: string) {
@@ -266,15 +316,62 @@ async function buildWorld(label: string) {
   /** One delivery task, `metresNorth` from the branch, in whatever state is asked. */
   async function makeTask(
     metresNorth: number,
-    options: { secondBranch?: boolean; createdAt?: Date; state?: 'UNASSIGNED' | 'DELIVERED' } = {},
+    options: {
+      secondBranch?: boolean
+      createdAt?: Date
+      state?: 'UNASSIGNED' | 'DELIVERED'
+      vehicleProfile?: 'MOTORCYCLE' | 'CAR'
+    } = {},
   ): Promise<string> {
     const key = randomUUID()
     const target = options.secondBranch ? otherBranch : branch
+
+    /**
+     * A quote, when the run is meant to carry a vehicle requirement.
+     *
+     * Built rather than stubbed because the value has to survive the join the
+     * service actually makes — order to quote — and a stub would prove the
+     * matcher works while leaving the two-hop read untested, which is exactly
+     * where this would break.
+     */
+    let quoteId: string | undefined
+    if (options.vehicleProfile) {
+      const cart = await prisma.cart.create({
+        data: {
+          tenantId,
+          customerId: customer.id,
+          cityId: city.id,
+          operationalZoneId: zone.id,
+          bakeryBranchId: target.id,
+        },
+      })
+      const quote = await prisma.quote.create({
+        data: {
+          tenantId,
+          idempotencyKey: `ca-quote-${key}`,
+          cartId: cart.id,
+          customerId: customer.id,
+          cartVersion: 1,
+          expiresAt: new Date(Date.now() + 600_000),
+          // Quote_amounts_check enforces total = subtotal + delivery - discount.
+          // The numbers here are not decoration; a quote that does not balance
+          // is refused by the database, which is the right place for it.
+          subtotalAmount: 500_000n,
+          deliveryFeeAmount: 50_000n,
+          totalAmount: 550_000n,
+          deliveryVehicleProfile: options.vehicleProfile,
+          ...(options.vehicleProfile === 'CAR' && { deliveryVehicleReason: 'LOAD' }),
+        },
+      })
+      quoteId = quote.id
+    }
+
     const order = await prisma.order.create({
       data: {
         publicId: generateOrderCode((length) => randomBytes(length)),
         tenantId,
         idempotencyKey: `ca-order-${key}`,
+        ...(quoteId && { quoteId }),
         customerId: customer.id,
         cityId: city.id,
         operationalZoneId: zone.id,
@@ -318,7 +415,11 @@ async function buildWorld(label: string) {
     /** One delivery waiting for a courier. */
     delivery(
       metresNorth: number,
-      options: { secondBranch?: boolean; createdAt?: Date } = {},
+      options: {
+        secondBranch?: boolean
+        createdAt?: Date
+        vehicleProfile?: 'MOTORCYCLE' | 'CAR'
+      } = {},
     ): Promise<string> {
       return makeTask(metresNorth, options)
     },
@@ -330,7 +431,11 @@ async function buildWorld(label: string) {
      */
     async courier(
       displayName: string,
-      history: { lastDeliveryMetres?: number; earlierDeliveryMetres?: number } = {},
+      history: {
+        lastDeliveryMetres?: number
+        earlierDeliveryMetres?: number
+        vehicleType?: 'MOTORCYCLE' | 'CAR' | 'VAN' | 'BICYCLE' | 'ON_FOOT'
+      } = {},
     ): Promise<string> {
       const created = await prisma.courier.create({
         data: {
@@ -338,6 +443,7 @@ async function buildWorld(label: string) {
           courierPartnerId: partner.id,
           displayName,
           status: 'AVAILABLE',
+          ...(history.vehicleType && { vehicleType: history.vehicleType }),
           mobileE164: `+9896${randomUUID().replace(/\D/g, '').padEnd(8, '4').slice(0, 8)}`,
         },
       })

@@ -1969,6 +1969,17 @@ model Courier {
   mobileE164       String                  @db.VarChar(16)
   displayName      String
   status           CourierStatus           @default(ONBOARDING)
+  /// What this courier rides.
+  ///
+  /// On the courier rather than derived from their partner's fleet, because a
+  /// partner owning a car does not mean this rider drives one — and assignment
+  /// has to answer "can this person take this run", not "does their employer
+  /// own something that could".
+  ///
+  /// Null means nobody has recorded it, which assignment treats as a
+  /// motorcycle: such a courier keeps taking the ordinary runs they always took
+  /// and is never sent to collect a load that needs a car.
+  vehicleType      VehicleType?
   assignments      DeliveryAssignment[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt

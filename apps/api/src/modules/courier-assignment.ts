@@ -208,6 +208,9 @@ async function waitingRuns(
           select: {
             bakeryBranchId: true,
             bakeryBranch: { select: { latitude: true, longitude: true } },
+            // What the customer was quoted and charged for. Reading it here is
+            // what stops a car order being handed to the nearest motorcycle.
+            order: { select: { quote: { select: { deliveryVehicleProfile: true } } } },
           },
         },
       },
@@ -239,6 +242,9 @@ async function waitingRuns(
           dropCount: 1,
           waitingSince: task.createdAt,
           origin: coordinatesOf(branch),
+          ...(task.fulfillment.order?.quote?.deliveryVehicleProfile && {
+            requiredProfile: task.fulfillment.order.quote.deliveryVehicleProfile,
+          }),
         },
       ]
     }),
@@ -274,7 +280,7 @@ async function freeCouriers(
       status: 'AVAILABLE',
       assignments: { none: { state: { in: [...HOLDING_WORK] } } },
     },
-    select: { id: true, displayName: true },
+    select: { id: true, displayName: true, vehicleType: true },
     orderBy: { createdAt: 'asc' },
     take: limit,
   })
@@ -296,6 +302,9 @@ async function freeCouriers(
       courierId: courier.id,
       displayName: courier.displayName,
       lastKnownPosition: known,
+      // Absent when nobody has recorded it, which the matcher reads as a
+      // motorcycle: every ordinary run stays reachable, and no car run is.
+      ...(courier.vehicleType && { vehicleType: courier.vehicleType }),
       // A courier whose last assignment has no end time recorded is treated as
       // having just finished rather than as having waited forever: an idle
       // credit awarded for a missing timestamp is a bug that hands that rider

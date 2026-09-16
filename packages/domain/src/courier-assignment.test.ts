@@ -333,3 +333,126 @@ function* permutations<T>(values: readonly T[]): Generator<T[]> {
     for (const permutation of permutations(rest)) yield [value, ...permutation]
   }
 }
+
+/*
+ * Refusing a courier who cannot do the run.
+ *
+ * The matcher was vehicle-blind, which was correct while every delivery was a
+ * motorcycle and became a silent bug the moment an order could require a car.
+ * It fails at the bakery door, with the bread made and the slot spent, and
+ * nothing before that moment looks wrong.
+ */
+describe('matching a run to a vehicle that can do it', () => {
+  const origin = { latitude: 36.5513, longitude: 52.679 }
+  const near = { latitude: 36.5515, longitude: 52.6792 }
+  const far = { latitude: 36.59, longitude: 52.72 }
+  const now = new Date('2026-09-16T09:00:00.000Z')
+
+  it('passes a car run over a nearby motorcycle to a distant car', () => {
+    // The whole point. Distance is what the matcher optimises, so a rule that
+    // merely made the car cheaper would still lose to a rider parked outside.
+    const plan = assignCouriers(
+      [{ runId: 'bulk', origin, requiredProfile: 'CAR' }],
+      [
+        { courierId: 'rider', lastKnownPosition: near, idleSince: null, vehicleType: 'MOTORCYCLE' },
+        { courierId: 'driver', lastKnownPosition: far, idleSince: null, vehicleType: 'CAR' },
+      ],
+      now,
+    )
+    expect(plan.pairs.map((pair) => pair.courierId)).toEqual(['driver'])
+  })
+
+  it('leaves the run unassigned rather than forcing it onto a motorcycle', () => {
+    // The matcher returns a perfect matching on the square it is given, so it
+    // will pair a forbidden couple when there is nothing else. That pairing is
+    // discarded, and the run becomes a line the dispatcher sees.
+    const plan = assignCouriers(
+      [{ runId: 'bulk', origin, requiredProfile: 'CAR' }],
+      [{ courierId: 'rider', lastKnownPosition: near, idleSince: null, vehicleType: 'MOTORCYCLE' }],
+      now,
+    )
+    expect(plan.pairs).toEqual([])
+    expect(plan.unassignedRunIds).toEqual(['bulk'])
+  })
+
+  it('still lets a car take an ordinary run', () => {
+    // A requirement is a floor, not an exact match. Refusing the only free
+    // courier because they brought a car would strand a run the car can do.
+    const plan = assignCouriers(
+      [{ runId: 'small', origin }],
+      [{ courierId: 'driver', lastKnownPosition: near, idleSince: null, vehicleType: 'CAR' }],
+      now,
+    )
+    expect(plan.pairs.map((pair) => pair.courierId)).toEqual(['driver'])
+  })
+
+  it('treats an unrecorded vehicle as a motorcycle, in both directions', () => {
+    // Conservative on purpose. Every courier predates this field, so refusing
+    // an unknown vehicle outright would strand every ordinary run; accepting
+    // one for a car run would put four hundred loaves on a bike.
+    const ordinary = assignCouriers(
+      [{ runId: 'small', origin }],
+      [{ courierId: 'unknown', lastKnownPosition: near, idleSince: null }],
+      now,
+    )
+    expect(ordinary.pairs).toHaveLength(1)
+
+    const bulk = assignCouriers(
+      [{ runId: 'bulk', origin, requiredProfile: 'CAR' }],
+      [{ courierId: 'unknown', lastKnownPosition: near, idleSince: null }],
+      now,
+    )
+    expect(bulk.unassignedRunIds).toEqual(['bulk'])
+  })
+
+  it('keeps the plan finite, so the matcher never sees a NaN', () => {
+    // Why the refusal is a large number rather than Infinity. The Hungarian
+    // method subtracts row and column minima; a non-finite entry propagates NaN
+    // across the matrix and produces a plan that looks ordinary and is
+    // arbitrary. That is a far worse failure than an unassigned run.
+    const plan = assignCouriers(
+      [
+        { runId: 'bulk', origin, requiredProfile: 'CAR' },
+        { runId: 'small', origin },
+      ],
+      [
+        { courierId: 'rider', lastKnownPosition: near, idleSince: null, vehicleType: 'MOTORCYCLE' },
+        { courierId: 'driver', lastKnownPosition: far, idleSince: null, vehicleType: 'CAR' },
+      ],
+      now,
+    )
+    expect(Number.isFinite(plan.totalCost)).toBe(true)
+    expect(Number.isFinite(plan.totalApproachMetres)).toBe(true)
+    // Each run goes to the only courier that can do it and is not taken.
+    expect(new Map(plan.pairs.map((pair) => [pair.runId, pair.courierId]))).toEqual(
+      new Map([
+        ['bulk', 'driver'],
+        ['small', 'rider'],
+      ]),
+    )
+    expect(plan.unassignedRunIds).toEqual([])
+  })
+
+  it('never counts a discarded pairing in the totals', () => {
+    // A prohibitive cost leaking into totalCost would make every downstream
+    // number — the saving against greedy, the average approach — meaningless.
+    const plan = assignCouriers(
+      [{ runId: 'bulk', origin, requiredProfile: 'CAR' }],
+      [{ courierId: 'rider', lastKnownPosition: near, idleSince: null, vehicleType: 'MOTORCYCLE' }],
+      now,
+    )
+    expect(plan.totalCost).toBe(0)
+    expect(plan.totalApproachMetres).toBe(0)
+  })
+
+  it('refuses bicycles and pedestrians even for an ordinary run', () => {
+    // The freshness window assumes a powered vehicle; a rider who cannot finish
+    // inside it delivers stale bread that was sold as fresh.
+    const plan = assignCouriers(
+      [{ runId: 'small', origin }],
+      [{ courierId: 'walker', lastKnownPosition: near, idleSince: null, vehicleType: 'ON_FOOT' }],
+      now,
+    )
+    expect(plan.unassignedRunIds).toEqual(['small'])
+  })
+})

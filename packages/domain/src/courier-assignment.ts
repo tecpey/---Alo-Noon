@@ -1,4 +1,6 @@
 import { DomainError } from './errors'
+import { vehicleSatisfies } from './delivery-vehicle'
+import type { RoutingProfile } from './routing'
 import { calculateDeliveryDistanceMeters, type DeliveryCoordinates } from './delivery-pricing'
 
 /**
@@ -78,6 +80,17 @@ export const RUN_WAIT_MINUTE_WEIGHT = 600
 export interface AssignableCourier {
   readonly courierId: string
   /**
+   * What this courier rides, as a `VehicleType`.
+   *
+   * Optional, and absent is treated conservatively: an unknown vehicle may take
+   * a run a motorcycle could do — which is exactly what happened before
+   * vehicles were considered at all — and may never take one that needs a car.
+   * The two failures are not comparable. An unassigned run is a line a
+   * dispatcher sees and acts on; a motorcycle sent to collect four hundred
+   * loaves is discovered at the bakery door, with the slot already spent.
+   */
+  readonly vehicleType?: string
+  /**
    * Where this courier last delivered, which is where they are until they move.
    * Null when they have delivered nothing yet.
    */
@@ -88,6 +101,13 @@ export interface AssignableCourier {
 
 export interface AssignableRun {
   readonly runId: string
+  /**
+   * The vehicle this run needs, decided when the order was quoted and priced.
+   *
+   * Absent means a motorcycle will do, which is what every run was before an
+   * order could say otherwise.
+   */
+  readonly requiredProfile?: RoutingProfile
   /** Where the courier must collect from. */
   readonly origin: DeliveryCoordinates
   /**
@@ -142,6 +162,19 @@ export interface AssignmentOptions {
 }
 
 /**
+ * A pairing the matcher must never choose.
+ *
+ * Large and finite rather than `Infinity`: the Hungarian method subtracts row
+ * and column minima, and a non-finite entry propagates NaN through the whole
+ * matrix — which does not fail loudly, it produces a plan that looks ordinary
+ * and is arbitrary. A sentinel this size cannot be reached by any real cost
+ * (approach distance is metres, and the credits below only subtract), so a
+ * pair still carrying it after matching is a forbidden pair the matcher was
+ * forced into, and `assignCouriers` discards it.
+ */
+export const PROHIBITIVE_COST = 1e12
+
+/**
  * The cost of sending one courier to one pickup.
  *
  * Exported because it is the policy, not an implementation detail: an operator
@@ -176,6 +209,12 @@ export function assignmentCost(
   const waitingMinutes = run.waitingSince
     ? Math.max(0, (now.getTime() - run.waitingSince.getTime()) / 60_000)
     : 0
+
+  // Checked before anything is weighed, because no amount of being nearby or
+  // idle makes a motorcycle able to carry a car's load.
+  if (!vehicleSatisfies(run.requiredProfile ?? 'MOTORCYCLE', courier.vehicleType ?? 'MOTORCYCLE')) {
+    return { approachMetres, cost: PROHIBITIVE_COST }
+  }
 
   return {
     approachMetres,
@@ -238,6 +277,13 @@ export function assignCouriers(
       continue
     }
     const entry = detail[runIndex]![courierIndex]!
+    if (entry.cost >= PROHIBITIVE_COST) {
+      // The matcher had to pair these because it must return a perfect matching
+      // on the square it was given; it does not mean the pairing is allowed.
+      // The run goes back on the unassigned list, where a dispatcher sees it.
+      unassignedRunIds.push(run.runId)
+      continue
+    }
     totalCost += entry.cost
     totalApproachMetres += entry.approachMetres
     pairs.push({
