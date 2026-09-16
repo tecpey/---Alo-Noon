@@ -14,6 +14,8 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { PrismaClient } from '@alo-noon/database'
 import {
   ADMIN_PERMISSION_DEFINITIONS,
+  BABOL_PILOT_COVERAGE,
+  circleToGeoJson,
   ADMIN_ROLES,
   branchRoleCodes,
   grantScopeMatchesRole,
@@ -87,6 +89,8 @@ const COMMANDS = [
   'configure-routing-provider',
   'list-routing-providers',
   'set-routing-provider-health',
+  'provision-coverage',
+  'list-coverage',
 ] as const
 
 /**
@@ -437,6 +441,101 @@ async function main(): Promise<void> {
         'Health starts UNKNOWN. Until it is HEALTHY, delivery distance falls back ' +
           'to the scaled straight line — which is safe, but is not what you paid for.\n',
       )
+      return
+    }
+
+    /**
+     * Creates the pilot's city, its one operational zone, and a service area
+     * per town from the coverage table in the domain package.
+     *
+     * One zone for all of them, and that is forced rather than chosen: the
+     * order path requires a cart's zone to equal its address's zone *and* its
+     * branch's zone, so a Babol bakery can only reach an address whose service
+     * area sits in the same zone the branch does. Separate zones per town would
+     * make every Babolsar order a CART_CONTEXT_MISMATCH.
+     *
+     * Idempotent on the codes, so running it twice updates rather than
+     * duplicates — which matters because the boundaries are approximations that
+     * will be re-run as they are corrected.
+     */
+    if (command === 'provision-coverage') {
+      const city = await prisma.city.upsert({
+        where: { code: 'BABOL_PILOT' },
+        update: { nameFa: flags['city-name'] ?? 'بابل و حومه' },
+        create: {
+          tenantId,
+          code: 'BABOL_PILOT',
+          nameFa: flags['city-name'] ?? 'بابل و حومه',
+          timezone: 'Asia/Tehran',
+          isActive: true,
+        },
+      })
+      const zone = await prisma.operationalZone.upsert({
+        where: { cityId_code: { cityId: city.id, code: 'BABOL_CATCHMENT' } },
+        update: { isActive: true },
+        create: {
+          tenantId,
+          cityId: city.id,
+          code: 'BABOL_CATCHMENT',
+          nameFa: 'حوزهٔ بابل',
+          isActive: true,
+        },
+      })
+
+      process.stdout.write(
+        `City   ${city.nameFa}  (${city.id})\nZone   ${zone.nameFa}  (${zone.id})\n\n`,
+      )
+      for (const area of BABOL_PILOT_COVERAGE) {
+        const boundaryGeoJson = circleToGeoJson(area, area.radiusMetres)
+        const saved = await prisma.serviceArea.upsert({
+          where: { operationalZoneId_code: { operationalZoneId: zone.id, code: area.code } },
+          update: {
+            nameFa: area.nameFa,
+            boundaryGeoJson,
+            motorcycleAllowed: area.motorcycleAllowed,
+            isActive: true,
+          },
+          create: {
+            tenantId,
+            operationalZoneId: zone.id,
+            code: area.code,
+            nameFa: area.nameFa,
+            boundaryGeoJson,
+            motorcycleAllowed: area.motorcycleAllowed,
+            isActive: true,
+          },
+        })
+        const vehicle = area.motorcycleAllowed ? 'موتور و خودرو' : 'فقط خودرو'
+        process.stdout.write(
+          `  ${area.nameFa.padEnd(20)} ${String(area.radiusMetres / 1000).padStart(4)}km  ${vehicle}  ${saved.id}\n`,
+        )
+      }
+      process.stdout.write(
+        '\nThese boundaries are circles around approximate town centres, not surveyed\n' +
+          'limits. Check every centre against a map, then refine the shapes from the\n' +
+          'admin panel against real deliveries.\n' +
+          'Branches must be created in this city and this zone, or no order can reach them.\n',
+      )
+      return
+    }
+
+    if (command === 'list-coverage') {
+      const areas = await prisma.serviceArea.findMany({
+        where: { tenantId, operationalZone: { is: { code: 'BABOL_CATCHMENT' } } },
+        orderBy: { code: 'asc' },
+        include: { operationalZone: { include: { city: true } } },
+      })
+      if (areas.length === 0) {
+        process.stdout.write('No coverage provisioned. Run provision-coverage first.\n')
+        return
+      }
+      for (const area of areas) {
+        const vehicle = area.motorcycleAllowed ? 'motorcycle+car' : 'car only'
+        const state = area.isActive ? 'active' : 'inactive'
+        process.stdout.write(
+          `${area.code.padEnd(20)} ${area.nameFa.padEnd(22)} ${vehicle.padEnd(16)} ${state}\n`,
+        )
+      }
       return
     }
 
