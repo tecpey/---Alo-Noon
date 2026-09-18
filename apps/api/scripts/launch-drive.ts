@@ -88,16 +88,55 @@ async function call(
   }
 }
 
-/** The last message the sandbox gateway was asked to send. */
+/**
+ * The last message the sandbox gateway was asked to send.
+ *
+ * Each line is an ISO timestamp, a space, then the body the adapter posted —
+ * so the JSON starts at the first brace rather than at the start of the line.
+ * Parsing the whole line threw `Unexpected non-whitespace character at position
+ * 4`, four characters being the year, which stopped this rehearsal at its first
+ * step and is the sort of thing only running it finds.
+ *
+ * Scanned backwards for the last line that actually carries a message, because
+ * the sandbox also logs requests with an empty body — a health probe writes a
+ * timestamp and nothing else, and that must not be mistaken for the OTP.
+ */
 function lastSentMessage(): { message: string; mobile: string } | null {
-  const lines = readFileSync(SMS_LOG, 'utf8').trim().split('\n').filter(Boolean)
-  const last = lines.at(-1)
-  if (!last) return null
-  const parsed = JSON.parse(last) as { Message?: string; MobileNumber?: string[] }
-  return parsed.Message ? { message: parsed.Message, mobile: parsed.MobileNumber?.[0] ?? '' } : null
+  let contents: string
+  try {
+    contents = readFileSync(SMS_LOG, 'utf8')
+  } catch {
+    // No log at all means the sandbox has not been asked to send anything —
+    // reported as "no message" so the step fails with its own wording rather
+    // than an ENOENT stack trace that says nothing about the rehearsal.
+    return null
+  }
+  const lines = contents.trim().split('\n').filter(Boolean)
+  for (const line of [...lines].reverse()) {
+    const brace = line.indexOf('{')
+    if (brace < 0) continue
+    let parsed: { Message?: string; MobileNumber?: string[] }
+    try {
+      parsed = JSON.parse(line.slice(brace)) as { Message?: string; MobileNumber?: string[] }
+    } catch {
+      continue
+    }
+    if (parsed.Message) return { message: parsed.Message, mobile: parsed.MobileNumber?.[0] ?? '' }
+  }
+  return null
+}
+
+/** How many lines the sandbox log already had, so a stale code cannot be read. */
+function sentCount(): number {
+  try {
+    return readFileSync(SMS_LOG, 'utf8').trim().split('\n').filter(Boolean).length
+  } catch {
+    return 0
+  }
 }
 
 async function signIn(mobileE164: string, label: string): Promise<string> {
+  const before = sentCount()
   const requested = await call('POST', '/api/v1/auth/otp/request', {
     body: { mobileE164 },
     idempotencyKey: `launch-${label}-${randomUUID()}`,
@@ -107,7 +146,23 @@ async function signIn(mobileE164: string, label: string): Promise<string> {
   })
 
   const challengeId = text(at(requested.body, 'data', 'challengeId'))
-  const sent = lastSentMessage()
+  /*
+   * Only a message this run caused. A request for a number that already has a
+   * live challenge is answered 202 with that same challenge and *no* new
+   * message — which is correct, and the reason a gateway is not paid every time
+   * somebody taps the button twice. Reading the log blindly would then pick up
+   * the previous run's code and fail at the next step with a 401 that says
+   * nothing about why.
+   */
+  const sent = sentCount() > before ? lastSentMessage() : null
+  if (!sent) {
+    step(
+      `${label}: a fresh code was sent`,
+      false,
+      'The API reused a live sign-in challenge, so no new message went out. ' +
+        'Wait for the resend window on this number and run again.',
+    )
+  }
   const otp = sent?.message.match(/\d{6}/)?.[0]
   step(`${label}: the gateway was handed a rendered message`, Boolean(otp), {
     message: sent?.message,
