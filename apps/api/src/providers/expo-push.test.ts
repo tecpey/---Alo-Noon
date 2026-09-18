@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { createExpoPushAdapter } from './expo-push'
 
 const request = {
-  token: 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]',
+  target: {
+    transport: 'EXPO' as const,
+    expoPushToken: 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]',
+  },
   message: {
     title: 'پیک راه افتاد',
     body: 'سفارش TJR29BT8 راه افتاد.',
@@ -45,7 +48,7 @@ describe('Expo push adapter', () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as unknown[]
     expect(body).toEqual([
       {
-        to: request.token,
+        to: request.target.expoPushToken,
         title: 'پیک راه افتاد',
         body: 'سفارش TJR29BT8 راه افتاد.',
         data: request.message.data,

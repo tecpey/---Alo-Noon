@@ -20,18 +20,73 @@ import type { MessageTemplatePurpose } from './message-template'
  * vendor's. Which service is used and whether a device is worth trying are
  * decided outside it.
  */
-export const PUSH_ADAPTER_SPI_VERSION = 1 as const
+export const PUSH_ADAPTER_SPI_VERSION = 2 as const
 
-export type PushDevicePlatform = 'IOS' | 'ANDROID'
+/**
+ * Where a handset lives, and how it is addressed.
+ *
+ * Two transports rather than one, because there are two apps: the React Native
+ * build, which Expo reaches by an opaque token, and the shop's own site added
+ * to a home screen, which is reached by the browser's push service under RFC
+ * 8030 with a subscription this platform encrypts to under RFC 8291.
+ *
+ * On iOS the second one is not a consolation. Apple does not accept Iranian
+ * developer enrolments — `docs/product/IOS_DISTRIBUTION.md` quotes the refusal
+ * — so an installed web app is the only iPhone this platform will ever reach,
+ * and web push is the only way it can say "your bread is at the door".
+ *
+ * The two are kept in one list rather than two, so a customer who uses both is
+ * reached on whichever they last opened. Two lists would need a priority
+ * between them, and any priority is wrong for somebody.
+ */
+export type PushTransport = 'EXPO' | 'WEB_PUSH'
 
-/** A device as this layer needs to see it. */
-export interface PushDeviceRecord {
+export type PushDevicePlatform = 'IOS' | 'ANDROID' | 'WEB'
+
+/**
+ * A browser's push subscription, exactly as the Push API hands it over.
+ *
+ * `endpoint` is a URL held by the browser vendor's push service and is the
+ * address; `p256dh` is that installation's public key and `auth` a shared
+ * secret, and both exist so the message is encrypted end to end — the push
+ * service forwards a payload it cannot read. Losing either means the
+ * subscription can still be posted to and the browser will discard what
+ * arrives, which is the quiet failure this type exists to make impossible.
+ */
+export interface WebPushSubscription {
+  /** The push service's URL for this installation. */
+  readonly endpoint: string
+  /** base64url of the uncompressed P-256 point, 65 octets. */
+  readonly p256dh: string
+  /** base64url of the 16-octet authentication secret. */
+  readonly auth: string
+}
+
+interface PushDeviceCommon {
   readonly id: string
-  readonly expoPushToken: string
   readonly platform: PushDevicePlatform
   readonly enabled: boolean
   readonly lastSeenAt: Date
 }
+
+export interface ExpoPushDevice extends PushDeviceCommon {
+  readonly transport: 'EXPO'
+  readonly expoPushToken: string
+}
+
+export interface WebPushDevice extends PushDeviceCommon {
+  readonly transport: 'WEB_PUSH'
+  readonly subscription: WebPushSubscription
+}
+
+/**
+ * A device as this layer needs to see it.
+ *
+ * A union rather than one shape with optional fields, so that no code can pass
+ * an Expo token where a subscription belongs. The compiler does the check that
+ * would otherwise be a runtime surprise on somebody's order.
+ */
+export type PushDeviceRecord = ExpoPushDevice | WebPushDevice
 
 export interface PushMessage {
   /**
@@ -51,8 +106,26 @@ export interface PushMessage {
   readonly data: Readonly<Record<string, string>>
 }
 
+/**
+ * The address to send to, without the rest of the device row.
+ *
+ * An adapter is given this rather than the `PushDeviceRecord` on purpose: it
+ * has no business knowing when the device was last seen or whether it is
+ * enabled, because those are the caller's decisions and an adapter that reads
+ * them is an adapter that will one day act on them.
+ */
+export type PushTarget =
+  | { readonly transport: 'EXPO'; readonly expoPushToken: string }
+  | { readonly transport: 'WEB_PUSH'; readonly subscription: WebPushSubscription }
+
+export function pushTargetFor(device: PushDeviceRecord): PushTarget {
+  return device.transport === 'EXPO'
+    ? { transport: 'EXPO', expoPushToken: device.expoPushToken }
+    : { transport: 'WEB_PUSH', subscription: device.subscription }
+}
+
 export interface PushSendRequest {
-  readonly token: string
+  readonly target: PushTarget
   readonly message: PushMessage
   readonly timeoutMs: number
   readonly signal: { readonly aborted: boolean }
@@ -69,9 +142,27 @@ export interface PushSendResult {
 
 export interface PushMessageProvider {
   readonly code: string
+  /** Which kind of address this adapter can send to. */
+  readonly transport: PushTransport
   readonly adapterVersion: string
   readonly spiVersion: typeof PUSH_ADAPTER_SPI_VERSION
   sendPush(request: PushSendRequest): Promise<PushSendResult>
+}
+
+/**
+ * The adapter that can reach a device, or nothing.
+ *
+ * Nothing is an ordinary answer: a deployment that configured Expo but no VAPID
+ * keys has web subscriptions in its database and no way to use them, and the
+ * right behaviour is the one that was already there — the SMS carries the
+ * message. Throwing here would turn a missing key into a customer hearing
+ * nothing at all.
+ */
+export function pushProviderFor(
+  providers: readonly PushMessageProvider[],
+  device: PushDeviceRecord,
+): PushMessageProvider | undefined {
+  return providers.find((provider) => provider.transport === device.transport)
 }
 
 /**
@@ -85,11 +176,25 @@ export interface PushMessageProvider {
  *
  * Everything else — a rate limit, a service having a bad minute — is transient,
  * and transient here means "SMS carries this one".
+ *
+ * The web push adapter answers in this same vocabulary rather than in HTTP
+ * status codes: a browser push service says 404 or 410 for a subscription that
+ * has been revoked, which is the same fact about the same kind of thing as
+ * Expo's `DeviceNotRegistered`. Translating at the edge keeps one rule here
+ * instead of one per transport, and keeps that rule readable against Expo's own
+ * documentation.
  */
 const PERMANENT_PUSH_FAILURES: ReadonlySet<string> = new Set([
   'DeviceNotRegistered',
   'InvalidCredentials',
   'MessageTooBig',
+  // A stored web subscription whose keys will not encrypt. Separate from
+  // `DeviceNotRegistered` because it is a different fact about a different
+  // thing — the subscription is malformed rather than revoked — and an operator
+  // reading `disabledReason` on the row deserves to be told which. Both retire
+  // the device: neither will ever work again.
+  'PUSH_SUBSCRIPTION_KEY_INVALID',
+  'PUSH_SUBSCRIPTION_AUTH_INVALID',
 ])
 
 export function pushFailureIsPermanent(code: string | undefined): boolean {

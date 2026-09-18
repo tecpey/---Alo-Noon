@@ -115,6 +115,42 @@ export const envSchema = z
      */
     EXPO_PUSH_ENDPOINT: z.string().url().optional(),
     /**
+     * The VAPID pair that identifies this deployment to a browser push service.
+     *
+     * All three together or none of them. There is no partial state worth
+     * having: a public key with no private key means the shop asks every
+     * customer for notification permission and can never send anything, and on
+     * most browsers a permission once refused is refused for good — so the cost
+     * of the half-configured case is paid by customers, permanently, and is not
+     * recoverable by fixing the environment later.
+     *
+     * Not per-tenant, unlike the payment and SMS credentials beside it. VAPID
+     * identifies the *server* to Google, Mozilla and Apple rather than
+     * identifying a shop to a vendor it has an account with; there is no
+     * account, nothing is billed, and a tenant has nothing to configure.
+     *
+     * The private key is a signing key and belongs in the environment like the
+     * peppers above. The public key is published to every browser by design.
+     *
+     * Generate a pair with `pnpm --filter @alo-noon/api vapid-keys`.
+     */
+    WEB_PUSH_VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+    WEB_PUSH_VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+    /**
+     * A contact a push service operator could reach, as RFC 8292 asks.
+     *
+     * Not decoration: when a push service decides this server is misbehaving,
+     * this is the only address it has, and the alternative to an email is being
+     * blocked without being told.
+     */
+    WEB_PUSH_SUBJECT: z
+      .string()
+      .refine(
+        (value) => value.startsWith('mailto:') || value.startsWith('https://'),
+        'WEB_PUSH_SUBJECT must be a mailto: or https: URI',
+      )
+      .optional(),
+    /**
      * Where the Neshan routing adapter asks, keeping Neshan's own paths.
      *
      * Absent it uses the real service, which is what production wants. Routing
@@ -158,6 +194,35 @@ export const envSchema = z
         message:
           'API_TRUST_PROXY must be set explicitly in production. Give the address of the reverse proxy in front of the API — "loopback" when it runs on the same host, otherwise its IP or CIDR block — or "none" only when the API is exposed directly. Guessing wrong disables per-IP rate limiting and OTP abuse control.',
       })
+    }
+  })
+  .superRefine((env, context) => {
+    /**
+     * The VAPID trio: all three, or none.
+     *
+     * Checked in every environment rather than only production, because the
+     * half-configured case is the one that costs something permanent. A public
+     * key with no private key makes the shop ask every customer for
+     * notification permission and then fail to send anything; on most browsers
+     * a permission once refused cannot be asked for again, so fixing the
+     * environment tomorrow does not get those customers back.
+     */
+    const vapid = {
+      WEB_PUSH_VAPID_PUBLIC_KEY: env.WEB_PUSH_VAPID_PUBLIC_KEY,
+      WEB_PUSH_VAPID_PRIVATE_KEY: env.WEB_PUSH_VAPID_PRIVATE_KEY,
+      WEB_PUSH_SUBJECT: env.WEB_PUSH_SUBJECT,
+    }
+    const set = Object.entries(vapid).filter(([, value]) => value !== undefined)
+    if (set.length > 0 && set.length < 3) {
+      for (const [key, value] of Object.entries(vapid)) {
+        if (value === undefined) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required once any of WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY or WEB_PUSH_SUBJECT is set. Web push needs all three or none: a key pair without a subject is refused by push services, and a public key without its private key makes the shop ask for notification permission it can never use.`,
+          })
+        }
+      }
     }
   })
   .superRefine((env, context) => {

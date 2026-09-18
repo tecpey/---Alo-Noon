@@ -2,6 +2,8 @@ import type { Prisma, PrismaClient } from '@alo-noon/database'
 import {
   composePushMessage,
   notificationPurposeForEvent,
+  pushProviderFor,
+  pushTargetFor,
   renderMessageTemplate,
   selectPushDevices,
   tomanDigits,
@@ -61,7 +63,14 @@ export interface CustomerNotificationOptions {
    * improvement to the cost of a working system, not a dependency of it.
    */
   readonly push?: {
-    readonly provider: PushMessageProvider
+    /**
+     * One adapter per transport: Expo for the React Native builds, Web Push for
+     * the shop added to a home screen. A device is sent to whichever speaks its
+     * transport, and a device whose transport has no adapter is skipped — which
+     * is how a deployment with no VAPID keys behaves exactly as it did before
+     * web push existed.
+     */
+    readonly providers: readonly PushMessageProvider[]
     readonly devices: PushDeviceService
   }
 }
@@ -282,12 +291,19 @@ async function tryPush(
   }
 
   for (const device of devices) {
+    // A device whose transport this deployment has no adapter for — a browser
+    // subscription on a server with no VAPID keys. Skipped rather than counted
+    // as a failure: it says nothing about the device, and retiring it would
+    // mean a customer had to subscribe again after the keys were configured.
+    const provider = pushProviderFor(push.providers, device)
+    if (!provider) continue
+
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), PUSH_TIMEOUT_MS)
     let sent
     try {
-      sent = await push.provider.sendPush({
-        token: device.expoPushToken,
+      sent = await provider.sendPush({
+        target: pushTargetFor(device),
         message,
         timeoutMs: PUSH_TIMEOUT_MS,
         signal: controller.signal,

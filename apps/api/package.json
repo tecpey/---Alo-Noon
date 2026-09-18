@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "clean": "rm -rf dist coverage",
-    "sms-sandbox": "tsx scripts/sms-sandbox.ts"
+    "sms-sandbox": "tsx scripts/sms-sandbox.ts",
+    "vapid-keys": "tsx scripts/vapid-keys.ts"
   },
   "dependencies": {
     "@alo-noon/config": "workspace:*",

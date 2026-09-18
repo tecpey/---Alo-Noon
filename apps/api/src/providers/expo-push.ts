@@ -49,10 +49,18 @@ export function createExpoPushAdapter(options: ExpoPushAdapterOptions = {}): Pus
 
   return {
     code: 'EXPO',
+    transport: 'EXPO',
     adapterVersion: EXPO_PUSH_ADAPTER_VERSION,
     spiVersion: PUSH_ADAPTER_SPI_VERSION,
 
     async sendPush(request: PushSendRequest): Promise<PushSendResult> {
+      if (request.target.transport !== 'EXPO') {
+        // The registry routes by transport, so this is a wiring mistake rather
+        // than anything about the customer. Permanent so it is not retried.
+        return { outcome: 'PERMANENT_FAILURE', normalizedCode: 'WRONG_PUSH_TRANSPORT' }
+      }
+      const token = request.target.expoPushToken
+
       let response: Response
       try {
         response = await send(endpoint, {
@@ -66,7 +74,7 @@ export function createExpoPushAdapter(options: ExpoPushAdapterOptions = {}): Pus
           },
           body: JSON.stringify([
             {
-              to: request.token,
+              to: token,
               title: request.message.title,
               body: request.message.body,
               data: request.message.data,

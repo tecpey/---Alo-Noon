@@ -37,6 +37,7 @@ import { createPrismaPushDeviceService } from './modules/push-devices.js'
 import { createPrismaWalletService } from './modules/wallet.js'
 import { createPrismaWalletTransferService } from './modules/wallet-transfer.js'
 import { createExpoPushAdapter } from './providers/expo-push.js'
+import { createWebPushAdapter } from './providers/web-push.js'
 import { createPrismaOutboxPublisher } from './modules/outbox-publisher.js'
 import {
   createEnvironmentRoutingCredentialResolver,
@@ -286,6 +287,27 @@ const adminMessaging = { service: createPrismaAdminMessagingService(prisma) }
 // The handsets a customer can be reached on without paying for a text message.
 const pushDeviceService = createPrismaPushDeviceService(prisma)
 
+/**
+ * The VAPID pair, when this deployment has one.
+ *
+ * The configuration schema already refuses a partial trio, so the three are
+ * present together or absent together and this is a single question. Absent,
+ * the web push adapter is never built, the key endpoint answers null, and the
+ * shop never asks a browser for notification permission — which is the
+ * behaviour that existed before web push and is better than asking for a
+ * permission that, once refused, most browsers will not ask for again.
+ */
+const webPushKeys =
+  env.WEB_PUSH_VAPID_PUBLIC_KEY && env.WEB_PUSH_VAPID_PRIVATE_KEY && env.WEB_PUSH_SUBJECT
+    ? {
+        keys: {
+          publicKey: env.WEB_PUSH_VAPID_PUBLIC_KEY,
+          privateKey: env.WEB_PUSH_VAPID_PRIVATE_KEY,
+        },
+        subject: env.WEB_PUSH_SUBJECT,
+      }
+    : undefined
+
 // Customer notifications go out over the same SMS gateway that carries sign-in
 // codes, but through their own path: the wording comes from the tenant's
 // editable templates, and each message is claimed once per order step so an
@@ -300,9 +322,12 @@ const customerNotificationService = createPrismaCustomerNotificationService(pris
   environment: authenticationDeliveryPolicy.environment,
   messagingService: adminMessaging.service,
   push: {
-    provider: createExpoPushAdapter(
-      env.EXPO_PUSH_ENDPOINT ? { endpoint: env.EXPO_PUSH_ENDPOINT } : {},
-    ),
+    providers: [
+      createExpoPushAdapter(env.EXPO_PUSH_ENDPOINT ? { endpoint: env.EXPO_PUSH_ENDPOINT } : {}),
+      ...(webPushKeys
+        ? [createWebPushAdapter({ keys: webPushKeys.keys, subject: webPushKeys.subject })]
+        : []),
+    ],
     devices: pushDeviceService,
   },
 })
@@ -408,7 +433,10 @@ const app = await buildApp({
   placesService: routingService,
   cityBias: createPrismaCityBiasResolver(prisma),
   addressRepository: createPrismaAddressRepository(prisma),
-  pushDevices: { service: pushDeviceService },
+  pushDevices: {
+    service: pushDeviceService,
+    ...(webPushKeys && { webPushPublicKey: webPushKeys.keys.publicKey }),
+  },
   walletTransfers: { service: walletTransferService },
   wallet: {
     service: walletService,
