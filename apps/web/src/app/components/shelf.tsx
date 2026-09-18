@@ -5,6 +5,7 @@ import { ProductCard } from './product-card'
 import { Reveal } from './reveal'
 import { SteamIcon } from './icons'
 import { useStorefront } from './storefront-state'
+import { matchesPersianQuery } from '@alo-noon/domain'
 import { ALL_CATEGORIES, type CatalogShelf } from '../../lib/catalog-view'
 
 /**
@@ -21,11 +22,15 @@ import { ALL_CATEGORIES, type CatalogShelf } from '../../lib/catalog-view'
  * there says nobody thought about that moment.
  */
 export function Shelf({ shelf }: { shelf: CatalogShelf }) {
-  const { category, selectCategory } = useStorefront()
-  const products =
-    category === ALL_CATEGORIES
-      ? shelf.products
-      : shelf.products.filter((product) => product.categoryCode === category)
+  const { category, selectCategory, query, setQuery } = useStorefront()
+  const searching = query.trim().length > 0
+  const products = shelf.products.filter(
+    (product) =>
+      (category === ALL_CATEGORIES || product.categoryCode === category) &&
+      // Folded on both sides, so «بربري» typed on an Arabic keyboard finds
+      // «بربری» on the shelf. See `matchesPersianQuery`.
+      matchesPersianQuery(product.nameFa, query),
+  )
 
   return (
     <section className="shelf" id={shelf.id} aria-labelledby={`${shelf.id}-title`}>
@@ -47,13 +52,22 @@ export function Shelf({ shelf }: { shelf: CatalogShelf }) {
       {products.length === 0 ? (
         <div className="shelf__empty">
           <EmptyBasketArt className="shelf__empty-art" />
-          <p className="shelf__empty-text">در این دسته، چیزی روی این قفسه نیست.</p>
+          {/*
+            Which of the two filters emptied it, because the way out is
+            different. Telling somebody who searched «کماج» that the category is
+            empty sends them to press a chip that will not help.
+          */}
+          <p className="shelf__empty-text">
+            {searching
+              ? `«${query.trim()}» روی این قفسه پیدا نشد.`
+              : 'در این دسته، چیزی روی این قفسه نیست.'}
+          </p>
           <button
             type="button"
             className="an-button an-button--quiet"
-            onClick={() => selectCategory(ALL_CATEGORIES)}
+            onClick={() => (searching ? setQuery('') : selectCategory(ALL_CATEGORIES))}
           >
-            نمایش همهٔ نان‌ها
+            {searching ? 'پاک کردن جست‌وجو' : 'نمایش همهٔ نان‌ها'}
           </button>
         </div>
       ) : (

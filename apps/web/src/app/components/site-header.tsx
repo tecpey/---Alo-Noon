@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { BrandMark } from './brand-mark'
 import { useStorefront } from './storefront-state'
-import { CartIcon, PinIcon, SearchIcon, UserIcon } from './icons'
+import { CartIcon, CloseIcon, PinIcon, SearchIcon, UserIcon } from './icons'
 import { brandCopy, orderConditions } from '../../lib/storefront-content'
 import { toPersianDigits } from '../../lib/persian'
 
@@ -26,7 +26,7 @@ import { toPersianDigits } from '../../lib/persian'
  */
 export function SiteHeader() {
   const address = orderConditions.find((condition) => condition.id === 'address')
-  const { count, pulse, openDrawer } = useStorefront()
+  const { count, pulse, openDrawer, query, setQuery } = useStorefront()
   const [condensed, setCondensed] = useState(false)
   const [bumping, setBumping] = useState(false)
   const firstPulse = useRef(pulse)
@@ -60,13 +60,38 @@ export function SiteHeader() {
             <span>{address?.valueFa}</span>
           </button>
 
+          {/*
+            It filters. It used to be an input with a placeholder and no
+            handler — a box that invited typing and swallowed it, which is the
+            same defect the category chips and the delivery conditions each had
+            before they were fixed, and the worst of the three because a
+            customer who types a bread's name and gets nothing concludes the
+            shop does not stock it.
+
+            No submit and no results page: the shelves below are already on
+            screen and they narrow as the letters arrive. A search that needs a
+            round trip to say «نان سنگک» is on the shelf you are looking at is a
+            search that takes longer than scrolling.
+          */}
           <div className="site-header__search">
             <SearchIcon />
             <input
               type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
               placeholder={brandCopy.searchPlaceholderFa}
               aria-label={brandCopy.searchPlaceholderFa}
             />
+            {query.length > 0 && (
+              <button
+                type="button"
+                className="site-header__search-clear"
+                onClick={() => setQuery('')}
+                aria-label="پاک کردن جست‌وجو"
+              >
+                <CloseIcon width={14} height={14} />
+              </button>
+            )}
           </div>
         </div>
 

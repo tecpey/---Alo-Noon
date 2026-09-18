@@ -282,6 +282,31 @@
 .site-header__search input::placeholder {
   color: var(--ink-faint);
 }
+/* Safari draws its own clear control inside a `type="search"`, which sits at
+   the wrong end in an RTL field and does not tell React the value changed. */
+.site-header__search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+/* Only there once there is something to clear, so the bar is not carrying a
+   permanently dead control. A full touch target: it is the way out of a search
+   that found nothing, which is exactly when somebody is already impatient. */
+.site-header__search-clear {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  margin-inline-start: -0.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.site-header__search-clear:hover {
+  color: var(--ink-strong);
+}
 .site-header__search input:focus {
   outline: none;
 }
@@ -1550,4 +1575,88 @@
   font-size: 0.95em;
   letter-spacing: 0.04em;
   unicode-bidi: isolate;
+}
+
+/*
+  The bottom tab bar, on phones only.
+
+  Installed to a home screen there is no browser chrome, so this is the only
+  navigation within reach of the thumb holding the phone — the pinned bar at the
+  top of the page is the furthest point on the screen from it.
+
+  `env(safe-area-inset-bottom)` keeps the labels clear of the home indicator.
+  Without it the row sits under the gesture bar on every modern iPhone, which
+  makes the tabs hard to hit and the labels impossible to read — and this is the
+  one control a customer uses on every visit.
+*/
+.app-tabs {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 55;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding-block: 0.4rem;
+  padding-bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--surface-card) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-block-start: 1px solid var(--line-subtle);
+}
+.app-tabs__tab {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  /* The 44pt touch floor this codebase holds everywhere. */
+  min-block-size: 2.75rem;
+  padding: 0.25rem 0.25rem;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 0.7rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+.app-tabs__tab.is-active {
+  color: var(--primary-600);
+}
+.app-tabs__glyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.app-tabs__count {
+  position: absolute;
+  /* Inset-inline so the badge stays on the trailing side of the glyph when the
+     page is laid out right to left. */
+  inset-inline-start: 55%;
+  bottom: 55%;
+  min-inline-size: 1rem;
+  padding-inline: 0.2rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  color: var(--surface-card);
+  font-size: 0.62rem;
+  line-height: 1rem;
+  text-align: center;
+}
+
+/*
+  Room for it, so the last card on a page is not sitting under the bar. Applied
+  to the frame rather than to each page: every page gets the same bar.
+*/
+.app-frame {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 56.25rem) {
+  /* A phone convention wearing the wrong clothes on a desktop: the top bar is
+     already in reach of a cursor, and the same four destinations twice is a
+     second place to look for one answer. */
+  .app-tabs {
+    display: none;
+  }
+  .app-frame {
+    padding-bottom: 0;
+  }
 }

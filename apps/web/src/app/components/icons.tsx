@@ -289,6 +289,15 @@ export function CheckIcon(props: IconProps) {
   )
 }
 
+/** A cross, for clearing a field or dismissing a panel. */
+export function CloseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 6 18 18M18 6 6 18" />
+    </Icon>
+  )
+}
+
 export function BellIcon(props: IconProps) {
   return (
     <Icon {...props} accent={<path d="M6 17.2V11a6 6 0 0 1 12 0v6.2Z" />}>

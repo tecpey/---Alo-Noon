@@ -58,6 +58,15 @@ interface StorefrontState {
   /** The selected category chip. `all` shows everything. */
   readonly category: string
   selectCategory: (code: string) => void
+  /**
+   * What is typed in the header's search box. Empty shows everything.
+   *
+   * Held here rather than in the header because the box and the shelves it
+   * filters are on opposite sides of the page: the header is pinned above the
+   * catalogue and neither is the other's parent.
+   */
+  readonly query: string
+  setQuery: (value: string) => void
   readonly drawerOpen: boolean
   openDrawer: () => void
   closeDrawer: () => void
@@ -85,6 +94,7 @@ export function StorefrontProvider({
   const [lines, setLines] = useState<ReadonlyMap<string, number>>(() => new Map(serverLines ?? []))
   const [pulse, setPulse] = useState(0)
   const [category, setCategory] = useState(ALL_CATEGORIES)
+  const [query, setQuery] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -223,6 +233,8 @@ export function StorefrontProvider({
       remove,
       category,
       selectCategory: setCategory,
+      query,
+      setQuery,
       drawerOpen,
       openDrawer,
       closeDrawer,
@@ -236,12 +248,24 @@ export function StorefrontProvider({
     add,
     remove,
     category,
+    query,
     drawerOpen,
     openDrawer,
     closeDrawer,
   ])
 
   return <StorefrontContext.Provider value={value}>{children}</StorefrontContext.Provider>
+}
+
+/**
+ * The storefront, when there is one.
+ *
+ * The provider wraps the shop and a bread's own page — the two places with a
+ * catalogue to price a basket against. The tab bar is on every page, so it asks
+ * this way and falls back to what the server told the layout.
+ */
+export function useStorefrontOptional(): StorefrontState | null {
+  return useContext(StorefrontContext)
 }
 
 export function useStorefront(): StorefrontState {

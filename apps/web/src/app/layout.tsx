@@ -6,6 +6,8 @@ import { colors, cssVariables } from '@alo-noon/design-tokens'
 import './styles.css'
 import { siteUrl } from '../lib/site-url'
 import { ProgressiveApp } from './components/progressive-app'
+import { AppTabs } from './components/app-tabs'
+import { loadServerBasket } from '../lib/storefront-data'
 
 export const metadata: Metadata = {
   /**
@@ -54,7 +56,20 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  /**
+   * The basket badge for pages that have no catalogue in context.
+   *
+   * The shop and a bread's own page carry a live basket and the bar prefers it.
+   * Everywhere else — order history, the account — a customer cannot change the
+   * basket from the page they are on, so what the server read is what is true.
+   *
+   * A refusal is a zero rather than an error: the tab bar is navigation, and a
+   * missing badge is a smaller failure than no way to reach the shop.
+   */
+  const basket = await loadServerBasket().catch(() => null)
+  const serverCount = (basket?.lines ?? []).reduce((total, [, quantity]) => total + quantity, 0)
+
   return (
     <html lang="fa" dir="rtl">
       <head>
@@ -107,6 +122,12 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
           is installable.
         */}
         <ProgressiveApp />
+        {/*
+          Last in the body, fixed to the bottom of the viewport. On a phone with
+          the shop installed there is no browser chrome, so this is the only
+          navigation within reach of the thumb holding it.
+        */}
+        <AppTabs serverCount={serverCount} />
       </body>
     </html>
   )
