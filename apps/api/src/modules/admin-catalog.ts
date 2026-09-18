@@ -168,10 +168,13 @@ export function createPrismaAdminCatalogService(prisma: PrismaClient): AdminCata
 
     async createCategory(tenantId, actor, command, now, correlationId) {
       return writeTransaction(prisma, tenantId, actor, now, async (transaction) => {
-        // The code is globally unique in the schema, not per tenant, so a clash
-        // is reported rather than left to surface as a constraint violation.
+        // Scoped to this tenant, which is what the constraint now says too.
+        // It used to be a global check, because `ProductCategory.code` carried a
+        // plain `@unique` — so a shop in Babol naming a category «سنگک» could be
+        // refused because a shop in Sari had already used the word. The 409 was
+        // a clean error for something that was never the operator's mistake.
         const clash = await transaction.productCategory.findFirst({
-          where: { code: command.code },
+          where: { tenantId, code: command.code },
           select: { id: true },
         })
         if (clash) throw new AdminCatalogError('CATEGORY_CODE_TAKEN', 409)

@@ -625,7 +625,7 @@ model TenantMembership {
 model City {
   id                          String                @id @default(uuid()) @db.Uuid
   tenantId                    String                @db.Uuid
-  code                        String                @unique @db.VarChar(32)
+  code                        String                 @db.VarChar(32)
   nameFa                      String
   timezone                    String                @default("Asia/Tehran") @db.VarChar(64)
   isActive                    Boolean               @default(false)
@@ -651,6 +651,7 @@ model City {
   createdAt                   DateTime              @default(now())
   updatedAt                   DateTime              @updatedAt
   promotions                  Promotion[]
+  @@unique([tenantId, code], map: "City_tenant_code_key")
 
   @@unique([id, tenantId], map: "g3b_City_id_tenant_key")
   @@index([tenantId])
@@ -1170,11 +1171,12 @@ model BakeryDeliveryWindow {
 model ProductCategory {
   id        String    @id @default(uuid()) @db.Uuid
   tenantId  String    @db.Uuid
-  code      String    @unique @db.VarChar(32)
+  code      String     @db.VarChar(32)
   nameFa    String
   products  Product[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  @@unique([tenantId, code], map: "ProductCategory_tenant_code_key")
 
   @@unique([id, tenantId], map: "g3b_ProductCategory_id_tenant_key")
   @@index([tenantId])
@@ -1185,7 +1187,7 @@ model Product {
   tenantId      String                 @db.Uuid
   categoryId    String                 @db.Uuid
   category      ProductCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  slug          String                 @unique @db.VarChar(100)
+  slug          String                  @db.VarChar(100)
   nameFa        String
   descriptionFa String?
   mediaRef      String?                @db.VarChar(500)
@@ -1193,6 +1195,7 @@ model Product {
   variants      ProductVariant[]
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
+  @@unique([tenantId, slug], map: "Product_tenant_slug_key")
 
   @@unique([id, tenantId], map: "g3b_Product_id_tenant_key")
   @@index([categoryId, lifecycle])
@@ -1205,7 +1208,7 @@ model ProductVariant {
   tenantId                String                  @db.Uuid
   productId               String                  @db.Uuid
   product                 Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
-  sku                     String                  @unique @db.VarChar(64)
+  sku                     String                   @db.VarChar(64)
   nameFa                  String
   fulfillmentClass        ProductFulfillmentClass
   freshnessClaim          FreshnessClaim
@@ -1225,6 +1228,7 @@ model ProductVariant {
   quoteItems              QuoteItem[]
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt
+  @@unique([tenantId, sku], map: "ProductVariant_tenant_sku_key")
 
   @@unique([id, tenantId], map: "g3b_ProductVariant_id_tenant_key")
   @@index([fulfillmentClass, lifecycle])
@@ -1955,7 +1959,7 @@ model Fulfillment {
 model CourierPartner {
   id          String    @id @default(uuid()) @db.Uuid
   tenantId    String    @db.Uuid
-  code        String    @unique @db.VarChar(32)
+  code        String     @db.VarChar(32)
   displayName String
   isActive    Boolean   @default(false)
   /// The partner's cut of the delivery fee, in basis points. 10000 is all of it.
@@ -1966,6 +1970,7 @@ model CourierPartner {
   payouts     PartnerPayout[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  @@unique([tenantId, code], map: "CourierPartner_tenant_code_key")
 
   @@unique([id, tenantId], map: "g3b_CourierPartner_id_tenant_key")
   @@index([tenantId])

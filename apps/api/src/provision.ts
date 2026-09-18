@@ -460,7 +460,7 @@ async function main(): Promise<void> {
      */
     if (command === 'provision-coverage') {
       const city = await prisma.city.upsert({
-        where: { code: 'BABOL_PILOT' },
+        where: { tenantId_code: { tenantId, code: 'BABOL_PILOT' } },
         update: { nameFa: flags['city-name'] ?? 'بابل و حومه' },
         create: {
           tenantId,

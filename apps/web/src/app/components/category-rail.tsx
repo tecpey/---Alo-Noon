@@ -12,6 +12,7 @@ import {
   WheatIcon,
   type IconProps,
 } from './icons'
+import { foldPersian } from '@alo-noon/domain'
 import { ALL_CATEGORIES, type CatalogChip } from '../../lib/catalog-view'
 
 /**
@@ -29,26 +30,46 @@ import { ALL_CATEGORIES, type CatalogChip } from '../../lib/catalog-view'
  * `role="tab"` and changed nothing, which is a lesson worth not repeating — a
  * prettier control that does nothing is a worse control.
  *
- * ## Why the glyph is chosen by code and why there is a fallback
+ * ## Why the glyph is chosen by name and not by code
  *
- * The categories are rows in the tenant's own database, not a list in this
- * file: the shop has to be able to add «شیرینی» without a deploy, and the
- * bootstrap's codes (`SANGAK`, `BARBARI`, …) are the stable part. So a code we
- * recognise gets its own bread, and anything else gets a wheat sprig.
+ * The obvious key is the category's code, and it is the wrong one.
+ * `ProductCategory.code` is unique across the *whole table* rather than per
+ * tenant, so the first shop to claim `SANGAK` owns it and every shop after
+ * has to invent something else — which is exactly what the existing fixtures
+ * do, carrying codes like `TRAD-145D7F`. A map keyed on bare codes would
+ * therefore match the first tenant and silently fall back for all the rest.
  *
- * That fallback is not a nicety. Without it, the first category an operator
- * adds next spring renders as an empty circle — or worse, as whichever bread
- * happened to be first in the list, which would be a picture of the wrong
- * loaf under the right name.
+ * So the glyph is chosen from the name, folded with the same helper the search
+ * box uses: an operator who calls a category «سنگک» or «نان سنگک» gets a
+ * sangak without knowing any code convention, and «سنگك» typed on an Arabic
+ * keyboard lands too. Matching the picture to the word the customer reads is
+ * also simply the right relationship — the code is an internal handle and
+ * nobody sees it.
+ *
+ * Anything unrecognised gets a wheat sprig. That fallback is not a nicety:
+ * without it the first category an operator adds next spring renders as an
+ * empty circle, or as whichever bread happened to be first in the list, which
+ * would be a picture of the wrong loaf under the right name.
  */
-const CATEGORY_GLYPHS: Readonly<Record<string, (props: IconProps) => React.JSX.Element>> = {
-  [ALL_CATEGORIES]: GridIcon,
-  SPECIAL: OvenIcon,
-  SANGAK: SangakIcon,
-  BARBARI: BarbariIcon,
-  LAVASH: LavashIcon,
-  TAFTOON: TaftoonIcon,
-  SWEET: KomajIcon,
+const BREAD_GLYPHS: ReadonlyArray<
+  readonly [readonly string[], (props: IconProps) => React.JSX.Element]
+> = [
+  // Order matters: «نان سنگک کنجدی» must not be caught by a looser rule first.
+  [['سنگک'], SangakIcon],
+  [['بربری'], BarbariIcon],
+  [['لواش'], LavashIcon],
+  [['تافتون', 'تافتان'], TaftoonIcon],
+  [['کماج', 'شیرینی'], KomajIcon],
+  [['ویژه', 'پخت'], OvenIcon],
+]
+
+function glyphFor(chip: CatalogChip): (props: IconProps) => React.JSX.Element {
+  if (chip.code === ALL_CATEGORIES) return GridIcon
+  const name = foldPersian(chip.labelFa)
+  for (const [words, Glyph] of BREAD_GLYPHS) {
+    if (words.some((word) => name.includes(foldPersian(word)))) return Glyph
+  }
+  return WheatIcon
 }
 
 export function CategoryRail({ chips }: { chips: readonly CatalogChip[] }) {
@@ -60,7 +81,7 @@ export function CategoryRail({ chips }: { chips: readonly CatalogChip[] }) {
       <div className="rail__track" role="group" aria-label="دسته‌بندی نان‌ها">
         {chips.map((entry) => {
           const active = entry.code === category
-          const Glyph = CATEGORY_GLYPHS[entry.code] ?? WheatIcon
+          const Glyph = glyphFor(entry)
           return (
             <button
               key={entry.code}

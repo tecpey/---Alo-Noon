@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { matchesPersianQuery } from '@alo-noon/domain'
+import { foldPersian, matchesPersianQuery } from '@alo-noon/domain'
 
 /**
  * Controls that look like they work, checked for whether they do.
@@ -87,18 +87,22 @@ describe('the category tiles', () => {
     expect(rail).toContain('aria-pressed={active}')
   })
 
-  it('give each launch category its own bread', () => {
-    // The codes the bootstrap creates. A category row of identical circles is a
-    // row of identical circles.
-    for (const [code, glyph] of [
-      ['SPECIAL', 'OvenIcon'],
-      ['SANGAK', 'SangakIcon'],
-      ['BARBARI', 'BarbariIcon'],
-      ['LAVASH', 'LavashIcon'],
-      ['TAFTOON', 'TaftoonIcon'],
-      ['SWEET', 'KomajIcon'],
-    ]) {
-      expect(rail).toMatch(new RegExp(`${code}:\\s*${glyph}`))
+  /**
+   * Keyed on the name rather than the code, and this is the reason:
+   * `ProductCategory.code` is unique across the whole table rather than per
+   * tenant, so the first shop to claim `SANGAK` owns it and every shop after it
+   * must invent something else — the existing fixtures carry codes like
+   * `TRAD-145D7F`. A map keyed on bare codes matches the first tenant and
+   * silently falls back for all the rest.
+   */
+  it('chooses the bread from the name, not from a code no second tenant can use', () => {
+    expect(rail).toContain('foldPersian(chip.labelFa)')
+    expect(rail).not.toContain("'SANGAK'")
+  })
+
+  it('names every bread the pilot sells', () => {
+    for (const word of ['سنگک', 'بربری', 'لواش', 'تافتون', 'کماج']) {
+      expect(rail).toContain(word)
     }
   })
 
@@ -106,10 +110,47 @@ describe('the category tiles', () => {
    * The shop can add a category without a deploy — that is why the categories
    * are rows rather than a list in the source. Without a fallback the first one
    * added next spring renders as an empty circle, or as whichever bread happens
-   * to be first in the map: a picture of the wrong loaf under the right name.
+   * to be first in the list: a picture of the wrong loaf under the right name.
    */
-  it('fall back rather than showing the wrong loaf for a code they do not know', () => {
-    expect(rail).toContain('?? WheatIcon')
+  it('falls back rather than showing the wrong loaf for a name it does not know', () => {
+    expect(rail).toContain('return WheatIcon')
+  })
+})
+
+describe('matching a category name to a bread', () => {
+  // The real rule, exercised rather than read: the same fold the search box
+  // uses, against the names an operator would actually type.
+  const BREADS: ReadonlyArray<readonly [readonly string[], string]> = [
+    [['سنگک'], 'sangak'],
+    [['بربری'], 'barbari'],
+    [['لواش'], 'lavash'],
+    [['تافتون', 'تافتان'], 'taftoon'],
+    [['کماج', 'شیرینی'], 'komaj'],
+    [['ویژه', 'پخت'], 'oven'],
+  ]
+  const pick = (labelFa: string) => {
+    const name = foldPersian(labelFa)
+    for (const [words, glyph] of BREADS) {
+      if (words.some((word) => name.includes(foldPersian(word)))) return glyph
+    }
+    return 'wheat'
+  }
+
+  it('reads the bread out of a fuller name', () => {
+    expect(pick('نان سنگک')).toBe('sangak')
+    expect(pick('نان بربری کنجدی')).toBe('barbari')
+    expect(pick('شیرینی و کماج')).toBe('komaj')
+  })
+
+  it('matches a name typed on an Arabic keyboard', () => {
+    expect(pick('سنگك')).toBe('sangak')
+    expect(pick('نان بربري')).toBe('barbari')
+  })
+
+  it('gives wheat to a category it has never heard of', () => {
+    // «لبنیات» is in the launch artwork and is not a bread.
+    expect(pick('لبنیات')).toBe('wheat')
+    expect(pick('نوشیدنی')).toBe('wheat')
   })
 })
 

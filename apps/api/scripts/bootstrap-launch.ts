@@ -204,14 +204,62 @@ async function main(): Promise<void> {
     create: { id: TENANT_ID, slug: 'alo-noon', name: 'الو نون', status: 'ACTIVE' },
   })
 
-  // Tenant identity comes from the host, and Fastify's `request.hostname` may or
-  // may not carry the port depending on the deployment, so both forms resolve.
-  for (const host of ['localhost', 'localhost:3001', '127.0.0.1', '127.0.0.1:3001']) {
+  /*
+   * Tenant identity comes from the host, and Fastify's `request.hostname` may or
+   * may not carry the port depending on the deployment, so both forms resolve.
+   *
+   * The public host is given rather than guessed. A migration written early in
+   * this project hard-coded `alonon.ir` as the primary domain while every other
+   * reference in the repository — the env example, the config tests, the mobile
+   * client's tests — says `alonoon.ir`. One of those is a typo, and whichever it
+   * is, a shop whose tenant does not resolve on its own domain answers "no shop
+   * is served from this host" to every visitor on launch day and looks, from
+   * outside, exactly like a DNS problem.
+   *
+   * So this refuses to invent one. `BOOTSTRAP_PUBLIC_HOST` is also what staging
+   * needs, which is the other reason it cannot be a constant.
+   */
+  const publicHost = process.env['BOOTSTRAP_PUBLIC_HOST']?.trim().toLowerCase()
+  if (publicHost && !/^[a-z0-9.-]+(:\d+)?$/.test(publicHost)) {
+    throw new Error(
+      `BOOTSTRAP_PUBLIC_HOST must be a bare host, optionally with a port — got ${publicHost}`,
+    )
+  }
+
+  const localHosts = ['localhost', 'localhost:3001', '127.0.0.1', '127.0.0.1:3001']
+  for (const host of localHosts) {
     await prisma.tenantDomain.upsert({
       where: { host },
-      update: { verifiedAt: now },
-      create: { tenantId: TENANT_ID, host, isPrimary: host === 'localhost', verifiedAt: now },
+      // Local hosts are never primary once a real one is known: `isPrimary`
+      // picks the origin the shop calls its own, and «localhost» in a canonical
+      // URL is how a sitemap ends up advertising a laptop.
+      update: { verifiedAt: now, ...(publicHost && { isPrimary: false }) },
+      create: {
+        tenantId: TENANT_ID,
+        host,
+        isPrimary: !publicHost && host === 'localhost',
+        verifiedAt: now,
+      },
     })
+  }
+
+  if (publicHost) {
+    await prisma.tenantDomain.upsert({
+      where: { host: publicHost },
+      update: { tenantId: TENANT_ID, isPrimary: true, verifiedAt: now },
+      create: { tenantId: TENANT_ID, host: publicHost, isPrimary: true, verifiedAt: now },
+    })
+    // Demote anything else this tenant still calls primary, so the flag means
+    // one origin rather than "whichever row was written last".
+    await prisma.tenantDomain.updateMany({
+      where: { tenantId: TENANT_ID, isPrimary: true, host: { not: publicHost } },
+      data: { isPrimary: false },
+    })
+  } else {
+    console.warn(
+      'BOOTSTRAP_PUBLIC_HOST is not set: only local hosts resolve to this tenant. ' +
+        'A deployment needs it, or the shop answers to nobody on its own domain.',
+    )
   }
 
   const ids = await tenantTransaction(async (t) => {
@@ -219,7 +267,7 @@ async function main(): Promise<void> {
     // leave stale terms behind.
     const cityPolicy = { isActive: true }
     const city = await t.city.upsert({
-      where: { code: 'BABOL' },
+      where: { tenantId_code: { tenantId: TENANT_ID, code: 'BABOL' } },
       update: cityPolicy,
       create: { tenantId: TENANT_ID, code: 'BABOL', nameFa: 'بابل', ...cityPolicy },
     })
@@ -319,7 +367,7 @@ async function main(): Promise<void> {
     const categoryIds = new Map<string, string>()
     for (const definition of LAUNCH_CATEGORIES) {
       const category = await t.productCategory.upsert({
-        where: { code: definition.code },
+        where: { tenantId_code: { tenantId: TENANT_ID, code: definition.code } },
         update: { nameFa: definition.nameFa },
         create: { tenantId: TENANT_ID, ...definition },
       })
@@ -336,7 +384,7 @@ async function main(): Promise<void> {
       // rather than leaving whatever it found. A bootstrap that only fixes an
       // empty database is a bootstrap you cannot trust twice.
       const product = await t.product.upsert({
-        where: { slug: bread.slug },
+        where: { tenantId_slug: { tenantId: TENANT_ID, slug: bread.slug } },
         update: {
           categoryId,
           nameFa: bread.nameFa,
@@ -394,7 +442,7 @@ async function main(): Promise<void> {
             lifecycle: 'ACTIVE' as const,
           }
       const variant = await t.productVariant.upsert({
-        where: { sku: bread.sku },
+        where: { tenantId_sku: { tenantId: TENANT_ID, sku: bread.sku } },
         update: variantShape,
         create: { tenantId: TENANT_ID, productId: product.id, sku: bread.sku, ...variantShape },
       })
@@ -610,7 +658,7 @@ async function main(): Promise<void> {
   })
   await tenantTransaction(async (t) => {
     const partner = await t.courierPartner.upsert({
-      where: { code: 'INHOUSE' },
+      where: { tenantId_code: { tenantId: TENANT_ID, code: 'INHOUSE' } },
       update: { isActive: true },
       create: {
         tenantId: TENANT_ID,

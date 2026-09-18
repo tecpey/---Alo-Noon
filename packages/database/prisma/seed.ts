@@ -7,7 +7,7 @@ async function main(): Promise<void> {
   await prisma.$transaction(async (transaction) => {
     await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${internalTenantId}, true)`
     const city = await transaction.city.upsert({
-      where: { code: 'BABOL' },
+      where: { tenantId_code: { tenantId: internalTenantId, code: 'BABOL' } },
       update: {},
       create: { tenantId: internalTenantId, code: 'BABOL', nameFa: 'بابل', isActive: true },
     })
@@ -79,13 +79,13 @@ async function main(): Promise<void> {
     })
 
     const category = await transaction.productCategory.upsert({
-      where: { code: 'SIGNATURE_BREAD' },
+      where: { tenantId_code: { tenantId: internalTenantId, code: 'SIGNATURE_BREAD' } },
       update: {},
       create: { tenantId: internalTenantId, code: 'SIGNATURE_BREAD', nameFa: 'نان امضادار' },
     })
 
     const product = await transaction.product.upsert({
-      where: { slug: 'development-signature-bread' },
+      where: { tenantId_slug: { tenantId: internalTenantId, slug: 'development-signature-bread' } },
       update: {},
       create: {
         tenantId: internalTenantId,
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     })
 
     const variant = await transaction.productVariant.upsert({
-      where: { sku: 'DEV-SIGNATURE-001' },
+      where: { tenantId_sku: { tenantId: internalTenantId, sku: 'DEV-SIGNATURE-001' } },
       update: {},
       create: {
         tenantId: internalTenantId,
