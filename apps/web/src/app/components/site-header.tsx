@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { BrandMark } from './brand-mark'
 import { useStorefront } from './storefront-state'
-import { CartIcon, CloseIcon, PinIcon, SearchIcon, UserIcon } from './icons'
+import { CartIcon, ChevronDownIcon, CloseIcon, PinIcon, SearchIcon, UserIcon } from './icons'
 import { brandCopy, orderConditions } from '../../lib/storefront-content'
 import { toPersianDigits } from '../../lib/persian'
 
@@ -26,7 +26,8 @@ import { toPersianDigits } from '../../lib/persian'
  */
 export function SiteHeader() {
   const address = orderConditions.find((condition) => condition.id === 'address')
-  const { count, pulse, openDrawer, query, setQuery } = useStorefront()
+  const { count, pulse, openDrawer, query, setQuery, cityNameFa, cities, openCity } =
+    useStorefront()
   const [condensed, setCondensed] = useState(false)
   const [bumping, setBumping] = useState(false)
   const firstPulse = useRef(pulse)
@@ -55,10 +56,34 @@ export function SiteHeader() {
         </Link>
 
         <div className="site-header__controls">
-          <button type="button" className="an-pill site-header__address">
-            <PinIcon duotone />
-            <span>{address?.valueFa}</span>
-          </button>
+          {/*
+            The city, and a way to change it.
+
+            It showed a hard-coded «شهرتان را انتخاب کنید» to somebody already
+            shopping in Babol, and it was a button with no handler — so the one
+            place anybody would look to change city both lied about the city and
+            did nothing. It says where you are now, and opens the sheet.
+
+            With one city there is nothing to choose between, so it renders as
+            plain text rather than as a control that opens a list of one.
+          */}
+          {cities.length > 1 ? (
+            <button
+              type="button"
+              className="an-pill site-header__address"
+              onClick={openCity}
+              aria-label={`شهر تحویل: ${cityNameFa ?? address?.valueFa}. برای تغییر بزنید`}
+            >
+              <PinIcon duotone />
+              <span>{cityNameFa ?? address?.valueFa}</span>
+              <ChevronDownIcon width={14} height={14} />
+            </button>
+          ) : (
+            <span className="an-pill site-header__address">
+              <PinIcon duotone />
+              <span>{cityNameFa ?? address?.valueFa}</span>
+            </span>
+          )}
 
           {/*
             It filters. It used to be an input with a placeholder and no

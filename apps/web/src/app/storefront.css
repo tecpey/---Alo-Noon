@@ -455,8 +455,15 @@
   align-self: stretch;
   /* A band, sized against the screen rather than fixed, so it is a header on a
      small phone and a picture on a large one — and never the whole first
-     screen on either. */
-  min-height: clamp(180px, 30vh, 260px);
+     screen on either.
+     
+     The claim in that last clause was not true when it was written. Measured at
+     390×844 the whole hero came to 817px — ninety-seven per cent of the screen
+     — so a returning customer, which is most of them once the shop is installed
+     to a home screen, scrolled a full screen past a pitch they had already read
+     before seeing one loaf. This band, the tighter copy below it and the
+     address row dropped from the panel are what make the sentence true. */
+  min-height: clamp(170px, 26vh, 260px);
   /* Full bleed: on a phone the frame has no margin to respect, and a photograph
      inset by a gutter reads as an image in a document rather than a window. */
   margin-inline: -1rem;
@@ -481,14 +488,14 @@
   z-index: 1;
   /* Rides up into the foot of the photograph so the headline starts inside the
      picture, which is what keeps the two reading as one hero. */
-  margin-block-start: -3rem;
+  margin-block-start: -2.25rem;
   padding-block: 0 0.5rem;
 }
 .hero__eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  margin-block-end: 0.9rem;
+  margin-block-end: 0.7rem;
   padding: 0.35rem 0.85rem;
   border-radius: var(--radius-full);
   background: var(--primary-100);
@@ -499,18 +506,36 @@
 .hero h1 {
   display: flex;
   flex-direction: column;
-  font-size: clamp(2.2rem, 4.6vw, 3.6rem);
+  /* The phone value first, as everything here is written. 2.2rem was three
+     lines of headline on a 390px screen once the hero had to fit. */
+  font-size: clamp(2rem, 4.6vw, 3.6rem);
   line-height: 1.3;
 }
 .hero__lead {
   max-width: 34rem;
-  margin-block-start: 1.1rem;
+  margin-block-start: 0.85rem;
   color: var(--ink-muted);
   font-size: clamp(0.98rem, 1.3vw, 1.1rem);
 }
 .hero__cta {
-  margin-block-start: 1.9rem;
+  margin-block-start: 1.35rem;
 }
+
+/*
+  The hero is the tallest thing on this page and the only thing above the shop.
+
+  Measured at 390×844 it was 817px — ninety-seven per cent of the screen — so a
+  returning customer, who is most of them once the shop is installed to a home
+  screen, scrolled a full screen past a pitch they had already read before
+  seeing a single loaf. The tightening above and the address row removed from
+  the panel below bring it under the fold's worth, which is what lets the next
+  section peek and say there is more.
+
+  It is not cut down to a banner. Half the people arriving here come from a link
+  in a story and have never seen the shop; for them the photograph and the
+  sentence are the product. The target is a hero that ends on screen, not one
+  that is gone.
+*/
 
 /* ------------------------------------------------------- delivery conditions */
 
@@ -739,36 +764,84 @@
   display: none;
 }
 
-.chip {
+/*
+  A category is a picture with its name under it, not a word in a pill.
+
+  The choice here is between kinds of bread, which people recognise by shape
+  long before they read the name — a drawing of a sangak lands faster than the
+  word «سنگک», the way a road sign lands faster than a sentence. On a phone held
+  one-handed that is the difference between scanning a row and reading it.
+
+  The tile is the touch target and the label rides along under it, so the whole
+  thing is one button rather than a picture with a caption you cannot press.
+*/
+.category {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  min-block-size: var(--touch-min);
-  padding: 0.55rem 1.1rem;
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  inline-size: 4.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+.category__tile {
+  display: grid;
+  place-items: center;
+  /* Comfortably past the 44pt touch floor, and the reason the label below can
+     stay small without the control being hard to hit. */
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-full);
   background: var(--surface-card);
   color: var(--ink-base);
-  font-size: 0.92rem;
-  font-weight: 600;
-  scroll-snap-align: start;
   transition:
     background var(--duration-base) var(--easing-standard),
-    color var(--duration-base) var(--easing-standard),
     border-color var(--duration-base) var(--easing-standard),
+    color var(--duration-base) var(--easing-standard),
     transform var(--duration-fast) var(--easing-spring);
 }
-.chip:hover {
+.category__label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.3;
+  /* One line, clipped. A category whose name wraps makes its tile taller than
+     its neighbours and the row stops being a row. */
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.category:hover .category__tile {
   border-color: var(--primary-300);
 }
-.chip:active {
-  transform: scale(0.95);
+.category:active .category__tile {
+  transform: scale(0.94);
 }
-.chip--active {
+/* The selected one fills, and its label takes the brand colour with it — the
+   tile alone is a small mark to carry the whole state at arm's length. */
+.category--active .category__tile {
   background: var(--primary-600);
   border-color: var(--primary-600);
   color: var(--ink-onAction);
   box-shadow: var(--shadow-action);
+}
+.category--active .category__label {
+  color: var(--primary-700);
+}
+/* The focus ring belongs on the tile, which is what is drawn, rather than on
+   the button box that also covers the label. */
+.category:focus-visible {
+  outline: none;
+}
+.category:focus-visible .category__tile {
+  outline: 2px solid var(--primary-600);
+  outline-offset: 2px;
 }
 
 @media (min-width: 56.25rem) {
@@ -1659,4 +1732,48 @@
   .app-frame {
     padding-bottom: 0;
   }
+}
+
+/*
+  The city sheet.
+
+  Reuses the basket drawer's shell — scrim, panel, head — because it is the same
+  gesture: something slides over the shop, takes one decision, and leaves. A
+  second set of panel styles would be a second set of panel bugs.
+*/
+.city-sheet__note {
+  margin: 0 0 1rem;
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+.city-sheet__options {
+  display: grid;
+  gap: 0.5rem;
+}
+.city-sheet__option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  inline-size: 100%;
+  min-block-size: var(--touch-min);
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  color: var(--ink-base);
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+.city-sheet__option:hover {
+  border-color: var(--primary-300);
+}
+/* The one you are already in is marked rather than hidden: a list that silently
+   drops the current city reads as though it is no longer available. */
+.city-sheet__option.is-current {
+  border-color: var(--primary-600);
+  background: var(--primary-50);
+  color: var(--primary-700);
 }

@@ -70,6 +70,25 @@ interface StorefrontState {
   readonly drawerOpen: boolean
   openDrawer: () => void
   closeDrawer: () => void
+  /**
+   * The city this shop is priced in, and the ones a customer could move to.
+   *
+   * Here because the header shows it and the header is a client component, and
+   * because until now it showed a hard-coded «شهرتان را انتخاب کنید» to
+   * somebody already shopping in Babol — the most persistent element on the
+   * page, saying something untrue.
+   */
+  readonly cityNameFa: string | null
+  readonly cities: readonly CityChoice[]
+  readonly cityOpen: boolean
+  openCity: () => void
+  closeCity: () => void
+}
+
+/** Just enough of a city to name it and switch to it. */
+export interface CityChoice {
+  readonly id: string
+  readonly nameFa: string
 }
 
 const StorefrontContext = createContext<StorefrontState | null>(null)
@@ -79,6 +98,8 @@ export function StorefrontProvider({
   signedIn = false,
   serverLines,
   serverVersion,
+  cityNameFa = null,
+  cities = [],
   children,
 }: {
   /** Everything on sale in this city, flattened across the shelves. */
@@ -89,6 +110,10 @@ export function StorefrontProvider({
   serverLines?: readonly (readonly [string, number])[]
   /** The cart version those lines came from, for optimistic concurrency. */
   serverVersion?: number
+  /** The city the catalogue below was priced in, when there is one. */
+  cityNameFa?: string | null
+  /** Every city this shop is open in, so the header can offer a move. */
+  cities?: readonly CityChoice[]
   children: ReactNode
 }) {
   const [lines, setLines] = useState<ReadonlyMap<string, number>>(() => new Map(serverLines ?? []))
@@ -96,6 +121,7 @@ export function StorefrontProvider({
   const [category, setCategory] = useState(ALL_CATEGORIES)
   const [query, setQuery] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [cityOpen, setCityOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const version = useRef<number | undefined>(serverVersion)
@@ -218,6 +244,8 @@ export function StorefrontProvider({
 
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
+  const openCity = useCallback(() => setCityOpen(true), [])
+  const closeCity = useCallback(() => setCityOpen(false), [])
 
   const value = useMemo<StorefrontState>(() => {
     let count = 0
@@ -238,6 +266,11 @@ export function StorefrontProvider({
       drawerOpen,
       openDrawer,
       closeDrawer,
+      cityNameFa,
+      cities,
+      cityOpen,
+      openCity,
+      closeCity,
     }
   }, [
     lines,
@@ -252,6 +285,11 @@ export function StorefrontProvider({
     drawerOpen,
     openDrawer,
     closeDrawer,
+    cityNameFa,
+    cities,
+    cityOpen,
+    openCity,
+    closeCity,
   ])
 
   return <StorefrontContext.Provider value={value}>{children}</StorefrontContext.Provider>

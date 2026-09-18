@@ -11,6 +11,7 @@ import './product.css'
 
 import { BreadPlaceholderArt } from '../../components/brand-art'
 import { BasketDrawer } from '../../components/basket-drawer'
+import { CitySheet } from '../../components/city-sheet'
 import { CitySwitch } from '../../components/city-switch'
 import { ProductBuy } from '../../components/product-buy'
 import { RetryButton } from '../../components/retry-button'
@@ -64,6 +65,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       signedIn={basket.signedIn}
       serverLines={basket.lines}
       {...(basket.version !== undefined && { serverVersion: basket.version })}
+      {...(data.state === 'ready' && {
+        cityNameFa: data.city.nameFa,
+        cities: data.cities.map((entry) => ({ id: entry.id, nameFa: entry.nameFa })),
+      })}
     >
       <div className="app-frame">
         <SiteHeader />
@@ -75,6 +80,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           )}
         </main>
         <BasketDrawer />
+        <CitySheet />
       </div>
     </StorefrontProvider>
   )

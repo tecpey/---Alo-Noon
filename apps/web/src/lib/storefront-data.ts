@@ -42,7 +42,20 @@ export async function loadServerBasket(): Promise<ServerBasket> {
 }
 
 export type StorefrontData =
-  | { readonly state: 'ready'; readonly city: ActiveCitySummary; readonly catalog: CatalogView }
+  | {
+      readonly state: 'ready'
+      readonly city: ActiveCitySummary
+      /**
+       * Every city this shop is open in, not only the chosen one.
+       *
+       * Carried through so the header can offer a move. Without it the city was
+       * askable exactly once — `CitySwitch` renders only in `choose-city`, so
+       * after the first tap there was no control anywhere that could change it,
+       * and the city decides which bakeries exist at all.
+       */
+      readonly cities: readonly ActiveCitySummary[]
+      readonly catalog: CatalogView
+    }
   /** Cities loaded, but this visitor has to pick one before there is a catalog. */
   | { readonly state: 'choose-city'; readonly cities: readonly ActiveCitySummary[] }
   /** The shop is not open anywhere — no active city has a live service area. */
@@ -57,7 +70,12 @@ export type StorefrontData =
  * priced against the same city the card that linked to it was.
  */
 type CityChoice =
-  | { readonly state: 'ready'; readonly city: ActiveCitySummary; readonly zoneId?: string }
+  | {
+      readonly state: 'ready'
+      readonly city: ActiveCitySummary
+      readonly cities: readonly ActiveCitySummary[]
+      readonly zoneId?: string
+    }
   | { readonly state: 'choose-city'; readonly cities: readonly ActiveCitySummary[] }
   | { readonly state: 'closed' }
   | { readonly state: 'unavailable'; readonly message: string }
@@ -77,7 +95,7 @@ async function resolveCity(): Promise<CityChoice> {
   if (!city) return { state: 'choose-city', cities: cities.data }
 
   const zoneId = cookieStore.get(ZONE_COOKIE)?.value
-  return { state: 'ready', city, ...(zoneId && { zoneId }) }
+  return { state: 'ready', city, cities: cities.data, ...(zoneId && { zoneId }) }
 }
 
 export async function loadStorefront(): Promise<StorefrontData> {
@@ -93,6 +111,7 @@ export async function loadStorefront(): Promise<StorefrontData> {
   return {
     state: 'ready',
     city: choice.city,
+    cities: choice.cities,
     catalog: buildCatalogView(products.data, choice.city.id),
   }
 }
@@ -141,7 +160,13 @@ export async function offeringContexts(): Promise<
 }
 
 export type ProductPageData =
-  | { readonly state: 'ready'; readonly city: ActiveCitySummary; readonly product: ProductDetail }
+  | {
+      readonly state: 'ready'
+      readonly city: ActiveCitySummary
+      /** The other cities, so a bread's page offers the same move the shop does. */
+      readonly cities: readonly ActiveCitySummary[]
+      readonly product: ProductDetail
+    }
   /** The slug is not on sale in this city. The page answers 404. */
   | { readonly state: 'missing' }
   | { readonly state: 'choose-city'; readonly cities: readonly ActiveCitySummary[] }
@@ -157,7 +182,8 @@ export async function loadProduct(slug: string): Promise<ProductPageData> {
     choice.city.id,
     choice.zoneId ? { operationalZoneId: choice.zoneId } : {},
   )
-  if (product.ok) return { state: 'ready', city: choice.city, product: product.data }
+  if (product.ok)
+    return { state: 'ready', city: choice.city, cities: choice.cities, product: product.data }
 
   // A bread that is not sold here is a missing page, not a broken one. Every
   // other failure keeps its own message, so "we could not reach the catalog"

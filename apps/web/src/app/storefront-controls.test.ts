@@ -77,6 +77,91 @@ describe('what the search actually answers', () => {
   })
 })
 
+describe('the category tiles', () => {
+  const rail = read('components/category-rail.tsx')
+
+  it('still filter, which is what they are for', () => {
+    // They were `role="tab"` and changed nothing once. A prettier control that
+    // does nothing is a worse control.
+    expect(rail).toContain('selectCategory(entry.code)')
+    expect(rail).toContain('aria-pressed={active}')
+  })
+
+  it('give each launch category its own bread', () => {
+    // The codes the bootstrap creates. A category row of identical circles is a
+    // row of identical circles.
+    for (const [code, glyph] of [
+      ['SPECIAL', 'OvenIcon'],
+      ['SANGAK', 'SangakIcon'],
+      ['BARBARI', 'BarbariIcon'],
+      ['LAVASH', 'LavashIcon'],
+      ['TAFTOON', 'TaftoonIcon'],
+      ['SWEET', 'KomajIcon'],
+    ]) {
+      expect(rail).toMatch(new RegExp(`${code}:\\s*${glyph}`))
+    }
+  })
+
+  /**
+   * The shop can add a category without a deploy — that is why the categories
+   * are rows rather than a list in the source. Without a fallback the first one
+   * added next spring renders as an empty circle, or as whichever bread happens
+   * to be first in the map: a picture of the wrong loaf under the right name.
+   */
+  it('fall back rather than showing the wrong loaf for a code they do not know', () => {
+    expect(rail).toContain('?? WheatIcon')
+  })
+})
+
+describe('the city in the header', () => {
+  const header = read('components/site-header.tsx')
+
+  /**
+   * It showed a hard-coded «شهرتان را انتخاب کنید» from the static content file
+   * to somebody already shopping in Babol — a render at phone size had the real
+   * city and the prompt on screen at the same time. The most persistent element
+   * on the page, saying something untrue.
+   */
+  it('names the city the catalogue was actually priced in', () => {
+    expect(header).toContain('cityNameFa')
+    expect(header).toMatch(/cityNameFa \?\? address\?\.valueFa/)
+  })
+
+  /**
+   * The pin was a `<button>` with no handler, and `CitySwitch` renders only in
+   * the `choose-city` state — so after the first tap there was no control
+   * anywhere that could change city again. The city decides which bakeries
+   * exist and what the prices are, so somebody who tapped the wrong one had a
+   * shop that would never show them bread they could buy.
+   */
+  it('opens the chooser, rather than being a button that does nothing', () => {
+    expect(header).toContain('onClick={openCity}')
+  })
+
+  /** A control that opens a list of one is a control that should not be there. */
+  it('is plain text when there is only one city', () => {
+    expect(header).toMatch(/cities\.length > 1/)
+  })
+
+  it('offers every city the shop is open in, and marks the current one', () => {
+    const sheet = read('components/city-sheet.tsx')
+    expect(sheet).toContain('selectCityAction')
+    expect(sheet).toContain('aria-current')
+  })
+})
+
+describe('the hero', () => {
+  /**
+   * Measured at 390×844 the hero was 817px — ninety-seven per cent of the
+   * screen — so a returning customer scrolled a full screen past a pitch they
+   * had already read before seeing one loaf. Part of that was the delivery
+   * address, printed here as well as in the pinned bar above it.
+   */
+  it('does not repeat the address the header already shows', () => {
+    expect(read('page.tsx')).toMatch(/filter\(\(condition\) => condition\.id !== 'address'\)/)
+  })
+})
+
 describe('the bottom tab bar', () => {
   const tabs = read('components/app-tabs.tsx')
 

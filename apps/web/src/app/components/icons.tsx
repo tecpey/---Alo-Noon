@@ -233,6 +233,89 @@ export function WheatIcon(props: IconProps) {
   )
 }
 
+/* ------------------------------------------------------------------ breads */
+
+/**
+ * One glyph per kind of bread, because a category row of identical circles is
+ * a row of identical circles.
+ *
+ * Each is drawn from the thing that actually tells that bread apart in a
+ * bakery window — the ridges down a barbari, the pebble dimples pressed into a
+ * sangak, the paper thinness of a lavash — rather than from six variations on
+ * an oval. At the twenty-eight pixels a category tile gives them, silhouette is
+ * the only thing that survives, so no two of these share one.
+ */
+
+/** Long, tapered, and pressed with pebbles. The dimples are the whole point. */
+export function SangakIcon(props: IconProps) {
+  // Tapered rather than a plain oblong: drawn as a rounded rectangle it is a
+  // second barbari, and the two sit next to each other in the row.
+  const body =
+    'M3.4 12c0-1.5 1.2-2.6 2.8-2.9l8.8-1.7c3.3-.6 5.6 1.6 5.6 4.6s-2.3 5.2-5.6 4.6l-8.8-1.7C4.6 14.6 3.4 13.5 3.4 12Z'
+  return (
+    <Icon {...props} accent={<path d={body} />}>
+      <path d={body} />
+      <circle cx="9.6" cy="11.4" r="0.8" />
+      <circle cx="13.4" cy="13.4" r="0.8" />
+      <circle cx="14.2" cy="10.2" r="0.8" />
+      <circle cx="17.4" cy="12.4" r="0.8" />
+    </Icon>
+  )
+}
+
+/** An oblong with grooves down its length — the ridges are how you know it. */
+export function BarbariIcon(props: IconProps) {
+  const body = 'M3.6 12a4.5 4.5 0 0 1 4.5-4.5h7.8a4.5 4.5 0 0 1 0 9H8.1A4.5 4.5 0 0 1 3.6 12Z'
+  return (
+    <Icon {...props} accent={<path d={body} />}>
+      <path d={body} />
+      {/* Two, not three. At the size a category tile gives this, three grooves
+          at 1.7 stroke touch each other and the loaf reads as a solid lozenge —
+          which was the first thing a render showed. */}
+      <path d="M7.5 10.5c3-.5 6-.5 9 0" />
+      <path d="M7.5 13.5c3-.5 6-.5 9 0" />
+    </Icon>
+  )
+}
+
+/** A sheet, thin enough to ripple. The only one here that is not a loaf. */
+export function LavashIcon(props: IconProps) {
+  const body =
+    'M3.2 8.4c2.9-1.7 5.9-1.7 8.8 0s5.9 1.7 8.8 0v7.2c-2.9 1.7-5.9 1.7-8.8 0s-5.9-1.7-8.8 0Z'
+  return (
+    <Icon {...props} accent={<path d={body} />}>
+      <path d={body} />
+      <path d="M3.2 12c2.9-1.7 5.9-1.7 8.8 0s5.9 1.7 8.8 0" />
+    </Icon>
+  )
+}
+
+/** Round and flat, dimpled across the face. */
+export function TaftoonIcon(props: IconProps) {
+  return (
+    <Icon {...props} accent={<circle cx="12" cy="12" r="8.2" />}>
+      <circle cx="12" cy="12" r="8.2" />
+      <circle cx="9.3" cy="10.3" r="0.75" />
+      <circle cx="14.4" cy="9.9" r="0.75" />
+      <circle cx="12" cy="13.4" r="0.75" />
+      <circle cx="9" cy="14.6" r="0.75" />
+      <circle cx="15.2" cy="14.2" r="0.75" />
+    </Icon>
+  )
+}
+
+/** A domed bun, scored across the top. Komaj, and the sweet things beside it. */
+export function KomajIcon(props: IconProps) {
+  const body = 'M4.2 16.6a7.8 7.8 0 0 1 15.6 0Z'
+  return (
+    <Icon {...props} accent={<path d={body} />}>
+      <path d={body} />
+      <path d="M3.4 16.6h17.2" />
+      <path d="M9 12.1c1-1.1 2-1.6 3-1.6s2 .5 3 1.6" />
+    </Icon>
+  )
+}
+
 /** A domed oven with a mouth. Freshness, said as a place rather than a word. */
 export function OvenIcon(props: IconProps) {
   return (

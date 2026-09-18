@@ -5,6 +5,7 @@ import './storefront.css'
 
 import { ArchTexture } from './components/brand-art'
 import { BasketDrawer } from './components/basket-drawer'
+import { CitySheet } from './components/city-sheet'
 import { CitySwitch } from './components/city-switch'
 import { Shelf } from './components/shelf'
 import { StorefrontProvider } from './components/storefront-state'
@@ -112,6 +113,10 @@ export default async function HomePage() {
       signedIn={basket.signedIn}
       serverLines={basket.lines}
       {...(basket.version !== undefined && { serverVersion: basket.version })}
+      {...(storefront.state === 'ready' && {
+        cityNameFa: storefront.city.nameFa,
+        cities: storefront.cities.map((entry) => ({ id: entry.id, nameFa: entry.nameFa })),
+      })}
     >
       <div className="app-frame">
         <SiteHeader />
@@ -166,17 +171,31 @@ export default async function HomePage() {
               for somebody who has not chosen one.
             */}
             <div className="conditions" role="group" aria-label="شرایط تحویل">
-              {orderConditions.map((condition) => (
-                <ConditionField
-                  key={condition.id}
-                  condition={condition}
-                  value={
-                    condition.id === 'address' && storefront.state === 'ready'
-                      ? storefront.city.nameFa
-                      : condition.valueFa
-                  }
-                />
-              ))}
+              {/*
+                The address is not repeated here.
+
+                It used to be, and a render at phone size showed «بابل و حومه»
+                twice on one screen — once in the pinned bar and again three
+                hundred pixels below it. The bar is the better of the two: it
+                survives scrolling, and it is now the control that *changes* the
+                city rather than a label that states it.
+
+                What is left is the pair the header does not say — that this is
+                delivery to a door, and that the time is chosen at checkout —
+                which is what this panel was for. Dropping the third also takes
+                a row off the tallest thing on the page: the hero measured 817px
+                of an 844px screen, so a customer with the shop installed
+                scrolled a full screen past the pitch before seeing one loaf.
+              */}
+              {orderConditions
+                .filter((condition) => condition.id !== 'address')
+                .map((condition) => (
+                  <ConditionField
+                    key={condition.id}
+                    condition={condition}
+                    value={condition.valueFa}
+                  />
+                ))}
             </div>
           </section>
 
@@ -252,6 +271,7 @@ export default async function HomePage() {
           </div>
         </footer>
         <BasketDrawer />
+        <CitySheet />
       </div>
     </StorefrontProvider>
   )
