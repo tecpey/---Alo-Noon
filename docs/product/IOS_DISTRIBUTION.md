@@ -33,16 +33,16 @@ the device.
 
 ## What the repository already has
 
-| Capability                    | Where                           | Status                                                                                                   |
-| ----------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| iOS bundle identifiers        | `apps/*/app.json`               | `ir.alonoon.customer`, `ir.alonoon.courier`                                                              |
-| iOS permission strings        | `apps/customer-mobile/app.json` | location and `ITSAppUsesNonExemptEncryption` declared, in Persian                                        |
-| iOS simulator build profile   | `apps/*/eas.json`               | `preview.ios.simulator` only                                                                             |
-| RTL layout                    | both Expo apps                  | hand-built (`row-reverse`, `textAlign`), so platform-independent — no `I18nManager.forceRTL` to go wrong |
-| Installable web app           | `apps/web/src/app/manifest.ts`  | manifest, service worker, maskable icons, shortcuts                                                      |
-| iOS home-screen metadata      | `apps/web/src/app/layout.tsx`   | title, status bar style, 180px touch icon                                                                |
-| Web push                      | —                               | **not implemented**; `push-devices.ts` serves Expo tokens only                                           |
-| Persian font in the Expo apps | —                               | **not implemented**; no `expo-font`, no `fontFamily` anywhere                                            |
+| Capability                    | Where                                                          | Status                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| iOS bundle identifiers        | `apps/*/app.json`                                              | `ir.alonoon.customer`, `ir.alonoon.courier`                                                              |
+| iOS permission strings        | `apps/customer-mobile/app.json`                                | location and `ITSAppUsesNonExemptEncryption` declared, in Persian                                        |
+| iOS simulator build profile   | `apps/*/eas.json`                                              | `preview.ios.simulator` only                                                                             |
+| RTL layout                    | both Expo apps                                                 | hand-built (`row-reverse`, `textAlign`), so platform-independent — no `I18nManager.forceRTL` to go wrong |
+| Installable web app           | `apps/web/src/app/manifest.ts`                                 | manifest, service worker, maskable icons, shortcuts                                                      |
+| iOS home-screen metadata      | `apps/web/src/app/layout.tsx`                                  | title, status bar style, 180px touch icon                                                                |
+| Web push                      | `apps/api/src/providers/web-push*.ts`, `apps/web/public/sw.js` | RFC 8291 + RFC 8292; a second transport on `CustomerPushDevice`, prompted above a live order             |
+| Persian font in the Expo apps | —                                                              | **not implemented**; no `expo-font`, no `fontFamily` anywhere                                            |
 
 ## Defects fixed in `821f47a`
 
@@ -88,17 +88,29 @@ manifest fails to load, which on a slow connection is not hypothetical.
 No Apple account, no review, no revocation risk, and the same codebase the web
 already ships. This is what Iranian services do in practice.
 
+Done since this was written:
+
+- **Web push.** The recommendation below — treat web push as the real
+  deliverable — is implemented. `CustomerPushDevice` carries a second transport
+  beside Expo, the payload is encrypted to the browser under RFC 8291 and the
+  server identifies itself under RFC 8292, both verified against the RFCs' own
+  worked examples. A deployment turns it on with three environment variables
+  (`pnpm --filter @alo-noon/api vapid-keys`); with none of them the shop behaves
+  exactly as it did before and every message goes by SMS.
+
+  The permission is asked for on the orders screen, above an order that is
+  actually moving, and nowhere else. A browser gives one prompt and treats a
+  refusal as final, so the moment it is spent decides whether this customer can
+  ever be told their bread arrived.
+
 Remaining work:
 
-- **Web push.** Supported since iOS 16.4 for apps added to the home screen, and
-  absent here: the API's `push-devices.ts` stores Expo tokens, and the web app
-  contains no `pushManager`, no VAPID keys, no subscription endpoint. For a
-  delivery product this is the gap that matters — an order whose courier is
-  outside cannot reach the customer.
+- **Verification on a real iPhone.** The encryption is proved against the
+  specification, not against Safari. Nothing here has shown a notification on
+  Apple hardware, and the failure mode if something is wrong is silence rather
+  than an error.
 - **Launch images.** iOS wants `apple-touch-startup-image` per device size; a
   PWA without them shows a white screen on cold start.
-- **Verification on a real iPhone.** None of the above has been seen on
-  hardware, only reasoned about from the specification and the built HTML.
 
 What it cannot do: appear in App Store search, or use anything the web platform
 withholds on iOS.

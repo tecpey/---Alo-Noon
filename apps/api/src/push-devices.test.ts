@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { buildApp } from './app'
+import { buildApp, type AppOptions } from './app'
 import type { PushDeviceService } from './modules/push-devices'
 
 /**
@@ -46,15 +46,17 @@ const service: PushDeviceService = {
   async recordOutcome() {},
 }
 
-/** Enough of the auth surface for the routes to resolve a host and a session. */
-function auth(tenantId: string | null) {
+/**
+ * Enough of the auth surface for the routes to resolve a host and refuse a
+ * session. Cast rather than built out: the rest of `AuthDependencies` is about
+ * signing in, which none of these cases reaches.
+ */
+function auth(tenantId: string | null): NonNullable<AppOptions['auth']> {
   return {
     repository: {
       resolveTenantByHost: async (host: string) => (host === HOST ? tenantId : null),
     },
-  } as unknown as Parameters<typeof buildApp>[0] extends undefined
-    ? never
-    : NonNullable<Parameters<typeof buildApp>[0]>['auth']
+  } as unknown as NonNullable<AppOptions['auth']>
 }
 
 async function appWith(options: { tenantId?: string | null; publicKey?: string }) {

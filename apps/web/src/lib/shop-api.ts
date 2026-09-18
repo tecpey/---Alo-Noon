@@ -14,6 +14,7 @@ import type {
   PlaceSearchResult,
   ProductDetail,
   ProductSummary,
+  PushDeviceSummary,
   QuoteSummary,
   ReverseGeocodeResult,
   ServiceabilityResponse,
@@ -22,6 +23,7 @@ import type {
   WalletSummary,
   WalletTransferSummary,
   WalletWithdrawalSummary,
+  WebPushSubscriptionInput,
 } from '@alo-noon/contracts'
 
 import {
@@ -433,4 +435,38 @@ export async function requestWalletWithdrawal(input: {
     method: 'POST',
     body: input,
   })
+}
+
+/* ---------------------------------------------------------------- push */
+
+/**
+ * The key a browser subscribes with, and the subscription it produces.
+ *
+ * All three go through the server rather than straight from the page, for one
+ * reason: the session cookie is `httpOnly`, so a script in the browser cannot
+ * authenticate to the API at all. Registering has to be a server action. The
+ * key fetch could have gone direct, and does not — a single path keeps the
+ * tenant host, the timeout and the envelope handling in one place.
+ *
+ * `null` for the key is a real answer and means this deployment has no VAPID
+ * pair. The caller must not prompt for notification permission in that case: on
+ * most browsers a permission once refused cannot be asked about again, so a
+ * prompt that could never have worked costs the customer the chance to say yes
+ * later.
+ */
+export async function webPushKey(): Promise<ApiResult<{ publicKey: string | null }>> {
+  return request<{ publicKey: string | null }>('/api/v1/push/web-key', { method: 'GET' })
+}
+
+export async function registerWebPushDevice(
+  subscription: WebPushSubscriptionInput,
+): Promise<ApiResult<PushDeviceSummary>> {
+  return request<PushDeviceSummary>('/api/v1/push/devices', {
+    method: 'PUT',
+    body: { platform: 'WEB', subscription },
+  })
+}
+
+export async function forgetWebPushDevice(endpoint: string): Promise<ApiResult<null>> {
+  return request<null>('/api/v1/push/devices', { method: 'DELETE', body: { endpoint } })
 }

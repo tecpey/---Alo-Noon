@@ -246,3 +246,43 @@
   border-color: var(--primary-600);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-600) 20%, transparent);
 }
+
+/* The offer to be told when the bread moves.
+ *
+ * In the flow of the page rather than fixed to the bottom like the install
+ * banner: that one is about the browser's own moment and interrupts on
+ * purpose, this one belongs above the order it is talking about and is read as
+ * part of it. A customer who ignores it scrolls past it, which is the correct
+ * amount of pressure to apply to a permission that can only be asked for once.
+ */
+.notify-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-block-end: 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-lg);
+}
+.notify-offer__text {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.9rem;
+}
+.notify-offer__text strong {
+  color: var(--ink-strong);
+}
+.notify-offer__text span {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+.notify-offer__on,
+.notify-offer__failed {
+  margin: 0 0 1rem;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}

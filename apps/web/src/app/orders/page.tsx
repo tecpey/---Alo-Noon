@@ -11,6 +11,7 @@ import { CheckIcon, ChevronIcon, ReceiptIcon } from '../components/icons'
 import { EmptyBasketArt } from '../components/brand-art'
 import { formatToman, toPersianDigits } from '../../lib/persian'
 import { OrderActions } from './order-actions'
+import { OrderNotifications } from './order-notifications'
 import { orderProgress, type OrderStates } from '@alo-noon/domain'
 import { currentSession, listOrders } from '../../lib/shop-api'
 
@@ -58,13 +59,28 @@ export default async function OrdersPage() {
             </Link>
           </div>
         ) : (
-          <ol className="orders">
-            {result.data.map((order) => (
-              <li key={order.id}>
-                <OrderCard order={order} />
-              </li>
-            ))}
-          </ol>
+          <>
+            {/*
+              Only above an order that is actually moving.
+
+              A browser gives one notification prompt and treats a refusal as
+              final, so the moment it is spent decides whether this customer can
+              ever be told their bread arrived. Asking beside "پیک در راه است"
+              is the moment the request explains itself; asking beside a list of
+              last month's finished orders spends it on somebody with nothing to
+              be told about.
+            */}
+            {result.data.some((order) => orderProgress(order).tone === 'live') && (
+              <OrderNotifications />
+            )}
+            <ol className="orders">
+              {result.data.map((order) => (
+                <li key={order.id}>
+                  <OrderCard order={order} />
+                </li>
+              ))}
+            </ol>
+          </>
         )}
       </main>
     </div>

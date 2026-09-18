@@ -20,6 +20,19 @@ const source = readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf
 
 const ORIGIN = 'https://alonoon.test'
 
+interface ShownNotification {
+  title: string
+  options: Record<string, unknown>
+}
+
+interface FakeWindowClient {
+  url: string
+  focused: boolean
+  navigatedTo: string | null
+  /** Omitted on purpose in one case: not every browser with push has it. */
+  navigate?: (url: string) => Promise<void>
+}
+
 interface Harness {
   listeners: Map<string, (event: FakeEvent) => void>
   cache: Map<string, string>
@@ -32,10 +45,18 @@ interface Harness {
   networkAnswers: Record<string, { ok: boolean; type?: string }>
   skipWaitingCalled: boolean
   claimCalled: boolean
+  shown: ShownNotification[]
+  closed: number
+  windows: FakeWindowClient[]
+  opened: string[]
 }
 
 interface FakeEvent {
   request: FakeRequest
+  /** Only on a push event. */
+  data?: { json(): unknown } | null
+  /** Only on a notificationclick event. */
+  notification?: { close(): void; data: Record<string, unknown> }
   respondWith(response: unknown): void
   waitUntil(promise: Promise<unknown>): void
 }
@@ -50,6 +71,8 @@ function load(overrides: Partial<Harness> = {}): {
   harness: Harness
   dispatch: (type: string, event: Partial<FakeEvent>) => Promise<unknown>
   request: (url: string, init?: { method?: string; mode?: string }) => Promise<unknown | undefined>
+  push: (payload: unknown, options?: { unreadable?: boolean }) => Promise<unknown>
+  click: (data?: Record<string, unknown>) => Promise<unknown>
 } {
   const harness: Harness = {
     listeners: new Map(),
@@ -61,6 +84,10 @@ function load(overrides: Partial<Harness> = {}): {
     networkAnswers: {},
     skipWaitingCalled: false,
     claimCalled: false,
+    shown: [],
+    closed: 0,
+    windows: [],
+    opened: [],
     ...overrides,
   }
 
@@ -88,6 +115,15 @@ function load(overrides: Partial<Harness> = {}): {
       clients: {
         claim: async () => {
           harness.claimCalled = true
+        },
+        matchAll: async () => harness.windows,
+        openWindow: async (url: string) => {
+          harness.opened.push(url)
+        },
+      },
+      registration: {
+        showNotification: async (title: string, options: Record<string, unknown>) => {
+          harness.shown.push({ title, options })
         },
       },
     },
@@ -154,6 +190,29 @@ function load(overrides: Partial<Harness> = {}): {
     return responded ? await responded : undefined
   }
 
+  const push = async (payload: unknown, options: { unreadable?: boolean } = {}) =>
+    dispatch('push', {
+      data:
+        payload === undefined
+          ? null
+          : {
+              json: () => {
+                if (options.unreadable) throw new Error('not JSON')
+                return payload
+              },
+            },
+    })
+
+  const click = async (data: Record<string, unknown> = {}) =>
+    dispatch('notificationclick', {
+      notification: {
+        data,
+        close: () => {
+          harness.closed += 1
+        },
+      },
+    })
+
   const request = async (url: string, init: { method?: string; mode?: string } = {}) =>
     dispatch('fetch', {
       request: {
@@ -163,7 +222,25 @@ function load(overrides: Partial<Harness> = {}): {
       },
     })
 
-  return { harness, dispatch, request }
+  return { harness, dispatch, request, push, click }
+}
+
+function windowClient(url: string, options: { navigable?: boolean } = {}): FakeWindowClient {
+  const client: FakeWindowClient = {
+    url,
+    focused: false,
+    navigatedTo: null,
+  }
+  const focus = async () => {
+    client.focused = true
+  }
+  Object.assign(client, { focus })
+  if (options.navigable !== false) {
+    client.navigate = async (target: string) => {
+      client.navigatedTo = target
+    }
+  }
+  return client
 }
 
 describe('what the service worker refuses to hold', () => {
@@ -340,5 +417,109 @@ describe('upgrading', () => {
     // with no offline page either.
     await expect(dispatch('install', {})).resolves.toBeUndefined()
     expect(harness.skipWaitingCalled).toBe(true)
+  })
+})
+
+describe('being told about an order', () => {
+  const message = {
+    title: 'پیک راه افتاد',
+    body: 'سفارش TJR29BT8 راه افتاد.',
+    data: { orderId: '00000000-0000-4000-8000-0000000000d9', orderCode: 'TJR29BT8' },
+  }
+
+  it('shows what the server said, in Persian and right to left', async () => {
+    const { harness, push } = load()
+    await push(message)
+
+    expect(harness.shown).toHaveLength(1)
+    expect(harness.shown[0]?.title).toBe(message.title)
+    expect(harness.shown[0]?.options).toMatchObject({
+      body: message.body,
+      // Without these the body is laid out as if it were English, on the one
+      // screen that gets a single glance.
+      dir: 'rtl',
+      lang: 'fa',
+      data: message.data,
+    })
+  })
+
+  /**
+   * A browser grants permission for *visible* notifications. A worker that
+   * takes a push and shows nothing is treated as abusing that — Chrome
+   * substitutes its own "This site has been updated in the background", and
+   * after a few of those it revokes the subscription. So every branch has to
+   * end in a notification, including the ones that could not read the payload.
+   */
+  it('shows something even when the payload cannot be read', async () => {
+    // No payload at all, something that is not an object, a title with no body,
+    // a body with no title. Each in its own worker, so one showing a
+    // notification cannot be mistaken for another doing so.
+    for (const broken of [undefined, 'not an object', { title: 'خبر' }, { body: 'بدون عنوان' }]) {
+      const { harness, push } = load()
+      await push(broken)
+      expect(harness.shown).toHaveLength(1)
+      expect(harness.shown[0]?.title).toBe('الو نون')
+    }
+
+    const unreadable = load()
+    await unreadable.push({}, { unreadable: true })
+    expect(unreadable.harness.shown).toHaveLength(1)
+  })
+
+  /**
+   * A phone that was off through "ready", "on its way" and "delivered" should
+   * show the one that is still true, not a stack of three. The Topic header
+   * does this for messages that never arrived; the tag does it for ones that
+   * did.
+   */
+  it('replaces the previous notification about the same order', async () => {
+    const { harness, push } = load()
+    await push(message)
+    expect(harness.shown[0]?.options).toMatchObject({ tag: 'TJR29BT8', renotify: true })
+  })
+
+  it('still groups a message that names no order', async () => {
+    const { harness, push } = load()
+    await push({ title: 'الو نون', body: 'خبری هست.', data: {} })
+    expect(harness.shown[0]?.options['tag']).toBe('alo-noon')
+  })
+})
+
+describe('tapping a notification', () => {
+  it('focuses the tab that is already open rather than opening another', async () => {
+    const existing = windowClient(`${ORIGIN}/wallet`)
+    const { harness, click } = load({ windows: [existing] })
+    await click({ orderCode: 'TJR29BT8' })
+
+    expect(existing.focused).toBe(true)
+    expect(existing.navigatedTo).toBe('/orders')
+    // A duplicate window with the same session is not what somebody who already
+    // had the shop open was asking for.
+    expect(harness.opened).toHaveLength(0)
+    expect(harness.closed).toBe(1)
+  })
+
+  it('opens the orders screen when nothing is open', async () => {
+    const { harness, click } = load()
+    await click({ orderCode: 'TJR29BT8' })
+    expect(harness.opened).toEqual(['/orders'])
+  })
+
+  it('focuses a tab whose browser cannot navigate it', async () => {
+    // `navigate` is not in every browser that supports push. A focused tab on
+    // the wrong page is still better than a tap that does nothing.
+    const old = windowClient(`${ORIGIN}/`, { navigable: false })
+    const { harness, click } = load({ windows: [old] })
+    await click()
+    expect(old.focused).toBe(true)
+    expect(harness.opened).toHaveLength(0)
+  })
+
+  it('ignores a window belonging to another origin', async () => {
+    const stranger = windowClient('https://gateway.example/pay/123')
+    const { harness, click } = load({ windows: [stranger] })
+    await click()
+    expect(stranger.focused).toBe(false)
+    expect(harness.opened).toEqual(['/orders'])
   })
 })

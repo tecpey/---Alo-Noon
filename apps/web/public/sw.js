@@ -25,6 +25,10 @@
  * stale price gets shown, and there is no amount of speed worth that.
  *
  * That restraint is also what makes the update strategy safe below.
+ *
+ * The one thing it does beyond caching is notifications, at the bottom of this
+ * file. That is not a departure: a push cannot be shown by a page, only by a
+ * worker, so this file is where "your bread is at the door" has to live.
  */
 
 /*
@@ -193,3 +197,119 @@ self.addEventListener('fetch', (event) => {
     })(),
   )
 })
+
+/**
+ * Being told about an order, and opening it.
+ *
+ * ## Why this is here at all
+ *
+ * A push message can only be shown by a service worker — a page cannot, and a
+ * page that is closed is exactly the case that matters. On an iPhone it is the
+ * only way this shop can say anything at all: Apple does not accept Iranian
+ * developer enrolments, so there is no App Store build and never will be, and
+ * the shop added to a home screen is the whole of it.
+ *
+ * ## Why a notification is always shown
+ *
+ * A browser grants permission for *visible* notifications. A worker that takes
+ * a push and shows nothing is treated as abusing that: Chrome substitutes its
+ * own "This site has been updated in the background", and after a few of those
+ * it revokes the subscription. So every branch below ends in a notification,
+ * including the ones where the payload could not be read.
+ */
+
+/** Where a tap goes. There is one order screen, and it lists them all. */
+const ORDERS_URL = '/orders'
+
+/**
+ * What is shown when the payload cannot be read.
+ *
+ * A push with no data, or with something this version does not understand,
+ * still has to become something the customer can act on. Vague on purpose: it
+ * is better to say "there is news about your order" and be right than to guess
+ * which news it was.
+ */
+const FALLBACK_NOTIFICATION = {
+  title: 'الو نون',
+  body: 'خبری از سفارش شما هست.',
+  data: {},
+}
+
+self.addEventListener('push', (event) => {
+  event.waitUntil(
+    (async () => {
+      const payload = readPush(event.data)
+      await self.registration.showNotification(payload.title, {
+        body: payload.body,
+        // Persian, right to left. Without these the body is laid out as if it
+        // were English and reads as nonsense on the lock screen — the one place
+        // it gets a single glance.
+        dir: 'rtl',
+        lang: 'fa',
+        icon: '/brand/icon-192.png',
+        // No `badge`. Android draws it as a monochrome silhouette, and there is
+        // no monochrome mark in `/brand` to give it; a colour icon flattened
+        // that way is a grey smudge, which is worse than the browser's own.
+        //
+        // One notification per order, replaced rather than stacked: a phone that
+        // was off through "ready", "on its way" and "delivered" should show the
+        // one that is still true. The Topic header does the same for the
+        // messages that never arrived; this does it for the ones that did.
+        tag: typeof payload.data.orderCode === 'string' ? payload.data.orderCode : 'alo-noon',
+        renotify: true,
+        data: payload.data,
+      })
+    })(),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      // An open tab is focused rather than a second one opened. Somebody who
+      // already has the shop open and taps the notification wants to be taken
+      // to their orders, not given a duplicate window with the same session.
+      for (const client of clients) {
+        if (new URL(client.url).origin !== self.location.origin) continue
+        await client.focus()
+        // `navigate` is not available in every browser that supports push, and
+        // a focused tab on the wrong page is still better than a failed tap.
+        if (typeof client.navigate === 'function') {
+          await client.navigate(ORDERS_URL).catch(() => {})
+        }
+        return
+      }
+      await self.clients.openWindow(ORDERS_URL)
+    })(),
+  )
+})
+
+/**
+ * The payload, or the fallback.
+ *
+ * Everything here is treated as untrusted shape rather than as our own message:
+ * an old installed worker will one day be handed a payload written by a newer
+ * server, and the failure mode of assuming otherwise is a push that throws
+ * inside the handler and shows nothing — which is how a subscription gets
+ * revoked.
+ */
+function readPush(data) {
+  if (!data) return FALLBACK_NOTIFICATION
+  let payload
+  try {
+    payload = data.json()
+  } catch {
+    return FALLBACK_NOTIFICATION
+  }
+  if (!payload || typeof payload !== 'object') return FALLBACK_NOTIFICATION
+  const title = typeof payload.title === 'string' && payload.title ? payload.title : null
+  const body = typeof payload.body === 'string' && payload.body ? payload.body : null
+  if (!title || !body) return FALLBACK_NOTIFICATION
+  return {
+    title,
+    body,
+    data: payload.data && typeof payload.data === 'object' ? payload.data : {},
+  }
+}
