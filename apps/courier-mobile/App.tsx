@@ -7,18 +7,26 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native'
 
 import type { DeliveryTaskView } from '@alo-noon/contracts'
 import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
 import { colors, ink, surface } from '@alo-noon/design-tokens'
-import { CheckIcon, CourierIcon, hitSlopTo, PressScale, touchTarget } from '@alo-noon/mobile-ui'
+import {
+  CheckIcon,
+  CourierIcon,
+  fontFamily,
+  hitSlopTo,
+  PressScale,
+  Text,
+  TextInput,
+  touchTarget,
+} from '@alo-noon/mobile-ui'
 
 import { createCourierApiClient, CourierApiError, type CourierReport } from './src/api'
 import { courierCopy } from './src/copy'
+import { useAppFonts } from './src/fonts'
 import {
   courierErrorMessage,
   courierStepFor,
@@ -47,6 +55,10 @@ type Screen = 'boot' | 'phone' | 'otp' | 'deliveries' | 'not-a-courier'
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL
 
 export default function App() {
+  // Before the first hook that could bail out, because hooks may not be
+  // conditional: every return below this line happens after the font has been
+  // asked for.
+  const fontsReady = useAppFonts()
   const api = useMemo(() => {
     if (!apiBaseUrl) return null
     try {
@@ -234,7 +246,11 @@ export default function App() {
     setRefreshing(false)
   }
 
-  if (screen === 'boot') {
+  // The same spinner the session check shows, for the same reason: both are
+  // "not ready yet", and a rider watching a screen does not care which. Painting
+  // before the font decodes would show one frame of Geeza Pro and then reflow
+  // every label on the screen, which reads as a glitch rather than as loading.
+  if (screen === 'boot' || !fontsReady) {
     return (
       <SafeAreaView style={styles.centered}>
         <ActivityIndicator color={colors.primary[500]} size="large" />
@@ -528,8 +544,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  headerTitle: { color: ink.onAction, fontSize: 22, fontWeight: '700' },
-  headerAction: { color: colors.primary[400], fontSize: 16, fontWeight: '700' },
+  headerTitle: { color: ink.onAction, fontSize: 22, fontFamily: fontFamily.bold },
+  headerAction: { color: colors.primary[400], fontSize: 16, fontFamily: fontFamily.bold },
   list: { padding: 16, gap: 14, paddingBottom: 40 },
   card: {
     gap: 10,
@@ -542,7 +558,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  orderCode: { color: colors.neutral[900], fontSize: 20, fontWeight: '700', textAlign: 'right' },
+  orderCode: {
+    color: colors.neutral[900],
+    fontSize: 20,
+    fontFamily: fontFamily.bold,
+    textAlign: 'right',
+  },
   stateBadge: {
     color: colors.primary[700],
     backgroundColor: colors.primary[50],
@@ -550,20 +571,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     overflow: 'hidden',
   },
-  brand: { color: colors.primary[600], fontSize: 17, fontWeight: '700', textAlign: 'right' },
-  title: { color: colors.neutral[900], fontSize: 26, fontWeight: '700', textAlign: 'right' },
+  brand: {
+    color: colors.primary[600],
+    fontSize: 17,
+    fontFamily: fontFamily.bold,
+    textAlign: 'right',
+  },
+  title: {
+    color: colors.neutral[900],
+    fontSize: 26,
+    fontFamily: fontFamily.bold,
+    textAlign: 'right',
+  },
   // The address is what the courier is actually looking for, so it is the
   // largest thing on the card after the order code.
   address: { color: colors.neutral[900], fontSize: 19, lineHeight: 32, textAlign: 'right' },
   body: { color: colors.neutral[600], fontSize: 15, lineHeight: 26, textAlign: 'right' },
-  deadline: { color: colors.warning, fontSize: 16, fontWeight: '700', textAlign: 'right' },
+  deadline: {
+    color: colors.warning,
+    fontSize: 16,
+    fontFamily: fontFamily.bold,
+    textAlign: 'right',
+  },
   paidNote: {
     color: colors.success,
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     textAlign: 'right',
     lineHeight: 26,
   },
@@ -586,7 +622,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   primaryButtonInner: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
-  primaryButtonText: { color: ink.onAction, fontSize: 18, fontWeight: '700' },
+  primaryButtonText: { color: ink.onAction, fontSize: 18, fontFamily: fontFamily.bold },
   secondaryButton: {
     // The shared floor's comfortable step. The buttons below it are taller
     // still, deliberately: this app is used one-handed, outdoors, often in the
@@ -597,7 +633,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.neutral[300],
   },
-  secondaryButtonText: { color: colors.neutral[700], fontSize: 16, fontWeight: '700' },
+  secondaryButtonText: { color: colors.neutral[700], fontSize: 16, fontFamily: fontFamily.bold },
   declineButton: {
     minHeight: 56,
     justifyContent: 'center',
@@ -607,7 +643,7 @@ const styles = StyleSheet.create({
     borderColor: colors.neutral[300],
     paddingHorizontal: 18,
   },
-  declineButtonText: { color: colors.neutral[700], fontSize: 17, fontWeight: '700' },
+  declineButtonText: { color: colors.neutral[700], fontSize: 17, fontFamily: fontFamily.bold },
   offerRow: { flexDirection: 'row-reverse', gap: 10 },
   grow: { flex: 1 },
   callButton: {
@@ -617,7 +653,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.neutral[100],
   },
-  callButtonText: { color: colors.neutral[900], fontSize: 17, fontWeight: '700' },
+  callButtonText: { color: colors.neutral[900], fontSize: 17, fontFamily: fontFamily.bold },
   reasonBlock: { gap: 10 },
   reasonButton: {
     minHeight: 52,
@@ -628,7 +664,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary[200],
     backgroundColor: colors.primary[50],
   },
-  reasonButtonText: { color: colors.primary[800], fontSize: 16, fontWeight: '700' },
+  reasonButtonText: { color: colors.primary[800], fontSize: 16, fontFamily: fontFamily.bold },
   buttonBusy: { opacity: 0.6 },
   error: { color: colors.error, fontSize: 15, textAlign: 'right', lineHeight: 26 },
   errorBanner: {

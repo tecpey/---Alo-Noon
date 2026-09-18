@@ -1,8 +1,8 @@
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 
 import type { DeliveryWindow, QuoteSummary } from '@alo-noon/contracts'
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
-import { touchTarget } from '@alo-noon/mobile-ui'
+import { fontFamily, Text, TextInput, touchTarget } from '@alo-noon/mobile-ui'
 import { formatDeliveryWindow, promotionRefusalMessage } from '@alo-noon/domain'
 
 /**
@@ -135,7 +135,7 @@ function Refusal({ text }: { text: string }) {
 const styles = StyleSheet.create({
   choices: { gap: 18 },
   group: { gap: 8 },
-  legend: { color: ink.strong, fontSize: 14, fontWeight: '700', textAlign: 'right' },
+  legend: { color: ink.strong, fontSize: 14, fontFamily: fontFamily.bold, textAlign: 'right' },
   choice: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   },
   dotOn: { borderColor: colors.primary[700], borderWidth: 6 },
   choiceLabel: { flex: 1, color: ink.muted, fontSize: 15, textAlign: 'right' },
-  choiceLabelOn: { color: ink.strong, fontWeight: '700' },
+  choiceLabelOn: { color: ink.strong, fontFamily: fontFamily.bold },
   input: {
     borderWidth: 1,
     borderColor: line.subtle,

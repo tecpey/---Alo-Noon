@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native'
 
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
+import { fontFamily } from '@alo-noon/mobile-ui'
 
 /**
  * The pieces of the app's visual language that more than one screen needs.
@@ -27,7 +28,7 @@ export const sharedStyles = StyleSheet.create({
   title: {
     color: colors.neutral[900],
     fontSize: 28,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
     textAlign: 'right',
   },
   subtitle: {
@@ -51,7 +52,7 @@ export const sharedStyles = StyleSheet.create({
   value: {
     color: ink.strong,
     fontSize: 15,
-    fontWeight: '600',
+    fontFamily: fontFamily.bold,
     textAlign: 'right',
   },
   /**
@@ -83,11 +84,11 @@ export const sharedStyles = StyleSheet.create({
     borderColor: line.subtle,
     backgroundColor: surface.sunken,
   },
-  badgeText: { color: ink.muted, fontSize: 12, fontWeight: '600' },
+  badgeText: { color: ink.muted, fontSize: 12, fontFamily: fontFamily.bold },
   linkText: {
     color: colors.primary[700],
     fontSize: 14,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     textAlign: 'right',
   },
 })

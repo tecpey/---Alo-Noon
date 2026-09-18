@@ -1,9 +1,9 @@
-import { Pressable, Text, View } from 'react-native'
+import { Pressable, View } from 'react-native'
 
 import type { OrderSummary } from '@alo-noon/contracts'
 import { ink, line } from '@alo-noon/design-tokens'
 import { orderProgress } from '@alo-noon/domain'
-import { touchTarget } from '@alo-noon/mobile-ui'
+import { Text, touchTarget } from '@alo-noon/mobile-ui'
 
 import { formatMoney } from '../presentation'
 import { sharedStyles } from '../theme'

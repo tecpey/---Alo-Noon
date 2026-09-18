@@ -1,7 +1,7 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
-import { touchTarget } from '@alo-noon/mobile-ui'
+import { fontFamily, Text, touchTarget } from '@alo-noon/mobile-ui'
 
 /**
  * Four tabs, hand-rolled.
@@ -93,8 +93,8 @@ const styles = StyleSheet.create({
    * Apple settle on, in the one bar somebody uses on every screen.
    */
   tab: { flex: 1, alignItems: 'center', gap: 6, paddingVertical: 6, ...touchTarget.min },
-  label: { color: ink.muted, fontSize: 14, fontWeight: '600' },
-  labelActive: { color: colors.primary[700], fontWeight: '800' },
+  label: { color: ink.muted, fontSize: 14, fontFamily: fontFamily.bold },
+  labelActive: { color: colors.primary[700], fontFamily: fontFamily.extraBold },
   indicator: { height: 2, width: 22, borderRadius: 2, backgroundColor: 'transparent' },
   indicatorActive: { backgroundColor: colors.primary[700] },
   badge: {
@@ -107,5 +107,5 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.primary[700],
   },
-  badgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  badgeText: { color: '#FFFFFF', fontSize: 11, fontFamily: fontFamily.bold, textAlign: 'center' },
 })

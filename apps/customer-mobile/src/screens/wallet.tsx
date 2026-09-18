@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native'
 
 import type {
   WalletEntrySummary,
@@ -8,7 +8,7 @@ import type {
   WalletWithdrawalSummary,
 } from '@alo-noon/contracts'
 import { colors, ink, line, surface } from '@alo-noon/design-tokens'
-import { touchTarget } from '@alo-noon/mobile-ui'
+import { fontFamily, Text, TextInput, touchTarget } from '@alo-noon/mobile-ui'
 
 import { formatMoney } from '../presentation'
 import { sharedStyles } from '../theme'
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   balanceAmount: {
     color: colors.neutral[900],
     fontSize: 34,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
     textAlign: 'right',
   },
 
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
     backgroundColor: surface.card,
   },
   presetOn: { borderColor: colors.primary[700], backgroundColor: surface.sunken },
-  presetText: { color: ink.muted, fontSize: 14, fontWeight: '700' },
+  presetText: { color: ink.muted, fontSize: 14, fontFamily: fontFamily.bold },
   presetTextOn: { color: ink.strong },
 
   input: {
@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     writingDirection: 'ltr',
   },
-  codeInput: { letterSpacing: 8, fontWeight: '800' },
+  codeInput: { letterSpacing: 8, fontFamily: fontFamily.extraBold },
 
   action: {
     alignItems: 'center',
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[700],
   },
   actionBusy: { opacity: 0.75 },
-  actionText: { color: surface.card, fontSize: 16, fontWeight: '800' },
+  actionText: { color: surface.card, fontSize: 16, fontFamily: fontFamily.extraBold },
 
   confirmLine: {
     color: ink.base,
@@ -523,7 +523,7 @@ const styles = StyleSheet.create({
     lineHeight: 32,
     textAlign: 'right',
   },
-  confirmStrong: { color: ink.strong, fontWeight: '800' },
+  confirmStrong: { color: ink.strong, fontFamily: fontFamily.extraBold },
 
   incoming: { color: colors.success },
   noticeOk: { color: colors.success, fontSize: 14, lineHeight: 24, textAlign: 'right' },

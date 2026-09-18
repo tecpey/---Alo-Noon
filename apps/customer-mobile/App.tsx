@@ -12,8 +12,6 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native'
 
@@ -47,18 +45,22 @@ import {
   withdrawalRefusalMessage,
 } from '@alo-noon/domain'
 import {
+  fontFamily,
   GlassSurface,
   hitSlopTo,
   OvenIcon,
   PlusIcon,
   PressScale,
   SteamIcon,
+  Text,
+  TextInput,
   touchTarget,
 } from '@alo-noon/mobile-ui'
 
 import brandMark from './assets/logo-mark.png'
 import { createCustomerApiClient, CustomerApiError, type CustomerApiClient } from './src/api'
 import { customerCopy } from './src/copy'
+import { useAppFonts } from './src/fonts'
 import { registerForPushNotifications } from './src/push'
 import { AccountScreen } from './src/screens/account'
 import { CheckoutChoices } from './src/screens/checkout-choices'
@@ -87,6 +89,10 @@ const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL
 const easProjectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined
 
 export default function App() {
+  // Before the first hook that could bail out, because hooks may not be
+  // conditional: every return below this line happens after the font has been
+  // asked for.
+  const fontsReady = useAppFonts()
   const api = useMemo(() => {
     if (!apiBaseUrl) return null
     try {
@@ -955,6 +961,17 @@ export default function App() {
       setScreen('phone')
     }
     setMessage(errorMessage(error))
+  }
+
+  // Before anything is painted. The alternative is one frame in Geeza Pro
+  // followed by every label on the screen reflowing, which reads as a glitch
+  // rather than as loading — and this is the first thing a new customer sees.
+  if (!fontsReady) {
+    return (
+      <Shell>
+        <Loading label="در حال آماده‌سازی…" />
+      </Shell>
+    )
   }
 
   if (!api) {
@@ -1881,7 +1898,7 @@ const styles = StyleSheet.create({
   brand: {
     color: ink.strong,
     fontSize: 22,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
     textAlign: 'right',
   },
   brandCaption: { color: ink.muted, fontSize: 13, textAlign: 'right' },
@@ -1897,7 +1914,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.neutral[900],
     fontSize: 28,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
     lineHeight: 40,
     textAlign: 'right',
   },
@@ -1907,7 +1924,12 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     textAlign: 'right',
   },
-  fieldLabel: { color: colors.neutral[700], fontSize: 14, fontWeight: '700', textAlign: 'right' },
+  fieldLabel: {
+    color: colors.neutral[700],
+    fontSize: 14,
+    fontFamily: fontFamily.bold,
+    textAlign: 'right',
+  },
   input: {
     minHeight: 56,
     paddingHorizontal: 16,
@@ -1930,7 +1952,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.55 },
   primaryButtonInner: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
-  primaryButtonText: { color: ink.onAction, fontSize: 16, fontWeight: '800' },
+  primaryButtonText: { color: ink.onAction, fontSize: 16, fontFamily: fontFamily.extraBold },
   secondaryButton: {
     minHeight: 46,
     alignItems: 'center',
@@ -1940,7 +1962,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary[200],
     borderRadius: 14,
   },
-  secondaryButtonText: { color: ink.action, fontSize: 15, fontWeight: '700' },
+  secondaryButtonText: { color: ink.action, fontSize: 15, fontFamily: fontFamily.bold },
   message: {
     padding: 14,
     borderWidth: 1,
@@ -1965,7 +1987,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary[700],
     backgroundColor: colors.primary[100],
   },
-  cityChipText: { color: colors.neutral[700], fontWeight: '700' },
+  cityChipText: { color: colors.neutral[700], fontFamily: fontFamily.bold },
   cityChipTextSelected: { color: colors.primary[900] },
   sessionRow: {
     flexDirection: 'row-reverse',
@@ -1978,8 +2000,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: tint.success.surface,
   },
-  sessionBadgeText: { color: tint.success.ink, fontSize: 12, fontWeight: '800' },
-  logoutText: { color: ink.action, fontWeight: '700' },
+  sessionBadgeText: { color: tint.success.ink, fontSize: 12, fontFamily: fontFamily.extraBold },
+  logoutText: { color: ink.action, fontFamily: fontFamily.bold },
   emptyText: {
     padding: 18,
     borderRadius: 16,
@@ -2001,7 +2023,7 @@ const styles = StyleSheet.create({
   productName: {
     color: colors.neutral[900],
     fontSize: 19,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
     textAlign: 'right',
   },
   promiseBadge: {
@@ -2014,10 +2036,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.neutral[100],
   },
-  promiseText: { color: colors.neutral[700], fontSize: 12, fontWeight: '700' },
+  promiseText: { color: colors.neutral[700], fontSize: 12, fontFamily: fontFamily.bold },
   freshBadge: { backgroundColor: tint.success.surface },
   freshText: { color: tint.success.ink },
-  price: { color: ink.action, fontSize: 16, fontWeight: '800', textAlign: 'right' },
+  price: { color: ink.action, fontSize: 16, fontFamily: fontFamily.extraBold, textAlign: 'right' },
   cartCard: {
     gap: 14,
     padding: 20,
@@ -2031,7 +2053,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  cartTitle: { color: colors.neutral[900], fontSize: 20, fontWeight: '800' },
+  cartTitle: { color: colors.neutral[900], fontSize: 20, fontFamily: fontFamily.extraBold },
   cartVersion: { color: colors.neutral[500], fontSize: 12 },
   cartItem: {
     flexDirection: 'row',
@@ -2043,27 +2065,31 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.primary[100],
   },
   cartItemCopy: { flex: 1, gap: 4, alignItems: 'flex-end' },
-  cartItemName: { color: colors.neutral[900], fontWeight: '800', textAlign: 'right' },
+  cartItemName: {
+    color: colors.neutral[900],
+    fontFamily: fontFamily.extraBold,
+    textAlign: 'right',
+  },
   cartItemMeta: { color: colors.neutral[600], fontSize: 13, textAlign: 'right' },
-  removeText: { color: colors.error, fontSize: 13, fontWeight: '700' },
+  removeText: { color: colors.error, fontSize: 13, fontFamily: fontFamily.bold },
   totalRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  totalLabel: { color: colors.neutral[700], fontWeight: '800' },
+  totalLabel: { color: colors.neutral[700], fontFamily: fontFamily.extraBold },
   quoteCard: {
     gap: 8,
     padding: 16,
     borderRadius: 16,
     backgroundColor: colors.neutral[50],
   },
-  quoteTitle: { color: colors.success, fontWeight: '800', textAlign: 'right' },
+  quoteTitle: { color: colors.success, fontFamily: fontFamily.extraBold, textAlign: 'right' },
   quoteMeta: { color: colors.neutral[600], textAlign: 'right' },
   quoteTotal: {
     color: ink.action,
     fontSize: 22,
-    fontWeight: '900',
+    fontFamily: fontFamily.extraBold,
     textAlign: 'right',
   },
   quoteNotice: { color: colors.neutral[600], fontSize: 12, lineHeight: 20, textAlign: 'right' },

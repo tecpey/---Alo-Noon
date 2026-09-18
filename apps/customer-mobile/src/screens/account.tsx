@@ -1,8 +1,8 @@
-import { Pressable, Text, View } from 'react-native'
+import { Pressable, View } from 'react-native'
 
 import type { AddressSummary, SessionContext } from '@alo-noon/contracts'
 import { colors } from '@alo-noon/design-tokens'
-import { touchTarget } from '@alo-noon/mobile-ui'
+import { Text, touchTarget } from '@alo-noon/mobile-ui'
 
 import { sharedStyles } from '../theme'
 

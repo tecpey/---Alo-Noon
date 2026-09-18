@@ -19,7 +19,7 @@ import reactNative from '@alo-noon/eslint-config/react-native'
 export default [
   ...reactNative,
   {
-    files: ['release-config.test.ts', 'touch-targets.test.ts'],
+    files: ['release-config.test.ts', 'touch-targets.test.ts', 'fonts.test.ts'],
     languageOptions: {
       parserOptions: { project: false },
     },

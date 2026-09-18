@@ -8,6 +8,8 @@
  * visibly two products from two companies.
  */
 export * from './icons'
+export * from './typography'
+export * from './text'
 export * from './press-scale'
 export * from './touch-target'
 export * from './hit-slop'
