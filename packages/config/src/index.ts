@@ -159,6 +159,25 @@ export const envSchema = z
      * for proving a deployment works.
      */
     ROUTING_NESHAN_ENDPOINT: z.string().url().optional(),
+    /**
+     * Where the Tapsi Pack fare adapter asks. Empty means the real service.
+     */
+    TAPSI_PACK_ENDPOINT: z.string().url().optional(),
+    /**
+     * What Tapsi's `invoice.amount` is denominated in, and what its
+     * `dateTimestamp` expects.
+     *
+     * Settings rather than constants because the published specification says
+     * neither, and the specification is archived. Rial and Toman differ by ten:
+     * assuming silently is how an order gets charged ten times its fare, so the
+     * assumption is written down somewhere an operator can correct it after
+     * reconciling the first real invoice.
+     *
+     * Getting the timestamp wrong is far cheaper — a preview with no available
+     * timeslot, which falls back to the published tariff.
+     */
+    TAPSI_PACK_AMOUNT_UNIT: z.enum(['RIAL', 'TOMAN']).optional(),
+    TAPSI_PACK_TIMESTAMP_UNIT: z.enum(['MILLISECONDS', 'SECONDS']).optional(),
     // Observability
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),

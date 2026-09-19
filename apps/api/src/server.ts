@@ -76,6 +76,7 @@ import { createShepaAdapter } from './providers/shepa.js'
 import { createZarinpalAdapter } from './providers/zarinpal.js'
 import { createZibalAdapter } from './providers/zibal.js'
 import { createNeshanAdapter } from './providers/neshan.js'
+import { createTapsiPackAdapter } from './providers/tapsi-pack.js'
 
 const env = getEnv()
 
@@ -203,14 +204,24 @@ const routingService = createPrismaRoutingService(prisma, {
 /**
  * Who prices a delivery.
  *
- * No adapter is registered yet, and that is the honest state: this shop
- * delivers with its own couriers, so the live price is the published tariff
- * with this moment's factors applied rather than a marketplace's quote. The
- * registry is wired anyway because that is the whole point of the seam — the
- * day a courier platform is signed, it is an adapter here and a configuration
- * row, not a change to the checkout.
+ * Registered unconditionally, like the gateways above: the adapter reads
+ * nothing at construction and its credential is resolved per quote from the
+ * configuration's own reference, so a tenant that has not signed with Tapsi
+ * simply never selects it rather than this failing to boot.
+ *
+ * Only Tapsi is here. Snapp Box publishes its business API behind a partner
+ * agreement and its documentation is not public, so there is nothing to build
+ * an adapter on that would not be invention — and an adapter built on a guessed
+ * wire format looks finished and fails on first contact, which is worse than
+ * not having one. It goes in when the contract and its specification do.
  */
-const deliveryFareRegistry = createDeliveryFareRegistry([])
+const deliveryFareRegistry = createDeliveryFareRegistry([
+  createTapsiPackAdapter({
+    ...(env.TAPSI_PACK_ENDPOINT && { endpointOrigin: env.TAPSI_PACK_ENDPOINT }),
+    ...(env.TAPSI_PACK_AMOUNT_UNIT && { amountUnit: env.TAPSI_PACK_AMOUNT_UNIT }),
+    ...(env.TAPSI_PACK_TIMESTAMP_UNIT && { timestampUnit: env.TAPSI_PACK_TIMESTAMP_UNIT }),
+  }),
+])
 const deliveryFareService = createPrismaDeliveryFareService(prisma, {
   registry: deliveryFareRegistry,
   credentialResolver: createEnvironmentDeliveryFareCredentialResolver(process.env),

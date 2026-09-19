@@ -35,6 +35,10 @@ import {
   AuthDeliveryProviderError,
 } from './modules/auth-delivery-provider.js'
 import { createPrismaRoutingProviderService } from './modules/routing-provider.js'
+import {
+  createPrismaDeliveryFareProviderService,
+  DeliveryFareProviderError,
+} from './modules/delivery-fare-provider.js'
 import { geoJsonBoundariesOverlap } from './modules/discovery.js'
 import {
   createPrismaAdminDeliveryPricingService,
@@ -98,6 +102,9 @@ const COMMANDS = [
   'list-coverage',
   'publish-tariff',
   'list-tariffs',
+  'configure-fare-provider',
+  'list-fare-providers',
+  'set-fare-provider-health',
 ] as const
 
 /**
@@ -372,6 +379,9 @@ async function main(): Promise<void> {
       allowSystemOperations: true,
     })
     const routingService = createPrismaRoutingProviderService(prisma, {
+      allowSystemOperations: true,
+    })
+    const fareProviderService = createPrismaDeliveryFareProviderService(prisma, {
       allowSystemOperations: true,
     })
 
@@ -751,6 +761,90 @@ async function main(): Promise<void> {
             `${tariff.cityNameFa} / ${scope}\n`,
         )
       }
+      return
+    }
+
+    /**
+     * Points a tenant at a courier platform that prices its own trips.
+     *
+     * Health starts UNKNOWN and nothing selects it until an operator says
+     * HEALTHY, exactly as the routing and payment configurations behave — so a
+     * configuration written today cannot start quoting real customers before
+     * somebody has checked a real quote against a real invoice.
+     */
+    if (command === 'configure-fare-provider') {
+      try {
+        const configuration = await fareProviderService.createConfiguration(
+          tenantId,
+          {
+            actor: 'SYSTEM',
+            providerCode: required(flags, 'provider').toUpperCase(),
+            adapterVersion: flags['adapter-version'] ?? '1.0.0',
+            environment: (flags['environment'] ?? 'TEST') as 'TEST' | 'PRODUCTION',
+            credentialReference: required(flags, 'credential-reference'),
+            enabled: asBoolean(flags, 'enabled', true),
+            isDefault: asBoolean(flags, 'default', true),
+            ...(flags['priority'] && { priority: Number(flags['priority']) }),
+            reason: flags['reason'] ?? 'Operator provisioning',
+          },
+          now,
+          correlationId,
+        )
+        process.stdout.write(
+          `Delivery fare provider configured\n  configurationId: ${configuration.id}\n` +
+            `  provider: ${configuration.providerCode}\n`,
+        )
+        process.stdout.write(
+          'Health starts UNKNOWN, so nothing is quoted through it yet. Before flipping it\n' +
+            'to HEALTHY, place one real order and check the fare against the invoice the\n' +
+            'platform issues — the unit of its amounts is not in its specification, and\n' +
+            'Rial against Toman is a factor of ten in the wrong direction.\n',
+        )
+      } catch (error) {
+        if (error instanceof DeliveryFareProviderError) {
+          throw new Error(`Fare provider refused: ${error.code}`)
+        }
+        throw error
+      }
+      return
+    }
+
+    if (command === 'list-fare-providers') {
+      const configurations = await fareProviderService.listConfigurations(
+        tenantId,
+        { actor: 'SYSTEM' },
+        now,
+      )
+      if (configurations.length === 0) {
+        process.stdout.write(
+          'No courier platform is configured. Delivery is priced on the published tariff.\n',
+        )
+        return
+      }
+      for (const configuration of configurations) {
+        process.stdout.write(
+          `${configuration.id}  ${configuration.providerCode}  ${configuration.environment}  ` +
+            `enabled=${configuration.enabled}  default=${configuration.isDefault}  ` +
+            `health=${configuration.healthStatus}  ${configuration.credentialReference}\n`,
+        )
+      }
+      return
+    }
+
+    if (command === 'set-fare-provider-health') {
+      const configuration = await fareProviderService.setConfigurationHealth(
+        tenantId,
+        {
+          actor: 'SYSTEM',
+          configurationId: required(flags, 'configuration'),
+          healthStatus: required(flags, 'health').toUpperCase() as
+            'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY',
+          reason: required(flags, 'reason'),
+        },
+        now,
+        correlationId,
+      )
+      process.stdout.write(`${configuration.providerCode} is now ${configuration.healthStatus}\n`)
       return
     }
 

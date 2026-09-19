@@ -572,10 +572,53 @@ pnpm --filter @alo-noon/api provision list-tariffs --tenant "<شناسه-tenant>
 pnpm --filter @alo-noon/api exec tsx scripts/fare-preview.ts
 ```
 
-> [!NOTE] هنوز هیچ adapterی برای سرویس‌های ارسال ثبت نشده، چون این مغازه با
-> پیک‌های خودش کار می‌کند. درگاهش آماده است: روزی که با اسنپ‌باکس یا مشابهش
-> قرارداد ببندید، یک adapter و یک ردیف پیکربندی لازم است، نه تغییر در مسیر
-> پرداخت.
+### وصل‌کردن تپسی پک
+
+تپسی قرارداد APIاش را عمومی منتشر کرده
+([tapsi-delivery/api-doc](https://github.com/tapsi-delivery/api-doc))، پس
+adapterش بر پایهٔ مستندات رسمی نوشته شده نه حدس. اعتبارنامه‌اش دو بخش دارد و به
+شکل JSON در یک متغیر محیطی می‌نشیند:
+
+```bash
+DELIVERY_FARE_TAPSI_PACK='{"secretKey":"<کلید پنل تپسی پک>","userId":"<شناسهٔ عددی>"}'
+```
+
+سپس برای tenant ثبتش کنید:
+
+```bash
+pnpm --filter @alo-noon/api provision configure-fare-provider \
+  --tenant "<شناسه-tenant>" \
+  --provider TAPSI_PACK \
+  --environment PRODUCTION \
+  --credential-reference "env://DELIVERY_FARE_TAPSI_PACK" \
+  --reason "قرارداد تپسی پک"
+```
+
+> [!WARNING] **پیش از HEALTHY کردن، یک سفارش واقعی را با فاکتور تپسی مقابله
+> کنید.** مستندات منتشرشده نمی‌گوید مبلغ‌هایش ریال است یا تومان، و این یعنی ضریب
+> ده در جهت اشتباه. تا وقتی سلامت `UNKNOWN` است هیچ مشتری‌ای از این مسیر قیمت
+> نمی‌گیرد — و همین است که این بررسی را بی‌خطر می‌کند. اگر واحدش تومان بود:
+> `TAPSI_PACK_AMOUNT_UNIT=TOMAN`.
+
+```bash
+pnpm --filter @alo-noon/api provision set-fare-provider-health \
+  --tenant "<شناسه-tenant>" --configuration "<configurationId>" \
+  --health HEALTHY --reason "مقابله با فاکتور اولین سفارش واقعی"
+
+pnpm --filter @alo-noon/api provision list-fare-providers --tenant "<شناسه-tenant>"
+```
+
+**تپسی فقط سفارش‌های موتوری را قیمت می‌دهد.** endpoint معرفی‌شدهٔ preview هیچ
+پارامتری برای وسیله ندارد، پس نمی‌شود به تپسی گفت این سفارش خودرو می‌خواهد؛ عددی
+که برمی‌گردد نرخ موتور است. adapter سفارش‌های خودرو را رد می‌کند و تعرفهٔ خودروی
+خودمان قیمتشان می‌دهد — درست، فقط کمی کم‌رقابت‌تر.
+
+> [!NOTE] **اسنپ‌باکس هنوز adapter ندارد.** API بیزینسش پشت قرارداد شراکتی است و
+> مستنداتش عمومی نیست. adapterی که روی endpointِ حدسی نوشته شود، تمام‌شده به نظر
+> می‌رسد، از بازبینی رد می‌شود، و سرِ اولین سفارش واقعی می‌شکند — پس نوشته نشده.
+> به محض اینکه مستندات قرارداد را داشته باشید (آدرس پایه، نحوهٔ احراز هویت، و
+> endpointِ استعلام قیمت با نمونهٔ درخواست و پاسخ) نوشتنش کار زیادی ندارد، چون
+> درگاهش از قبل آماده است.
 
 <a id="هشدارها"></a>
 

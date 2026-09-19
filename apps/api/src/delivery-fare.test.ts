@@ -15,6 +15,7 @@ import {
   type ProviderFareOffer,
   type ResolvedFare,
 } from './modules/delivery-fare'
+import { createTapsiPackAdapter } from './providers/tapsi-pack'
 
 const now = new Date('2026-09-19T07:30:00.000Z')
 
@@ -169,12 +170,28 @@ describe('the adapter seam', () => {
     expect(quoted.amount).toBe(88_000n)
   })
 
-  it('has no adapters registered in this build, which is the honest state', () => {
-    // This shop delivers with its own couriers. The seam exists so signing a
-    // courier platform is an adapter and a configuration row rather than a
-    // change to the checkout — and this test is what will fail, loudly and in
-    // the right place, on the day one is added without being reviewed here.
-    expect(createDeliveryFareRegistry([]).identities()).toEqual([])
+  it('carries Tapsi Pack, and nothing that was guessed at', () => {
+    /*
+     * This is the list of couriers whose wire format we can actually honour.
+     *
+     * Tapsi publishes its contract — `github.com/tapsi-delivery/api-doc` — so
+     * its adapter is built on a specification rather than on inference. Snapp
+     * Box keeps its business API behind a partner agreement and publishes
+     * nothing, so there is deliberately no `SNAPP_BOX` here: an adapter written
+     * against a guessed endpoint looks finished, passes review, and fails on
+     * first contact with a real order.
+     *
+     * Registering an adapter means a tenant can be configured onto it and real
+     * customers can be quoted by it, so this list changing is a thing to notice.
+     */
+    expect(createDeliveryFareRegistry([createTapsiPackAdapter()]).identities()).toEqual([
+      {
+        providerCode: 'TAPSI_PACK',
+        adapterVersion: '1.0.0',
+        adapterSpiVersion: DELIVERY_FARE_ADAPTER_SPI_VERSION,
+        testOnly: false,
+      },
+    ])
   })
 })
 
