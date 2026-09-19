@@ -23,6 +23,7 @@ import {
   calculateDeliveryDistanceMeters,
   calculateDeliveryFee,
   deliveryVehicleOptions,
+  estimateRouteDistance,
   requiredDeliveryVehicle,
   vehicleChoiceAllowed,
   vehiclePolicyForCity,
@@ -43,6 +44,7 @@ import {
   releaseRedemptionsForQuotes,
   reservePromotion,
 } from './promotions.js'
+import { chooseFare, type DeliveryFareService, type ProviderFareOffer } from './delivery-fare.js'
 import type { RoutingService } from './routing.js'
 
 const cartInclude = {
@@ -299,6 +301,11 @@ export function registerCommerceRoutes(
  */
 export interface PrismaCommerceOptions {
   routingService?: RoutingService
+  /**
+   * Who prices the delivery. Optional for the same reason routing is: a
+   * deployment without one still sells bread, on the published tariff.
+   */
+  fareService?: DeliveryFareService
 }
 
 export function createPrismaCommerceRepository(
@@ -321,8 +328,13 @@ export function createPrismaCommerceRepository(
     customerId: string,
     input: QuoteCreate,
     now: Date,
-  ): Promise<{ branchId: string; addressId: string; distance: RouteDistance } | null> {
-    if (!options.routingService) return null
+  ): Promise<{
+    branchId: string
+    addressId: string
+    distance: RouteDistance
+    offer: ProviderFareOffer | null
+  } | null> {
+    if (!options.routingService && !options.fareService) return null
     const context = await prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`
       const replay = await transaction.quote.findFirst({
@@ -336,33 +348,91 @@ export function createPrismaCommerceRepository(
         where: { tenantId, customerId, state: 'ACTIVE' },
         select: {
           bakeryBranchId: true,
+          cityId: true,
           bakeryBranch: { select: { id: true, latitude: true, longitude: true } },
+          // Only the quantities: a marketplace prices the trip, and the money is
+          // computed authoritatively inside the transaction below.
+          items: { select: { quantity: true } },
         },
       })
       const address = await transaction.address.findFirst({
         where: { id: input.deliveryAddressId, tenantId, customerId, archivedAt: null },
-        select: { id: true, latitude: true, longitude: true },
+        select: { id: true, latitude: true, longitude: true, serviceAreaId: true },
       })
-      return cart?.bakeryBranch && address ? { branch: cart.bakeryBranch, address } : null
+      if (!cart?.bakeryBranch || !address) return null
+      const city = await transaction.city.findFirst({
+        where: { id: cart.cityId, tenantId },
+        select: { motorcycleItemLimit: true, motorcycleRangeMetres: true },
+      })
+      const serviceArea = address.serviceAreaId
+        ? await transaction.serviceArea.findFirst({
+            where: { id: address.serviceAreaId, tenantId },
+            select: { motorcycleAllowed: true },
+          })
+        : null
+      return { branch: cart.bakeryBranch, address, cart, city, serviceArea }
     })
     if (!context) return null
 
-    const distance = await options.routingService.distanceFor(
-      tenantId,
+    const origin = {
+      latitude: Number(context.branch.latitude),
+      longitude: Number(context.branch.longitude),
+    }
+    const destination = {
+      latitude: Number(context.address.latitude),
+      longitude: Number(context.address.longitude),
+    }
+
+    const distance = options.routingService
+      ? await options.routingService.distanceFor(
+          tenantId,
+          { branchId: context.branch.id, origin, destination },
+          now,
+        )
+      : estimateRouteDistance(origin, destination, 'ROUTING_NOT_CONFIGURED')
+
+    /**
+     * The marketplace's price, asked here rather than inside the transaction.
+     *
+     * Same reasoning as the distance above, and it matters more: the quote runs
+     * SERIALIZABLE and holds locks a checkout depends on, so a courier platform
+     * having a slow afternoon would become a checkout having one.
+     *
+     * The vehicle is derived here too, because the provider has to be told what
+     * it is pricing. It is derived again authoritatively inside the transaction,
+     * and if the two disagree — a threshold moved, or the address resolved into
+     * a different area — `chooseFare` discards this offer rather than charging a
+     * motorcycle price for a car. Deriving it twice is the cost of not holding a
+     * lock across somebody else's network.
+     */
+    const itemCount = context.cart.items.reduce((total, item) => total + item.quantity, 0)
+    const profile = requiredDeliveryVehicle(
       {
-        branchId: context.branch.id,
-        origin: {
-          latitude: Number(context.branch.latitude),
-          longitude: Number(context.branch.longitude),
-        },
-        destination: {
-          latitude: Number(context.address.latitude),
-          longitude: Number(context.address.longitude),
-        },
+        itemCount,
+        distanceMetres: distance.distanceMetres,
+        ...(context.serviceArea && {
+          motorcycleAllowedInArea: context.serviceArea.motorcycleAllowed,
+        }),
       },
-      now,
-    )
-    return { branchId: context.branch.id, addressId: context.address.id, distance }
+      vehiclePolicyForCity(context.city),
+    ).profile
+    const offer = options.fareService
+      ? await options.fareService.offerFromProvider(
+          tenantId,
+          {
+            origin,
+            destination,
+            profile,
+            distanceMetres: distance.distanceMetres,
+            durationSeconds: distance.durationSeconds,
+            itemCount,
+          },
+          { branchId: context.branch.id, addressId: context.address.id, profile },
+          now,
+        )
+      : null
+
+    return { branchId: context.branch.id, addressId: context.address.id, distance, offer }
   }
 
   return {
@@ -655,8 +725,12 @@ export function createPrismaCommerceRepository(
          */
         const cityPolicy = await transaction.city.findFirst({
           where: { id: cart.cityId, tenantId },
-          select: { motorcycleItemLimit: true, motorcycleRangeMetres: true },
+          // The timezone rides along because the fare below asks what time of
+          // day it is *here*. "Is it the breakfast rush" is a question about
+          // Babol's clock, and a server's clock is neither here nor there.
+          select: { motorcycleItemLimit: true, motorcycleRangeMetres: true, timezone: true },
         })
+        const cityTimeZone = cityPolicy?.timezone ?? 'Asia/Tehran'
         // Whether this address's area takes motorcycles at all. Read from the
         // area the address resolved to rather than from the city, because the
         // village that does not take them and the city centre that does are
@@ -729,6 +803,38 @@ export function createPrismaCommerceRepository(
         )
         const delivery = calculateDeliveryFee(pricingRule, subtotal.amount, distanceMeters)
 
+        /**
+         * What the customer is actually charged to have this delivered.
+         *
+         * The tariff above is no longer the answer — it is the floor and the
+         * fallback. A published rate prices every journey as though the only
+         * thing that varies is its length, which is wrong about the market when
+         * somebody else is carrying the bread and wrong about the moment when
+         * breakfast lands in a ninety-minute window.
+         *
+         * `chooseFare` decides here rather than outside, because only here are
+         * the tariff amount and the vehicle authoritative. An offer quoted for a
+         * different branch, address or vehicle is discarded — those were priced
+         * for a different journey.
+         */
+        const own = options.fareService
+          ? await options.fareService.ownFare(
+              tenantId,
+              { tariffAmount: delivery.deliveryFeeAmount, timeZone: cityTimeZone },
+              now,
+            )
+          : null
+        const fare = own
+          ? chooseFare(
+              delivery.deliveryFeeAmount,
+              routed?.offer ?? null,
+              { branchId: branch.id, addressId: address.id, profile: chosenProfile },
+              own,
+              now,
+            )
+          : null
+        const deliveryFeeAmount = fare?.amount ?? delivery.deliveryFeeAmount
+
         // A code the customer supplied. A refusal does not fail the quote: a
         // basket that will not price because a code expired is a basket that
         // gets abandoned. The quote comes back undiscounted and says why.
@@ -736,7 +842,10 @@ export function createPrismaCommerceRepository(
           ? await reservePromotion(transaction, tenantId, customerId, {
               code: input.promotionCode,
               subtotal: subtotal.amount,
-              deliveryFee: delivery.deliveryFeeAmount,
+              // The charged fare, not the published rate: a percentage-off code
+              // that ignored a rush uplift would discount a fee nobody was asked
+              // to pay, and free-delivery codes would leave the uplift behind.
+              deliveryFee: deliveryFeeAmount,
               cityId: cart.cityId,
               now,
               correlationId,
@@ -763,7 +872,7 @@ export function createPrismaCommerceRepository(
         const total = Money.irr(
           totalAfterDiscount({
             subtotal: subtotal.amount,
-            deliveryFee: delivery.deliveryFeeAmount,
+            deliveryFee: deliveryFeeAmount,
             discountAmount,
           }),
         )
@@ -797,7 +906,7 @@ export function createPrismaCommerceRepository(
             cartVersion: cart.version,
             expiresAt: calculateQuoteExpiry(now),
             subtotalAmount: subtotal.amount,
-            deliveryFeeAmount: delivery.deliveryFeeAmount,
+            deliveryFeeAmount,
             discountAmount,
             totalAmount: total.amount,
             ...(promotion?.applied && { promotionId: promotion.promotionId }),
@@ -811,6 +920,20 @@ export function createPrismaCommerceRepository(
               deliveryDistanceSource: routeDistance.source,
               ...(routeDistance.reasonCode !== undefined && {
                 deliveryDistanceReasonCode: routeDistance.reasonCode,
+              }),
+            }),
+            // Which of the three answers priced this, and why it moved. A fare a
+            // customer disputes months from now has to be explainable: either a
+            // marketplace quoted it and here is their reference, or it was the
+            // breakfast rush and here is the multiplier.
+            ...(fare && {
+              deliveryFareSource: fare.source,
+              deliveryFareMultiplierBasisPoints: fare.multiplierBasisPoints,
+              deliveryFareReasonCodes: [...fare.reasonCodes],
+              ...(fare.expiresAt && { deliveryFareExpiresAt: fare.expiresAt }),
+              ...(fare.source === 'PROVIDER' && {
+                deliveryFareProviderCode: fare.providerCode,
+                deliveryFareProviderReference: fare.providerReference,
               }),
             }),
             deliveryVehicleProfile: chosenProfile,
@@ -1043,6 +1166,25 @@ function mapCart(cart: CartRecord): CartSummary {
  * had, because the basket it was priced from is long gone and the answer would
  * be about nothing the customer can now act on.
  */
+/**
+ * The stored reason codes, in the words a customer reads.
+ *
+ * Translated here rather than stored in Persian, because the code is what the
+ * quote is joined and reported on and the sentence is what changes when
+ * somebody decides «شلوغی صبحگاهی» reads better another way. An unrecognised
+ * code is dropped rather than shown raw: `MORNING_RUSH` on a checkout screen is
+ * worse than no explanation at all.
+ */
+function fareReasonsFa(codes: readonly string[]): string[] {
+  const sentences: Readonly<Record<string, string>> = {
+    MORNING_RUSH: 'شلوغی صبحگاهی',
+    EVENING_RUSH: 'شلوغی عصرگاهی',
+    HIGH_DEMAND: 'تقاضای زیاد در این لحظه',
+    PROVIDER_SURGE: 'افزایش نرخ سرویس ارسال',
+  }
+  return codes.map((code) => sentences[code]).filter((sentence): sentence is string => !!sentence)
+}
+
 function mapQuote(
   quote: QuoteRecord,
   vehicleOptions?: QuoteSummary['deliveryVehicleOptions'],
@@ -1080,6 +1222,19 @@ function mapQuote(
     deliveryPricingRuleVersion: quote.deliveryPricingRuleVersion,
     subtotal: { amount: quote.subtotalAmount.toString(), currency: quote.currency },
     deliveryFee: { amount: quote.deliveryFeeAmount.toString(), currency: quote.currency },
+    // Only when something actually moved the fare. A quote at the published
+    // rate on an ordinary afternoon has nothing to explain, and a screen that
+    // justifies a price nobody questioned invites the question.
+    ...(quote.deliveryFareSource &&
+      fareReasonsFa(quote.deliveryFareReasonCodes).length > 0 && {
+        deliveryFareExplanation: {
+          source: quote.deliveryFareSource,
+          reasonsFa: fareReasonsFa(quote.deliveryFareReasonCodes),
+          ...(quote.deliveryFareExpiresAt && {
+            heldUntil: quote.deliveryFareExpiresAt.toISOString(),
+          }),
+        },
+      }),
     discount: { amount: quote.discountAmount.toString(), currency: quote.currency },
     ...(quote.promotion && {
       promotion: {

@@ -367,6 +367,25 @@ export function CheckoutFlow({
             <dd>{quote ? formatToman(quote.deliveryFee.amount) : '—'}</dd>
           </div>
           {/*
+            Why the fare is what it is, when something moved it.
+
+            The fare is quoted at the moment of the order rather than read off a
+            published rate, so on a busy morning it is not the number the same
+            basket cost yesterday afternoon. A price that changed and does not
+            say why is the one people write to support about — and the answer
+            «شلوغی صبحگاهی» settles it in three words where a tariff table
+            would not settle it at all.
+
+            Rendered only when there is something to say. A quote at the
+            ordinary rate has no explanation attached, and a line justifying a
+            price nobody questioned only invites the question.
+          */}
+          {quote?.deliveryFareExplanation && (
+            <p className="summary__fare-note">
+              {quote.deliveryFareExplanation.reasonsFa.join(' • ')}
+            </p>
+          )}
+          {/*
             Both vehicles, always, with the unavailable one disabled and saying
             why. Showing it disabled rather than hiding it is the point: a
             customer in a village learns that bread does reach them, by car,

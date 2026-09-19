@@ -151,6 +151,29 @@ export const quoteSummarySchema = z.object({
   deliveryPricingRuleVersion: z.number().int().min(1),
   subtotal: moneySchema,
   deliveryFee: moneySchema,
+  /**
+   * Why the delivery costs what it costs.
+   *
+   * The fare is quoted at the moment of the order rather than read off a
+   * published rate — a courier platform announces its own price, and our own
+   * price moves with the hour, because breakfast arrives in a ninety-minute
+   * window and couriers are scarcest exactly then.
+   *
+   * A fare that moves and cannot say why is the thing people dispute, so the
+   * reasons travel with it in the words a customer reads. Absent on an ordinary
+   * hour at the published rate, which is the common case and needs no
+   * explanation: a screen that justifies a price nobody questioned only invites
+   * the question.
+   */
+  deliveryFareExplanation: z
+    .object({
+      source: z.enum(['PROVIDER', 'DYNAMIC', 'TARIFF']),
+      /** Persian, customer-facing. Empty when nothing moved the fare. */
+      reasonsFa: z.array(z.string().min(1).max(120)).max(4),
+      /** When this fare stops being held and the basket must be re-priced. */
+      heldUntil: isoDateTimeSchema.optional(),
+    })
+    .optional(),
   discount: moneySchema,
   /** The campaign that produced the discount, when one did. */
   promotion: z

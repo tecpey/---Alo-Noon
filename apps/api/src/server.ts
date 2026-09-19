@@ -8,6 +8,7 @@ import {
   createAuthenticationDeliveryPolicy,
   createAuthenticationDeliveryRegistry,
   createPaymentProviderAdapterRegistry,
+  createDeliveryFareRegistry,
   createEmailRegistry,
   createRoutingProviderRegistry,
   createProviderExecutionPolicy,
@@ -57,6 +58,10 @@ import { createPrismaEmailProviderService } from './modules/email-provider.js'
 import { createPrismaOperatorAlertService } from './modules/operator-alerts.js'
 import { createSmtpAdapter } from './providers/smtp.js'
 import { createPrismaCommerceRepository } from './modules/commerce.js'
+import {
+  createEnvironmentDeliveryFareCredentialResolver,
+  createPrismaDeliveryFareService,
+} from './modules/delivery-fare.js'
 import { createPrismaAddressRepository, createPrismaCityBiasResolver } from './modules/addresses.js'
 import { createPrismaOrderRepository } from './modules/orders.js'
 import { createPrismaPaymentExecutionService } from './modules/payment-execution.js'
@@ -192,6 +197,23 @@ const routingProviderRegistry = createRoutingProviderRegistry([
 const routingService = createPrismaRoutingService(prisma, {
   registry: routingProviderRegistry,
   credentialResolver: createEnvironmentRoutingCredentialResolver(process.env),
+  environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
+})
+
+/**
+ * Who prices a delivery.
+ *
+ * No adapter is registered yet, and that is the honest state: this shop
+ * delivers with its own couriers, so the live price is the published tariff
+ * with this moment's factors applied rather than a marketplace's quote. The
+ * registry is wired anyway because that is the whole point of the seam — the
+ * day a courier platform is signed, it is an adapter here and a configuration
+ * row, not a change to the checkout.
+ */
+const deliveryFareRegistry = createDeliveryFareRegistry([])
+const deliveryFareService = createPrismaDeliveryFareService(prisma, {
+  registry: deliveryFareRegistry,
+  credentialResolver: createEnvironmentDeliveryFareCredentialResolver(process.env),
   environment: env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
 })
 
@@ -429,7 +451,10 @@ const app = await buildApp({
   serviceabilityRepository: createPrismaServiceabilityRepository(prisma),
   corsOrigins: parseCorsOrigins(env.CORS_ORIGINS),
   auth,
-  commerceRepository: createPrismaCommerceRepository(prisma, { routingService }),
+  commerceRepository: createPrismaCommerceRepository(prisma, {
+    routingService,
+    fareService: deliveryFareService,
+  }),
   placesService: routingService,
   cityBias: createPrismaCityBiasResolver(prisma),
   addressRepository: createPrismaAddressRepository(prisma),

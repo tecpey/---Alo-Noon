@@ -359,6 +359,24 @@
   color: var(--ink-base);
   font-weight: 600;
 }
+/*
+  Why the fare moved, directly under the fare.
+
+  Deliberately quiet — small, muted, no icon and no border. It is an
+  explanation, not a warning: the customer is being told something true about
+  the hour they are ordering in, and dressing it up as an alert would make a
+  normal breakfast price look like a problem.
+
+  Not a `div`, so it sits outside the flex rows above and reads as a note on
+  the line before it rather than as another total.
+*/
+.summary__fare-note {
+  margin: -0.2rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
 .summary__grand {
   padding-block-start: 0.6rem;
   border-block-start: 1px solid var(--line-subtle);
