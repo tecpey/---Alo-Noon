@@ -2,6 +2,11 @@
 # Formatting it makes `pnpm format` and `pnpm build` overwrite each other's work.
 apps/web/next-env.d.ts
 
+# Written and re-added by `next dev` itself, for the same reason: Prettier only
+# rewraps its paragraphs, and then the next `next dev` unwraps them again, so
+# formatting it makes the two tools overwrite each other forever.
+apps/web/AGENTS.md
+
 # Build output and dependencies.
 **/.next/
 **/dist/
