@@ -153,7 +153,17 @@ export function registerAuthRoutes(app: FastifyInstance, dependencies: AuthDepen
               .code(409)
               .send(errorEnvelope(error.code, 'The idempotency key was already used.'))
           }
-          request.log.warn({ code: error.code }, 'OTP delivery unavailable')
+          // The cause names which of the several ways this fails actually
+          // happened. It is logged and never sent: the reply stays the same
+          // generic sentence, because a caller learning that this tenant has no
+          // SMS provider configured learns something about the tenant.
+          request.log.warn(
+            {
+              code: error.code,
+              ...(error.cause instanceof Error && { cause: error.cause.message }),
+            },
+            'OTP delivery unavailable',
+          )
           return reply
             .code(503)
             .send(

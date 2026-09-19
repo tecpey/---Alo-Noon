@@ -17,7 +17,26 @@ import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '@alo-noon/database'
 
 const prisma = new PrismaClient()
-const BASE = process.env['LAUNCH_API_BASE'] ?? 'http://localhost:3001'
+/**
+ * `127.0.0.1` rather than `localhost`, which is not a cosmetic choice.
+ *
+ * The API resolves the tenant from the host the request arrived on, and the two
+ * spellings are separate rows. In a workspace that has run both the demo seed
+ * and the launch bootstrap they point at different tenants — `localhost` at the
+ * demo shop, `127.0.0.1` at the launch one — so this script drove its HTTP at
+ * one tenant while reading the other out of the database with `TENANT_ID`
+ * below.
+ *
+ * That is the worst shape a smoke test can have. It did not fail cleanly: the
+ * sign-in returned 503 because the demo tenant has no SMS provider, which reads
+ * as "OTP delivery is broken" and sends you looking at the gateway, the
+ * credential and the adapter — none of which were wrong. Had the demo tenant
+ * happened to be fully configured, it would have passed instead, and reported
+ * that a shop was ready to launch after exercising a different one.
+ *
+ * `assertHostMatchesTenant` below makes the mismatch impossible to have again.
+ */
+const BASE = process.env['LAUNCH_API_BASE'] ?? 'http://127.0.0.1:3001'
 const TENANT_ID = '00000000-0000-4000-8000-000000000001'
 const SMS_LOG = process.env['SMS_LOG'] ?? ''
 
@@ -180,7 +199,46 @@ async function signIn(mobileE164: string, label: string): Promise<string> {
   return verified.cookie
 }
 
+/**
+ * That the shop answering on `BASE` is the shop this script checks in the
+ * database.
+ *
+ * Runs before anything else, because every later step reads from both sides: an
+ * order placed over HTTP against one tenant and then looked up with `TENANT_ID`
+ * in another produces failures that describe none of what is wrong.
+ *
+ * The city list is the cheapest tenant-scoped thing the API will answer without
+ * a session, and comparing ids rather than names is what makes it conclusive —
+ * two tenants can both have a city called «بابل», and in this workspace they do.
+ */
+async function assertHostMatchesTenant(): Promise<void> {
+  const cities = await call('GET', '/api/v1/serviceability/cities')
+  const served = list(at(cities.body, 'data'))
+    .map((city) => text(at(city, 'id')))
+    .filter((id): id is string => Boolean(id))
+  const mine = await prisma.city.findMany({
+    where: { tenantId: TENANT_ID, id: { in: served } },
+    select: { id: true },
+  })
+  const matches = mine.length > 0
+  step(`host ${BASE} serves the tenant this script checks`, matches, {
+    citiesServed: served.length,
+    ofWhichThisTenants: mine.length,
+  })
+  if (!matches) {
+    throw new Error(
+      `${BASE} resolves to a different tenant than ${TENANT_ID}. ` +
+        'Point LAUNCH_API_BASE at a host registered to this tenant — the API ' +
+        'picks the tenant from the request host, and "localhost" and ' +
+        '"127.0.0.1" are separate registrations.',
+    )
+  }
+}
+
 async function main(): Promise<void> {
+  console.log('=== 0. Who am I talking to ===')
+  await assertHostMatchesTenant()
+
   console.log('=== 1. Customer ===')
   const customer = await signIn(CUSTOMER, 'customer')
 

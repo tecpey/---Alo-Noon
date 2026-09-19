@@ -77,8 +77,20 @@ export class AuthenticationDeliveryError extends Error {
   constructor(
     readonly code: string,
     readonly status: 409 | 503,
+    /**
+     * What actually went wrong, for the log only.
+     *
+     * The codes this carries are deliberately coarse — a caller learns that OTP
+     * delivery is unavailable and nothing about the tenant's provider setup —
+     * and that coarseness used to reach the operator too, because the one place
+     * the real reason existed was a bare `catch` that dropped it. "No provider
+     * is configured", "two providers both claim default" and "the configured
+     * adapter is not registered in this build" arrived as the same 503 with the
+     * same log line, and they have three different fixes.
+     */
+    options?: { cause: unknown },
   ) {
-    super(code)
+    super(code, options)
     this.name = 'AuthenticationDeliveryError'
   }
 }
@@ -290,8 +302,10 @@ async function prepareDelivery(
           adapterSpiVersion: selected.adapterSpiVersion,
           environment: options.policy.environment,
         })
-      } catch {
-        throw new AuthenticationDeliveryError('AUTH_DELIVERY_PROVIDER_UNAVAILABLE', 503)
+      } catch (error) {
+        throw new AuthenticationDeliveryError('AUTH_DELIVERY_PROVIDER_UNAVAILABLE', 503, {
+          cause: error,
+        })
       }
 
       const active = await transaction.authOtpChallenge.findFirst({

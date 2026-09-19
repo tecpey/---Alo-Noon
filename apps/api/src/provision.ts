@@ -35,6 +35,11 @@ import {
   AuthDeliveryProviderError,
 } from './modules/auth-delivery-provider.js'
 import { createPrismaRoutingProviderService } from './modules/routing-provider.js'
+import { geoJsonBoundariesOverlap } from './modules/discovery.js'
+import {
+  createPrismaAdminDeliveryPricingService,
+  AdminDeliveryPricingError,
+} from './modules/admin-delivery-pricing.js'
 import {
   createPrismaPaymentProviderService,
   PaymentProviderError,
@@ -91,6 +96,8 @@ const COMMANDS = [
   'set-routing-provider-health',
   'provision-coverage',
   'list-coverage',
+  'publish-tariff',
+  'list-tariffs',
 ] as const
 
 /**
@@ -445,8 +452,8 @@ async function main(): Promise<void> {
     }
 
     /**
-     * Creates the pilot's city, its one operational zone, and a service area
-     * per town from the coverage table in the domain package.
+     * Puts the coverage table in the domain package on the ground: a service
+     * area per town, all inside one city and one operational zone.
      *
      * One zone for all of them, and that is forced rather than chosen: the
      * order path requires a cart's zone to equal its address's zone *and* its
@@ -454,39 +461,115 @@ async function main(): Promise<void> {
      * area sits in the same zone the branch does. Separate zones per town would
      * make every Babolsar order a CART_CONTEXT_MISMATCH.
      *
-     * Idempotent on the codes, so running it twice updates rather than
-     * duplicates — which matters because the boundaries are approximations that
-     * will be re-run as they are corrected.
+     * ## Why the city and zone codes are flags
+     *
+     * They were literals — `BABOL_PILOT` and `BABOL_CATCHMENT` — which is
+     * correct for a tenant that has never been set up and wrong for every
+     * tenant that has. A shop already selling bread has a city and a zone
+     * already, with its bakeries in them, under whatever codes its bootstrap
+     * chose. Run against that shop, the literals created a *second* city and a
+     * second zone, put eight perfectly good service areas inside them, and
+     * changed nothing a customer could see: no branch sits in that zone, so no
+     * order can reach any of it. A provisioning command whose successful output
+     * describes a shop nobody can order from is worse than one that refuses.
+     *
+     * So the codes are flags, defaulting to the greenfield names. Point them at
+     * the city and zone the bakeries are actually in, and the areas land where
+     * orders can use them. The command upserts, so a wrong run is corrected by
+     * a right one.
+     *
+     * ## Why it refuses to leave an overlap behind
+     *
+     * An address inside two active areas is refused as
+     * `SERVICE_AREA_AMBIGUOUS`, which the customer reads as "they do not
+     * deliver here". A zone that already has a broad placeholder area — a
+     * rectangle drawn around the city to get the first order through — will
+     * overlap half of this table the moment it is written, and the result is a
+     * shop that silently stops serving its own centre.
+     *
+     * The command therefore checks every pre-existing active area in the zone
+     * against the ones it is about to write, using the same containment test
+     * the serviceability resolver uses, and stops before writing anything if
+     * any of them collide. `--retire-unlisted true` is the operator saying "yes,
+     * those were placeholders" — it deactivates them rather than deleting them,
+     * because a service area is referenced by every address resolved inside it.
+     * Areas that do not overlap are never touched: a tenant that has drawn a
+     * real polygon for a village keeps it.
      */
     if (command === 'provision-coverage') {
+      const cityCode = flags['city-code'] ?? 'BABOL_PILOT'
+      const zoneCode = flags['zone-code'] ?? 'BABOL_CATCHMENT'
       const city = await prisma.city.upsert({
-        where: { tenantId_code: { tenantId, code: 'BABOL_PILOT' } },
-        update: { nameFa: flags['city-name'] ?? 'بابل و حومه' },
+        where: { tenantId_code: { tenantId, code: cityCode } },
+        update: { ...(flags['city-name'] && { nameFa: flags['city-name'] }), isActive: true },
         create: {
           tenantId,
-          code: 'BABOL_PILOT',
+          code: cityCode,
           nameFa: flags['city-name'] ?? 'بابل و حومه',
           timezone: 'Asia/Tehran',
           isActive: true,
         },
       })
       const zone = await prisma.operationalZone.upsert({
-        where: { cityId_code: { cityId: city.id, code: 'BABOL_CATCHMENT' } },
-        update: { isActive: true },
+        where: { cityId_code: { cityId: city.id, code: zoneCode } },
+        update: { ...(flags['zone-name'] && { nameFa: flags['zone-name'] }), isActive: true },
         create: {
           tenantId,
           cityId: city.id,
-          code: 'BABOL_CATCHMENT',
-          nameFa: 'حوزهٔ بابل',
+          code: zoneCode,
+          nameFa: flags['zone-name'] ?? 'حوزهٔ بابل',
           isActive: true,
         },
       })
 
+      const planned = BABOL_PILOT_COVERAGE.map((area) => ({
+        area,
+        boundaryGeoJson: circleToGeoJson(area, area.radiusMetres),
+      }))
+      const plannedCodes = new Set(planned.map((entry) => entry.area.code))
+      const existing = await prisma.serviceArea.findMany({
+        where: { tenantId, operationalZoneId: zone.id, isActive: true },
+        select: { id: true, code: true, nameFa: true, boundaryGeoJson: true },
+      })
+      const colliding = existing
+        .filter((area) => !plannedCodes.has(area.code))
+        .map((area) => ({
+          area,
+          overlaps: planned
+            .filter((entry) =>
+              geoJsonBoundariesOverlap(area.boundaryGeoJson, entry.boundaryGeoJson),
+            )
+            .map((entry) => entry.area.nameFa),
+        }))
+        .filter((entry) => entry.overlaps.length > 0)
+
+      const retireUnlisted = asBoolean(flags, 'retire-unlisted', false)
+      if (colliding.length > 0 && !retireUnlisted) {
+        // Nothing has been written to `ServiceArea` yet, so refusing here leaves
+        // the zone exactly as it was rather than half-provisioned.
+        process.stdout.write(
+          'Refusing to provision: these active areas overlap the coverage table.\n' +
+            'Every address inside an overlap would be refused as SERVICE_AREA_AMBIGUOUS,\n' +
+            'which a customer reads as "out of range".\n\n',
+        )
+        for (const entry of colliding) {
+          process.stdout.write(
+            `  ${entry.area.code.padEnd(20)} ${entry.area.nameFa}\n` +
+              `      overlaps: ${entry.overlaps.join('، ')}\n`,
+          )
+        }
+        process.stdout.write(
+          '\nRe-run with --retire-unlisted true to deactivate them, or rename them to\n' +
+            'match the coverage table if they are the same places under other codes.\n',
+        )
+        process.exitCode = 1
+        return
+      }
+
       process.stdout.write(
-        `City   ${city.nameFa}  (${city.id})\nZone   ${zone.nameFa}  (${zone.id})\n\n`,
+        `City   ${city.nameFa}  (${city.code})\nZone   ${zone.nameFa}  (${zone.code})\n\n`,
       )
-      for (const area of BABOL_PILOT_COVERAGE) {
-        const boundaryGeoJson = circleToGeoJson(area, area.radiusMetres)
+      for (const { area, boundaryGeoJson } of planned) {
         const saved = await prisma.serviceArea.upsert({
           where: { operationalZoneId_code: { operationalZoneId: zone.id, code: area.code } },
           update: {
@@ -510,6 +593,25 @@ async function main(): Promise<void> {
           `  ${area.nameFa.padEnd(20)} ${String(area.radiusMetres / 1000).padStart(4)}km  ${vehicle}  ${saved.id}\n`,
         )
       }
+
+      for (const entry of colliding) {
+        // Deactivated, never deleted: an address that resolved inside this area
+        // still points at it, and a delete would either fail on the reference or
+        // orphan the address out of the shop.
+        await prisma.serviceArea.update({
+          where: { id: entry.area.id },
+          data: { isActive: false },
+        })
+        process.stdout.write(`\n  retired  ${entry.area.code}  ${entry.area.nameFa}`)
+      }
+      if (colliding.length > 0) {
+        process.stdout.write(
+          '\n\nAddresses that resolved inside a retired area keep pointing at it. They\n' +
+            'still deliver, but the area is gone from the shop — re-save any address\n' +
+            'that should now resolve into one of the new ones.\n',
+        )
+      }
+
       process.stdout.write(
         '\nThese boundaries are circles around approximate town centres, not surveyed\n' +
           'limits. Check every centre against a map, then refine the shapes from the\n' +
@@ -519,10 +621,22 @@ async function main(): Promise<void> {
       return
     }
 
+    /**
+     * Every service area this tenant has, and which zone each sits in.
+     *
+     * It used to filter on the literal zone code `BABOL_CATCHMENT`, which made
+     * it answer "No coverage provisioned" to a tenant whose eight areas were
+     * sitting right there under a zone its bootstrap had named something else —
+     * advice to run a command that had already run. Narrowing is a flag now,
+     * and the zone is a column rather than an assumption.
+     */
     if (command === 'list-coverage') {
       const areas = await prisma.serviceArea.findMany({
-        where: { tenantId, operationalZone: { is: { code: 'BABOL_CATCHMENT' } } },
-        orderBy: { code: 'asc' },
+        where: {
+          tenantId,
+          ...(flags['zone-code'] && { operationalZone: { is: { code: flags['zone-code'] } } }),
+        },
+        orderBy: [{ operationalZone: { code: 'asc' } }, { code: 'asc' }],
         include: { operationalZone: { include: { city: true } } },
       })
       if (areas.length === 0) {
@@ -533,7 +647,108 @@ async function main(): Promise<void> {
         const vehicle = area.motorcycleAllowed ? 'motorcycle+car' : 'car only'
         const state = area.isActive ? 'active' : 'inactive'
         process.stdout.write(
-          `${area.code.padEnd(20)} ${area.nameFa.padEnd(22)} ${vehicle.padEnd(16)} ${state}\n`,
+          `${area.operationalZone.city.code.padEnd(12)} ${area.operationalZone.code.padEnd(16)} ` +
+            `${area.code.padEnd(20)} ${area.nameFa.padEnd(22)} ${vehicle.padEnd(16)} ${state}\n`,
+        )
+      }
+      return
+    }
+
+    /**
+     * Publishes a delivery tariff, through the service the admin panel calls.
+     *
+     * The panel can already do this, and this command exists anyway for the
+     * same reason `configure-routing-provider` does: the tariff a shop opens
+     * with has to be set before anybody has a browser pointed at the panel, and
+     * it has to be set the same way afterwards. Going through
+     * `publishTariff` rather than writing the row means a tariff made from a
+     * shell supersedes its predecessor, carries a version, and is refused for
+     * the same reasons a tariff made from the panel is refused.
+     *
+     * Scope is the pair (city, zone, vehicle); leaving `--zone` off publishes a
+     * city-wide tariff, which is the right shape for a car rate — the selection
+     * rule falls back from a zone's tariff to the city's, so one car rate covers
+     * every zone that has not priced its own.
+     *
+     * Amounts are Rial, like everything the ledger touches.
+     */
+    if (command === 'publish-tariff') {
+      const pricingService = createPrismaAdminDeliveryPricingService(prisma)
+      const cityCode = required(flags, 'city-code')
+      const city = await prisma.city.findFirst({
+        where: { tenantId, code: cityCode },
+        select: { id: true, nameFa: true },
+      })
+      if (!city) throw new Error(`No city ${cityCode} in this tenant`)
+
+      let operationalZoneId: string | undefined
+      if (flags['zone-code']) {
+        const zone = await prisma.operationalZone.findFirst({
+          where: { tenantId, cityId: city.id, code: flags['zone-code'] },
+          select: { id: true },
+        })
+        if (!zone) throw new Error(`No zone ${flags['zone-code']} in city ${cityCode}`)
+        operationalZoneId = zone.id
+      }
+
+      const vehicleProfile = (flags['vehicle'] ?? 'CAR').toUpperCase()
+      if (vehicleProfile !== 'CAR' && vehicleProfile !== 'MOTORCYCLE') {
+        throw new Error('--vehicle must be CAR or MOTORCYCLE')
+      }
+      const calculationMode = (flags['mode'] ?? 'DISTANCE_BANDED').toUpperCase()
+      if (calculationMode !== 'FLAT' && calculationMode !== 'DISTANCE_BANDED') {
+        throw new Error('--mode must be FLAT or DISTANCE_BANDED')
+      }
+
+      try {
+        const tariff = await pricingService.publishTariff(
+          tenantId,
+          {
+            cityId: city.id,
+            ...(operationalZoneId && { operationalZoneId }),
+            vehicleProfile,
+            calculationMode,
+            baseFeeAmount: BigInt(required(flags, 'base-rial')),
+            perKilometerFeeAmount: BigInt(flags['per-km-rial'] ?? '0'),
+            ...(flags['minimum-order-rial'] && {
+              minimumOrderAmount: BigInt(flags['minimum-order-rial']),
+            }),
+            ...(flags['free-delivery-rial'] && {
+              freeDeliveryThreshold: BigInt(flags['free-delivery-rial']),
+            }),
+          },
+          now,
+        )
+        process.stdout.write(
+          `Tariff published\n  city: ${city.nameFa}\n  vehicle: ${tariff.vehicleProfile}\n` +
+            `  mode: ${tariff.calculationMode}\n  version: ${tariff.version}\n` +
+            `  base: ${tariff.baseFeeAmount} Rial\n  perKm: ${tariff.perKilometerFeeAmount} Rial\n`,
+        )
+        process.stdout.write('The previous version of this tariff, if any, is now inactive.\n')
+      } catch (error) {
+        if (error instanceof AdminDeliveryPricingError) {
+          throw new Error(`Tariff refused: ${error.code}`)
+        }
+        throw error
+      }
+      return
+    }
+
+    if (command === 'list-tariffs') {
+      const pricingService = createPrismaAdminDeliveryPricingService(prisma)
+      const tariffs = await pricingService.listTariffs(tenantId)
+      if (tariffs.length === 0) {
+        process.stdout.write('No delivery tariff is published. No order can be priced.\n')
+        return
+      }
+      for (const tariff of tariffs) {
+        const scope = tariff.operationalZoneNameFa ?? 'city-wide'
+        const state = tariff.isActive ? 'active' : 'superseded'
+        process.stdout.write(
+          `${tariff.vehicleProfile.padEnd(11)} ${tariff.calculationMode.padEnd(16)} ` +
+            `v${String(tariff.version).padEnd(3)} base=${tariff.baseFeeAmount.padStart(9)} ` +
+            `perKm=${tariff.perKilometerFeeAmount.padStart(8)} ${state.padEnd(11)} ` +
+            `${tariff.cityNameFa} / ${scope}\n`,
         )
       }
       return

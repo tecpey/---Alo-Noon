@@ -574,6 +574,102 @@ function ringContainsPoint(ring: LinearRing, longitude: number, latitude: number
   return inside
 }
 
+/**
+ * Whether two service-area boundaries cover any of the same ground.
+ *
+ * This exists because of how overlap fails. An address inside two active areas
+ * is refused as `SERVICE_AREA_AMBIGUOUS` — see `resolveServiceArea` above, which
+ * insists on exactly one match — and the customer reads that refusal as "they do
+ * not deliver here". So a pair of boundaries that touch does not degrade the
+ * shop a little; it deletes the overlapping streets from it, silently, and the
+ * only symptom is orders that never happen.
+ *
+ * It is deliberately built on the same `polygonContainsPoint` the serviceability
+ * check uses rather than on a geometry library. The question being asked is not
+ * "do these shapes intersect" in the abstract — it is "will the resolver see two
+ * matches", and the only answer that means anything is one computed the way the
+ * resolver computes it.
+ *
+ * Three tests, which together are complete for the simple boundaries in use
+ * (circles from `circleToGeoJson`, and rectangles drawn by hand): a vertex of
+ * one inside the other catches containment in either direction, and a crossing
+ * edge catches the case where the outlines cut through each other with no vertex
+ * landing inside — two overlapping rectangles offset diagonally, for instance.
+ *
+ * Holes are honoured for the vertex tests, since `polygonContainsPoint` honours
+ * them, and ignored for the edge test — a boundary whose hole is threaded by
+ * another's edge would be reported as overlapping when it may not be. That is
+ * the safe direction to be wrong in for a warning, and nothing in this product
+ * draws a boundary with a hole today.
+ */
+export function geoJsonBoundariesOverlap(first: unknown, second: unknown): boolean {
+  const firstPolygons = parsePolygons(first)
+  const secondPolygons = parsePolygons(second)
+  return firstPolygons.some((left) => secondPolygons.some((right) => polygonsOverlap(left, right)))
+}
+
+function polygonsOverlap(first: Polygon, second: Polygon): boolean {
+  const [firstOuter] = first
+  const [secondOuter] = second
+  if (!firstOuter || !secondOuter) return false
+
+  if (firstOuter.some((point) => polygonContainsPoint(second, point[0], point[1]))) return true
+  if (secondOuter.some((point) => polygonContainsPoint(first, point[0], point[1]))) return true
+  return ringsCross(firstOuter, secondOuter)
+}
+
+function ringsCross(first: LinearRing, second: LinearRing): boolean {
+  for (let index = 1; index < first.length; index += 1) {
+    const firstStart = first[index - 1]!
+    const firstEnd = first[index]!
+    for (let other = 1; other < second.length; other += 1) {
+      if (segmentsIntersect(firstStart, firstEnd, second[other - 1]!, second[other]!)) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Two segments sharing at least one point, collinear cases included.
+ *
+ * The orientation test is the standard one: the segments cross when each
+ * straddles the other's line. Collinear overlap produces four zero
+ * orientations and no straddle, so it is caught separately by asking whether
+ * any endpoint lies on the other segment — the same `pointOnSegment` the
+ * containment test uses for a point sitting exactly on a boundary.
+ */
+function segmentsIntersect(
+  firstStart: Position,
+  firstEnd: Position,
+  secondStart: Position,
+  secondEnd: Position,
+): boolean {
+  const d1 = orientation(secondStart, secondEnd, firstStart)
+  const d2 = orientation(secondStart, secondEnd, firstEnd)
+  const d3 = orientation(firstStart, firstEnd, secondStart)
+  const d4 = orientation(firstStart, firstEnd, secondEnd)
+
+  if (d1 * d2 < 0 && d3 * d4 < 0) return true
+
+  return (
+    pointOnSegment(firstStart[0], firstStart[1], secondStart, secondEnd) ||
+    pointOnSegment(firstEnd[0], firstEnd[1], secondStart, secondEnd) ||
+    pointOnSegment(secondStart[0], secondStart[1], firstStart, firstEnd) ||
+    pointOnSegment(secondEnd[0], secondEnd[1], firstStart, firstEnd)
+  )
+}
+
+/** Sign of the cross product: which side of `start`→`end` the point falls. */
+function orientation(start: Position, end: Position, point: Position): number {
+  const cross =
+    (end[0] - start[0]) * (point[1] - start[1]) - (end[1] - start[1]) * (point[0] - start[0])
+  // A tolerance rather than a bare sign: these are degrees of latitude, where
+  // the cross product of two adjacent boundary vertices is of the order of
+  // 1e-8, and floating-point noise around zero would otherwise read as a side.
+  if (Math.abs(cross) <= 1e-14) return 0
+  return cross > 0 ? 1 : -1
+}
+
 function pointOnSegment(
   longitude: number,
   latitude: number,

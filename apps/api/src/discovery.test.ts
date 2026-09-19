@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ActiveCitySummary, ProductDetail, ProductSummary } from '@alo-noon/contracts'
+import { BABOL_PILOT_COVERAGE, circleToGeoJson } from '@alo-noon/domain'
 
 import { buildApp } from './app'
 import type { AuthDependencies, AuthRepository } from './modules/auth'
 import {
   evaluateServiceability,
+  geoJsonBoundariesOverlap,
   geoJsonContainsPoint,
   type CatalogDetailInput,
   type CatalogListInput,
@@ -566,5 +568,116 @@ describe('GeoJSON evaluation', () => {
       false,
     )
     expect(geoJsonContainsPoint({ type: 'Polygon', coordinates: [[]] }, 52.7, 36.6)).toBe(false)
+  })
+})
+
+/**
+ * The overlap test exists to catch the boundaries that would make
+ * `resolveServiceArea` see two matches, so the cases below are the shapes that
+ * actually arise: a placeholder rectangle drawn around a city, and the circles
+ * `circleToGeoJson` produces around town centres.
+ */
+describe('boundary overlap', () => {
+  const rectangle = (
+    west: number,
+    south: number,
+    east: number,
+    north: number,
+  ): { type: 'Polygon'; coordinates: number[][][] } => ({
+    type: 'Polygon',
+    coordinates: [
+      [
+        [west, south],
+        [east, south],
+        [east, north],
+        [west, north],
+        [west, south],
+      ],
+    ],
+  })
+
+  it('finds a small area sitting wholly inside a large one', () => {
+    // The case that broke the launch tenant: a rectangle drawn around Babol to
+    // get the first order through, and a proper circle for the city centre
+    // written inside it.
+    const placeholder = rectangle(52.62, 36.5, 52.73, 36.59)
+    const centre = circleToGeoJson({ latitude: 36.5513, longitude: 52.679 }, 3_400)
+    expect(geoJsonBoundariesOverlap(placeholder, centre)).toBe(true)
+    expect(geoJsonBoundariesOverlap(centre, placeholder)).toBe(true)
+  })
+
+  it('finds boundaries that cut through each other with no vertex inside', () => {
+    // A cross: neither rectangle has a corner in the other, and they plainly
+    // share ground. The vertex tests alone would miss this.
+    expect(
+      geoJsonBoundariesOverlap(
+        rectangle(52.6, 36.55, 52.8, 36.57),
+        rectangle(52.69, 36.5, 52.71, 36.62),
+      ),
+    ).toBe(true)
+  })
+
+  it('leaves neighbouring areas that do not touch alone', () => {
+    // Babol and Amirkola at the radii the coverage table sizes them to. The
+    // table's own note says they clear each other by about 150 metres, and an
+    // overlap test that reported these would make the command unusable.
+    const babol = circleToGeoJson({ latitude: 36.5513, longitude: 52.679 }, 3_400)
+    const amirkola = circleToGeoJson({ latitude: 36.59, longitude: 52.72 }, 2_100)
+    expect(geoJsonBoundariesOverlap(babol, amirkola)).toBe(false)
+  })
+
+  it('reports circles that were grown until they collided', () => {
+    // The same two towns with Babol's radius pushed out by a kilometre, which
+    // is what "just widen it a bit" looks like from the panel.
+    const babol = circleToGeoJson({ latitude: 36.5513, longitude: 52.679 }, 4_400)
+    const amirkola = circleToGeoJson({ latitude: 36.59, longitude: 52.72 }, 2_100)
+    expect(geoJsonBoundariesOverlap(babol, amirkola)).toBe(true)
+  })
+
+  it('treats a shared edge as an overlap', () => {
+    // Containment includes the boundary — `geoJsonContainsPoint` returns true
+    // for a point on the edge — so two areas meeting along a line really do
+    // both match the addresses on it.
+    expect(
+      geoJsonBoundariesOverlap(
+        rectangle(52.6, 36.5, 52.7, 36.6),
+        rectangle(52.7, 36.5, 52.8, 36.6),
+      ),
+    ).toBe(true)
+  })
+
+  it('confirms the shipped coverage table has no overlapping pair', () => {
+    // The table's own note claims four pairs overlapped on its first draft and
+    // that the radii were then sized to clear each other. That claim decides
+    // whether Babol, Amirkola and the industrial estate are serviceable at all,
+    // and until now it was a comment. This is the claim, checked — and checked
+    // by the same test the resolver would apply, so it cannot drift from it.
+    //
+    // It also guards the obvious future edit: somebody widening one circle to
+    // reach a street just outside it, and taking a neighbouring town off the
+    // map without noticing.
+    const shapes = BABOL_PILOT_COVERAGE.map((area) => ({
+      area,
+      boundary: circleToGeoJson(area, area.radiusMetres),
+    }))
+    const overlapping: string[] = []
+    for (let index = 0; index < shapes.length; index += 1) {
+      for (let other = index + 1; other < shapes.length; other += 1) {
+        if (geoJsonBoundariesOverlap(shapes[index]!.boundary, shapes[other]!.boundary)) {
+          overlapping.push(`${shapes[index]!.area.nameFa} × ${shapes[other]!.area.nameFa}`)
+        }
+      }
+    }
+    expect(overlapping).toEqual([])
+  })
+
+  it('says no when either side is not a polygon', () => {
+    expect(geoJsonBoundariesOverlap(rectangle(52.6, 36.5, 52.7, 36.6), null)).toBe(false)
+    expect(
+      geoJsonBoundariesOverlap(
+        { type: 'Point', coordinates: [52.7, 36.6] },
+        rectangle(52.6, 36.5, 52.7, 36.6),
+      ),
+    ).toBe(false)
   })
 })
