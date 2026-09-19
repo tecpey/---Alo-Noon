@@ -343,32 +343,58 @@ export interface DynamicFarePolicy {
 }
 
 /**
- * The starting policy: the two rushes a bakery actually has, and no surge.
+ * The two rushes a bakery has, for a shop that decides it wants them.
  *
- * The windows are the ones bread is bought in — dawn and the hour before
- * dinner — and the uplift on them is small (×1.15 and ×1.10) because it is
- * paying for couriers being scarce at those hours, not for the customer having
- * no alternative. Every number here is a stated assumption to be replaced by
- * the first month of real orders: the data needed is completed deliveries per
- * hour against couriers on shift.
+ * **Not on by default.** They are exported separately from the policy below so
+ * that switching them on is somebody's decision with their name on it, rather
+ * than a behaviour inherited by installing software.
+ *
+ * The uplift is small — ×1.15 and ×1.10 — because the thing being paid for is
+ * couriers being scarce at those hours, not the customer having no alternative
+ * at breakfast. Both numbers are stated assumptions to be replaced by the first
+ * month of real orders: the data needed is completed deliveries per hour
+ * against couriers on shift.
+ */
+export const BAKERY_RUSH_WINDOWS: readonly FarePeakWindow[] = Object.freeze([
+  Object.freeze({
+    code: 'MORNING_RUSH',
+    labelFa: 'شلوغی صبحگاهی',
+    fromMinuteOfDay: 6 * 60,
+    untilMinuteOfDay: 9 * 60,
+    multiplierBasisPoints: 11_500,
+  }),
+  Object.freeze({
+    code: 'EVENING_RUSH',
+    labelFa: 'شلوغی عصرگاهی',
+    fromMinuteOfDay: 17 * 60,
+    untilMinuteOfDay: 20 * 60,
+    multiplierBasisPoints: 11_000,
+  }),
+])
+
+/**
+ * What the fare varies with out of the box: the journey, and nothing else.
+ *
+ * Distance, vehicle, the area and the load already move the fare — they are the
+ * tariff's own work, in `calculateDeliveryFee` and the vehicle policy, and they
+ * are the variables a delivery charge is actually *about*. Two loaves to the
+ * next street and two hundred to Amol are different jobs and cost differently,
+ * whatever hour either is ordered in.
+ *
+ * The factors here are a different category: they move the price of the *same
+ * job* depending on when it is asked for. That is a pricing strategy rather
+ * than a cost, and the shipped answer to it is no. Bread is a staple; a charge
+ * that climbs when everybody needs it is a decision for whoever runs the shop
+ * and answers to their customers for it.
+ *
+ * So both are off, and neither is missing: a tenant that wants the rushes
+ * passes `BAKERY_RUSH_WINDOWS` above, and one that wants demand pricing sets
+ * `demandEnabled`. The thresholds and the cap are kept populated so that
+ * turning either on is one field rather than a fresh set of invented numbers,
+ * and so the cap binds from the first minute it is on.
  */
 export const DEFAULT_DYNAMIC_FARE_POLICY: DynamicFarePolicy = Object.freeze({
-  peakWindows: Object.freeze([
-    Object.freeze({
-      code: 'MORNING_RUSH',
-      labelFa: 'شلوغی صبحگاهی',
-      fromMinuteOfDay: 6 * 60,
-      untilMinuteOfDay: 9 * 60,
-      multiplierBasisPoints: 11_500,
-    }),
-    Object.freeze({
-      code: 'EVENING_RUSH',
-      labelFa: 'شلوغی عصرگاهی',
-      fromMinuteOfDay: 17 * 60,
-      untilMinuteOfDay: 20 * 60,
-      multiplierBasisPoints: 11_000,
-    }),
-  ]),
+  peakWindows: Object.freeze([]),
   demandEnabled: false,
   demandThresholdPerCourier: 3,
   demandStepBasisPoints: 500,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   applyFareMultiplier,
+  BAKERY_RUSH_WINDOWS,
   createDeliveryFareRegistry,
   DEFAULT_DYNAMIC_FARE_POLICY,
   DELIVERY_FARE_ADAPTER_SPI_VERSION,
@@ -102,8 +103,38 @@ describe('provider fare validation', () => {
   })
 })
 
+describe('what the shipped policy does', () => {
+  it('applies nothing at any hour of the day', () => {
+    // The fare is variable — with distance, vehicle, area and load — and every
+    // one of those moved it before this function saw the number. What ships
+    // adds no factor on top of the journey, at any time.
+    for (let minute = 0; minute < 1440; minute += 15) {
+      expect(dynamicFareMultiplier(DEFAULT_DYNAMIC_FARE_POLICY, minute).basisPoints).toBe(
+        FARE_MULTIPLIER_ONE,
+      )
+    }
+  })
+
+  it('ships with no peak windows and no demand pricing', () => {
+    // Both are capabilities rather than defaults. Bread is a staple: a charge
+    // that climbs when everybody needs it is a decision for whoever runs the
+    // shop, not one inherited by installing software.
+    expect(DEFAULT_DYNAMIC_FARE_POLICY.peakWindows).toEqual([])
+    expect(DEFAULT_DYNAMIC_FARE_POLICY.demandEnabled).toBe(false)
+  })
+
+  it('keeps the cap populated so turning a factor on is one field', () => {
+    expect(DEFAULT_DYNAMIC_FARE_POLICY.maxMultiplierBasisPoints).toBe(15_000)
+  })
+})
+
 describe('dynamic fare multiplier', () => {
-  const policy = DEFAULT_DYNAMIC_FARE_POLICY
+  // The rushes are opt-in, so the tests that exercise them have to opt in. That
+  // asymmetry is the point: what ships applies nothing.
+  const policy: DynamicFarePolicy = {
+    ...DEFAULT_DYNAMIC_FARE_POLICY,
+    peakWindows: BAKERY_RUSH_WINDOWS,
+  }
 
   it('leaves an ordinary hour at exactly one', () => {
     const decision = dynamicFareMultiplier(policy, 11 * 60)
@@ -177,10 +208,15 @@ describe('dynamic fare multiplier', () => {
 })
 
 describe('applying a multiplier to money', () => {
+  const rushing: DynamicFarePolicy = {
+    ...DEFAULT_DYNAMIC_FARE_POLICY,
+    peakWindows: BAKERY_RUSH_WINDOWS,
+  }
+
   it('rounds to the nearest hundred Toman rather than quoting a formula', () => {
     // 50,000 × 1.15 = 57,500, which is 5,750 Toman — half a step off, so it
     // settles on 5,800.
-    const decision = dynamicFareMultiplier(DEFAULT_DYNAMIC_FARE_POLICY, 7 * 60)
+    const decision = dynamicFareMultiplier(rushing, 7 * 60)
     expect(applyFareMultiplier(50_000n, decision).amount).toBe(58_000n)
     // 55,000 × 1.15 = 63,250, which is not a price anybody writes down.
     expect(applyFareMultiplier(55_000n, decision).amount).toBe(63_000n)
@@ -193,12 +229,12 @@ describe('applying a multiplier to money', () => {
   })
 
   it('keeps free delivery free through the busiest hour', () => {
-    const decision = dynamicFareMultiplier(DEFAULT_DYNAMIC_FARE_POLICY, 7 * 60)
+    const decision = dynamicFareMultiplier(rushing, 7 * 60)
     expect(applyFareMultiplier(0n, decision)).toEqual({ amount: 0n, uplift: 0n })
   })
 
   it('reports the uplift separately so a quote can show what moved', () => {
-    const decision = dynamicFareMultiplier(DEFAULT_DYNAMIC_FARE_POLICY, 7 * 60)
+    const decision = dynamicFareMultiplier(rushing, 7 * 60)
     expect(applyFareMultiplier(50_000n, decision).uplift).toBe(8_000n)
   })
 })

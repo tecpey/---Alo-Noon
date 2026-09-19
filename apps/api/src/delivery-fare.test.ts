@@ -179,14 +179,16 @@ describe('the adapter seam', () => {
 })
 
 describe('the shipped fare policy', () => {
-  it('ships with demand pricing off', () => {
-    // Bread is a staple. A price that climbs when everybody needs it is a
-    // decision for whoever runs the shop and answers for it, not a behaviour to
-    // inherit by installing software.
+  it('adds no time-of-day or demand factor to a delivery charge', () => {
+    // What varies is the journey: distance, vehicle, area and load, all of
+    // which moved the number before the fare service saw it. Nothing here
+    // charges differently for the same journey depending on when it is asked
+    // for — that is a capability the shop switches on, not a default.
+    expect(DEFAULT_DYNAMIC_FARE_POLICY.peakWindows).toEqual([])
     expect(DEFAULT_DYNAMIC_FARE_POLICY.demandEnabled).toBe(false)
   })
 
-  it('caps how far any combination of factors can move a fare', () => {
+  it('caps how far any combination of factors can move a fare once switched on', () => {
     expect(DEFAULT_DYNAMIC_FARE_POLICY.maxMultiplierBasisPoints).toBe(15_000)
   })
 })

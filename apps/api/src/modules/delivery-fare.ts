@@ -313,6 +313,17 @@ export function createPrismaDeliveryFareService(
         demand ?? undefined,
       )
       const { amount, uplift } = applyFareMultiplier(input.tariffAmount, decision)
+      /**
+       * `DYNAMIC` only when something actually moved it.
+       *
+       * The fare already varies with the journey — distance, vehicle, area,
+       * load — and all of that happened in the tariff before this function saw
+       * the number. Labelling an untouched tariff `DYNAMIC` would claim a
+       * factor applied when none did, and since the customer-facing
+       * explanation keys off the source, it would also promise an explanation
+       * there is nothing to explain.
+       */
+      if (decision.basisPoints === FARE_MULTIPLIER_ONE) return flatFare(amount)
       return Object.freeze({
         amount,
         source: 'DYNAMIC' as const,
