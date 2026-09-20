@@ -81,7 +81,16 @@ export interface CustomerApiClient {
     latitude: number
     longitude: number
   }): Promise<ServiceabilityResponse>
-  listCatalog(input: { cityId: string; operationalZoneId: string }): Promise<ProductSummary[]>
+  /**
+   * The shelves of a city, and optionally of one zone inside it.
+   *
+   * The zone is optional because the contract makes it optional and because
+   * the app now opens on the catalogue: somebody who has not shared an address
+   * has no zone yet, and still deserves to see what is for sale and what it
+   * costs. Narrowing to a zone is what happens once there is a doorstep to
+   * work out which branch can reach.
+   */
+  listCatalog(input: { cityId: string; operationalZoneId?: string }): Promise<ProductSummary[]>
   getCart(): Promise<CartSummary | null>
   listAddresses(): Promise<AddressSummary[]>
   createAddress(input: AddressCreate): Promise<AddressSummary>
@@ -286,7 +295,7 @@ export function createCustomerApiClient(
     listCatalog: async ({ cityId, operationalZoneId }) => {
       const query = new URLSearchParams({
         cityId,
-        operationalZoneId,
+        ...(operationalZoneId && { operationalZoneId }),
         page: '1',
         pageSize: '50',
       })

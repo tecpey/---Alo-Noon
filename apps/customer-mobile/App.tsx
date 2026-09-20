@@ -156,6 +156,15 @@ export default function App() {
   const [challengeId, setChallengeId] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
+  /**
+   * The loaf somebody reached for before they had signed in.
+   *
+   * Held so the trip through sign-in and location does not lose it. Coming back
+   * to an empty basket after being sent away to prove who you are is the moment
+   * a customer decides the app wasted their time — and re-finding the bread is
+   * the work they already did once.
+   */
+  const [pendingProduct, setPendingProduct] = useState<ProductSummary>()
 
   useEffect(() => {
     if (!api) {
@@ -170,7 +179,7 @@ export default function App() {
         if (!active) return
         setSession(currentSession)
         if (!currentSession) {
-          setScreen('phone')
+          await browseWithoutSession(api, active)
           return
         }
         setScreen('location')
@@ -200,6 +209,59 @@ export default function App() {
       if (!stillActive) return
       setCities(activeCities)
       setSelectedCityId(activeCities[0]?.id)
+    }
+
+    /**
+     * Bread first. Name and street later.
+     *
+     * This used to open on a phone-number field. A customer who had never seen
+     * the shop was asked for their number, then a text message, then their
+     * city, then permission to read their location — five gates before a single
+     * loaf or a single price appeared, and if they refused the location prompt
+     * the screen had nowhere to go.
+     *
+     * Every part of that is backwards against the evidence. Baymard's cart
+     * research puts forced account creation and trust at nineteen per cent of
+     * abandonment each, and unexpected cost at thirty-nine: all three are things
+     * a shopper can only judge by *looking at the shop*. Asking a stranger to
+     * identify themselves before showing them what is for sale inverts the
+     * order in which somebody decides to buy bread.
+     *
+     * The catalogue never needed any of it. `operationalZoneId` is optional on
+     * the catalogue query, `listActiveCities` is public, and the web storefront
+     * has always shown its shelves to signed-out visitors. The gate was ours,
+     * not the API's.
+     *
+     * So: open on the shelves. Identity is asked for at the first moment it is
+     * actually needed — putting a loaf in a basket — where the customer already
+     * knows what they are signing in *for*, which is the thing the sign-in
+     * screen could never tell them before.
+     */
+    async function browseWithoutSession(client: CustomerApiClient, stillActive: boolean) {
+      try {
+        const activeCities = await client.listActiveCities()
+        if (!stillActive) return
+        setCities(activeCities)
+        const city = activeCities[0]
+        setSelectedCityId(city?.id)
+        if (!city) {
+          // No city to shop in is the one case where there is nothing to show.
+          setScreen('phone')
+          return
+        }
+        // Without coordinates there is no zone, and the catalogue accepts that:
+        // it answers with everything the city sells. Which branch can reach
+        // this particular doorstep is a question for checkout, once there is an
+        // address to ask it about.
+        const catalog = await client.listCatalog({ cityId: city.id })
+        if (!stillActive) return
+        setProducts(catalog)
+        setScreen('catalog')
+      } catch (error) {
+        if (!stillActive) return
+        setMessage(errorMessage(error))
+        setScreen('phone')
+      }
     }
 
     async function loadCart(client: CustomerApiClient, stillActive: boolean) {
@@ -410,6 +472,18 @@ export default function App() {
       setProducts(catalog)
       setQuote(null)
       setScreen('catalog')
+      // The loaf they reached for before signing in. Added now that there is a
+      // session and a zone to add it against, so they arrive at a basket with
+      // their bread in it rather than at the shelf they already chose from.
+      if (pendingProduct) {
+        const resume = pendingProduct
+        setPendingProduct(undefined)
+        setBusy(false)
+        await addProduct(resume, {
+          cityId: selectedCityId,
+          operationalZoneId: decision.operationalZoneId,
+        })
+      }
     } catch (error) {
       handleAuthenticatedError(error)
     } finally {
@@ -417,8 +491,42 @@ export default function App() {
     }
   }
 
-  const addProduct = async (product: ProductSummary) => {
-    if (!api || !selectedCityId || !operationalZoneId || busy) return
+  /**
+   * @param context Where to add it, for callers that have just worked the
+   * answer out and cannot read it back off state yet. `locateAndLoad` is the
+   * one: it has set the city and zone moments earlier, and a `useState` setter
+   * does not change the value this closure already captured — so without this
+   * it would see no zone, bounce the customer back to the location screen, and
+   * do it again every time.
+   */
+  const addProduct = async (
+    product: ProductSummary,
+    context?: { cityId: string; operationalZoneId: string },
+  ) => {
+    if (!api || busy) return
+    const cityId = context?.cityId ?? selectedCityId
+    const zoneId = context?.operationalZoneId ?? operationalZoneId
+    /**
+     * The first moment identity is genuinely needed, and the first moment it
+     * can be explained.
+     *
+     * Somebody browsing without a session has no `operationalZoneId` — there is
+     * no address yet to work out which branch reaches them. Before this, the
+     * guard below simply returned, so the add button on a shelf full of bread
+     * was a control that looked alive and did nothing at all. A dead button is
+     * worse than a locked one: it teaches the customer the app is broken rather
+     * than that something is required.
+     *
+     * Now it carries them into sign-in with the loaf they picked remembered, so
+     * the trip through the phone number is visibly *for* something. The basket
+     * is filled on the other side by `pendingProduct`.
+     */
+    if (!session || !cityId || !zoneId) {
+      setPendingProduct(product)
+      setMessage(undefined)
+      setScreen(session ? 'location' : 'phone')
+      return
+    }
     const currentQuantity =
       cart?.items.find((item) => item.bakeryProductOfferingId === product.offeringId)?.quantity ?? 0
     setBusy(true)
@@ -428,8 +536,8 @@ export default function App() {
     resetPayment()
     try {
       const updated = await api.setCartItem(product.offeringId, {
-        cityId: selectedCityId,
-        operationalZoneId,
+        cityId,
+        operationalZoneId: zoneId,
         quantity: currentQuantity + 1,
         ...(cart && { expectedCartVersion: cart.version }),
       })

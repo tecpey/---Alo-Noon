@@ -496,3 +496,52 @@ describe('customer API client', () => {
     })
   })
 })
+
+/**
+ * The app opens on the shelves, so the catalogue has to answer before anybody
+ * has an address — and therefore before there is a zone to narrow it to.
+ */
+describe('browsing before sign-in', () => {
+  const catalogPage = (items: unknown[]) => ({
+    success: true,
+    data: items,
+    meta: {
+      ...meta,
+      pagination: {
+        page: 1,
+        pageSize: 50,
+        totalItems: items.length,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+    },
+  })
+
+  it('asks for a city alone when there is no zone yet', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse(catalogPage([])))
+    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+
+    await client.listCatalog({ cityId: '55555555-5555-4555-8555-555555555555' })
+
+    const url = String(fetchMock.mock.calls[0]?.[0])
+    expect(url).toContain('cityId=55555555-5555-4555-8555-555555555555')
+    // Not sent empty: `operationalZoneId=` would be a filter on the empty
+    // string rather than no filter, and the shelf would come back bare.
+    expect(url).not.toContain('operationalZoneId')
+  })
+
+  it('narrows to the zone once a doorstep has produced one', async () => {
+    const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse(catalogPage([])))
+    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+
+    await client.listCatalog({
+      cityId: '55555555-5555-4555-8555-555555555555',
+      operationalZoneId: '66666666-6666-4666-8666-666666666666',
+    })
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      'operationalZoneId=66666666-6666-4666-8666-666666666666',
+    )
+  })
+})
