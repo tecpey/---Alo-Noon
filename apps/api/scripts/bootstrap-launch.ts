@@ -209,13 +209,19 @@ async function main(): Promise<void> {
    * Tenant identity comes from the host, and Fastify's `request.hostname` may or
    * may not carry the port depending on the deployment, so both forms resolve.
    *
-   * The public host is given rather than guessed. A migration written early in
-   * this project hard-coded `alonon.ir` as the primary domain while every other
-   * reference in the repository — the env example, the config tests, the mobile
-   * client's tests — says `alonoon.ir`. One of those is a typo, and whichever it
-   * is, a shop whose tenant does not resolve on its own domain answers "no shop
-   * is served from this host" to every visitor on launch day and looks, from
-   * outside, exactly like a DNS problem.
+   * The public host is given rather than guessed, and the reason is worth
+   * keeping: this project spent a while with two spellings in it, `alonon.ir`
+   * in an early migration against `alonoon.ir` everywhere else, and an attempt
+   * to settle it from DNS got it backwards. `alonoon.ir` resolved and
+   * `alonon.ir` did not, which reads like an answer and is not one — a domain
+   * you own but have not pointed anywhere yet fails to resolve exactly as an
+   * unregistered one does, and a name that *does* resolve may simply belong to
+   * somebody else. The owner settled it: `alonon.ir`.
+   *
+   * A shop whose tenant does not resolve on its own domain answers "no shop is
+   * served from this host" to every visitor on launch day and looks, from
+   * outside, exactly like a DNS problem — which is why this is worth getting
+   * from a person rather than from a lookup.
    *
    * So this refuses to invent one. `BOOTSTRAP_PUBLIC_HOST` is also what staging
    * needs, which is the other reason it cannot be a constant.
@@ -250,10 +256,9 @@ async function main(): Promise<void> {
      *
      * A tenant is found by its host and a host with no row finds no tenant, so
      * the API answers "the requested service is unavailable" — which from
-     * outside is indistinguishable from DNS being broken. The launch domain
-     * already resolves on both `alonoon.ir` and `www.alonoon.ir`, so
-     * registering only one of them would lose every visitor who types the
-     * other, on launch day, with nothing in any log to say why.
+     * outside is indistinguishable from DNS being broken. Registering only the
+     * form the operator happened to type would lose every visitor who types
+     * the other, on launch day, with nothing in any log to say why.
      *
      * Only the host the operator actually named is primary: `isPrimary` picks
      * the one origin the shop calls its own, and two of them is how a sitemap

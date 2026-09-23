@@ -100,7 +100,7 @@ describe('what the operator reads at four in the morning', () => {
     const { subject } = composeOperatorAlert(
       observation(3, 'PAYMENT_GATEWAY_UNHEALTHY'),
       'نان سنگک بابل',
-      'https://alonoon.ir/admin',
+      'https://alonon.ir/admin',
     )
 
     // On a phone this line is often all that is read before deciding whether to
@@ -113,7 +113,7 @@ describe('what the operator reads at four in the morning', () => {
     const { body } = composeOperatorAlert(
       observation(2, 'PAYMENT_GATEWAY_UNHEALTHY'),
       'نان سنگک بابل',
-      'https://alonoon.ir/admin',
+      'https://alonon.ir/admin',
     )
 
     expect(body).toContain('جزئیات آزمون')
@@ -121,14 +121,14 @@ describe('what the operator reads at four in the morning', () => {
     // about whether they can still take orders. With one way to pay, they
     // cannot: no payment means no order.
     expect(body).toContain('فروش متوقف است')
-    expect(body).toContain('https://alonoon.ir/admin')
+    expect(body).toContain('https://alonon.ir/admin')
   })
 
   it('tells the reader it will not repeat immediately', () => {
     const { body } = composeOperatorAlert(
       observation(1, 'OUTBOX_EVENTS_PARKED'),
       'نان سنگک بابل',
-      'https://alonoon.ir/admin',
+      'https://alonon.ir/admin',
     )
 
     expect(body).toContain('دیگر')

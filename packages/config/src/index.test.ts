@@ -94,16 +94,16 @@ describe('environment configuration', () => {
 
   it('requires a valid URL for the payment callback base when provided', () => {
     expect(validateEnv({}).success).toBe(true)
-    expect(validateEnv({ PAYMENT_CALLBACK_BASE_URL: 'https://api.alonoon.ir' }).success).toBe(true)
+    expect(validateEnv({ PAYMENT_CALLBACK_BASE_URL: 'https://api.alonon.ir' }).success).toBe(true)
     expect(validateEnv({ PAYMENT_CALLBACK_BASE_URL: 'not-a-url' }).success).toBe(false)
   })
 
   it('parses exact credential-safe CORS origins', () => {
-    expect(parseCorsOrigins('http://localhost:3000, https://app.alonoon.ir')).toEqual([
+    expect(parseCorsOrigins('http://localhost:3000, https://app.alonon.ir')).toEqual([
       'http://localhost:3000',
-      'https://app.alonoon.ir',
+      'https://app.alonon.ir',
     ])
     expect(() => parseCorsOrigins('*')).toThrow('wildcard')
-    expect(() => parseCorsOrigins('https://app.alonoon.ir/path')).toThrow('path')
+    expect(() => parseCorsOrigins('https://app.alonon.ir/path')).toThrow('path')
   })
 })

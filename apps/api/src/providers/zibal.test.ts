@@ -67,7 +67,7 @@ function json(payload: unknown, status = 200) {
 }
 
 const adapter = createZibalAdapter({
-  callbackUrl: 'https://api.alonoon.ir/api/v1/payments/callback/zibal',
+  callbackUrl: 'https://api.alonon.ir/api/v1/payments/callback/zibal',
 })
 
 afterEach(() => {
@@ -108,7 +108,7 @@ describe('Zibal adapter initialization', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       merchant: 'merchant-key',
       amount: 250_000,
-      callbackUrl: 'https://api.alonoon.ir/api/v1/payments/callback/zibal',
+      callbackUrl: 'https://api.alonon.ir/api/v1/payments/callback/zibal',
       description: 'پرداخت سفارش',
       orderId: ATTEMPT_ID,
     })

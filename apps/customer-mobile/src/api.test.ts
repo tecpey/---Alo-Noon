@@ -29,12 +29,12 @@ describe('customer API client', () => {
         meta,
       }),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir/', fetchMock)
 
     await client.verifyOtp('44444444-4444-4444-8444-444444444444', '004231')
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.alonoon.ir/api/v1/auth/otp/verify',
+      'https://api.alonon.ir/api/v1/auth/otp/verify',
       expect.objectContaining({ credentials: 'include' }),
     )
     const request = fetchMock.mock.calls[0]?.[1]
@@ -53,7 +53,7 @@ describe('customer API client', () => {
         401,
       ),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(client.getSession()).resolves.toBeNull()
   })
@@ -62,7 +62,7 @@ describe('customer API client', () => {
     const fetchMock = vi
       .fn<CustomerFetch>()
       .mockResolvedValue(jsonResponse({ success: true, data: [{ id: 'not-a-uuid' }], meta }))
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(client.listActiveCities()).rejects.toMatchObject({
       code: 'INVALID_API_RESPONSE',
@@ -80,7 +80,7 @@ describe('customer API client', () => {
         503,
       ),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     const error = await client
       .requestOtp('+989111234567', 'otp-test-idempotency-key')
@@ -94,9 +94,9 @@ describe('customer API client', () => {
 
   it('rejects unsafe or ambiguous API base URLs before making a request', () => {
     expect(() => createCustomerApiClient('file:///tmp/api')).toThrow()
-    expect(() => createCustomerApiClient('https://user:secret@api.alonoon.ir')).toThrow()
-    expect(() => createCustomerApiClient('https://api.alonoon.ir/v1')).toThrow('path')
-    expect(() => createCustomerApiClient('https://api.alonoon.ir?tenant=other')).toThrow()
+    expect(() => createCustomerApiClient('https://user:secret@api.alonon.ir')).toThrow()
+    expect(() => createCustomerApiClient('https://api.alonon.ir/v1')).toThrow('path')
+    expect(() => createCustomerApiClient('https://api.alonon.ir?tenant=other')).toThrow()
   })
 
   it('fails closed when server-side logout cannot be confirmed', async () => {
@@ -110,14 +110,14 @@ describe('customer API client', () => {
         503,
       ),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(client.logout()).rejects.toMatchObject({
       code: 'SERVICE_UNAVAILABLE',
       status: 503,
     })
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.alonoon.ir/api/v1/auth/session',
+      'https://api.alonon.ir/api/v1/auth/session',
       expect.objectContaining({ credentials: 'include', method: 'DELETE' }),
     )
   })
@@ -139,7 +139,7 @@ describe('customer API client', () => {
         meta,
       }),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     await client.setCartItem('55555555-5555-4555-8555-555555555555', {
       cityId: '22222222-2222-4222-8222-222222222222',
@@ -149,7 +149,7 @@ describe('customer API client', () => {
 
     const call = fetchMock.mock.calls[0]
     expect(call?.[0]).toBe(
-      'https://api.alonoon.ir/api/v1/cart/items/55555555-5555-4555-8555-555555555555',
+      'https://api.alonon.ir/api/v1/cart/items/55555555-5555-4555-8555-555555555555',
     )
     expect(call?.[1]).toMatchObject({ method: 'PUT', credentials: 'include' })
     expect(call?.[1]?.body).not.toContain('price')
@@ -199,7 +199,7 @@ describe('customer API client', () => {
         meta,
       }),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(
       client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001'),
@@ -226,7 +226,7 @@ describe('customer API client', () => {
    */
   it('carries the checkout choices, and omits the ones not made', async () => {
     const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse({}, 500))
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(
       client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001', {
@@ -241,7 +241,7 @@ describe('customer API client', () => {
 
   it('drops an empty discount code rather than sending a blank one', async () => {
     const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse({}, 500))
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(
       client.createQuote('77777777-7777-4777-8777-777777777777', 3, 'mobile-quote-command-0001', {
@@ -279,7 +279,7 @@ describe('customer API client', () => {
         meta,
       }),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
     await client.createOrder('22222222-2222-4222-8222-222222222222', 'mobile-order-command-0001')
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
       JSON.stringify({
@@ -311,7 +311,7 @@ describe('customer API client', () => {
         201,
       ),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     const payment = await client.startPayment(
       '66666666-6666-4666-8666-666666666666',
@@ -346,7 +346,7 @@ describe('customer API client', () => {
     const fetchMock = vi
       .fn<CustomerFetch>()
       .mockResolvedValue(jsonResponse({ success: true, data: accepted, meta }, 201))
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
     const result = await client.initializePayment(
       '55555555-5555-4555-8555-555555555555',
       'mobile-payment-0000000001',
@@ -369,7 +369,7 @@ describe('customer API client', () => {
       ),
     )
     await expect(
-      createCustomerApiClient('https://api.alonoon.ir', insecure).initializePayment(
+      createCustomerApiClient('https://api.alonon.ir', insecure).initializePayment(
         '55555555-5555-4555-8555-555555555555',
         'mobile-payment-0000000001',
       ),
@@ -394,12 +394,12 @@ describe('customer API client', () => {
         meta,
       }),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
     const payment = await client.readPayment('55555555-5555-4555-8555-555555555555')
 
     expect(payment.state).toBe('CAPTURED')
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      'https://api.alonoon.ir/api/v1/payments/55555555-5555-4555-8555-555555555555',
+      'https://api.alonon.ir/api/v1/payments/55555555-5555-4555-8555-555555555555',
     )
   })
 
@@ -417,13 +417,13 @@ describe('customer API client', () => {
         meta,
       }),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     const started = await client.startWalletTopUp('500000', 'mobile-top-up-000001')
 
     expect(started.paymentId).toBe('55555555-5555-4555-8555-555555555555')
     const request = fetchMock.mock.calls[0]?.[1]
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.alonoon.ir/api/v1/wallet/top-ups')
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.alonon.ir/api/v1/wallet/top-ups')
     expect(JSON.parse(String(request?.body))).toEqual({
       amount: '500000',
       idempotencyKey: 'mobile-top-up-000001',
@@ -449,7 +449,7 @@ describe('customer API client', () => {
         422,
       ),
     )
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     const error = await client
       .openWalletTransfer({
@@ -485,7 +485,7 @@ describe('customer API client', () => {
     const fetchMock = vi
       .fn<CustomerFetch>()
       .mockImplementation(async () => jsonResponse({ success: true, data: payment, meta }))
-    const client = createCustomerApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir', fetchMock)
 
     await client.startPayment(payment.orderId, 'mobile-payment-000001')
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty('source')
@@ -520,7 +520,7 @@ describe('browsing before sign-in', () => {
 
   it('asks for a city alone when there is no zone yet', async () => {
     const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse(catalogPage([])))
-    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir/', fetchMock)
 
     await client.listCatalog({ cityId: '55555555-5555-4555-8555-555555555555' })
 
@@ -533,7 +533,7 @@ describe('browsing before sign-in', () => {
 
   it('narrows to the zone once a doorstep has produced one', async () => {
     const fetchMock = vi.fn<CustomerFetch>().mockResolvedValue(jsonResponse(catalogPage([])))
-    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir/', fetchMock)
 
     await client.listCatalog({
       cityId: '55555555-5555-4555-8555-555555555555',
@@ -559,7 +559,7 @@ describe('browsing before sign-in', () => {
       .mockResolvedValue(
         jsonResponse({ success: true, data: { available: true, candidates: [] }, meta }),
       )
-    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir/', fetchMock)
 
     return client
       .searchPlaces({ term: 'مدرس', cityId: '55555555-5555-4555-8555-555555555555' })
@@ -576,7 +576,7 @@ describe('browsing before sign-in', () => {
       .mockResolvedValue(
         jsonResponse({ success: true, data: { available: true, candidates: [] }, meta }),
       )
-    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir/', fetchMock)
 
     await client.searchPlaces({ term: 'مدرس' })
 
@@ -594,7 +594,7 @@ describe('browsing before sign-in', () => {
       .mockResolvedValue(
         jsonResponse({ success: true, data: { available: false, candidates: [] }, meta }),
       )
-    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+    const client = createCustomerApiClient('https://api.alonon.ir/', fetchMock)
 
     await expect(client.searchPlaces({ term: 'مدرس' })).resolves.toEqual({
       available: false,

@@ -9,7 +9,7 @@ import type { PaymentProviderService } from './modules/payment-provider'
 import type { PaymentSettlementService } from './modules/payment-settlement'
 
 const tenantId = '00000000-0000-4000-8000-000000000001'
-const resultRedirectUrl = 'https://app.alonoon.ir/payments/result'
+const resultRedirectUrl = 'https://app.alonon.ir/payments/result'
 
 function authFixture(resolvesTenant = true): AuthDependencies {
   return {

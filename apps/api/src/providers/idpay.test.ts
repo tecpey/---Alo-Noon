@@ -34,7 +34,7 @@ function baseRequest(overrides: Partial<ProviderPaymentRequest> = {}): ProviderP
 }
 
 const adapter = createIdPayAdapter({
-  callbackUrl: 'https://api.alonoon.ir/api/v1/payments/callback',
+  callbackUrl: 'https://api.alonon.ir/api/v1/payments/callback',
 })
 
 afterEach(() => {
@@ -82,7 +82,7 @@ describe('IDPay adapter initialization', () => {
     expect(body).toEqual({
       order_id: 'attempt-1',
       amount: '250000',
-      callback: 'https://api.alonoon.ir/api/v1/payments/callback',
+      callback: 'https://api.alonon.ir/api/v1/payments/callback',
     })
   })
 

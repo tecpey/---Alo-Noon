@@ -75,7 +75,7 @@ function failure(code: number, status = 400) {
 }
 
 const adapter = createZarinpalAdapter({
-  callbackUrl: 'https://api.alonoon.ir/api/v1/payments/callback/zarinpal',
+  callbackUrl: 'https://api.alonon.ir/api/v1/payments/callback/zarinpal',
 })
 
 afterEach(() => {
@@ -119,7 +119,7 @@ describe('Zarinpal adapter initialization', () => {
       merchant_id: 'merchant-uuid',
       amount: 250_000,
       currency: 'IRR',
-      callback_url: 'https://api.alonoon.ir/api/v1/payments/callback/zarinpal',
+      callback_url: 'https://api.alonon.ir/api/v1/payments/callback/zarinpal',
       description: 'پرداخت سفارش',
     })
   })

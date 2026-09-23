@@ -35,12 +35,12 @@ describe('courier API client', () => {
     const fetchMock = vi
       .fn<CourierFetch>()
       .mockResolvedValue(jsonResponse({ success: true, data: [task], meta }))
-    const client = createCourierApiClient('https://api.alonoon.ir/', fetchMock)
+    const client = createCourierApiClient('https://api.alonon.ir/', fetchMock)
 
     await client.listDeliveries()
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.alonoon.ir/api/v1/courier/deliveries',
+      'https://api.alonon.ir/api/v1/courier/deliveries',
       expect.objectContaining({ credentials: 'include' }),
     )
     expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty('Authorization')
@@ -57,7 +57,7 @@ describe('courier API client', () => {
         401,
       ),
     )
-    const client = createCourierApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCourierApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(client.getSession()).resolves.toBeNull()
   })
@@ -75,7 +75,7 @@ describe('courier API client', () => {
         403,
       ),
     )
-    const client = createCourierApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCourierApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(client.listDeliveries()).rejects.toMatchObject({
       code: 'NOT_A_COURIER',
@@ -89,7 +89,7 @@ describe('courier API client', () => {
     const fetchMock = vi
       .fn<CourierFetch>()
       .mockImplementation(async () => jsonResponse({ success: true, data: task, meta }))
-    const client = createCourierApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCourierApiClient('https://api.alonon.ir', fetchMock)
 
     await client.report(task.taskId, 'DELIVERED')
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ to: 'DELIVERED' })
@@ -105,12 +105,12 @@ describe('courier API client', () => {
     const fetchMock = vi
       .fn<CourierFetch>()
       .mockResolvedValue(jsonResponse({ success: true, data: task, meta }))
-    const client = createCourierApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCourierApiClient('https://api.alonon.ir', fetchMock)
 
     await client.respond('../../admin/orders', true)
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      'https://api.alonoon.ir/api/v1/courier/deliveries/..%2F..%2Fadmin%2Forders/respond',
+      'https://api.alonon.ir/api/v1/courier/deliveries/..%2F..%2Fadmin%2Forders/respond',
     )
   })
 
@@ -120,7 +120,7 @@ describe('courier API client', () => {
     const fetchMock = vi
       .fn<CourierFetch>()
       .mockResolvedValue(jsonResponse({ success: true, data: [{ taskId: 'nope' }], meta }))
-    const client = createCourierApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCourierApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(client.listDeliveries()).rejects.toBeInstanceOf(CourierApiError)
   })
@@ -135,13 +135,13 @@ describe('courier API client', () => {
           { 'Retry-After': '30' },
         ),
       )
-    const client = createCourierApiClient('https://api.alonoon.ir', fetchMock)
+    const client = createCourierApiClient('https://api.alonon.ir', fetchMock)
 
     await expect(client.listDeliveries()).rejects.toMatchObject({ retryAfterSeconds: 30 })
   })
 
   it('refuses a base URL that could send a session somewhere else', async () => {
-    for (const bad of ['ftp://api.alonoon.ir', 'https://api.alonoon.ir/v1', 'https://a:b@x.ir']) {
+    for (const bad of ['ftp://api.alonon.ir', 'https://api.alonon.ir/v1', 'https://a:b@x.ir']) {
       expect(() => createCourierApiClient(bad)).toThrow()
     }
   })

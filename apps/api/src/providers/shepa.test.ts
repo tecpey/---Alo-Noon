@@ -34,7 +34,7 @@ function baseRequest(overrides: Partial<ProviderPaymentRequest> = {}): ProviderP
 }
 
 const adapter = createShepaAdapter({
-  callbackUrl: 'https://api.alonoon.ir/api/v1/payments/callback',
+  callbackUrl: 'https://api.alonon.ir/api/v1/payments/callback',
 })
 
 afterEach(() => {
@@ -76,7 +76,7 @@ describe('Shepa adapter initialization', () => {
     const body = new URLSearchParams(init.body as string)
     expect(body.get('api')).toBe('test-api-key')
     expect(body.get('amount')).toBe('250000')
-    expect(body.get('callback')).toBe('https://api.alonoon.ir/api/v1/payments/callback')
+    expect(body.get('callback')).toBe('https://api.alonon.ir/api/v1/payments/callback')
   })
 
   it('uses the production base URL when the configuration environment is PRODUCTION', async () => {

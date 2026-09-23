@@ -34,7 +34,7 @@ function baseRequest(overrides: Partial<ProviderPaymentRequest> = {}): ProviderP
 }
 
 const adapter = createNextPayAdapter({
-  callbackUrl: 'https://api.alonoon.ir/api/v1/payments/callback',
+  callbackUrl: 'https://api.alonon.ir/api/v1/payments/callback',
 })
 
 afterEach(() => {
@@ -76,7 +76,7 @@ describe('NextPay adapter initialization', () => {
     expect(body.get('api_key')).toBe('test-api-key')
     expect(body.get('order_id')).toBe('attempt-1')
     expect(body.get('amount')).toBe('25000')
-    expect(body.get('callback_uri')).toBe('https://api.alonoon.ir/api/v1/payments/callback')
+    expect(body.get('callback_uri')).toBe('https://api.alonon.ir/api/v1/payments/callback')
   })
 
   it('classifies an incorrect API key as a permanent failure', async () => {

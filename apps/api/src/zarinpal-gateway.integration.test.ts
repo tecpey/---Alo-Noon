@@ -47,7 +47,7 @@ const prisma = new PrismaClient()
 
 const AMOUNT = 2_950_000n
 const MERCHANT_ID = '00000000-0000-0000-0000-000000000000'
-const RESULT_REDIRECT = 'https://alonoon.ir/payment/result'
+const RESULT_REDIRECT = 'https://alonon.ir/payment/result'
 
 afterAll(async () => prisma.$disconnect())
 

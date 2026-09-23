@@ -65,14 +65,14 @@ function stubGateway(status: number, body: unknown) {
   return fetchMock
 }
 
-const idpay = createIdPayAdapter({ callbackUrl: 'https://alonoon.ir/cb/idpay' })
-const nextpay = createNextPayAdapter({ callbackUrl: 'https://alonoon.ir/cb/nextpay' })
-const shepa = createShepaAdapter({ callbackUrl: 'https://alonoon.ir/cb/shepa' })
+const idpay = createIdPayAdapter({ callbackUrl: 'https://alonon.ir/cb/idpay' })
+const nextpay = createNextPayAdapter({ callbackUrl: 'https://alonon.ir/cb/nextpay' })
+const shepa = createShepaAdapter({ callbackUrl: 'https://alonon.ir/cb/shepa' })
 // Zarinpal's and Zibal's own settlement behaviour is covered in their own test
 // files; they appear here so the capability check below stays a check on *every*
 // gateway.
-const zarinpal = createZarinpalAdapter({ callbackUrl: 'https://alonoon.ir/cb/zarinpal' })
-const zibal = createZibalAdapter({ callbackUrl: 'https://alonoon.ir/cb/zibal' })
+const zarinpal = createZarinpalAdapter({ callbackUrl: 'https://alonon.ir/cb/zarinpal' })
+const zibal = createZibalAdapter({ callbackUrl: 'https://alonon.ir/cb/zibal' })
 
 afterEach(() => {
   vi.unstubAllGlobals()
