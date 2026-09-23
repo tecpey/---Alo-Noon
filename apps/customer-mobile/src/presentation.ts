@@ -124,3 +124,69 @@ export function fareLine(estimate: DeliveryEstimate | null | undefined): FareLin
       }
   }
 }
+
+/**
+ * Which of the four steps of buying bread the customer is standing on.
+ *
+ * The app had no answer to this. Its checkout is four stages deep — a basket,
+ * an address, a price, a payment — each appearing as the one before it is
+ * finished, with nothing anywhere saying how many there are or which this is.
+ * The website numbers its steps («۱ نشانی، ۲ هزینه») and the accessibility
+ * audit singled that out as one of the things it got right; the phone did not
+ * have it.
+ *
+ * Worth the space because of the goal-gradient effect: Kivetz, Urminsky and
+ * Zheng (JMR 43(1), 2006) measured that people put in more effort the closer a
+ * goal appears, and accelerate as they approach it. A customer who can see they
+ * are on step three of four is in a different position from one who cannot tell
+ * whether the next tap is the last. NIA's guidance for older readers asks for
+ * the same thing for a plainer reason: a page that says where you are is a page
+ * you can come back to after a phone call.
+ *
+ * Derived from what exists rather than stored, so it cannot disagree with the
+ * screen. A remembered step is a second source of truth about the same thing.
+ */
+export const CHECKOUT_STEPS = ['سبد', 'نشانی', 'هزینه', 'پرداخت'] as const
+
+export type CheckoutStep = 1 | 2 | 3 | 4
+
+export function checkoutStep(state: {
+  itemCount: number
+  addressSelected: boolean
+  quoted: boolean
+  ordered: boolean
+}): CheckoutStep {
+  // Deliberately in this order. An order exists only after a quote, and a quote
+  // only after an address, so the latest true thing is the step they are on —
+  // and an empty basket is step one however much else happens to be set, since
+  // there is nothing to buy.
+  if (state.itemCount === 0) return 1
+  if (state.ordered) return 4
+  if (state.quoted) return 4
+  if (state.addressSelected) return 3
+  return 2
+}
+
+/**
+ * The one action this step is waiting for, for the bar pinned above the tabs.
+ *
+ * Hoober's 1,333 observations put 49% of phone use one-handed and 75% of it
+ * thumb-driven, and the top of a modern phone is out of a thumb's reach. Until
+ * now the action that moves this purchase forward sat wherever the page had
+ * scrolled to — sometimes under the thumb, sometimes two flicks above it,
+ * never predictably. Null when the step is not waiting on a tap.
+ */
+export function checkoutAction(step: CheckoutStep): string | null {
+  switch (step) {
+    case 1:
+      return null
+    case 2:
+      // The address is chosen on the account tab, so this is a signpost rather
+      // than the action itself — which is why it reads as a direction.
+      return 'انتخاب نشانی تحویل'
+    case 3:
+      return 'دریافت قیمت نهایی'
+    case 4:
+      return null
+  }
+}

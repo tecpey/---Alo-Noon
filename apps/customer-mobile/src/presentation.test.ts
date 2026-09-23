@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { DeliveryEstimate } from '@alo-noon/contracts'
 
 import {
+  CHECKOUT_STEPS,
+  checkoutAction,
+  checkoutStep,
   fareLine,
   formatMoney,
   normalizeIranianMobile,
@@ -99,5 +102,51 @@ describe('the fare line', () => {
         fareLine(estimate({ basis, freeOver: { amount: '800000', currency: 'IRR' } }))!.freeOver,
       ).toContain('رایگان')
     }
+  })
+})
+
+/**
+ * Where the customer is in the four steps of buying bread.
+ *
+ * Derived from what exists, never stored — a remembered step is a second source
+ * of truth about the same thing, and the two drift the first time a basket is
+ * emptied from another screen. These assert that derivation, including the
+ * cases that only happen when somebody backtracks.
+ */
+describe('the checkout step', () => {
+  const at = (overrides: Partial<Parameters<typeof checkoutStep>[0]> = {}) =>
+    checkoutStep({
+      itemCount: 1,
+      addressSelected: false,
+      quoted: false,
+      ordered: false,
+      ...overrides,
+    })
+
+  it('has four steps, which is what the rail draws', () => {
+    expect(CHECKOUT_STEPS).toHaveLength(4)
+  })
+
+  it('walks forward as each thing becomes true', () => {
+    expect(at({ itemCount: 0 })).toBe(1)
+    expect(at()).toBe(2)
+    expect(at({ addressSelected: true })).toBe(3)
+    expect(at({ addressSelected: true, quoted: true })).toBe(4)
+    expect(at({ addressSelected: true, quoted: true, ordered: true })).toBe(4)
+  })
+
+  it('goes back to the basket when the basket is emptied, whatever else is set', () => {
+    // Reachable: remove the last item from the cart after pricing it. Without
+    // this the rail would claim step four over an empty basket.
+    expect(at({ itemCount: 0, addressSelected: true, quoted: true, ordered: true })).toBe(1)
+  })
+
+  it('names an action only on the steps that are waiting for a tap', () => {
+    // One and four are not: the first is waiting for shopping and the last for
+    // a payment method, which is a choice rather than a single button.
+    expect(checkoutAction(1)).toBeNull()
+    expect(checkoutAction(4)).toBeNull()
+    expect(checkoutAction(2)).toBeTruthy()
+    expect(checkoutAction(3)).toBeTruthy()
   })
 })

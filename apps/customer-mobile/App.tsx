@@ -70,6 +70,9 @@ import { OrderDetailScreen, OrdersScreen } from './src/screens/orders'
 import { TabBar, type Tab } from './src/screens/tabs'
 import { WalletScreen, type WalletTransferStage } from './src/screens/wallet'
 import {
+  CHECKOUT_STEPS,
+  checkoutAction,
+  checkoutStep,
   fareLine,
   formatMoney,
   normalizeIranianMobile,
@@ -1215,23 +1218,64 @@ export default function App() {
     return tone === 'live' || tone === 'waiting'
   }).length
 
+  /*
+    The step of the purchase, and the one tap it is waiting for — pinned above
+    the tabs rather than left wherever the page happens to have scrolled to.
+
+    Hoober's 1,333 observations put 49% of phone use one-handed and 75% of it
+    thumb-driven, and the top of a modern phone is out of a thumb's reach.
+    Until now the button that moves this purchase forward lived inside a long
+    scroll: sometimes under the thumb, sometimes two flicks above it, never in
+    the same place twice. Pinning it puts it in the one region every grip can
+    reach, and puts it in the *same* region every time, which is the half of
+    the finding that matters for somebody who is not confident with a phone.
+
+    Only on the shop tab, and only while the purchase is actually waiting for a
+    tap. Step one is waiting for shopping and step four for a choice between
+    two ways to pay, which is not one button — a bar that appeared there would
+    be a control with nothing to do, on the screen where money moves.
+  */
+  const pinnedStep = cart
+    ? checkoutStep({
+        itemCount: cart.items.length,
+        addressSelected: Boolean(selectedAddressId),
+        quoted: quote !== null,
+        ordered: order !== null,
+      })
+    : null
+  const pinnedLabel = pinnedStep === null ? null : checkoutAction(pinnedStep)
+
   return (
     <Shell
       footer={
         // Only once there is somewhere to go. During the funnel the tabs would
         // lead to two empty screens and one the customer has not reached yet.
         screen === 'catalog' ? (
-          <TabBar
-            active={tab}
-            liveOrderCount={liveOrderCount}
-            onChange={(next) => {
-              setMessage(undefined)
-              setOpenOrderId(undefined)
-              setTab(next)
-              if (next === 'orders') void loadOrders()
-              if (next === 'wallet') void loadWallet()
-            }}
-          />
+          <>
+            {tab === 'shop' && pinnedLabel && pinnedStep !== null && (
+              <View style={styles.pinnedBar}>
+                <PrimaryButton
+                  label={pinnedLabel}
+                  busy={busy}
+                  // Step two sends them to where addresses live; step three is
+                  // the quote itself. Both are the same tap from the customer's
+                  // side: "get me to the next thing".
+                  onPress={() => (pinnedStep === 2 ? setTab('account') : void createQuote())}
+                />
+              </View>
+            )}
+            <TabBar
+              active={tab}
+              liveOrderCount={liveOrderCount}
+              onChange={(next) => {
+                setMessage(undefined)
+                setOpenOrderId(undefined)
+                setTab(next)
+                if (next === 'orders') void loadOrders()
+                if (next === 'wallet') void loadWallet()
+              }}
+            />
+          </>
         ) : undefined
       }
     >
@@ -1742,6 +1786,42 @@ function AuthCard({
   )
 }
 
+/**
+ * The four steps of buying bread, and which one this is.
+ *
+ * A rail rather than a percentage: «۷۵٪» tells a customer nothing about whether
+ * they are about to be asked for money, and four named stops tell them exactly.
+ * The same shape the website's order tracking uses, for the same reason.
+ *
+ * `accessibilityLabel` carries the whole thing in one sentence, because a
+ * screen reader walking four unlabelled dots reports four dots.
+ */
+function CheckoutRail({ step }: { step: 1 | 2 | 3 | 4 }) {
+  return (
+    <View
+      style={styles.rail}
+      accessibilityRole="progressbar"
+      accessibilityLabel={`گام ${step.toLocaleString('fa-IR')} از ${CHECKOUT_STEPS.length.toLocaleString('fa-IR')}: ${CHECKOUT_STEPS[step - 1]}`}
+    >
+      {CHECKOUT_STEPS.map((label, index) => {
+        const position = index + 1
+        const done = position < step
+        const here = position === step
+        return (
+          <View key={label} style={styles.railStep}>
+            <View style={[styles.railDot, (done || here) && styles.railDotReached]}>
+              <Text style={[styles.railDotText, (done || here) && styles.railDotTextReached]}>
+                {position.toLocaleString('fa-IR')}
+              </Text>
+            </View>
+            <Text style={[styles.railLabel, here && styles.railLabelHere]}>{label}</Text>
+          </View>
+        )
+      })}
+    </View>
+  )
+}
+
 function PrimaryButton({
   label,
   busy,
@@ -1944,12 +2024,20 @@ function CartCard({
     /^\d+$/.test(order.total.amount) &&
     BigInt(walletBalance) >= BigInt(order.total.amount)
 
+  const step = checkoutStep({
+    itemCount: cart.items.length,
+    addressSelected,
+    quoted: quote !== null,
+    ordered: order !== null,
+  })
+
   return (
     <View style={styles.cartCard}>
       <View style={styles.cartTitleRow}>
         <Text style={styles.cartVersion}>نسخه {cart.version.toLocaleString('fa-IR')}</Text>
         <Text style={styles.cartTitle}>سبد خرید سروری</Text>
       </View>
+      <CheckoutRail step={step} />
       {cart.items.length === 0 ? (
         <Text style={styles.emptyText}>سبد خرید خالی است.</Text>
       ) : (
@@ -2370,6 +2458,70 @@ const styles = StyleSheet.create({
     not an offer competing with the bread. The free-delivery line is the one
     exception, because that one *is* an offer.
   */
+  /*
+    The four-step rail. `row-reverse` because the steps run the way the page
+    reads, which here is right to left — a left-to-right rail in a Persian
+    interface counts backwards.
+  */
+  /*
+    The pinned action bar, directly above the tab bar.
+
+    It takes the tab bar's own paper and border so the two read as one pinned
+    region rather than as a strip floating over the shelf. No bottom inset here
+    — the tab bar below it carries the home-indicator room for both.
+  */
+  pinnedBar: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral[200],
+    backgroundColor: surface.card,
+  },
+  rail: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  railStep: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  railDot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.neutral[300],
+    backgroundColor: colors.neutral[50],
+  },
+  railDotReached: {
+    borderColor: ink.action,
+    backgroundColor: ink.action,
+  },
+  railDotText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 13,
+    color: ink.muted,
+  },
+  railDotTextReached: {
+    color: ink.onAction,
+  },
+  railLabel: {
+    fontFamily: fontFamily.regular,
+    fontSize: 13,
+    color: ink.muted,
+    textAlign: 'center',
+  },
+  /* The step they are on is the only one in full ink. Weight as well as colour,
+     because colour alone is the distinction a colour-blind reader misses. */
+  railLabelHere: {
+    fontFamily: fontFamily.bold,
+    color: ink.strong,
+  },
   fareNote: {
     gap: 3,
     padding: 12,
