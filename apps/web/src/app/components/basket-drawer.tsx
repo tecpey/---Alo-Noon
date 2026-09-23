@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react'
 
 import { BreadPlaceholderArt, EmptyBasketArt } from './brand-art'
 import { CheckIcon, ChevronIcon, PlusIcon } from './icons'
+import { fareLine } from '../../lib/fare-line'
 import { useStorefront } from './storefront-state'
 import { formatToman, sumRial, toPersianDigits } from '../../lib/persian'
 
@@ -26,7 +27,18 @@ import { formatToman, sumRial, toPersianDigits } from '../../lib/persian'
  * the control that opened it.
  */
 export function BasketDrawer() {
-  const { lines, catalog, add, remove, saving, error, drawerOpen, closeDrawer } = useStorefront()
+  const {
+    lines,
+    catalog,
+    add,
+    remove,
+    saving,
+    error,
+    drawerOpen,
+    closeDrawer,
+    fare: estimate,
+  } = useStorefront()
+  const fare = fareLine(estimate)
   const panel = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -151,19 +163,31 @@ export function BasketDrawer() {
                 <strong>{formatToman(subtotal)}</strong>
               </div>
               {/*
-                It says "ادامهٔ سفارش" rather than "پرداخت" because the fare is
-                not known yet: it is measured to an address the customer has not
-                chosen. Naming a payment before a total exists would be
-                promising a number this drawer cannot show.
+                The fare, at the moment somebody decides whether to continue.
 
-                Checkout sends a signed-out visitor through sign-in and back,
-                so this is one link for both cases rather than two buttons that
-                differ by a state the drawer would have to guess at.
+                This line used to read «کرایه در مرحلهٔ بعد ... محاسبه می‌شود» —
+                a promise that a cost exists, with no number, on the last screen
+                before the customer commits. Baymard's recommendation is
+                specifically the cart rather than the final click, and the shop
+                has known its own tariff since the first screen.
+
+                The wording is shared with the shelf so the two cannot make
+                different promises about one number. The old sentence survives
+                as the fallback, which is the honest thing to say when no tariff
+                is published for this scope.
               */}
               <p className="drawer__note">
                 <CheckIcon width={16} height={16} />
-                کرایه در مرحلهٔ بعد و بر اساس مسیر واقعی محاسبه می‌شود.
+                {fare ? (
+                  <span>
+                    {fare.text}
+                    {fare.note ? ` — ${fare.note}` : ''}
+                  </span>
+                ) : (
+                  <span>کرایه در مرحلهٔ بعد و بر اساس مسیر واقعی محاسبه می‌شود.</span>
+                )}
               </p>
+              {fare?.freeOver && <p className="drawer__free">{fare.freeOver}</p>}
               <Link className="an-button drawer__cta" href="/checkout">
                 ادامهٔ سفارش
                 <ChevronIcon width={18} height={18} />

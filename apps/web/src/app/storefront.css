@@ -459,6 +459,47 @@
  * customer came to order bread, and a hero tall enough to be a poster puts the
  * one button that starts an order below the fold.
  */
+/* --------------------------------------------------------------- the fare */
+
+/*
+  What delivery costs, above the first loaf.
+
+  Quiet on purpose: it is a fact the customer needs in order to decide, not an
+  offer competing with the bread. The one exception is the free-delivery line,
+  which is an offer and is dressed as one.
+*/
+.fare-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin: 0 1rem 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface-card);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+}
+.fare-note__glyph {
+  flex: none;
+  margin-block-start: 0.1rem;
+  color: var(--ink-action);
+}
+.fare-note__text {
+  color: var(--ink-strong);
+  font-size: 1rem;
+  font-weight: 700;
+}
+.fare-note__qualifier {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+.fare-note__free {
+  margin-block-start: 0.2rem;
+  color: var(--ink-action);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 /* ------------------------------------------------------- the last order */
 
 /*
@@ -1098,6 +1139,22 @@
   inset-block-start: 0.5rem;
   inset-inline-start: 0.5rem;
   z-index: 1;
+  /*
+    A dead spot, found by hit-testing rather than by reading.
+
+    The card's title link stretches over the whole card through an `::after`,
+    so a tap anywhere on it opens the bread — except here, where this badge sat
+    on top and swallowed the tap into a `<span>` with nothing behind it. One
+    corner of every card in the shop did nothing when pressed, which for a
+    customer who is already unsure is indistinguishable from the shop being
+    broken.
+
+    It is decoration and says «تازه از تنور»; there is nothing to press. Taps
+    fall through to the link now. The add button keeps its own `z-index: 2` and
+    its own pointer events, so the one control on this card that *is* a control
+    is unaffected.
+  */
+  pointer-events: none;
   padding: 0.25rem 0.6rem;
   border-radius: var(--radius-full);
   background: var(--ink-action);
@@ -1558,7 +1615,10 @@
 }
 .drawer__note {
   display: flex;
-  align-items: center;
+  /* `flex-start`, not `center`: this line carries a real fare now and can run
+     to two lines on a narrow phone, and a centred glyph beside two lines of
+     text floats in the middle of neither. */
+  align-items: flex-start;
   gap: 0.4rem;
   margin-block-end: 0.9rem;
   color: var(--ink-muted);
@@ -1567,7 +1627,17 @@
 }
 .drawer__note svg {
   flex: none;
+  margin-block-start: 0.2rem;
   color: var(--success);
+}
+/* Free delivery is the strongest sentence a basket can carry, so it is the one
+   thing in this footer allowed to use the action colour. */
+.drawer__free {
+  margin-block-end: 0.9rem;
+  color: var(--ink-action);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.8;
 }
 .drawer__cta {
   width: 100%;

@@ -2,12 +2,19 @@ import 'server-only'
 
 import { cookies } from 'next/headers'
 
-import type { ActiveCitySummary, ProductDetail } from '@alo-noon/contracts'
+import type { ActiveCitySummary, DeliveryEstimate, ProductDetail } from '@alo-noon/contracts'
 
 import { linesFromCart } from './basket-lines'
 import { buildCatalogView, type CatalogView } from './catalog-view'
 import { SESSION_COOKIE } from './api-core'
-import { listCities, listOrders, listProducts, readCart, readProduct } from './shop-api'
+import {
+  deliveryEstimate,
+  listCities,
+  listOrders,
+  listProducts,
+  readCart,
+  readProduct,
+} from './shop-api'
 import { CITY_COOKIE, ZONE_COOKIE } from './shop-cookies'
 
 /**
@@ -99,6 +106,12 @@ export type StorefrontData =
        */
       readonly cities: readonly ActiveCitySummary[]
       readonly catalog: CatalogView
+      /**
+       * What delivery costs, said on the shelf rather than after sign-in, an
+       * address and a delivery window. Null when no tariff is published for
+       * this scope, which renders as no fare line.
+       */
+      readonly fare: DeliveryEstimate | null
     }
   /** Cities loaded, but this visitor has to pick one before there is a catalog. */
   | { readonly state: 'choose-city'; readonly cities: readonly ActiveCitySummary[] }
@@ -146,10 +159,16 @@ export async function loadStorefront(): Promise<StorefrontData> {
   const choice = await resolveCity()
   if (choice.state !== 'ready') return choice
 
-  const products = await listProducts(
-    choice.city.id,
-    choice.zoneId ? { operationalZoneId: choice.zoneId } : {},
-  )
+  // Together, because the fare does not depend on the shelf and the shelf must
+  // not wait on the fare. A tariff lookup that is slow or unhappy costs a line
+  // of text; it may never cost the bread.
+  const [products, fare] = await Promise.all([
+    listProducts(choice.city.id, choice.zoneId ? { operationalZoneId: choice.zoneId } : {}),
+    deliveryEstimate({
+      cityId: choice.city.id,
+      ...(choice.zoneId && { operationalZoneId: choice.zoneId }),
+    }),
+  ])
   if (!products.ok) return { state: 'unavailable', message: products.error.message }
 
   return {
@@ -157,6 +176,7 @@ export async function loadStorefront(): Promise<StorefrontData> {
     city: choice.city,
     cities: choice.cities,
     catalog: buildCatalogView(products.data, choice.city.id),
+    fare: fare.ok ? fare.data.estimate : null,
   }
 }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   calculateDeliveryDistanceMeters,
   calculateDeliveryFee,
+  estimateDeliveryFee,
   selectDeliveryPricingRule,
   type DeliveryPricingRuleCandidate,
 } from './delivery-pricing'
@@ -145,5 +146,127 @@ describe('choosing a tariff for the vehicle the order needs', () => {
     // Every caller that predates the vehicle was pricing a motorcycle, so the
     // default keeps them correct rather than merely compiling.
     expect(selectDeliveryPricingRule([motorcycleCity, carCity], 'zone-a').id).toBe('moto-city')
+  })
+})
+
+/**
+ * The fare a customer is shown before they have given an address.
+ *
+ * Every assertion here is about the same thing: whether the number on the shelf
+ * is still true at the payment button. A late surprise is the largest fixable
+ * cause of abandonment Baymard measures, and an early number that under-quotes
+ * produces exactly that surprise — politely, and with the shop's own words
+ * behind it, which is worse than saying nothing.
+ */
+describe('the fare shown beside the bread', () => {
+  const zone = '9d0b2b7a-0000-4000-8000-000000000001'
+
+  it('says nothing at all when no tariff is published', () => {
+    // A shelf with no fare line is correct. A shelf implying free delivery is
+    // a promise nobody made.
+    expect(estimateDeliveryFee([], { operationalZoneId: zone, providerMayQuote: false })).toBeNull()
+  })
+
+  it('calls a single flat tariff exact, because nothing left can move it', () => {
+    const estimate = estimateDeliveryFee([rule({ baseFeeAmount: 50_000n })], {
+      operationalZoneId: zone,
+      providerMayQuote: false,
+    })
+    expect(estimate).toMatchObject({
+      basis: 'EXACT',
+      amount: 50_000n,
+      vehicleProfile: 'MOTORCYCLE',
+    })
+  })
+
+  it('bills the first kilometre into the floor of a distance tariff', () => {
+    // The bug this test exists for. `calculateDeliveryFee` rounds distance up to
+    // whole kilometres, so any journey longer than nothing costs base + one
+    // band. Quoting the base alone would under-quote *every* order by exactly
+    // one kilometre — a number that is never right rather than usually right.
+    const estimate = estimateDeliveryFee(
+      [rule({ mode: 'DISTANCE_BANDED', baseFeeAmount: 150_000n, perKmFeeAmount: 25_000n })],
+      { operationalZoneId: zone, providerMayQuote: false },
+    )
+    expect(estimate).toMatchObject({ basis: 'FROM', amount: 175_000n })
+    // And it agrees with what the order will actually be charged for the
+    // shortest real journey there is.
+    expect(
+      calculateDeliveryFee(
+        rule({ mode: 'DISTANCE_BANDED', baseFeeAmount: 150_000n, perKmFeeAmount: 25_000n }),
+        500_000n,
+        1,
+      ).deliveryFeeAmount,
+    ).toBe(estimate!.amount)
+  })
+
+  it('quotes the cheapest vehicle, and stops calling it exact once there are two', () => {
+    // The customer picks the vehicle, so the motorcycle is what "from" means —
+    // but the car is reachable, so the number is a floor and not the fare.
+    const estimate = estimateDeliveryFee(
+      [
+        rule({ id: 'moto', baseFeeAmount: 50_000n }),
+        rule({
+          id: 'car',
+          vehicleProfile: 'CAR',
+          mode: 'DISTANCE_BANDED',
+          baseFeeAmount: 150_000n,
+          perKmFeeAmount: 25_000n,
+        }),
+      ],
+      { operationalZoneId: zone, providerMayQuote: false },
+    )
+    expect(estimate).toMatchObject({ basis: 'FROM', amount: 50_000n, vehicleProfile: 'MOTORCYCLE' })
+  })
+
+  it('drops to indicative the moment a provider will be asked', () => {
+    // Tapsi and Snapp compute the fare live, and `chooseFare` prefers their
+    // answer over ours. A tenant on a provider cannot promise our tariff, so
+    // the claim weakens even though the tariff is a single flat rate.
+    const estimate = estimateDeliveryFee([rule({ baseFeeAmount: 50_000n })], {
+      operationalZoneId: zone,
+      providerMayQuote: true,
+    })
+    expect(estimate).toMatchObject({ basis: 'INDICATIVE', amount: 50_000n })
+  })
+
+  it('prefers a zone tariff over the city one, per vehicle', () => {
+    const estimate = estimateDeliveryFee(
+      [
+        rule({ id: 'city', baseFeeAmount: 90_000n }),
+        rule({ id: 'zone', operationalZoneId: zone, baseFeeAmount: 50_000n }),
+      ],
+      { operationalZoneId: zone, providerMayQuote: false },
+    )
+    expect(estimate).toMatchObject({ amount: 50_000n, basis: 'EXACT' })
+  })
+
+  it('falls back to the city tariff before a doorstep is known', () => {
+    const estimate = estimateDeliveryFee(
+      [
+        rule({ id: 'city', baseFeeAmount: 90_000n }),
+        rule({ id: 'zone', operationalZoneId: zone, baseFeeAmount: 50_000n }),
+      ],
+      { operationalZoneId: null, providerMayQuote: false },
+    )
+    expect(estimate).toMatchObject({ amount: 90_000n })
+  })
+
+  it('carries the free-delivery threshold, which is the strongest line on the shelf', () => {
+    const estimate = estimateDeliveryFee(
+      [rule({ freeDeliveryThresholdAmount: 800_000n, minimumOrderAmount: 200_000n })],
+      { operationalZoneId: zone, providerMayQuote: false },
+    )
+    expect(estimate).toMatchObject({ freeOverAmount: 800_000n, minimumOrderAmount: 200_000n })
+  })
+
+  it('stays quiet rather than taking the shop down over an ambiguous scope', () => {
+    // `selectDeliveryPricingRule` throws on this, and is right to at quote
+    // time. Here the same fault must cost a line of decoration, not the shelf.
+    const estimate = estimateDeliveryFee(
+      [rule({ id: 'a', operationalZoneId: zone }), rule({ id: 'b', operationalZoneId: zone })],
+      { operationalZoneId: zone, providerMayQuote: false },
+    )
+    expect(estimate).toBeNull()
   })
 })

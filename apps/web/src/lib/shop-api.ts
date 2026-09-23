@@ -4,6 +4,7 @@ import type {
   ActiveCitySummary,
   AddressSummary,
   CartSummary,
+  DeliveryEstimateResult,
   DeliveryWindow,
   Favourite,
   OrderRating,
@@ -51,6 +52,25 @@ import {
 
 export async function listCities(): Promise<ApiResult<ActiveCitySummary[]>> {
   return request<ActiveCitySummary[]>('/api/v1/serviceability/cities', { method: 'GET' })
+}
+
+/**
+ * What delivery costs, before the customer has spent anything on finding out.
+ *
+ * `estimate: null` is an ordinary answer and means no tariff is published for
+ * this scope — the shelf then shows no fare line, which is where this shop
+ * started. The `basis` on a non-null estimate decides the wording and is not
+ * optional: see `deliveryEstimateSchema` in the contracts.
+ */
+export async function deliveryEstimate(input: {
+  cityId: string
+  operationalZoneId?: string
+}): Promise<ApiResult<DeliveryEstimateResult>> {
+  const query = new URLSearchParams({ cityId: input.cityId })
+  if (input.operationalZoneId) query.set('operationalZoneId', input.operationalZoneId)
+  return request<DeliveryEstimateResult>(`/api/v1/delivery/estimate?${query.toString()}`, {
+    method: 'GET',
+  })
 }
 
 /**

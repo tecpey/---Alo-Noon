@@ -23,6 +23,7 @@ import type {
   OrderSummary,
   PaymentExecutionSummary,
   PaymentSummary,
+  DeliveryEstimate,
   PlaceCandidate,
   ProductSummary,
   QuoteSummary,
@@ -69,6 +70,7 @@ import { OrderDetailScreen, OrdersScreen } from './src/screens/orders'
 import { TabBar, type Tab } from './src/screens/tabs'
 import { WalletScreen, type WalletTransferStage } from './src/screens/wallet'
 import {
+  fareLine,
   formatMoney,
   normalizeIranianMobile,
   normalizeOtpCode,
@@ -150,6 +152,12 @@ export default function App() {
    * prompt is refused.
    */
   const [typedAddressOpen, setTypedAddressOpen] = useState(false)
+  /**
+   * What delivery costs, for saying so on the shelf rather than after sign-in,
+   * an address and a delivery window. Undefined until the shelf opens, and null
+   * when no tariff is published — both render as no fare line.
+   */
+  const [fare, setFare] = useState<DeliveryEstimate | null>()
   const [placeTerm, setPlaceTerm] = useState('')
   /**
    * Undefined is "not searched yet"; an empty array is "searched, and the map
@@ -484,10 +492,16 @@ export default function App() {
     setPlaceResults(undefined)
     setPlaceTerm('')
     setScreen('catalog')
-    // Not awaited. The shelf is the thing the customer asked for; the repeat
-    // card is an offer on top of it, and holding the shop closed until the
-    // order history answers would trade the whole page for a shortcut.
+    // Neither is awaited. The shelf is the thing the customer asked for; the
+    // repeat card and the fare line are offers on top of it, and holding the
+    // shop closed until either answers would trade the whole page for a
+    // decoration.
     void loadOrders()
+    void api
+      .deliveryEstimate({ cityId, operationalZoneId: decision.operationalZoneId })
+      .then((result) => setFare(result.estimate))
+      // A tariff that cannot be read costs a line of text, never the shelf.
+      .catch(() => setFare(null))
     // The loaf they reached for before signing in. Added now that there is a
     // session and a zone to add it against, so they arrive at a basket with
     // their bread in it rather than at the shelf they already chose from.
@@ -1149,6 +1163,7 @@ export default function App() {
    * thing that can be stale.
    */
   const lastOrder = orders[0]
+  const fareNote = fareLine(fare)
 
   const handleAuthenticatedError = (error: unknown) => {
     if (error instanceof CustomerApiError && error.status === 401) {
@@ -1471,6 +1486,25 @@ export default function App() {
           <Header session={session} onLogout={logout} />
           <Text style={styles.title}>{customerCopy.title}</Text>
           <Text style={styles.subtitle}>{customerCopy.subtitle}</Text>
+
+          {/*
+            The fare, above everything.
+
+            Extra costs met late are the largest fixable cause of an abandoned
+            basket Baymard measures — 39% of shoppers — and this app knew the
+            tariff from the moment the shelf loaded while saying nothing until
+            three screens later. The wording comes from `fareLine`, which prints
+            the same three sentences the website does, so a customer who checks
+            on their phone and then on the site meets one promise rather than
+            two.
+          */}
+          {fareNote && (
+            <View style={styles.fareNote}>
+              <Text style={styles.fareNoteText}>{fareNote.text}</Text>
+              {fareNote.note && <Text style={styles.fareNoteQualifier}>{fareNote.note}</Text>}
+              {fareNote.freeOver && <Text style={styles.fareNoteFree}>{fareNote.freeOver}</Text>}
+            </View>
+          )}
 
           {/*
             Yesterday's basket, above the shelf.
@@ -2331,6 +2365,38 @@ const styles = StyleSheet.create({
     it reads as the shop remembering something rather than as one more product
     to choose between.
   */
+  /*
+    The fare line. Quiet: it is a fact the customer needs in order to decide,
+    not an offer competing with the bread. The free-delivery line is the one
+    exception, because that one *is* an offer.
+  */
+  fareNote: {
+    gap: 3,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.neutral[200],
+    borderRadius: 14,
+    backgroundColor: colors.neutral[50],
+  },
+  fareNoteText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 15,
+    color: ink.strong,
+    textAlign: 'right',
+  },
+  fareNoteQualifier: {
+    fontFamily: fontFamily.regular,
+    fontSize: 13,
+    lineHeight: 24,
+    color: ink.muted,
+    textAlign: 'right',
+  },
+  fareNoteFree: {
+    fontFamily: fontFamily.bold,
+    fontSize: 14,
+    color: ink.action,
+    textAlign: 'right',
+  },
   againCard: {
     gap: 8,
     padding: 14,

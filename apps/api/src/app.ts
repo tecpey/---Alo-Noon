@@ -14,6 +14,7 @@ import {
   registerDiscoveryRoutes,
   type CatalogRepository,
   type CityRepository,
+  type DeliveryEstimateRepository,
   type ServiceabilityRepository,
 } from './modules/discovery.js'
 import { registerAuthRoutes, type AuthDependencies } from './modules/auth.js'
@@ -104,6 +105,12 @@ export interface AppOptions {
   catalogRepository?: CatalogRepository
   cityRepository?: CityRepository
   serviceabilityRepository?: ServiceabilityRepository
+  /**
+   * The published tariff, for showing the fare beside the bread. Optional
+   * because a deployment without it renders no fare line, which is the
+   * behaviour this application had before the route existed.
+   */
+  deliveryEstimateRepository?: DeliveryEstimateRepository
   auth?: AuthDependencies
   commerceRepository?: CommerceRepository
   addressRepository?: AddressRepository
@@ -306,6 +313,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     cityRepository: options.cityRepository ?? unavailableCityRepository,
     serviceabilityRepository:
       options.serviceabilityRepository ?? unavailableServiceabilityRepository,
+    ...(options.deliveryEstimateRepository && {
+      deliveryEstimateRepository: options.deliveryEstimateRepository,
+    }),
     ...(options.auth && { auth: options.auth }),
   })
   if (options.auth) registerAuthRoutes(app, options.auth)

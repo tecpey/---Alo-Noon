@@ -146,6 +146,119 @@ export function calculateDeliveryFee(
   })
 }
 
+/**
+ * What kind of claim a fare shown before checkout is allowed to make.
+ *
+ * This enum exists because "کرایه از ۵٬۰۰۰ تومان" and "کرایه ۵٬۰۰۰ تومان" are
+ * different promises, and a shop that makes the second one and then charges
+ * more has done the thing this whole feature was meant to prevent. Extra costs
+ * appearing late are the largest *fixable* cause of abandonment Baymard
+ * measures — 39% of shoppers — but the fix is only a fix if the early number
+ * survives contact with the final one.
+ *
+ * - `EXACT` — one flat tariff applies and no provider will be consulted, so
+ *   this is the fare. Nothing about distance or vehicle can move it.
+ * - `FROM` — a floor. Either the tariff charges by distance, or the customer
+ *   has a choice of vehicles and may pick the dearer one. The final fare is
+ *   this or more, never less.
+ * - `INDICATIVE` — a delivery provider will quote at checkout and its answer
+ *   wins, so our own tariff is a guide rather than a bound. This is the honest
+ *   answer for a tenant on Tapsi or Snapp: the fare is computed live, the way
+ *   it is in their own applications, and pretending otherwise on a shelf would
+ *   be inventing a number.
+ */
+export type DeliveryEstimateBasis = 'EXACT' | 'FROM' | 'INDICATIVE'
+
+export interface DeliveryEstimate {
+  basis: DeliveryEstimateBasis
+  /** The number to show, in the smallest unit, before any basket discount. */
+  amount: bigint
+  currency: 'IRR'
+  /** The vehicle the shown amount belongs to — the cheapest one on offer. */
+  vehicleProfile: DeliveryVehicleProfile
+  /** Set when this tariff stops charging above a basket size. */
+  freeOverAmount: bigint | null
+  /** Set when this tariff refuses baskets below a size. */
+  minimumOrderAmount: bigint | null
+}
+
+/**
+ * The cheapest fare this scope can produce, for showing beside the bread.
+ *
+ * Deliberately not `calculateDeliveryFee` with a distance of zero. Zero metres
+ * is not a delivery, and `calculateDeliveryFee` rounds distance up to whole
+ * kilometres — so a distance-banded tariff bills one kilometre for any journey
+ * at all, and its real floor is `base + perKm` rather than `base`. Showing the
+ * base alone would under-quote every single order by exactly one band, which is
+ * the same broken promise as hiding the fee, arrived at politely.
+ *
+ * Returns null when nothing is published for this scope. A shelf with no fare
+ * line is correct then; a shelf claiming free delivery would not be.
+ */
+export function estimateDeliveryFee(
+  rules: readonly DeliveryPricingRuleCandidate[],
+  options: {
+    /** Null before a doorstep is known; city-wide tariffs still apply. */
+    operationalZoneId: string | null
+    /**
+     * Whether a delivery provider is configured, healthy and will be asked.
+     * When it will, its answer replaces ours at checkout — so the claim this
+     * estimate may make drops to `INDICATIVE` whatever the tariffs say.
+     */
+    providerMayQuote: boolean
+  },
+): Readonly<DeliveryEstimate> | null {
+  // The same zone-then-city fallback `selectDeliveryPricingRule` applies, per
+  // vehicle: a zone's own tariff replaces the city-wide one for that vehicle,
+  // and a vehicle with no zone tariff still falls back to the city.
+  const profiles: DeliveryVehicleProfile[] = ['MOTORCYCLE', 'CAR']
+  const applicable: DeliveryPricingRuleCandidate[] = []
+  for (const profile of profiles) {
+    const forVehicle = rules.filter((rule) => rule.vehicleProfile === profile)
+    if (forVehicle.length === 0) continue
+    const zoneRules =
+      options.operationalZoneId === null
+        ? []
+        : forVehicle.filter((rule) => rule.operationalZoneId === options.operationalZoneId)
+    const candidates =
+      zoneRules.length > 0
+        ? zoneRules
+        : forVehicle.filter((rule) => rule.operationalZoneId === null)
+    // An ambiguous scope is a configuration fault that `selectDeliveryPricingRule`
+    // reports loudly at quote time. Here it must not: this is a decoration on a
+    // shelf, and taking the shop down over it would be the worse failure.
+    if (candidates.length === 1) applicable.push(candidates[0]!)
+  }
+  if (applicable.length === 0) return null
+
+  const floors = applicable.map((rule) => ({ rule, floor: tariffFloor(rule) }))
+  const cheapest = floors.reduce((best, entry) => (entry.floor < best.floor ? entry : best))
+
+  const basis: DeliveryEstimateBasis = options.providerMayQuote
+    ? 'INDICATIVE'
+    : // Exact only when nothing left can move it: one tariff, charged flat. A
+      // second vehicle means the customer can choose the dearer one, and a
+      // distance-banded tariff means the road decides.
+      applicable.length === 1 && cheapest.rule.mode === 'FLAT'
+      ? 'EXACT'
+      : 'FROM'
+
+  return Object.freeze({
+    basis,
+    amount: cheapest.floor,
+    currency: cheapest.rule.currency,
+    vehicleProfile: cheapest.rule.vehicleProfile,
+    freeOverAmount: cheapest.rule.freeDeliveryThresholdAmount,
+    minimumOrderAmount: cheapest.rule.minimumOrderAmount,
+  })
+}
+
+/** The least this tariff can charge for a journey longer than nothing. */
+function tariffFloor(rule: DeliveryPricingRuleCandidate): bigint {
+  if (rule.mode === 'FLAT') return rule.baseFeeAmount
+  return rule.baseFeeAmount + (rule.perKmFeeAmount ?? 0n)
+}
+
 function assertCoordinates(value: DeliveryCoordinates): void {
   if (
     !Number.isFinite(value.latitude) ||

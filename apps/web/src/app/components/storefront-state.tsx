@@ -11,6 +11,8 @@ import {
   type ReactNode,
 } from 'react'
 
+import type { DeliveryEstimate } from '@alo-noon/contracts'
+
 import { ALL_CATEGORIES, type ShelfProduct } from '../../lib/catalog-view'
 import { linesFromCart, serializeBasket } from '../../lib/basket-lines'
 import { readStoredBasket, writeStoredBasket } from '../../lib/basket-storage'
@@ -79,6 +81,15 @@ interface StorefrontState {
    * page, saying something untrue.
    */
   readonly cityNameFa: string | null
+  /**
+   * What delivery costs, for the basket to say before the customer commits.
+   *
+   * Here for the same reason the city name is: the drawer is a client
+   * component, and until now it told everybody «کرایه در مرحلهٔ بعد ... محاسبه
+   * می‌شود» — a promise of a cost, with no number, at the exact moment somebody
+   * decides whether to continue.
+   */
+  readonly fare: DeliveryEstimate | null
   readonly cities: readonly CityChoice[]
   readonly cityOpen: boolean
   openCity: () => void
@@ -99,6 +110,7 @@ export function StorefrontProvider({
   serverLines,
   serverVersion,
   cityNameFa = null,
+  fare = null,
   cities = [],
   children,
 }: {
@@ -112,6 +124,8 @@ export function StorefrontProvider({
   serverVersion?: number
   /** The city the catalogue below was priced in, when there is one. */
   cityNameFa?: string | null
+  /** The published fare for this scope, when one is published. */
+  fare?: DeliveryEstimate | null
   /** Every city this shop is open in, so the header can offer a move. */
   cities?: readonly CityChoice[]
   children: ReactNode
@@ -267,6 +281,7 @@ export function StorefrontProvider({
       openDrawer,
       closeDrawer,
       cityNameFa,
+      fare,
       cities,
       cityOpen,
       openCity,
@@ -286,6 +301,7 @@ export function StorefrontProvider({
     openDrawer,
     closeDrawer,
     cityNameFa,
+    fare,
     cities,
     cityOpen,
     openCity,

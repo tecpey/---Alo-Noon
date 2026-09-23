@@ -13,6 +13,7 @@ import {
   reorderEnvelopeSchema,
   paymentEnvelopeSchema,
   paymentExecutionEnvelopeSchema,
+  deliveryEstimateEnvelopeSchema,
   placeSearchEnvelopeSchema,
   pushDeviceEnvelopeSchema,
   serviceabilityEnvelopeSchema,
@@ -28,6 +29,7 @@ import {
   type AddressCreate,
   type AddressSummary,
   type CartSummary,
+  type DeliveryEstimateResult,
   type DeliveryWindow,
   type OtpRequestAccepted,
   type PaymentMethod,
@@ -94,6 +96,17 @@ export interface CustomerApiClient {
    * must not be shown alike.
    */
   searchPlaces(input: { term: string; cityId?: string }): Promise<PlaceSearchResult>
+  /**
+   * What delivery costs, before the customer has spent anything finding out.
+   *
+   * `estimate: null` is an ordinary answer — no tariff published for this
+   * scope — and renders as no fare line. The `basis` on a non-null estimate
+   * decides what the interface may claim and is never optional.
+   */
+  deliveryEstimate(input: {
+    cityId: string
+    operationalZoneId?: string
+  }): Promise<DeliveryEstimateResult>
   /**
    * The shelves of a city, and optionally of one zone inside it.
    *
@@ -305,6 +318,14 @@ export function createCustomerApiClient(
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    deliveryEstimate: async (input) => {
+      const query = new URLSearchParams({ cityId: input.cityId })
+      if (input.operationalZoneId) query.set('operationalZoneId', input.operationalZoneId)
+      return request(
+        `/api/v1/delivery/estimate?${query.toString()}`,
+        deliveryEstimateEnvelopeSchema,
+      )
+    },
     searchPlaces: async (input) => {
       const query = new URLSearchParams({ term: input.term })
       if (input.cityId) query.set('cityId', input.cityId)

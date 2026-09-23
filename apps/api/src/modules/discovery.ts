@@ -4,9 +4,11 @@ import {
   activeCitySummarySchema,
   catalogDetailQuerySchema,
   catalogListQuerySchema,
+  deliveryEstimateQuerySchema,
   productDetailSchema,
   serviceabilityRequestSchema,
   type ActiveCitySummary,
+  type DeliveryEstimateResult,
   type ErrorEnvelope,
   type PaginatedResponse,
   type ProductDetail,
@@ -16,6 +18,7 @@ import {
   type ServiceabilityResponse,
 } from '@alo-noon/contracts'
 import type { Prisma, PrismaClient } from '@alo-noon/database'
+import { estimateDeliveryFee, type DeliveryPricingRuleCandidate } from '@alo-noon/domain'
 
 import { resolveTenantId, type AuthDependencies } from './auth.js'
 
@@ -60,11 +63,81 @@ export interface ServiceabilityRepository {
   listAreas(tenantId: string, cityId: string): Promise<ServiceAreaRecord[]>
 }
 
+/**
+ * What the shelf needs to say what delivery costs, before anybody has typed an
+ * address.
+ *
+ * `providerMayQuote` is the half that is easy to forget and expensive to get
+ * wrong. When a delivery provider is configured, healthy and default, the quote
+ * asks it and prefers its answer over our own tariff — so our tariff stops
+ * being a bound and the shelf may only call its number indicative.
+ */
+export interface DeliveryEstimateRepository {
+  listActiveRules(tenantId: string, cityId: string): Promise<DeliveryPricingRuleCandidate[]>
+  providerWillQuote(tenantId: string): Promise<boolean>
+}
+
 export interface DiscoveryDependencies {
   catalogRepository: CatalogRepository
   cityRepository: CityRepository
   serviceabilityRepository: ServiceabilityRepository
+  /** Optional: a deployment without it simply shows no fare line. */
+  deliveryEstimateRepository?: DeliveryEstimateRepository
   auth?: AuthDependencies
+}
+
+export function createPrismaDeliveryEstimateRepository(
+  prisma: PrismaClient,
+  /** The same environment the fare service runs in, so the two agree. */
+  environment: 'TEST' | 'PRODUCTION',
+): DeliveryEstimateRepository {
+  return {
+    async listActiveRules(tenantId, cityId) {
+      const rules = await withTenant(prisma, tenantId, (transaction) =>
+        transaction.deliveryPricingRule.findMany({
+          where: { tenantId, cityId, isActive: true },
+          select: {
+            id: true,
+            operationalZoneId: true,
+            vehicleProfile: true,
+            version: true,
+            calculationMode: true,
+            baseFeeAmount: true,
+            perKilometerFeeAmount: true,
+            minimumOrderAmount: true,
+            freeDeliveryThreshold: true,
+            currency: true,
+          },
+        }),
+      )
+      return rules.map((rule) => ({
+        id: rule.id,
+        operationalZoneId: rule.operationalZoneId,
+        vehicleProfile: rule.vehicleProfile,
+        version: rule.version,
+        mode: rule.calculationMode,
+        baseFeeAmount: rule.baseFeeAmount,
+        perKmFeeAmount: rule.perKilometerFeeAmount,
+        minimumOrderAmount: rule.minimumOrderAmount,
+        freeDeliveryThresholdAmount: rule.freeDeliveryThreshold,
+        currency: rule.currency,
+      }))
+    },
+    async providerWillQuote(tenantId) {
+      // The same four conditions `offerFromProvider` applies. They are repeated
+      // rather than shared because the fare service's version runs inside a
+      // quote and this one must not: a shelf may not open a transaction that a
+      // customer is not waiting on. If they ever disagree, the shelf over-warns
+      // — which is the safe direction.
+      const configuration = await withTenant(prisma, tenantId, (transaction) =>
+        transaction.deliveryFareProviderConfiguration.findFirst({
+          where: { tenantId, environment, enabled: true, isDefault: true, healthStatus: 'HEALTHY' },
+          select: { id: true },
+        }),
+      )
+      return configuration !== null
+    },
+  }
 }
 
 export function createPrismaCityRepository(prisma: PrismaClient): CityRepository {
@@ -301,6 +374,81 @@ export function registerDiscoveryRoutes(
         .send(
           errorEnvelope('CITY_DISCOVERY_UNAVAILABLE', 'City discovery is temporarily unavailable.'),
         )
+    }
+  })
+
+  /**
+   * What delivery costs, answered before the customer has spent anything.
+   *
+   * This route exists because of a single number: 39% of shoppers abandon a
+   * basket over extra costs they met too late (Baymard). The shop knew its own
+   * tariff the whole time and did not say so until after sign-in, an address
+   * and a delivery window — three screens of effort spent before the price of
+   * the fourth was admitted.
+   *
+   * The answer carries a `basis` as well as an amount, and that is the part
+   * that keeps it honest rather than merely early. A flat zone tariff with no
+   * provider is a fare and is labelled one; a distance tariff is a floor; a
+   * tenant whose provider quotes live gets a guide and a plain statement that
+   * the real number is worked out at checkout. Quoting a bare figure in the
+   * third case would replace a late surprise with an early lie.
+   *
+   * Never fails the page. A missing tariff, an ambiguous scope or an unhappy
+   * database all resolve to `estimate: null`, which the interface renders as no
+   * fare line at all. A shelf without a fare line is the situation we started
+   * from; a shelf that will not load is worse than it.
+   */
+  app.get('/api/v1/delivery/estimate', async (request, reply) => {
+    const parsed = deliveryEstimateQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send(
+          errorEnvelope(
+            'INVALID_DELIVERY_ESTIMATE_QUERY',
+            'Delivery estimate query parameters are invalid.',
+            parsed.error.flatten(),
+          ),
+        )
+    }
+    const tenantId = dependencies.auth ? await resolveTenantId(request, dependencies.auth) : null
+    if (!tenantId) return tenantUnavailable(reply)
+
+    const repository = dependencies.deliveryEstimateRepository
+    const empty: DeliveryEstimateResult = { estimate: null }
+    if (!repository) return { success: true, data: empty, meta: responseMeta() }
+
+    try {
+      const [rules, providerMayQuote] = await Promise.all([
+        repository.listActiveRules(tenantId, parsed.data.cityId),
+        repository.providerWillQuote(tenantId),
+      ])
+      const estimate = estimateDeliveryFee(rules, {
+        operationalZoneId: parsed.data.operationalZoneId ?? null,
+        providerMayQuote,
+      })
+      const data: DeliveryEstimateResult = {
+        estimate: estimate
+          ? {
+              basis: estimate.basis,
+              amount: { amount: estimate.amount.toString(), currency: estimate.currency },
+              vehicleProfile: estimate.vehicleProfile,
+              freeOver:
+                estimate.freeOverAmount === null
+                  ? null
+                  : { amount: estimate.freeOverAmount.toString(), currency: estimate.currency },
+              minimumOrder:
+                estimate.minimumOrderAmount === null
+                  ? null
+                  : { amount: estimate.minimumOrderAmount.toString(), currency: estimate.currency },
+            }
+          : null,
+      }
+      return { success: true, data, meta: responseMeta() }
+    } catch (error) {
+      // Logged, not surfaced. See the note above: this is a line of text.
+      request.log.warn({ err: error }, 'Delivery estimate unavailable')
+      return { success: true, data: empty, meta: responseMeta() }
     }
   })
 

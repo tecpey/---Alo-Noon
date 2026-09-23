@@ -1,6 +1,8 @@
 import Image from 'next/image'
 import Link from 'next/link'
 
+import type { DeliveryEstimate } from '@alo-noon/contracts'
+
 import './storefront.css'
 
 import { ArchTexture } from './components/brand-art'
@@ -26,6 +28,7 @@ import {
   SteamIcon,
   WheatIcon,
 } from './components/icons'
+import { fareLine } from '../lib/fare-line'
 import { toPersianDigits } from '../lib/persian'
 import { enamadSeal } from '../lib/legal-identity'
 import {
@@ -126,6 +129,7 @@ export default async function HomePage() {
       {...(basket.version !== undefined && { serverVersion: basket.version })}
       {...(storefront.state === 'ready' && {
         cityNameFa: storefront.city.nameFa,
+        fare: storefront.fare,
         cities: storefront.cities.map((entry) => ({ id: entry.id, nameFa: entry.nameFa })),
       })}
     >
@@ -358,11 +362,42 @@ function Catalog({ storefront }: { storefront: StorefrontData }) {
 
   return (
     <>
+      {/*
+        The fare, above the first loaf.
+
+        Extra costs met late are the largest fixable cause of an abandoned
+        basket Baymard measures — 39% of shoppers — and this shop knew its own
+        tariff from the first screen while saying nothing about it until after
+        sign-in, an address and a delivery window. Three screens of effort spent
+        before the price of the fourth was admitted.
+
+        The wording comes from `fareLine`, which is shared with the basket so
+        the two cannot promise different things about the same number.
+      */}
+      <FareNote estimate={storefront.fare} />
       <CategoryRail chips={storefront.catalog.chips} />
       {storefront.catalog.shelves.map((shelf) => (
         <Shelf key={shelf.id} shelf={shelf} />
       ))}
     </>
+  )
+}
+
+/** The fare line, or nothing at all when no tariff is published for this scope. */
+function FareNote({ estimate }: { estimate: DeliveryEstimate | null }) {
+  const line = fareLine(estimate)
+  if (!line) return null
+  return (
+    <aside className="fare-note">
+      <span className="fare-note__glyph" aria-hidden="true">
+        <CourierIcon duotone width={20} height={20} />
+      </span>
+      <div>
+        <p className="fare-note__text">{line.text}</p>
+        {line.note && <p className="fare-note__qualifier">{line.note}</p>}
+        {line.freeOver && <p className="fare-note__free">{line.freeOver}</p>}
+      </div>
+    </aside>
   )
 }
 

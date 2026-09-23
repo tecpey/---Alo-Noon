@@ -13,6 +13,7 @@ import {
   type CatalogListInput,
   type CatalogRepository,
   type CityRepository,
+  type DeliveryEstimateRepository,
   type ServiceabilityRepository,
 } from './modules/discovery'
 
@@ -679,5 +680,127 @@ describe('boundary overlap', () => {
         rectangle(52.6, 36.5, 52.7, 36.6),
       ),
     ).toBe(false)
+  })
+})
+
+/**
+ * The fare, said on the shelf.
+ *
+ * The route's whole value is that the number arrives before the customer has
+ * spent any effort, and its whole risk is that an early number the shop cannot
+ * keep is worse than a late one it can. So these test the claim as much as the
+ * arithmetic: what `basis` comes back, and whether the route can ever take the
+ * shop down with it.
+ */
+describe('the delivery fare estimate', () => {
+  const flatZoneRule = {
+    id: 'moto-zone',
+    operationalZoneId: zoneId,
+    vehicleProfile: 'MOTORCYCLE' as const,
+    version: 1,
+    mode: 'FLAT' as const,
+    baseFeeAmount: 50_000n,
+    perKmFeeAmount: null,
+    minimumOrderAmount: null,
+    freeDeliveryThresholdAmount: null,
+    currency: 'IRR' as const,
+  }
+
+  const estimateRepository = (
+    overrides: Partial<DeliveryEstimateRepository> = {},
+  ): DeliveryEstimateRepository => ({
+    listActiveRules: async () => [flatZoneRule],
+    providerWillQuote: async () => false,
+    ...overrides,
+  })
+
+  it('answers with the zone fare, and calls it exact', async () => {
+    const app = await buildApp({
+      auth: discoveryAuth,
+      deliveryEstimateRepository: estimateRepository(),
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/delivery/estimate?cityId=${cityId}&operationalZoneId=${zoneId}`,
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().data.estimate).toEqual({
+      basis: 'EXACT',
+      amount: { amount: '50000', currency: 'IRR' },
+      vehicleProfile: 'MOTORCYCLE',
+      freeOver: null,
+      minimumOrder: null,
+    })
+  })
+
+  it('weakens the claim to indicative when a provider will quote', async () => {
+    // The tariff has not changed — only who gets the last word. Tapsi and Snapp
+    // compute the fare live and `chooseFare` prefers their answer, so the shelf
+    // may show ours as a guide and must not call it the fare.
+    const app = await buildApp({
+      auth: discoveryAuth,
+      deliveryEstimateRepository: estimateRepository({ providerWillQuote: async () => true }),
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/delivery/estimate?cityId=${cityId}&operationalZoneId=${zoneId}`,
+    })
+
+    expect(response.json().data.estimate.basis).toBe('INDICATIVE')
+  })
+
+  it('answers with no fare line rather than failing when the tariff cannot be read', async () => {
+    // A shelf without a fare line is where this product started. A shelf that
+    // will not load because pricing is misconfigured is a worse place.
+    const app = await buildApp({
+      auth: discoveryAuth,
+      deliveryEstimateRepository: estimateRepository({
+        listActiveRules: async () => {
+          throw new Error('postgresql://secret@database/internal')
+        },
+      }),
+    })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/delivery/estimate?cityId=${cityId}`,
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().data).toEqual({ estimate: null })
+    // And the connection string does not travel to the shelf with it.
+    expect(response.body).not.toContain('secret')
+  })
+
+  it('answers empty rather than 404 when the deployment has no tariff repository', async () => {
+    const app = await buildApp({ auth: discoveryAuth })
+    apps.push(app)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/delivery/estimate?cityId=${cityId}`,
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().data).toEqual({ estimate: null })
+  })
+
+  it('refuses a malformed city rather than guessing one', async () => {
+    const app = await buildApp({
+      auth: discoveryAuth,
+      deliveryEstimateRepository: estimateRepository(),
+    })
+    apps.push(app)
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/delivery/estimate?cityId=no' })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error.code).toBe('INVALID_DELIVERY_ESTIMATE_QUERY')
   })
 })

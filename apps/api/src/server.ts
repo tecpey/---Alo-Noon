@@ -18,6 +18,7 @@ import { buildApp } from './app.js'
 import {
   createPrismaCatalogRepository,
   createPrismaCityRepository,
+  createPrismaDeliveryEstimateRepository,
   createPrismaServiceabilityRepository,
 } from './modules/discovery.js'
 import { createPrismaAuthRepository } from './modules/auth.js'
@@ -460,6 +461,10 @@ const app = await buildApp({
   catalogRepository: createPrismaCatalogRepository(prisma),
   cityRepository: createPrismaCityRepository(prisma),
   serviceabilityRepository: createPrismaServiceabilityRepository(prisma),
+  deliveryEstimateRepository: createPrismaDeliveryEstimateRepository(
+    prisma,
+    env.NODE_ENV === 'production' ? 'PRODUCTION' : 'TEST',
+  ),
   corsOrigins: parseCorsOrigins(env.CORS_ORIGINS),
   auth,
   commerceRepository: createPrismaCommerceRepository(prisma, {

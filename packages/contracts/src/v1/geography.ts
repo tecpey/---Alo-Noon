@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { responseMetaSchema, uuidSchema } from './common'
+import { moneySchema, responseMetaSchema, uuidSchema } from './common'
 
 export const activeCitySummarySchema = z.object({
   id: uuidSchema,
@@ -100,6 +100,68 @@ export const serviceabilityEnvelopeSchema = z.object({
   meta: responseMetaSchema,
 })
 export type ServiceabilityEnvelope = z.infer<typeof serviceabilityEnvelopeSchema>
+
+/* --------------------------------------------------- the fare, shown early */
+
+export const deliveryEstimateQuerySchema = z.object({
+  cityId: uuidSchema,
+  /**
+   * Optional, because the shelf is rendered before a doorstep exists. Given, a
+   * zone's own tariff replaces the city-wide one; absent, the city-wide tariff
+   * is what can honestly be quoted.
+   */
+  operationalZoneId: uuidSchema.optional(),
+})
+export type DeliveryEstimateQuery = z.infer<typeof deliveryEstimateQuerySchema>
+
+/**
+ * The delivery fare, said before the customer has spent anything.
+ *
+ * Extra costs that appear late are the largest fixable cause of abandoned
+ * baskets Baymard measures — 39% of shoppers — and this is the answer to it.
+ * But the answer only works if the early number survives contact with the
+ * final one, so `basis` travels with `amount` and the interface is required to
+ * word the three cases differently:
+ *
+ * - `EXACT` — one flat tariff and no provider to consult. This *is* the fare.
+ * - `FROM` — a floor. Distance or the customer's choice of vehicle can raise
+ *   it; nothing can lower it.
+ * - `INDICATIVE` — a delivery provider quotes at checkout and its answer wins,
+ *   the way it does in Tapsi's and Snapp's own applications. Our tariff is a
+ *   guide, and the interface must not print it as a promise.
+ *
+ * `amount` without `basis` would be a number the shop cannot stand behind, so
+ * neither field is optional.
+ */
+export const deliveryEstimateSchema = z.object({
+  basis: z.enum(['EXACT', 'FROM', 'INDICATIVE']),
+  amount: moneySchema,
+  /** The vehicle the amount belongs to: the cheapest one this scope offers. */
+  vehicleProfile: z.enum(['MOTORCYCLE', 'CAR']),
+  /** Set when the tariff stops charging above a basket size. */
+  freeOver: moneySchema.nullable(),
+  /** Set when the tariff refuses baskets below a size. */
+  minimumOrder: moneySchema.nullable(),
+})
+export type DeliveryEstimate = z.infer<typeof deliveryEstimateSchema>
+
+/**
+ * `estimate: null` means no tariff is published for this scope, which is a
+ * shelf with no fare line rather than a failure. It is deliberately not an
+ * error envelope: a missing tariff must cost the customer a line of text and
+ * never the shop.
+ */
+export const deliveryEstimateResultSchema = z.object({
+  estimate: deliveryEstimateSchema.nullable(),
+})
+export type DeliveryEstimateResult = z.infer<typeof deliveryEstimateResultSchema>
+
+export const deliveryEstimateEnvelopeSchema = z.object({
+  success: z.literal(true),
+  data: deliveryEstimateResultSchema,
+  meta: responseMetaSchema,
+})
+export type DeliveryEstimateEnvelope = z.infer<typeof deliveryEstimateEnvelopeSchema>
 
 /* ------------------------------------------------------------------ places */
 
