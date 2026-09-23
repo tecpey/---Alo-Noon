@@ -178,6 +178,31 @@ export const envSchema = z
      */
     TAPSI_PACK_AMOUNT_UNIT: z.enum(['RIAL', 'TOMAN']).optional(),
     TAPSI_PACK_TIMESTAMP_UNIT: z.enum(['MILLISECONDS', 'SECONDS']).optional(),
+    /**
+     * Where the Snapp Box fare adapter asks. Empty means the real service;
+     * `https://customer-stg.snapp-box.com` is Snapp's staging origin.
+     */
+    SNAPP_BOX_ENDPOINT: z.string().url().optional(),
+    /**
+     * What Snapp's `totalFare` is denominated in.
+     *
+     * Same treatment as Tapsi's and for the same reason: Rial and Toman differ
+     * by ten, the contract this adapter is built on does not say which, and a
+     * silent assumption is how an order gets charged ten times its fare. The
+     * operations guide requires the first real order to be reconciled against
+     * a Snapp invoice before the provider is marked HEALTHY.
+     */
+    SNAPP_BOX_AMOUNT_UNIT: z.enum(['RIAL', 'TOMAN']).optional(),
+    /**
+     * The city and vehicle class in Snapp's own vocabulary, which only Snapp
+     * defines — `GET /v2/delivery-category/by-city` lists them per account.
+     *
+     * No default is possible and none is invented: without both, the adapter
+     * declines to quote and the published tariff prices the order, which is
+     * correct and merely less competitive.
+     */
+    SNAPP_BOX_CITY: z.string().min(1).max(64).optional(),
+    SNAPP_BOX_DELIVERY_CATEGORY: z.string().min(1).max(64).optional(),
     // Observability
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),

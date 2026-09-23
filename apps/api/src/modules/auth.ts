@@ -859,6 +859,36 @@ function normalizeHost(host: string): string {
   return host.trim().toLowerCase().replace(/\.$/, '')
 }
 
+/**
+ * Every hostname a deployment on `host` has to answer to.
+ *
+ * Tenants are identified by the host, so a hostname with no row resolves to no
+ * tenant and the API answers "the requested service is unavailable" — which
+ * from outside is indistinguishable from the site being down.
+ *
+ * The apex and its `www.` sibling are one site to everybody except a database
+ * lookup. `alonoon.ir` and `www.alonoon.ir` already resolve to the same
+ * address in DNS, so registering only the one the operator happened to type
+ * would lose every visitor who types the other, on launch day, silently.
+ *
+ * A host that is not a public apex gets no sibling. `staging.alonoon.ir` has
+ * no `www.` and inventing `www.staging.alonoon.ir` would be a row nothing can
+ * ever reach; a host with a port is a local one and the same applies.
+ */
+export function tenantHostAliases(host: string): readonly string[] {
+  const normalized = normalizeHost(host)
+  if (!normalized || normalized.includes(':')) return [normalized].filter(Boolean)
+  if (normalized.startsWith('www.')) {
+    const apex = normalized.slice('www.'.length)
+    // `www.` on its own, or on something that is not a name, is not an alias
+    // pair — it is a typo, and this must not turn it into two rows.
+    return apex.includes('.') ? [apex, normalized] : [normalized]
+  }
+  // Exactly two labels is an apex: `alonoon.ir`. Three or more is a subdomain
+  // that already names itself, and `www.staging.…` is nobody's address.
+  return normalized.split('.').length === 2 ? [normalized, `www.${normalized}`] : [normalized]
+}
+
 function sessionTokenFromRequest(request: FastifyRequest): string | undefined {
   const authorization = request.headers.authorization
   if (authorization?.startsWith('Bearer ')) {

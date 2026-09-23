@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '@alo-noon/database'
 import { ADMIN_PERMISSIONS, ADMIN_ROLES } from '@alo-noon/domain'
 
+import { tenantHostAliases } from '../src/modules/auth'
 import { createPrismaFinancialOperationsService } from '../src/modules/financial-operations'
 
 const prisma = new PrismaClient()
@@ -244,11 +245,27 @@ async function main(): Promise<void> {
   }
 
   if (publicHost) {
-    await prisma.tenantDomain.upsert({
-      where: { host: publicHost },
-      update: { tenantId: TENANT_ID, isPrimary: true, verifiedAt: now },
-      create: { tenantId: TENANT_ID, host: publicHost, isPrimary: true, verifiedAt: now },
-    })
+    /*
+     * The apex and its `www.` sibling, not only the one that was typed.
+     *
+     * A tenant is found by its host and a host with no row finds no tenant, so
+     * the API answers "the requested service is unavailable" — which from
+     * outside is indistinguishable from DNS being broken. The launch domain
+     * already resolves on both `alonoon.ir` and `www.alonoon.ir`, so
+     * registering only one of them would lose every visitor who types the
+     * other, on launch day, with nothing in any log to say why.
+     *
+     * Only the host the operator actually named is primary: `isPrimary` picks
+     * the one origin the shop calls its own, and two of them is how a sitemap
+     * ends up advertising the same shop twice.
+     */
+    for (const host of tenantHostAliases(publicHost)) {
+      await prisma.tenantDomain.upsert({
+        where: { host },
+        update: { tenantId: TENANT_ID, isPrimary: host === publicHost, verifiedAt: now },
+        create: { tenantId: TENANT_ID, host, isPrimary: host === publicHost, verifiedAt: now },
+      })
+    }
     // Demote anything else this tenant still calls primary, so the flag means
     // one origin rather than "whichever row was written last".
     await prisma.tenantDomain.updateMany({

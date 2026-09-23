@@ -77,6 +77,7 @@ import { createShepaAdapter } from './providers/shepa.js'
 import { createZarinpalAdapter } from './providers/zarinpal.js'
 import { createZibalAdapter } from './providers/zibal.js'
 import { createNeshanAdapter } from './providers/neshan.js'
+import { createSnappBoxAdapter } from './providers/snapp-box.js'
 import { createTapsiPackAdapter } from './providers/tapsi-pack.js'
 
 const env = getEnv()
@@ -210,17 +211,31 @@ const routingService = createPrismaRoutingService(prisma, {
  * configuration's own reference, so a tenant that has not signed with Tapsi
  * simply never selects it rather than this failing to boot.
  *
- * Only Tapsi is here. Snapp Box publishes its business API behind a partner
- * agreement and its documentation is not public, so there is nothing to build
- * an adapter on that would not be invention — and an adapter built on a guessed
- * wire format looks finished and fails on first contact, which is worse than
- * not having one. It goes in when the contract and its specification do.
+ * Tapsi is built on its published swagger. Snapp Box is built on the OpenAPI
+ * document behind `@snapp-store/snapp-box-sdk`, whose own build step generates
+ * it from `spec/api.yaml` — so the paths and field names are Snapp's rather
+ * than somebody's reading of a documentation page. That is good evidence and
+ * it is not the vendor's own word, which is why every costly unknown in that
+ * adapter is a setting with a conservative default and why neither provider is
+ * marked HEALTHY until a real invoice has been reconciled against it.
+ *
+ * Registering an adapter is not the same as using one. Nothing is asked of
+ * either service until a tenant configures it, enables it, makes it default
+ * and marks it healthy.
  */
 const deliveryFareRegistry = createDeliveryFareRegistry([
   createTapsiPackAdapter({
     ...(env.TAPSI_PACK_ENDPOINT && { endpointOrigin: env.TAPSI_PACK_ENDPOINT }),
     ...(env.TAPSI_PACK_AMOUNT_UNIT && { amountUnit: env.TAPSI_PACK_AMOUNT_UNIT }),
     ...(env.TAPSI_PACK_TIMESTAMP_UNIT && { timestampUnit: env.TAPSI_PACK_TIMESTAMP_UNIT }),
+  }),
+  createSnappBoxAdapter({
+    ...(env.SNAPP_BOX_ENDPOINT && { endpointOrigin: env.SNAPP_BOX_ENDPOINT }),
+    ...(env.SNAPP_BOX_AMOUNT_UNIT && { amountUnit: env.SNAPP_BOX_AMOUNT_UNIT }),
+    ...(env.SNAPP_BOX_CITY && { city: env.SNAPP_BOX_CITY }),
+    ...(env.SNAPP_BOX_DELIVERY_CATEGORY && {
+      deliveryCategory: env.SNAPP_BOX_DELIVERY_CATEGORY,
+    }),
   }),
 ])
 const deliveryFareService = createPrismaDeliveryFareService(prisma, {
