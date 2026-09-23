@@ -6,7 +6,8 @@ import type { ActiveCitySummary, ProductDetail } from '@alo-noon/contracts'
 
 import { linesFromCart } from './basket-lines'
 import { buildCatalogView, type CatalogView } from './catalog-view'
-import { listCities, listProducts, readCart, readProduct } from './shop-api'
+import { SESSION_COOKIE } from './api-core'
+import { listCities, listOrders, listProducts, readCart, readProduct } from './shop-api'
 import { CITY_COOKIE, ZONE_COOKIE } from './shop-cookies'
 
 /**
@@ -38,6 +39,49 @@ export async function loadServerBasket(): Promise<ServerBasket> {
     signedIn: true,
     lines: [...linesFromCart(cart)],
     ...(cart && { version: cart.version }),
+  }
+}
+
+/**
+ * The one order the home page offers to repeat, or nothing.
+ *
+ * Reduced to the four things the card shows rather than handed the whole
+ * `OrderSummary`: the card is a client component, so everything passed to it
+ * crosses into the browser bundle, and an order carries payment states and a
+ * rating that have no business on the shop's front page.
+ */
+export interface RepeatableOrder {
+  readonly orderId: string
+  readonly items: readonly { readonly nameFa: string; readonly quantity: number }[]
+  readonly total: string
+  readonly placedAt: string
+}
+
+/**
+ * The most recent order, for the returning customer.
+ *
+ * Null for everybody else, and null rather than an error when the call fails:
+ * this is an offer on top of a page that works without it, so a slow or
+ * unhappy orders endpoint must cost the shop its shortcut and nothing else.
+ */
+export async function loadLastOrder(): Promise<RepeatableOrder | null> {
+  // The cookie first, so an anonymous visit to the shop's front page does not
+  // spend a round trip on an endpoint that can only answer 401. Most visits are
+  // anonymous, and this page is `force-dynamic` — the call would be made every
+  // time, for everybody, to learn something the request already says.
+  const cookieStore = await cookies()
+  if (!cookieStore.get(SESSION_COOKIE)) return null
+
+  const result = await listOrders()
+  if (!result.ok || result.data.length === 0) return null
+  // The API returns newest first, which the orders page also relies on.
+  const [order] = result.data
+  if (!order || order.items.length === 0) return null
+  return {
+    orderId: order.id,
+    items: order.items.map((item) => ({ nameFa: item.nameFaSnapshot, quantity: item.quantity })),
+    total: order.total.amount,
+    placedAt: order.createdAt,
   }
 }
 

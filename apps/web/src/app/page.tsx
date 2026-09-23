@@ -12,6 +12,7 @@ import { StorefrontProvider } from './components/storefront-state'
 import { BrandMark } from './components/brand-mark'
 import { CategoryRail } from './components/category-rail'
 import { Reveal } from './components/reveal'
+import { RepeatOrder } from './components/repeat-order'
 import { RetryButton } from './components/retry-button'
 import { SiteHeader } from './components/site-header'
 import {
@@ -27,7 +28,12 @@ import {
 } from './components/icons'
 import { toPersianDigits } from '../lib/persian'
 import { enamadSeal } from '../lib/legal-identity'
-import { loadServerBasket, loadStorefront, type StorefrontData } from '../lib/storefront-data'
+import {
+  loadLastOrder,
+  loadServerBasket,
+  loadStorefront,
+  type StorefrontData,
+} from '../lib/storefront-data'
 import {
   foundationStatus,
   heroCopy,
@@ -99,9 +105,14 @@ function ConditionField({ condition, value }: { condition: OrderCondition; value
  * glass, because there is nothing behind it to see through.
  */
 export default async function HomePage() {
-  // Both in one round trip: the catalog decides what may be shown, the basket
-  // decides what is already chosen, and neither depends on the other.
-  const [storefront, basket] = await Promise.all([loadStorefront(), loadServerBasket()])
+  // All three in one round trip: the catalog decides what may be shown, the
+  // basket decides what is already chosen, the last order decides whether this
+  // page can offer the two-tap path. None of them depends on the others.
+  const [storefront, basket, lastOrder] = await Promise.all([
+    loadStorefront(),
+    loadServerBasket(),
+    loadLastOrder(),
+  ])
   const products =
     storefront.state === 'ready'
       ? storefront.catalog.shelves.flatMap((shelf) => shelf.products)
@@ -122,6 +133,23 @@ export default async function HomePage() {
         <SiteHeader />
 
         <main>
+          {/*
+            Above the hero, for the customer who has ordered before.
+
+            The hero argues that this shop is worth trying. Somebody with an
+            order history has already accepted that argument, and making them
+            scroll past it to reach the shortest path in the product is the
+            cost the accessibility audit measured.
+          */}
+          {lastOrder && (
+            <RepeatOrder
+              orderId={lastOrder.orderId}
+              items={lastOrder.items}
+              total={lastOrder.total}
+              placedAt={lastOrder.placedAt}
+            />
+          )}
+
           <section className="hero">
             {/*
               The photograph is the page's ground, not an illustration beside

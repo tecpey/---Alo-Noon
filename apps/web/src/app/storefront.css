@@ -459,6 +459,78 @@
  * customer came to order bread, and a hero tall enough to be a poster puts the
  * one button that starts an order below the fold.
  */
+/* ------------------------------------------------------- the last order */
+
+/*
+  Yesterday's basket, at the top of the shop.
+
+  Sunken paper rather than a card: it is not one more thing on the shelf, it is
+  the shop remembering something. The whole block is one column at every width,
+  because the only two-column version of it that fits a phone is one that hides
+  the button below the fold.
+*/
+.again {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem;
+  padding: 1.1rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-lg);
+}
+.again__head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.again__glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--ink-action);
+}
+.again h2 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--ink-strong);
+}
+.again__when {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+.again__items {
+  color: var(--ink-base);
+  line-height: 1.9;
+}
+.again__total {
+  color: var(--ink-action);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+.again__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  inline-size: 100%;
+  margin-block-start: 0.35rem;
+}
+.again__notice,
+.again__error {
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+.again__notice {
+  color: var(--ink-base);
+}
+.again__error {
+  color: var(--error);
+}
+
 .hero {
   position: relative;
   display: grid;
