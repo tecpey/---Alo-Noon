@@ -24,7 +24,25 @@
   --ink: var(--ink-strong);
   --ink-muted: var(--ink-muted);
   --line: var(--line-subtle);
-  --accent: var(--primary-600);
+  /*
+    The action colour, moved to `ink.action` for the same reason the customer
+    shop was: measured on the running panel, `primary-600` put the sign-out
+    button at 3.24:1, every «ثبت»/«اعمال» button at 3.64:1 and the order codes
+    an operator reads off a customer's phone at 3.46:1 — on all twelve routes.
+    WCAG 1.4.3 wants 4.5.
+
+    These files were excluded from the type-size floor on purpose, because an
+    operator at a desk all day is not the reader that floor is for. Carrying
+    that exclusion into colour was a mistake: 4.5:1 is 4.5:1 at any age, and
+    somebody reading order codes for a whole shift is worse served by a low
+    one, not better.
+
+    `--accent-line` keeps the lighter brand orange for edges and rules, where
+    nothing is read and 1.4.3 does not apply — the same split the storefront
+    makes between `ink.action` and `primary-600`.
+  */
+  --accent: var(--ink-action);
+  --accent-line: var(--primary-600);
   --ok: var(--success);
   --warn: var(--warning);
   --bad: var(--error);
@@ -320,7 +338,7 @@
 .field input:focus-visible,
 .field select:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-line);
   outline-offset: 2px;
 }
 .field small {
@@ -333,7 +351,7 @@ button {
   font: inherit;
   font-weight: 700;
   padding: 0.55rem 1.1rem;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--accent-line);
   border-radius: var(--radius-md);
   background: var(--accent);
   /* Never pure white: it punches a hole in this palette, and the ink token is
@@ -346,9 +364,12 @@ button {
     background var(--duration-base) var(--easing-standard),
     transform var(--duration-fast) var(--easing-standard);
 }
+/* Darker on hover; see the note on `.an-button:hover` in styles.css. The
+   operator panel is the one surface with a real cursor on it all day, so a
+   hover that ran backwards was most visible here. */
 button:hover:not(:disabled) {
-  background: var(--primary-700);
-  border-color: var(--primary-700);
+  background: var(--primary-900);
+  border-color: var(--primary-900);
 }
 /* The same give as the phone apps and the shop. An operator confirming a refund
    should get the same acknowledgement everywhere in this product. */
@@ -366,7 +387,7 @@ button.ghost {
 }
 button.ghost:hover:not(:disabled) {
   background: var(--surface-sunken);
-  border-color: var(--accent);
+  border-color: var(--accent-line);
   color: var(--accent);
 }
 
@@ -461,7 +482,7 @@ button.ghost:hover:not(:disabled) {
   border-bottom: 2px solid transparent;
 }
 .range-picker a.current {
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--accent-line);
   font-weight: 700;
 }
 .range-picker a:hover,

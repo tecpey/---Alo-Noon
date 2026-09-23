@@ -198,6 +198,63 @@ describe('nothing on a customer screen is too small to read', () => {
     expect(offenders).toEqual([])
   })
 
+  it('reads text through the action token, never off the brand ramp', () => {
+    /*
+      The rule that would have caught this a whole audit earlier.
+
+      The operator and bakery panels kept `--accent: var(--primary-600)` long
+      after the shop moved off it, because they were excluded from the type
+      floor above — an exclusion that is right for type and wrong for colour.
+      Measured on the running panel, that one token put the sign-out button at
+      3.24:1, every «ثبت» at 3.64:1 and the order codes an operator reads off a
+      customer's phone at 3.46:1, on all twelve routes. 4.5:1 is 4.5:1 at any
+      age; somebody reading codes for a whole shift is worse served by a low
+      one, not better.
+
+      So: text colour comes from `ink.action`, whose contrast the design-token
+      suite proves against every readable surface. Borders and backgrounds may
+      still take the lighter brand orange — nothing is read off an edge, and
+      1.4.3 does not apply to one.
+
+      One alias hop is followed on purpose. The first version of this test
+      looked only for a literal `color: var(--primary-600)` and passed against
+      the very bug it was written for, because the panel reached the ramp
+      through `--accent`. A guard that cannot catch the case that prompted it
+      is worse than no guard: it reports safety.
+    */
+    const RAMP = /var\(--primary-([5-9]00)\)/
+    const offenders: string[] = []
+    for (const { path, source } of files) {
+      // Custom properties that resolve to a brand-ramp step, e.g. `--accent`.
+      const aliases = new Set(
+        [...source.matchAll(/(--[\w-]+):\s*var\(--primary-[5-9]00\)/g)].map((m) => m[1]!),
+      )
+      for (const { selector, body } of rules(source)) {
+        for (const match of body.matchAll(/(?:^|\n)\s*color:\s*var\((--[\w-]+)\)/g)) {
+          const referenced = match[1]!
+          if (RAMP.test(`var(${referenced})`) || aliases.has(referenced))
+            offenders.push(`${path}: ${selector} → color via ${referenced}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('catches a ramp colour reached through an alias, which is how it got in', () => {
+    // Guards the guard. The check above is only worth having if it fails on the
+    // shape the panel actually had, so that shape is fed to it directly.
+    const panel = `
+      .shell { --accent: var(--primary-600); }
+      .shell button { color: var(--accent); }
+    `
+    const aliases = new Set(
+      [...panel.matchAll(/(--[\w-]+):\s*var\(--primary-[5-9]00\)/g)].map((m) => m[1]!),
+    )
+    expect(aliases.has('--accent')).toBe(true)
+    const reached = [...panel.matchAll(/color:\s*var\((--[\w-]+)\)/g)].map((m) => m[1]!)
+    expect(reached.some((name) => aliases.has(name))).toBe(true)
+  })
+
   it('takes white from the token rather than typing #fff', () => {
     // `ink.onAction` is #FFF9F2 — warm, because pure white punches a hole in
     // paper and the palette test forbids it. Three badges had `color: #fff`

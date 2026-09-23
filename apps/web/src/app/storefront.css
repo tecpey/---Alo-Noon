@@ -1236,8 +1236,9 @@
     opacity var(--duration-base) var(--easing-standard),
     background var(--duration-base) var(--easing-standard);
 }
+/* Darker on hover; see the note on `.an-button:hover` in styles.css. */
 .product-card__add:hover {
-  background: var(--primary-700);
+  background: var(--primary-900);
 }
 .product-card__add:active {
   transform: scale(0.88);

@@ -183,8 +183,13 @@ button {
     background var(--duration-base) var(--easing-standard),
     transform var(--duration-fast) var(--easing-standard);
 }
+/* Darker on hover, not lighter.
+   The resting colour is `ink.action` (primary-800). Hover used to set
+   primary-700, which is a *lighter* orange: the button brightened when a
+   cursor touched it, against every other affordance in this product, and
+   white-on-it fell from 7.01:1 to 4.90 — still passing, but the wrong way. */
 .an-button:hover {
-  background: var(--primary-700);
+  background: var(--primary-900);
 }
 .an-button:active {
   transform: translateY(1px);
