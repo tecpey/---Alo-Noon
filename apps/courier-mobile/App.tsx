@@ -12,7 +12,7 @@ import {
 
 import type { DeliveryTaskView } from '@alo-noon/contracts'
 import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
-import { colors, ink, surface } from '@alo-noon/design-tokens'
+import { colors, ink, surface, tint } from '@alo-noon/design-tokens'
 import {
   CheckIcon,
   CourierIcon,
@@ -29,7 +29,9 @@ import { courierCopy } from './src/copy'
 import { useAppFonts } from './src/fonts'
 import {
   courierErrorMessage,
+  courierLegFor,
   courierStepFor,
+  navigationUrls,
   FAILURE_REASONS,
   formatDeadline,
   formatMoney,
@@ -417,6 +419,9 @@ function DeliveryCard({
   const primary = step.primary
   const deadline = formatDeadline(task.deliverBefore)
   const call = telHref(task.recipientPhone)
+  const leg = courierLegFor(task.state)
+  const routeTo = leg === 'PICKUP' ? task.pickup : leg === 'DROPOFF' ? task.destination : null
+  const routeLabel = leg === 'PICKUP' ? task.bakeryName : task.recipientName
 
   return (
     <View style={styles.card}>
@@ -429,6 +434,37 @@ function DeliveryCard({
       <Text style={styles.body}>گیرنده: {task.recipientName}</Text>
       <Text style={styles.body}>تحویل‌گیری از: {task.bakeryName}</Text>
       {deadline && <Text style={styles.deadline}>تا ساعت {deadline}</Text>}
+
+      {/*
+        What the customer wrote about finding them, and what the bakery said
+        about collecting. Both were in the order all along and neither reached
+        this screen — «زنگ نزنید، بچه خواب است» is the single line most likely
+        to turn a failed delivery into a completed one, and it was being
+        thrown away between the checkout form and the rider's hand.
+
+        The customer's note is shown on both legs, because a rider reads the
+        card once at the bakery and plans the rest of the trip from it.
+      */}
+      {task.deliveryInstructions && <Text style={styles.note}>📝 {task.deliveryInstructions}</Text>}
+      {leg === 'PICKUP' && task.pickupNote && <Text style={styles.note}>🏠 {task.pickupNote}</Text>}
+
+      {/*
+        One route button, pointed at the leg they are on: the bakery before the
+        bread is collected, the door after. Before this the address was a line
+        of text and a rider typed it into a map at the kerb, one-handed, while
+        the coordinates sat in the order the fare had already been measured
+        against.
+      */}
+      {routeTo && (
+        <PressScale
+          style={styles.routeButton}
+          onPress={() => void openRoute(routeTo.latitude, routeTo.longitude, routeLabel)}
+        >
+          <Text style={styles.routeButtonText}>
+            {leg === 'PICKUP' ? 'مسیر تا نانوایی' : 'مسیر تا مقصد'}
+          </Text>
+        </PressScale>
+      )}
 
       {/* Prepaid, always: an order cannot be accepted before its payment is
           captured, so a courier must never be asked for money at the door. */}
@@ -516,6 +552,28 @@ function DeliveryCard({
       )}
     </View>
   )
+}
+
+/**
+ * Opens the first map the phone will accept.
+ *
+ * `canOpenURL` rather than firing the first candidate and hoping: an
+ * unregistered scheme rejects silently on Android and throws on iOS, and
+ * either way the rider gets a button that does nothing. The list ends in an
+ * https link, so the loop cannot run out.
+ */
+async function openRoute(latitude: number, longitude: number, label: string): Promise<void> {
+  for (const url of navigationUrls(latitude, longitude, label)) {
+    try {
+      if (await Linking.canOpenURL(url)) {
+        await Linking.openURL(url)
+        return
+      }
+    } catch {
+      // Try the next one. A map that will not open is not worth an error
+      // message on a screen somebody is reading at a junction.
+    }
+  }
 }
 
 function commandKey(): string {
@@ -654,6 +712,37 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral[100],
   },
   callButtonText: { color: colors.neutral[900], fontSize: 17, fontFamily: fontFamily.bold },
+  /*
+    The route button. Same height as «تماس با گیرنده» and directly above it:
+    on this screen the two things a rider does before acting are find the
+    place and ring the bell, and they belong together.
+  */
+  routeButton: {
+    minHeight: 52,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: colors.neutral[100],
+  },
+  routeButtonText: { color: colors.neutral[900], fontSize: 17, fontFamily: fontFamily.bold },
+  /*
+    The customer's own words about finding them. Given its own surface rather
+    than set as another body line, because a rider scanning a card at a
+    junction has to be able to find it without reading the card.
+  */
+  note: {
+    // The warning tint pair, not `colors.warning` itself — that is a dark
+    // amber meant for text, and using it as a surface would put dark ink on
+    // dark ink. The pair is the one the token suite proves readable.
+    color: tint.warning.ink,
+    backgroundColor: tint.warning.surface,
+    fontSize: 16,
+    lineHeight: 28,
+    fontFamily: fontFamily.bold,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   reasonBlock: { gap: 10 },
   reasonButton: {
     minHeight: 52,

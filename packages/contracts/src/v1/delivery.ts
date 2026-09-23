@@ -76,7 +76,36 @@ export const deliveryTaskSchema = z.object({
   recipientName: z.string(),
   recipientPhone: z.string(),
   address: z.string(),
+  /**
+   * Where the doorstep actually is, so the courier can be routed to it.
+   *
+   * The address string alone is what this carried at first, which meant a
+   * courier read it off the screen and typed it into Neshan by hand, at the
+   * kerb, one-handed. The coordinates were in the order the whole time — they
+   * are the ones the fare was measured against — so the only thing missing was
+   * carrying them this far.
+   *
+   * Snapshots, like the name and the phone beside them: a customer editing a
+   * saved address later must not move a delivery already in flight.
+   */
+  destination: z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+  }),
+  /**
+   * Whatever the customer wrote about finding them — «زنگ نزنید، بچه خواب
+   * است», «درِ آبی، طبقهٔ سوم». It is the single field most likely to turn a
+   * failed delivery into a completed one, and the courier could not see it.
+   */
+  deliveryInstructions: z.string().nullable(),
   bakeryName: z.string(),
+  /** Where to collect, for the first leg of the trip. */
+  pickup: z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+  }),
+  /** What the bakery said about collecting — which door, which counter. */
+  pickupNote: z.string().nullable(),
   totalAmount: z.string(),
   deliverBefore: z.string().nullable(),
   courier: z

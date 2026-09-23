@@ -439,6 +439,33 @@ async function main(): Promise<void> {
     Boolean(text(at(mine.body, 'data', 0, 'recipientPhone'))),
     { phone: at(mine.body, 'data', 0, 'recipientPhone') },
   )
+  /*
+    The rider has to be able to *get there*, not only read an address.
+
+    Checked here rather than only in a unit test because these are snapshots
+    copied through four layers — order, fulfilment, task, view — and the way
+    they break is by quietly arriving as zero, which routes a courier to the
+    Gulf of Guinea rather than to a door in Babol.
+  */
+  const destination = at(mine.body, 'data', 0, 'destination')
+  const pickup = at(mine.body, 'data', 0, 'pickup')
+  const plausible = (point: unknown): boolean => {
+    const latitude = at(point, 'latitude')
+    const longitude = at(point, 'longitude')
+    // Iran's box, roughly. Zero is inside no country this shop delivers to.
+    return (
+      typeof latitude === 'number' &&
+      typeof longitude === 'number' &&
+      latitude > 24 &&
+      latitude < 40 &&
+      longitude > 43 &&
+      longitude < 64
+    )
+  }
+  step('courier: can be routed to the door, not just told the address', plausible(destination), {
+    destination,
+  })
+  step('courier: can be routed to the bakery to collect', plausible(pickup), { pickup })
 
   for (const [label, path, body] of [
     ['accepted the offer', `respond`, { accept: true }],

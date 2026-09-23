@@ -66,7 +66,15 @@ export interface DeliveryTaskView {
    */
   recipientPhone: string
   address: string
+  /** The doorstep itself, so the courier can be routed rather than reading. */
+  destination: { latitude: number; longitude: number }
+  /** What the customer wrote about finding them. */
+  deliveryInstructions: string | null
   bakeryName: string
+  /** Where to collect, for the first leg. */
+  pickup: { latitude: number; longitude: number }
+  /** What the bakery said about collecting. */
+  pickupNote: string | null
   totalAmount: string
   deliverBefore: string | null
   courier: { courierId: string; displayName: string; assignmentId: string; state: string } | null
@@ -168,8 +176,17 @@ const TASK_INCLUDE = {
           recipientNameSnapshot: true,
           recipientPhoneSnapshot: true,
           deliveryAddressSnapshot: true,
+          deliveryLatitudeSnapshot: true,
+          deliveryLongitudeSnapshot: true,
+          deliveryInstructionsSnapshot: true,
           bakeryNameSnapshot: true,
+          bakeryPickupSnapshot: true,
           totalAmount: true,
+          // The branch's own position, for the collection leg. Read live
+          // rather than snapshotted: a bakery that moves has moved, and the
+          // courier needs where it is now, not where it was when the order
+          // was placed.
+          bakeryBranch: { select: { latitude: true, longitude: true } },
         },
       },
     },
@@ -843,7 +860,17 @@ function taskView(task: TaskRecord): DeliveryTaskView {
     recipientName: order.recipientNameSnapshot,
     recipientPhone: order.recipientPhoneSnapshot,
     address: order.deliveryAddressSnapshot,
+    destination: {
+      latitude: Number(order.deliveryLatitudeSnapshot),
+      longitude: Number(order.deliveryLongitudeSnapshot),
+    },
+    deliveryInstructions: order.deliveryInstructionsSnapshot ?? null,
     bakeryName: order.bakeryNameSnapshot,
+    pickup: {
+      latitude: Number(order.bakeryBranch.latitude),
+      longitude: Number(order.bakeryBranch.longitude),
+    },
+    pickupNote: order.bakeryPickupSnapshot ?? null,
     totalAmount: order.totalAmount.toString(),
     deliverBefore: task.deliverBefore?.toISOString() ?? null,
     courier: assignment

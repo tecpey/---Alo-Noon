@@ -37,6 +37,28 @@ export interface CourierStep {
 
 const NOTHING: CourierStep = { primary: null, isOffer: false, canFail: false }
 
+/**
+ * Which end of the trip the courier is heading for right now.
+ *
+ * Before the bread is collected they are going to the bakery; after it, to the
+ * door. One button, pointed at the leg they are on — the same "one obvious
+ * action" this whole screen is built around. Offering both at once would make
+ * a rider at a junction read two labels and pick.
+ */
+export function courierLegFor(state: string): 'PICKUP' | 'DROPOFF' | null {
+  switch (state) {
+    case 'ASSIGNED':
+      return 'PICKUP'
+    case 'PICKED_UP':
+    case 'OUT_FOR_DELIVERY':
+      return 'DROPOFF'
+    // An offer has not been accepted, and a finished or failed task is not
+    // somewhere to be sent. Neither gets a route.
+    default:
+      return null
+  }
+}
+
 export function courierStepFor(state: string): CourierStep {
   switch (state) {
     case 'ASSIGNMENT_PENDING':
@@ -132,6 +154,44 @@ export function formatDeadline(value: string | null): string | null {
  */
 export function telHref(mobileE164: string): string | null {
   return /^\+\d{8,15}$/.test(mobileE164) ? `tel:${mobileE164}` : null
+}
+
+/**
+ * Where to send a courier who taps «مسیریابی», in order of preference.
+ *
+ * A list rather than one address, because no single scheme works everywhere and
+ * the cost of guessing is a rider at the kerb with a dead button:
+ *
+ * 1. `nshn:` — Neshan, which is the map Iranian couriers actually use and the
+ *    only one with usable Iranian addressing. Tried first whenever installed.
+ * 2. `geo:` — the Android intent. Opens whatever map the rider has chosen as
+ *    their default, including Neshan, Balad or Google Maps. Not registered on
+ *    iOS, which is why it is not the only entry.
+ * 3. `https://neshan.org/maps/...` — the universal fallback. Works on every
+ *    platform with a browser and needs nothing installed, so the list can
+ *    never be exhausted without something opening.
+ *
+ * The caller walks the list and opens the first the system will accept. Six
+ * decimal places is about 11cm, which is past the precision of any consumer
+ * GPS fix and well past the precision of a doorway.
+ */
+export function navigationUrls(
+  latitude: number,
+  longitude: number,
+  label: string,
+): readonly string[] {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return []
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return []
+  const at = `${latitude.toFixed(6)},${longitude.toFixed(6)}`
+  // Stripped of the characters that would break out of the query, rather than
+  // escaped: a label is a convenience and an address is never worth a
+  // malformed URL that opens nothing.
+  const name = encodeURIComponent(label.replace(/[()]/g, ' ').trim().slice(0, 60))
+  return [
+    `nshn://location?lat=${latitude.toFixed(6)}&lng=${longitude.toFixed(6)}&name=${name}`,
+    `geo:${at}?q=${at}(${name})`,
+    `https://neshan.org/maps/@${at},16z`,
+  ]
 }
 
 /**

@@ -5,7 +5,9 @@ import {
   courierStepFor,
   FAILURE_REASONS,
   formatDeadline,
+  courierLegFor,
   formatMoney,
+  navigationUrls,
   TASK_STATE_LABELS,
   telHref,
 } from './presentation'
@@ -113,5 +115,73 @@ describe('error wording', () => {
 
   it('shows an unrecognised code rather than hiding it', () => {
     expect(courierErrorMessage('SOMETHING_ODD')).toContain('SOMETHING_ODD')
+  })
+})
+
+/**
+ * Routing the courier to the door.
+ *
+ * The app carried an address as a line of text and nothing else, so a rider
+ * read it off the screen and typed it into a map at the kerb, one-handed. The
+ * coordinates were in the order the whole time. These assert the shape of what
+ * replaced that, and the failure the list exists to prevent: a dead button.
+ */
+describe('navigation targets', () => {
+  const babol = [36.5513, 52.679] as const
+
+  it('always offers something that needs nothing installed', () => {
+    // The last entry is the universal one. If the list could be exhausted, a
+    // rider with no map app taps and nothing happens.
+    const urls = navigationUrls(babol[0], babol[1], 'خانه')
+    expect(urls.length).toBeGreaterThan(1)
+    expect(urls.at(-1)).toMatch(/^https:\/\//)
+  })
+
+  it('offers Neshan first, because that is the map couriers here use', () => {
+    expect(navigationUrls(babol[0], babol[1], 'خانه')[0]).toMatch(/^nshn:/)
+  })
+
+  it('includes the Android intent, which opens whichever map the rider chose', () => {
+    expect(navigationUrls(babol[0], babol[1], 'خانه').some((u) => u.startsWith('geo:'))).toBe(true)
+  })
+
+  it('carries the coordinates to a precision past any consumer fix', () => {
+    for (const url of navigationUrls(36.5513, 52.679, 'خانه')) {
+      expect(url).toContain('36.551300')
+      expect(url).toContain('52.679000')
+    }
+  })
+
+  it('does not let a label break the URL it is inside', () => {
+    // `geo:` puts the name in parentheses, so an unescaped one truncates the
+    // target and the map opens somewhere else entirely.
+    const urls = navigationUrls(babol[0], babol[1], 'خانه (طبقهٔ ۳)')
+    const geo = urls.find((u) => u.startsWith('geo:'))!
+    expect(geo.endsWith(')')).toBe(true)
+    expect(geo.slice(0, -1)).not.toContain(')')
+  })
+
+  it('answers with nothing rather than a broken target for impossible coordinates', () => {
+    // A dead button is bad; a button that opens the middle of the ocean is
+    // worse, because the rider follows it.
+    expect(navigationUrls(Number.NaN, 52.679, 'خانه')).toEqual([])
+    expect(navigationUrls(91, 52.679, 'خانه')).toEqual([])
+    expect(navigationUrls(36.55, 181, 'خانه')).toEqual([])
+  })
+})
+
+describe('which leg the courier is on', () => {
+  it('sends them to the bakery before the bread is collected, and to the door after', () => {
+    expect(courierLegFor('ASSIGNED')).toBe('PICKUP')
+    expect(courierLegFor('PICKED_UP')).toBe('DROPOFF')
+    expect(courierLegFor('OUT_FOR_DELIVERY')).toBe('DROPOFF')
+  })
+
+  it('routes nobody anywhere for an offer or a finished task', () => {
+    // An offer has not been accepted; a delivered or cancelled task is not
+    // somewhere to be sent. A route button on either is a button that means
+    // nothing, on a screen built so every button means one thing.
+    for (const state of ['ASSIGNMENT_PENDING', 'UNASSIGNED', 'DELIVERED', 'CANCELLED', 'FAILED'])
+      expect(courierLegFor(state)).toBeNull()
   })
 })
