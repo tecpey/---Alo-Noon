@@ -13,6 +13,7 @@ import {
   reorderEnvelopeSchema,
   paymentEnvelopeSchema,
   paymentExecutionEnvelopeSchema,
+  placeSearchEnvelopeSchema,
   pushDeviceEnvelopeSchema,
   serviceabilityEnvelopeSchema,
   sessionEnvelopeSchema,
@@ -36,6 +37,7 @@ import {
   type ReorderResult,
   type PaymentExecutionSummary,
   type PaymentSummary,
+  type PlaceSearchResult,
   type PushDeviceRegister,
   type PushDeviceSummary,
   type ServiceabilityResponse,
@@ -81,6 +83,17 @@ export interface CustomerApiClient {
     latitude: number
     longitude: number
   }): Promise<ServiceabilityResponse>
+  /**
+   * Finding a doorstep by typing it, for the customer who will not hand over a
+   * satellite position.
+   *
+   * `available: false` means this tenant has no mapping provider configured at
+   * all, so the search box should not be offered; `available: true` with an
+   * empty `candidates` means the provider answered and knows nowhere by that
+   * name, which is worth saying so the customer tries different words. The two
+   * must not be shown alike.
+   */
+  searchPlaces(input: { term: string; cityId?: string }): Promise<PlaceSearchResult>
   /**
    * The shelves of a city, and optionally of one zone inside it.
    *
@@ -292,6 +305,11 @@ export function createCustomerApiClient(
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    searchPlaces: async (input) => {
+      const query = new URLSearchParams({ term: input.term })
+      if (input.cityId) query.set('cityId', input.cityId)
+      return request(`/api/v1/places/search?${query.toString()}`, placeSearchEnvelopeSchema)
+    },
     listCatalog: async ({ cityId, operationalZoneId }) => {
       const query = new URLSearchParams({
         cityId,

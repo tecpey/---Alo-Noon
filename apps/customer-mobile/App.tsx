@@ -23,6 +23,7 @@ import type {
   OrderSummary,
   PaymentExecutionSummary,
   PaymentSummary,
+  PlaceCandidate,
   ProductSummary,
   QuoteSummary,
   SessionContext,
@@ -140,6 +141,24 @@ export default function App() {
   const [addresses, setAddresses] = useState<AddressSummary[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState<string>()
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number }>()
+  /**
+   * The way into the shop for somebody who will not hand over a satellite fix.
+   *
+   * Closed to begin with, because two ways of answering one question on one
+   * screen is the shape that makes a customer ask which one they are supposed
+   * to use. It opens on request, and opens itself the moment the position
+   * prompt is refused.
+   */
+  const [typedAddressOpen, setTypedAddressOpen] = useState(false)
+  const [placeTerm, setPlaceTerm] = useState('')
+  /**
+   * Undefined is "not searched yet"; an empty array is "searched, and the map
+   * provider knows nowhere by that name". The screen must not show those alike
+   * — one is a blank space, the other is a reason to try different words.
+   */
+  const [placeResults, setPlaceResults] = useState<PlaceCandidate[]>()
+  /** False means this tenant has no mapping provider at all, so do not offer it. */
+  const [placeSearchAvailable, setPlaceSearchAvailable] = useState(true)
   const [addressLabel, setAddressLabel] = useState('خانه')
   const [recipientName, setRecipientName] = useState('')
   const [recipientPhone, setRecipientPhone] = useState('')
@@ -432,6 +451,54 @@ export default function App() {
     }
   }
 
+  /**
+   * A point on the ground, turned into a shelf.
+   *
+   * Everything after "where is the doorstep" is the same work whichever way the
+   * answer arrived — satellite, a saved address, or a name the customer typed —
+   * so it lives here once rather than three times. The three entry points below
+   * differ only in how they get the two numbers.
+   */
+  const enterShopAt = async (cityId: string, latitude: number, longitude: number) => {
+    if (!api) return
+    const decision = await api.checkServiceability({ cityId, latitude, longitude })
+    if (!decision.serviceable || !decision.operationalZoneId) {
+      setMessage(serviceabilityMessage(decision.reason))
+      return
+    }
+
+    const catalog = await api.listCatalog({
+      cityId,
+      operationalZoneId: decision.operationalZoneId,
+    })
+    setOperationalZoneId(decision.operationalZoneId)
+    setSelectedAddressId(
+      addresses.find(
+        (address) =>
+          address.cityId === cityId && address.operationalZoneId === decision.operationalZoneId,
+      )?.id,
+    )
+    setCoordinates({ latitude, longitude })
+    setProducts(catalog)
+    setQuote(null)
+    setPlaceResults(undefined)
+    setPlaceTerm('')
+    setScreen('catalog')
+    // Not awaited. The shelf is the thing the customer asked for; the repeat
+    // card is an offer on top of it, and holding the shop closed until the
+    // order history answers would trade the whole page for a shortcut.
+    void loadOrders()
+    // The loaf they reached for before signing in. Added now that there is a
+    // session and a zone to add it against, so they arrive at a basket with
+    // their bread in it rather than at the shelf they already chose from.
+    if (pendingProduct) {
+      const resume = pendingProduct
+      setPendingProduct(undefined)
+      setBusy(false)
+      await addProduct(resume, { cityId, operationalZoneId: decision.operationalZoneId })
+    }
+  }
+
   const locateAndLoad = async () => {
     if (!api || !selectedCityId || busy) return
     setBusy(true)
@@ -439,50 +506,75 @@ export default function App() {
     try {
       const permission = await Location.requestForegroundPermissionsAsync()
       if (permission.status !== Location.PermissionStatus.GRANTED) {
-        setMessage('اجازه دسترسی به موقعیت داده نشد؛ برای بررسی محدوده باید آن را فعال کنید.')
+        /*
+          A refusal used to end the path here, and that was the one place in
+          this application where it could. Older customers decline this prompt
+          often and out of caution, and NN/g measured that a first failure
+          roughly doubles the rate at which they abandon — so a dead end here
+          costs the order, not a moment.
+
+          The way round opens itself rather than waiting to be found: the
+          message names it and the field is already on screen underneath.
+        */
+        setTypedAddressOpen(true)
+        setMessage('اشکالی ندارد — نشانی‌تان را بنویسید تا محدوده را از روی آن بررسی کنیم.')
         return
       }
 
       const current = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       })
-      const decision = await api.checkServiceability({
-        cityId: selectedCityId,
-        latitude: current.coords.latitude,
-        longitude: current.coords.longitude,
-      })
-      if (!decision.serviceable || !decision.operationalZoneId) {
-        setMessage(serviceabilityMessage(decision.reason))
-        return
-      }
+      await enterShopAt(selectedCityId, current.coords.latitude, current.coords.longitude)
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
 
-      const catalog = await api.listCatalog({
-        cityId: selectedCityId,
-        operationalZoneId: decision.operationalZoneId,
+  /**
+   * The doorstep this customer has already told us about.
+   *
+   * The cheapest of the three and the one a returning customer should meet
+   * first: the coordinates were verified when the address was saved, so there
+   * is no prompt, no typing and no map provider in the path at all.
+   */
+  const enterFromSavedAddress = async (address: AddressSummary) => {
+    if (!api || busy) return
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      setSelectedCityId(address.cityId)
+      await enterShopAt(address.cityId, address.latitude, address.longitude)
+    } catch (error) {
+      handleAuthenticatedError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const searchForPlace = async () => {
+    if (!api || busy) return
+    const term = placeTerm.trim()
+    // Two characters is the shortest thing worth asking a geocoder about, and
+    // asking with less is a request that can only come back empty.
+    if (term.length < 2) {
+      setMessage('برای جست‌وجو دست‌کم دو حرف بنویسید.')
+      return
+    }
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      const found = await api.searchPlaces({
+        term,
+        ...(selectedCityId && { cityId: selectedCityId }),
       })
-      setOperationalZoneId(decision.operationalZoneId)
-      setSelectedAddressId(
-        addresses.find(
-          (address) =>
-            address.cityId === selectedCityId &&
-            address.operationalZoneId === decision.operationalZoneId,
-        )?.id,
-      )
-      setCoordinates({ latitude: current.coords.latitude, longitude: current.coords.longitude })
-      setProducts(catalog)
-      setQuote(null)
-      setScreen('catalog')
-      // The loaf they reached for before signing in. Added now that there is a
-      // session and a zone to add it against, so they arrive at a basket with
-      // their bread in it rather than at the shelf they already chose from.
-      if (pendingProduct) {
-        const resume = pendingProduct
-        setPendingProduct(undefined)
-        setBusy(false)
-        await addProduct(resume, {
-          cityId: selectedCityId,
-          operationalZoneId: decision.operationalZoneId,
-        })
+      setPlaceSearchAvailable(found.available)
+      setPlaceResults([...found.candidates])
+      if (!found.available) {
+        setMessage('جست‌وجوی نشانی روی این فروشگاه فعال نیست؛ لطفاً موقعیت را روشن کنید.')
+      } else if (found.candidates.length === 0) {
+        setMessage('جایی با این نام پیدا نشد. نام خیابان یا یک نشانهٔ نزدیک را بنویسید.')
       }
     } catch (error) {
       handleAuthenticatedError(error)
@@ -1048,6 +1140,16 @@ export default function App() {
     }
   }
 
+  /**
+   * The order the shelf offers to repeat.
+   *
+   * Newest first is what the API returns and what the orders tab already
+   * relies on. Derived rather than stored: `orders` is refreshed by the orders
+   * tab and by `enterShopAt`, and a second copy of the same fact is a second
+   * thing that can be stale.
+   */
+  const lastOrder = orders[0]
+
   const handleAuthenticatedError = (error: unknown) => {
     if (error instanceof CustomerApiError && error.status === 401) {
       setSession(null)
@@ -1190,12 +1292,109 @@ export default function App() {
                   </PressScale>
                 ))}
               </View>
+              {/*
+                A doorstep this customer has already given us, offered before
+                anything is asked of them. No prompt, no typing, no map
+                provider — the coordinates were verified when the address was
+                saved. For a returning customer this is the whole screen.
+              */}
+              {addresses.length > 0 && (
+                <>
+                  <Text style={styles.fieldLabel}>نشانی‌های شما</Text>
+                  <View style={styles.cityList}>
+                    {addresses.map((address) => (
+                      <PressScale
+                        key={address.id}
+                        scaleTo={0.94}
+                        accessibilityLabel={`تحویل به ${address.label}`}
+                        style={styles.cityChip}
+                        onPress={() => void enterFromSavedAddress(address)}
+                      >
+                        <Text style={styles.cityChipText}>{address.label}</Text>
+                      </PressScale>
+                    ))}
+                  </View>
+                </>
+              )}
+
               <PrimaryButton
                 label="بررسی موقعیت و نمایش محصولات"
                 busy={busy}
                 disabled={!selectedCityId}
                 onPress={locateAndLoad}
               />
+
+              {/*
+                The way round the position prompt, and the reason this screen
+                is no longer a place the path can end.
+
+                Shut until asked for, so the screen carries one question at a
+                time; it opens itself when the prompt is refused. Hidden
+                entirely when the tenant has no mapping provider, because a
+                search box that cannot search is worse than no search box.
+              */}
+              {placeSearchAvailable &&
+                (typedAddressOpen ? (
+                  <>
+                    <Text style={styles.fieldLabel}>یا نشانی را بنویسید</Text>
+                    <TextInput
+                      accessibilityLabel="نشانی یا نام محل"
+                      placeholder="مثلاً خیابان مدرس، بابل"
+                      placeholderTextColor={colors.neutral[400]}
+                      style={styles.input}
+                      value={placeTerm}
+                      onChangeText={setPlaceTerm}
+                      onSubmitEditing={() => void searchForPlace()}
+                    />
+                    <PrimaryButton
+                      label="جست‌وجوی نشانی"
+                      busy={busy}
+                      disabled={placeTerm.trim().length < 2}
+                      onPress={() => void searchForPlace()}
+                    />
+                    {placeResults?.map((candidate, index) => (
+                      <PressScale
+                        key={`${candidate.latitude},${candidate.longitude},${index}`}
+                        scaleTo={0.97}
+                        accessibilityLabel={`${candidate.title}${candidate.address ? `، ${candidate.address}` : ''}`}
+                        style={styles.placeRow}
+                        onPress={() => {
+                          if (!selectedCityId) return
+                          void (async () => {
+                            setBusy(true)
+                            setMessage(undefined)
+                            try {
+                              await enterShopAt(
+                                selectedCityId,
+                                candidate.latitude,
+                                candidate.longitude,
+                              )
+                            } catch (error) {
+                              handleAuthenticatedError(error)
+                            } finally {
+                              setBusy(false)
+                            }
+                          })()
+                        }}
+                      >
+                        <Text style={styles.placeTitle}>{candidate.title}</Text>
+                        {candidate.address && (
+                          <Text style={styles.placeAddress}>{candidate.address}</Text>
+                        )}
+                      </PressScale>
+                    ))}
+                  </>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    style={styles.secondaryButton}
+                    onPress={() => setTypedAddressOpen(true)}
+                  >
+                    <Text style={styles.secondaryButtonText}>
+                      نمی‌خواهید موقعیت را روشن کنید؟ نشانی را بنویسید
+                    </Text>
+                  </Pressable>
+                ))}
             </>
           )}
           {message && <InlineMessage text={message} />}
@@ -1272,6 +1471,36 @@ export default function App() {
           <Header session={session} onLogout={logout} />
           <Text style={styles.title}>{customerCopy.title}</Text>
           <Text style={styles.subtitle}>{customerCopy.subtitle}</Text>
+
+          {/*
+            Yesterday's basket, above the shelf.
+
+            Reorder already existed, two taps deep in the orders tab, which
+            means the customer has to remember it is there. Bread is bought
+            again and again — it is the same bread as last week — so the shelf
+            is where the offer belongs. Kivetz, Urminsky and Zheng's
+            goal-gradient work is the reason it is worth the space: a basket
+            that arrives pre-filled moves somebody most of the way to the end
+            of the task before they have spent any effort on it.
+          */}
+          {lastOrder && lastOrder.items.length > 0 && (
+            <View style={styles.againCard}>
+              <Text style={styles.againTitle}>همان سفارش قبلی</Text>
+              <Text style={styles.againItems}>
+                {lastOrder.items
+                  .map(
+                    (item) => `${item.nameFaSnapshot} × ${item.quantity.toLocaleString('fa-IR')}`,
+                  )
+                  .join('، ')}
+              </Text>
+              <PrimaryButton
+                label="همین را دوباره بفرست"
+                busy={reordering}
+                onPress={() => void reorderFrom(lastOrder.id)}
+              />
+            </View>
+          )}
+
           {products.length === 0 ? (
             <Text style={styles.emptyText}>{customerCopy.emptyCatalog}</Text>
           ) : (
@@ -2090,6 +2319,62 @@ const styles = StyleSheet.create({
     borderColor: colors.neutral[300],
     borderRadius: 999,
     backgroundColor: colors.neutral[50],
+  },
+  /*
+    A search result, sized as a row rather than a chip: it carries two lines —
+    the name of the place and the street it is on — and a customer choosing
+    between two junctions with similar names needs the second line to tell
+    them apart.
+  */
+  /*
+    The repeat-order card above the shelf. Sunken paper with a dashed edge, so
+    it reads as the shop remembering something rather than as one more product
+    to choose between.
+  */
+  againCard: {
+    gap: 8,
+    padding: 14,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[300],
+    borderRadius: 16,
+    backgroundColor: colors.neutral[50],
+  },
+  againTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: 16,
+    color: ink.strong,
+    textAlign: 'right',
+  },
+  againItems: {
+    fontFamily: fontFamily.regular,
+    fontSize: 14,
+    lineHeight: 26,
+    color: ink.base,
+    textAlign: 'right',
+  },
+  placeRow: {
+    ...touchTarget.comfortable,
+    justifyContent: 'center',
+    gap: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.neutral[300],
+    borderRadius: 14,
+    backgroundColor: colors.neutral[50],
+  },
+  placeTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: 15,
+    color: ink.strong,
+    textAlign: 'right',
+  },
+  placeAddress: {
+    fontFamily: fontFamily.regular,
+    fontSize: 13,
+    color: ink.muted,
+    textAlign: 'right',
   },
   cityChipSelected: {
     borderColor: colors.primary[700],

@@ -544,4 +544,61 @@ describe('browsing before sign-in', () => {
       'operationalZoneId=66666666-6666-4666-8666-666666666666',
     )
   })
+  /*
+    The way into the shop for a customer who declines the position prompt.
+
+    This was the one place in the application where the path could end: the
+    location screen offered a satellite fix and nothing else, and older
+    customers decline that prompt often and out of caution. These check the two
+    distinctions the screen depends on, because getting either wrong turns a
+    working alternative back into a dead end.
+  */
+  it('asks the geocoder within the chosen city, so a search finds the near junction', () => {
+    const fetchMock = vi
+      .fn<CustomerFetch>()
+      .mockResolvedValue(
+        jsonResponse({ success: true, data: { available: true, candidates: [] }, meta }),
+      )
+    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+
+    return client
+      .searchPlaces({ term: 'مدرس', cityId: '55555555-5555-4555-8555-555555555555' })
+      .then(() => {
+        const url = String(fetchMock.mock.calls[0]?.[0])
+        expect(url).toContain('/api/v1/places/search')
+        expect(url).toContain('cityId=55555555-5555-4555-8555-555555555555')
+      })
+  })
+
+  it('leaves the city out rather than sending it empty', async () => {
+    const fetchMock = vi
+      .fn<CustomerFetch>()
+      .mockResolvedValue(
+        jsonResponse({ success: true, data: { available: true, candidates: [] }, meta }),
+      )
+    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+
+    await client.searchPlaces({ term: 'مدرس' })
+
+    // `cityId=` is a filter on the empty string, not the absence of a filter.
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('cityId')
+  })
+
+  it('keeps "no provider" and "no such place" as different answers', async () => {
+    // The screen shows one as a hidden search box and the other as "try
+    // different words". Collapsing them into a single empty list would tell a
+    // customer their street does not exist when the truth is that nobody has
+    // configured a map.
+    const fetchMock = vi
+      .fn<CustomerFetch>()
+      .mockResolvedValue(
+        jsonResponse({ success: true, data: { available: false, candidates: [] }, meta }),
+      )
+    const client = createCustomerApiClient('https://api.alonoon.ir/', fetchMock)
+
+    await expect(client.searchPlaces({ term: 'مدرس' })).resolves.toEqual({
+      available: false,
+      candidates: [],
+    })
+  })
 })
