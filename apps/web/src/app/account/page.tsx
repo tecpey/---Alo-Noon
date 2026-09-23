@@ -51,13 +51,46 @@ export default async function AccountPage({
   )
 }
 
+/**
+ * What this sign-in is *for*, in the words of the thing the customer was doing.
+ *
+ * Every gated route lands here, and before this they all read «ورود به حساب» —
+ * the same four words whether somebody had tapped «ادامهٔ سفارش» with a basket
+ * of bread, opened their orders to see where lunch was, or gone looking for
+ * their wallet. A screen that cannot say why it is in the way is where the
+ * thread of a task gets dropped, and NN/g's senior research is blunt about the
+ * cost: after one failure, older customers abandon at nearly twice the rate of
+ * younger ones, and are markedly less willing to try another route.
+ *
+ * Keyed on the destination the route already passes, so a new gated page gets
+ * a sentence by adding one line here rather than by being forgotten.
+ */
+const SIGN_IN_PURPOSE: Readonly<Record<string, { title: string; lead: string }>> = {
+  '/checkout': {
+    title: 'برای ثبت سفارش وارد شوید',
+    lead: 'سبد شما محفوظ است. با شمارهٔ موبایل و یک کد پیامکی وارد شوید تا سفارش را تمام کنیم.',
+  },
+  '/orders': {
+    title: 'برای دیدن سفارش‌ها وارد شوید',
+    lead: 'سفارش‌های شما به شمارهٔ موبایلتان بسته است. کد پیامکی را بزنید تا نشانتان بدهیم.',
+  },
+  '/wallet': {
+    title: 'برای دیدن کیف پول وارد شوید',
+    lead: 'موجودی و گردش حساب شما به شمارهٔ موبایلتان بسته است.',
+  },
+}
+
+const DEFAULT_PURPOSE = {
+  title: 'ورود به حساب',
+  lead: 'ورود با شمارهٔ موبایل و کد یک‌بارمصرف انجام می‌شود؛ رمز عبوری وجود ندارد که فراموش شود.',
+} as const
+
 function SignedOut({ next }: { next: string }) {
+  const purpose = SIGN_IN_PURPOSE[next] ?? DEFAULT_PURPOSE
   return (
     <>
-      <h1>ورود به حساب</h1>
-      <p className="account__lead">
-        ورود با شمارهٔ موبایل و کد یک‌بارمصرف انجام می‌شود؛ رمز عبوری وجود ندارد که فراموش شود.
-      </p>
+      <h1>{purpose.title}</h1>
+      <p className="account__lead">{purpose.lead}</p>
       <SignInForm {...(next && { next })} />
       <ul className="account__points">
         <li>

@@ -29,7 +29,10 @@ export const metadata: Metadata = {
  */
 export default async function OrdersPage() {
   const session = await currentSession()
-  if (!session) redirect('/account')
+  // Carrying the destination, like checkout and the wallet already do. Without
+  // it, somebody who came here to check on their bread signed in and landed on
+  // an account page, having to find their way back to the thing they asked for.
+  if (!session) redirect('/account?next=/orders')
 
   const result = await listOrders()
 

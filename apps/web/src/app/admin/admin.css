@@ -431,7 +431,7 @@ button.ghost:hover:not(:disabled) {
   color: var(--ink-strong);
 }
 .admin-nav a.current {
-  background: var(--primary-600);
+  background: var(--ink-action);
   color: var(--ink-onAction);
   font-weight: 700;
 }

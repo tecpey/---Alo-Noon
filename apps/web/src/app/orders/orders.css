@@ -58,7 +58,7 @@
 .order__meta {
   margin-block-start: 0.15rem;
   color: var(--ink-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 .order__total {
   flex: none;
@@ -81,7 +81,7 @@
   align-items: center;
   gap: 0.35rem;
   color: var(--ink-faint);
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   text-align: center;
 }
 .order__rail li.is-done {
@@ -97,7 +97,7 @@
   color: var(--ink-onAction);
 }
 .order__rail li.is-done .order__dot {
-  background: var(--primary-600);
+  background: var(--ink-action);
 }
 .order--done .order__rail li.is-done .order__dot {
   background: var(--success);
@@ -168,7 +168,7 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--primary-600);
+  color: var(--ink-action);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -192,7 +192,7 @@
   padding: 0;
   margin-block-end: 0.4rem;
   color: var(--ink-muted);
-  font-size: 0.83rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 .rating__scores {
@@ -227,7 +227,7 @@
   display: grid;
   gap: 0.3rem;
   color: var(--ink-muted);
-  font-size: 0.83rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 .rating__comment textarea {
@@ -277,7 +277,7 @@
 }
 .notify-offer__text span {
   color: var(--ink-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 .notify-offer__on,
 .notify-offer__failed {

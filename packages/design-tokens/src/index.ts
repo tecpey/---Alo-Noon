@@ -125,14 +125,44 @@ export const ink = {
   strong: colors.neutral[900],
   /** Body copy. */
   base: colors.neutral[800],
-  /** Captions, secondary lines, the second row of a card. */
-  muted: colors.neutral[600],
+  /**
+   * Captions, secondary lines, the second row of a card.
+   *
+   * 700 rather than 600. Measured on the running storefront, 600 put category
+   * labels at 3.94:1 against the card and 4.10:1 against the page — under the
+   * 4.5 that WCAG 1.4.3 asks of body text. 700 reads at 5.87 and 6.11.
+   */
+  muted: colors.neutral[700],
   /** Placeholders, disabled text. */
   faint: colors.neutral[500],
   /** On the action colour and on inverse surfaces. */
   onAction: '#FFF9F2',
-  /** Prices, links, anything that is itself the action. */
-  action: colors.primary[600],
+  /**
+   * Prices, links, anything that is itself the action.
+   *
+   * 700 rather than 600, and this is the single highest-value colour decision
+   * in the system: 600 is `#E4520D`, which measured **3.46:1** against a
+   * product card and **3.60:1** against the page. The price of the bread — the
+   * one number on the screen a customer cannot guess and must not misread —
+   * was the faintest text on it, and the same orange failed again under every
+   * primary button as white-on-orange at 3.81:1.
+   *
+   * Nothing new was invented to fix it — 800 was already in the ramp. The
+   * brand keeps its colours; only the role moved.
+   *
+   * 800 rather than 700, and the test below is why. 700 clears the bar on a
+   * card (4.66) and looked like enough when the browser was only asked about
+   * cards. It does not clear `surface.page` (3.87) or `surface.sunken` (4.09),
+   * and those are real: the page ground and the well an input sits in. 800
+   * clears every surface the system defines — 5.53 at its worst, 7.01 for its
+   * own text on top of it.
+   *
+   * That is a darker, deeper orange than the mark, and deliberately so: 500
+   * and 600 stay exactly where they were, for the decorative surfaces where
+   * contrast is not being asked to carry meaning. The mark stays bright. The
+   * price becomes readable.
+   */
+  action: colors.primary[800],
 } as const
 
 export const line = {

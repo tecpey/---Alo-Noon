@@ -54,7 +54,7 @@
   height: 3.25rem;
   border-radius: var(--radius-full);
   background: var(--surface-base);
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 
 .wallet__balance-label {
@@ -252,7 +252,7 @@
 .wallet-entry__after {
   margin-block-start: 0.2rem;
   color: var(--ink-faint);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 .wallet-entry__money {
   text-align: end;
@@ -290,7 +290,7 @@
   color: var(--success);
 }
 .wallet-transfer.is-pending .wallet-transfer__glyph {
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 .wallet-transfer__who {
   color: var(--ink-strong);
@@ -299,7 +299,7 @@
 .wallet-transfer__when {
   margin-block-start: 0.2rem;
   color: var(--ink-faint);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 .wallet-transfer__amount {
   margin-inline-start: auto;
@@ -329,7 +329,7 @@
   gap: 0.4rem;
   margin-block-start: 1rem;
   color: var(--ink-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   line-height: 1.9;
 }
 .wallet__reassure svg {
@@ -376,6 +376,6 @@
 }
 .wallet-transfer__reason {
   margin: 0.15rem 0 0;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--ink-muted);
 }

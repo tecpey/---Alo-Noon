@@ -43,25 +43,43 @@
   margin-block: 0;
   background: var(--surface-base);
   overflow: clip;
+
+  /*
+    Held sideways, a notched iPhone puts 44px of sensor housing over one edge
+    of the page. These two are that much, and `0px` in portrait and on every
+    desktop — which is all of the time, for all but a few customers.
+
+    Physical properties on purpose: `inline-start` follows the writing
+    direction and this page is RTL, but the notch is on whichever side the
+    hardware puts it.
+  */
+  --notch-start: env(safe-area-inset-left, 0px);
+  --notch-end: env(safe-area-inset-right, 0px);
 }
 
 /*
-  Held sideways, a notched iPhone puts 44px of sensor housing over one edge of
-  the page.
+  The notch inset for a `main` that does not set a side gutter of its own.
 
-  The header and the footer each carry their own inset rather than inheriting
-  one, because their backgrounds are full-bleed and have to stay that way — a
-  sticky bar padded by its parent leaves a strip of the wrong colour beside it.
-  Everything between them is ordinary content, so it is enough to push it clear
-  here, once, instead of on each section.
+  `:where()` is load-bearing, and the reason is a bug this shipped with. As a
+  plain `.app-frame > main` the rule scored (0,1,1) and beat every page that
+  padded its own main from a single class — `.account__body`, `.legal__body`,
+  `.product-page`, `.catalog-state`, `.admin` — all of which score (0,1,0) and
+  all of which set `padding` as the shorthand, so the two physical longhands
+  here replaced their side gutters with zero. Five surfaces, the sign-in screen
+  among them, were putting text against the bare edge of the glass on every
+  phone, in portrait, permanently. It measured as text running 0→390 on a 390px
+  viewport, which reads as clipping and is not: it is an override.
 
-  Physical properties on purpose: `inline-start` follows the writing direction
-  and this page is RTL, but the notch is on whichever side the hardware puts
-  it. Both are `0px` in portrait and on every desktop.
+  Zeroed, this is a floor rather than a ceiling. A `main` with no gutter of its
+  own still clears the sensor housing; one that has a gutter keeps it, and
+  takes the notch into account itself with `max()` and the two variables above.
+
+  The header and the tab bar are deliberately not covered: their backgrounds
+  are full-bleed and have to stay that way, so each carries its own inset.
 */
-.app-frame > main {
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
+:where(.app-frame > main) {
+  padding-left: var(--notch-start);
+  padding-right: var(--notch-end);
 }
 
 @media (min-width: 56.25rem) {
@@ -181,8 +199,8 @@
 }
 .brand-lockup__tagline {
   color: var(--ink-muted);
-  /* 11.5px of Persian under a wordmark is a smudge rather than a tagline. */
-  font-size: 0.8rem;
+  /* 12.8px of Persian under a wordmark is a smudge rather than a tagline. */
+  font-size: 0.85rem;
 }
 
 /*
@@ -249,7 +267,7 @@
   transform: scale(0.97);
 }
 .site-header__address svg {
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 
 .site-header__search {
@@ -311,7 +329,7 @@
   outline: none;
 }
 .site-header__search:focus-within {
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 
 .site-header__account {
@@ -377,7 +395,7 @@
   place-items: center;
   padding-inline: 0.3rem;
   border-radius: var(--radius-full);
-  background: var(--primary-600);
+  background: var(--ink-action);
   color: var(--ink-onAction);
   font-size: 0.75rem;
   font-weight: 800;
@@ -499,8 +517,8 @@
   padding: 0.35rem 0.85rem;
   border-radius: var(--radius-full);
   background: var(--primary-100);
-  color: var(--primary-700);
-  font-size: 0.82rem;
+  color: var(--ink-action);
+  font-size: 0.85rem;
   font-weight: 700;
 }
 .hero h1 {
@@ -591,7 +609,7 @@
   flex: none;
   border-radius: var(--radius-md);
   background: var(--surface-card);
-  color: var(--primary-600);
+  color: var(--ink-action);
   box-shadow: var(--shadow-sm);
 }
 .condition__text {
@@ -705,7 +723,7 @@
   flex: none;
   border-radius: var(--radius-md);
   background: var(--primary-100);
-  color: var(--primary-700);
+  color: var(--ink-action);
 }
 .trust__title {
   color: var(--ink-strong);
@@ -716,7 +734,7 @@
 .trust__body {
   margin-block-start: 0.2rem;
   color: var(--ink-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   line-height: 1.7;
 }
 
@@ -807,7 +825,7 @@
     transform var(--duration-fast) var(--easing-spring);
 }
 .category__label {
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   font-weight: 600;
   line-height: 1.3;
   /* One line, clipped. A category whose name wraps makes its tile taller than
@@ -826,13 +844,13 @@
 /* The selected one fills, and its label takes the brand colour with it — the
    tile alone is a small mark to carry the whole state at arm's length. */
 .category--active .category__tile {
-  background: var(--primary-600);
+  background: var(--ink-action);
   border-color: var(--primary-600);
   color: var(--ink-onAction);
   box-shadow: var(--shadow-action);
 }
 .category--active .category__label {
-  color: var(--primary-700);
+  color: var(--ink-action);
 }
 /* The focus ring belongs on the tile, which is what is drawn, rather than on
    the button box that also covers the label. */
@@ -1010,9 +1028,9 @@
   z-index: 1;
   padding: 0.25rem 0.6rem;
   border-radius: var(--radius-full);
-  background: var(--primary-600);
-  color: #fff;
-  font-size: 0.7rem;
+  background: var(--ink-action);
+  color: var(--ink-onAction);
+  font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   box-shadow: var(--shadow-sm);
@@ -1071,12 +1089,15 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  min-width: 2.2rem;
-  height: 2.2rem;
+  /* The floor, not a number close to it. Measured at 37×44 on a rendered
+     card: tall enough and 7px too narrow, on the one control this whole shop
+     exists to have pressed. */
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
   padding-inline: 0.6rem;
   border: 0;
   border-radius: var(--radius-full);
-  background: var(--primary-600);
+  background: var(--ink-action);
   color: var(--ink-onAction);
   font-size: 0.85rem;
   font-weight: 800;
@@ -1135,7 +1156,7 @@
 }
 .product-card__price {
   color: var(--ink-action);
-  font-size: 0.92rem;
+  font-size: 1rem;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1398,7 +1419,7 @@
 }
 .drawer-line__price {
   color: var(--ink-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 
 /* Plus first, reading right to left: the common action sits where the thumb
@@ -1469,7 +1490,7 @@
   gap: 0.4rem;
   margin-block-end: 0.9rem;
   color: var(--ink-muted);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   line-height: 1.8;
 }
 .drawer__note svg {
@@ -1523,7 +1544,11 @@
   justify-items: center;
   gap: 0.75rem;
   margin: 1.5rem;
-  padding: 2.75rem 1.5rem;
+  /* Longhands, because this is also a `.app-frame > main`: see the note on that
+     rule. The 1.5rem margin already clears a 44px notch once this padding is
+     added to it, so there is no `max()` to do here. */
+  padding-block: 2.75rem;
+  padding-inline: 1.5rem;
   text-align: center;
   background: var(--surface-card);
   border: 1px dashed var(--line-base);
@@ -1599,7 +1624,7 @@
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--primary-600) 10%, var(--surface-card));
   border: 1px solid color-mix(in srgb, var(--primary-600) 35%, transparent);
-  color: var(--primary-700);
+  color: var(--ink-action);
   font-size: 0.85rem;
   line-height: 1.7;
 }
@@ -1686,12 +1711,12 @@
   background: none;
   color: var(--ink-muted);
   font: inherit;
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   text-decoration: none;
   cursor: pointer;
 }
 .app-tabs__tab.is-active {
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 .app-tabs__glyph {
   position: relative;
@@ -1707,9 +1732,9 @@
   min-inline-size: 1rem;
   padding-inline: 0.2rem;
   border-radius: var(--radius-full);
-  background: var(--primary-600);
+  background: var(--ink-action);
   color: var(--surface-card);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   line-height: 1rem;
   text-align: center;
 }
@@ -1775,5 +1800,5 @@
 .city-sheet__option.is-current {
   border-color: var(--primary-600);
   background: var(--primary-50);
-  color: var(--primary-700);
+  color: var(--ink-action);
 }

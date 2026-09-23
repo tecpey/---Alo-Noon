@@ -63,6 +63,15 @@ export function CheckoutFlow({
   const [chosenWindow, setChosenWindow] = useState<string | null>(null)
   const [source, setSource] = useState<'GATEWAY' | 'BALANCE'>('GATEWAY')
   const [shortBy, setShortBy] = useState<string | null>(null)
+  /**
+   * The total the customer has been asked to confirm, or null for "not asked".
+   *
+   * The amount rather than a boolean, and that is the whole trick: the panel is
+   * rendered only while this equals the live total, so a basket that re-prices
+   * underneath an open confirmation dismisses it instead of collecting a yes
+   * for one number and spending another.
+   */
+  const [confirming, setConfirming] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
   // Fixed for the life of the page. Recomputing it per render would make
@@ -112,6 +121,7 @@ export function CheckoutFlow({
     if (!quote) return
     setError(null)
     setShortBy(null)
+    setConfirming(null)
     startTransition(async () => {
       const result = await payAction(quote.id, source)
       if (!result.ok) {
@@ -533,26 +543,77 @@ export function CheckoutFlow({
           </p>
         )}
 
-        <button
-          type="button"
-          className="an-button checkout__pay"
-          disabled={!quote || pending || (source === 'BALANCE' && !enoughBalance)}
-          onClick={pay}
-        >
-          {pending && quote ? (
-            source === 'BALANCE' ? (
-              'در حال پرداخت…'
+        {/*
+          The last step before money moves, and the only irreversible button on
+          the page.
+
+          Asked for the wallet and not for the gateway, which is a distinction
+          rather than an inconsistency: the bank's own page is a confirmation
+          screen, it names the amount, and it can be abandoned without anything
+          being spent. «پرداخت از کیف پول» has none of that — one tap and the
+          balance is gone, with a refund the only way back.
+
+          That single tap is what the accessibility audit found no guard on, and
+          the customers it named are the reason: this shop runs on a household
+          phone that a grandchild also holds, and the repeat-order path is
+          deliberately short enough that a stray tap can reach the end of it.
+
+          Rendered in place of the pay button rather than over it. A dialog laid
+          on top of the page is the wrong shape for this — it is a modal to trap
+          focus in, it lands under the sensor housing on a notched phone in
+          landscape, and it puts the amount somewhere the customer has to look
+          away from the summary to read. In place, the amount is a line further
+          down the same column of figures they have been reading.
+
+          `aria-live` because the panel replaces the control that was just
+          pressed: without it a screen reader announces nothing and the button
+          simply stops being there.
+        */}
+        {confirming !== null && confirming === quote?.total.amount ? (
+          <div className="paycheck" role="group" aria-live="polite" aria-label="تأیید پرداخت">
+            <p className="paycheck__lead">از کیف پول شما کم می‌شود:</p>
+            <p className="paycheck__amount">{formatToman(confirming)}</p>
+            {chosen && <p className="paycheck__where">تحویل به «{chosen.label}»</p>}
+            <div className="paycheck__actions">
+              <button type="button" className="an-button" disabled={pending} onClick={pay}>
+                <CheckIcon width={18} height={18} />
+                {pending ? 'در حال پرداخت…' : 'بله، پرداخت کن'}
+              </button>
+              <button
+                type="button"
+                className="an-button an-button--quiet"
+                disabled={pending}
+                onClick={() => setConfirming(null)}
+              >
+                نه، برگرد
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="an-button checkout__pay"
+            disabled={!quote || pending || (source === 'BALANCE' && !enoughBalance)}
+            onClick={() => {
+              if (source === 'BALANCE' && quote) setConfirming(quote.total.amount)
+              else pay()
+            }}
+          >
+            {pending && quote ? (
+              source === 'BALANCE' ? (
+                'در حال پرداخت…'
+              ) : (
+                'در حال اتصال به درگاه…'
+              )
             ) : (
-              'در حال اتصال به درگاه…'
-            )
-          ) : (
-            <>
-              <CheckIcon width={18} height={18} />
-              {source === 'BALANCE' ? 'پرداخت از کیف پول' : 'پرداخت'}
-              <ChevronIcon width={18} height={18} />
-            </>
-          )}
-        </button>
+              <>
+                <CheckIcon width={18} height={18} />
+                {source === 'BALANCE' ? 'پرداخت از کیف پول' : 'پرداخت'}
+                <ChevronIcon width={18} height={18} />
+              </>
+            )}
+          </button>
+        )}
 
         <p className="checkout__trust">
           <ShieldIcon width={16} height={16} />

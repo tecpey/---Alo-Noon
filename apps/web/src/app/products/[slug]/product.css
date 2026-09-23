@@ -9,7 +9,10 @@
  */
 
 .product-page {
-  padding: 1rem 1rem 2.5rem;
+  /* Side gutter against the notch: see `.app-frame > main` in storefront.css. */
+  padding-block: 1rem 2.5rem;
+  padding-left: max(1rem, var(--notch-start, 0px));
+  padding-right: max(1rem, var(--notch-end, 0px));
 }
 
 .crumbs {
@@ -24,7 +27,7 @@
   color: var(--ink-muted);
 }
 .crumbs a:hover {
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 /* The chevron points the way reading runs, which in Persian is leftward. */
 .crumbs svg {
@@ -83,9 +86,9 @@
   inset-inline-start: 0.75rem;
   padding: 0.3rem 0.75rem;
   border-radius: var(--radius-full);
-  background: var(--primary-600);
-  color: #fff;
-  font-size: 0.78rem;
+  background: var(--ink-action);
+  color: var(--ink-onAction);
+  font-size: 0.85rem;
   font-weight: 700;
   box-shadow: var(--shadow-sm);
 }
@@ -96,7 +99,7 @@
   align-content: start;
 }
 .product__category {
-  color: var(--primary-600);
+  color: var(--ink-action);
   font-size: 0.85rem;
   font-weight: 700;
 }
@@ -158,7 +161,7 @@
 .product__facts svg {
   flex: none;
   margin-block-start: 0.15rem;
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 .product__fact-title {
   font-weight: 700;
@@ -205,6 +208,6 @@
 .tag-list--warning li {
   background: color-mix(in srgb, var(--primary-600) 10%, var(--surface-card));
   border-color: color-mix(in srgb, var(--primary-600) 40%, transparent);
-  color: var(--primary-700);
+  color: var(--ink-action);
   font-weight: 700;
 }

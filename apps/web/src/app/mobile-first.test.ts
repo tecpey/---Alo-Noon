@@ -127,7 +127,114 @@ describe('controls are big enough to hit', () => {
   })
 })
 
+/**
+ * The customer stylesheets, which are the ones an eighty-year-old reads.
+ *
+ * The operator surfaces are excluded on purpose and by name: a 13px column
+ * header in a shift-long admin table is a convention, and the person reading it
+ * is at a desk doing this job all day. The shop is the opposite — held at arm's
+ * length, one-handed, often by somebody who is not going to pinch-zoom.
+ */
+const CUSTOMER_STYLESHEETS = files.filter(
+  ({ path }) => !path.includes('admin/') && !path.includes('bakery/'),
+)
+
+/** Every `selector { … }` rule in a file, flattened to the last selector line. */
+function* rules(source: string) {
+  for (const match of source.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+    yield {
+      selector: match[1]!.trim().split('\n').pop()!.trim(),
+      body: match[2]!,
+    }
+  }
+}
+
+describe('nothing on a customer screen is too small to read', () => {
+  /*
+    13.6px, and the reasoning for the number rather than a rounder one.
+
+    NIA and MedlinePlus put the floor for an older reader at 16px, and that is
+    right for body copy — which is why every paragraph, price and field on these
+    pages is at least 1rem. It is not a sane floor for a caption under a
+    wordmark or the label under a tab glyph; applied literally it would give
+    four tab labels the width of six. So body copy answers to NIA and the
+    secondary layer answers to this: 0.85rem, the size the stylesheets already
+    used for most of their small print, made the floor rather than the average.
+
+    What it replaced was not a scale. It was 0.62rem on the basket count, 0.7rem
+    on the tab labels — the shop's primary navigation, at 11.2px — 0.72rem on
+    the order-tracking rail, and 0.78rem on the fare note beside the money. Each
+    was individually defensible and together they were a product that cannot be
+    read by the people it was built for.
+  */
+  const FLOOR_REM = 0.85
+
+  /*
+    Two numeric count badges, named so the exemption is a decision. Each is a
+    digit or two inside a circle sized by the glyph it hangs off; the digits
+    cannot grow without the circle growing, and the circle cannot grow without
+    covering the icon it belongs to. They carry no information that is not also
+    in the accessible name of their control.
+  */
+  const COUNT_BADGES = new Set(['.site-header__count', '.app-tabs__count'])
+  const BADGE_FLOOR_REM = 0.75
+
+  it('has customer stylesheets to check', () => {
+    expect(CUSTOMER_STYLESHEETS.length).toBeGreaterThan(5)
+  })
+
+  it('sets no type below the floor', () => {
+    const offenders: string[] = []
+    for (const { path, source } of CUSTOMER_STYLESHEETS) {
+      for (const { selector, body } of rules(source)) {
+        for (const declared of body.matchAll(/font-size:\s*([0-9.]+)rem/g)) {
+          const rem = Number.parseFloat(declared[1]!)
+          const floor = COUNT_BADGES.has(selector) ? BADGE_FLOOR_REM : FLOOR_REM
+          if (rem < floor) offenders.push(`${path}: ${selector} → ${rem}rem (${rem * 16}px)`)
+        }
+      }
+    }
+    // Named rather than counted, so a failure says which line and how small.
+    expect(offenders).toEqual([])
+  })
+
+  it('takes white from the token rather than typing #fff', () => {
+    // `ink.onAction` is #FFF9F2 — warm, because pure white punches a hole in
+    // paper and the palette test forbids it. Three badges had `color: #fff`
+    // hardcoded and so were exempt from that test by not going through it.
+    const offenders: string[] = []
+    for (const { path, source } of CUSTOMER_STYLESHEETS) {
+      for (const match of source.matchAll(
+        /(?:^|\n)\s*(?:color|background(?:-color)?):\s*(#[0-9a-fA-F]{3,8})/g,
+      ))
+        if (/^#(fff|ffffff|000|000000)$/i.test(match[1]!)) offenders.push(`${path}: ${match[1]}`)
+    }
+    expect(offenders).toEqual([])
+  })
+})
+
 describe('the phone the shop is held in', () => {
+  it('leaves a page its own side gutter', () => {
+    /*
+      A regression test for a one-character bug with a five-page blast radius.
+
+      `.app-frame > main` sets the notch inset in physical longhands and scores
+      (0,1,1). Every page that pads its own main does it from a single class at
+      (0,1,0), with the `padding` shorthand — so the longhands won and the side
+      gutters of the sign-in screen, the orders list, the wallet, the legal
+      pages, the product page and the payment result all computed to zero. Text
+      against the bare edge of the glass, in portrait, on every phone, from the
+      day the notch rule was written.
+
+      `:where()` drops it to zero specificity, which makes it a floor instead of
+      an override. The assertion is on the mechanism rather than on any one
+      page, because the next page to pad its own main will not think to check.
+    */
+    const storefront = files.find((file) => file.path === 'app/storefront.css')!
+    expect(storefront.source).toContain(':where(.app-frame > main)')
+    expect(storefront.source).not.toMatch(/(?<!:where\()\.app-frame > main\s*\{/)
+  })
+
   it('keeps its fixed edges clear of the notch and the home indicator', () => {
     // Anything pinned to an edge — the top bar, the basket's checkout button,
     // the footer — sits under the sensor housing or the gesture bar without

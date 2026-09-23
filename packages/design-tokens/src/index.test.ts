@@ -19,8 +19,14 @@ describe('the palette', () => {
   it('keeps the action colour distinct from the brand colour', () => {
     // The brand appears; the action commands. One value doing both jobs is how
     // a page ends up with six things all asking to be pressed.
-    expect(ink.action).toBe(colors.primary[600])
+    //
+    // It is darker than either — 800, not the 600 it used to be — because the
+    // action colour is the only one of the three that has to be *read*, on a
+    // price and inside a button, and the contrast test below is what settled
+    // which step of the ramp that takes.
+    expect(ink.action).toBe(colors.primary[800])
     expect(ink.action).not.toBe(colors.primary[500])
+    expect(ink.action).not.toBe(colors.primary[600])
   })
 
   it('has no pure white or pure black anywhere in it', () => {
@@ -114,5 +120,85 @@ describe('state tints', () => {
     for (const values of Object.values(tint)) {
       expect(luminance(values.ink)).toBeLessThan(luminance(values.surface) - 200)
     }
+  })
+})
+
+/**
+ * The contrast every text role owes the surface it is read on.
+ *
+ * This exists because the storefront shipped failing it. Measured on the
+ * running page, the price of the bread sat at 3.46:1 and every primary button
+ * at 3.81:1 — the two things on the screen a customer most needs to read. The
+ * numbers came back from a browser, and nothing in the repository would have
+ * caught them, because a colour that fails contrast is not a colour that looks
+ * broken. It looks like a brand.
+ *
+ * So the arithmetic lives here now, next to the tokens, and runs on every
+ * commit. A future palette change that drops a text role below its floor fails
+ * the build rather than reaching a customer's eyes.
+ *
+ * WCAG 2.x relative luminance, from the specification rather than approximated:
+ * linearise each channel, weight by 0.2126/0.7152/0.0722, and compare the
+ * lighter of the pair to the darker with the 0.05 flare term on both.
+ */
+describe('text contrast against real surfaces', () => {
+  const channel = (value: number) => {
+    const c = value / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16))
+    return 0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!)
+  }
+  const contrast = (foreground: string, background: string) => {
+    const [a, b] = [luminance(foreground), luminance(background)]
+    const [high, low] = a > b ? [a, b] : [b, a]
+    return (high + 0.05) / (low + 0.05)
+  }
+
+  /** WCAG 1.4.3 (AA) for body text. Large text may sit at 3. */
+  const BODY_MINIMUM = 4.5
+
+  const readableSurfaces = [
+    ['page', surface.page],
+    ['base', surface.base],
+    ['card', surface.card],
+    ['sunken', surface.sunken],
+  ] as const
+
+  for (const [name, background] of readableSurfaces) {
+    it(`carries strong, base, muted and action text on the ${name} surface`, () => {
+      for (const role of ['strong', 'base', 'muted', 'action'] as const) {
+        const measured = contrast(ink[role], background)
+        expect(
+          measured,
+          `ink.${role} (${ink[role]}) on surface.${name} (${background}) is ${measured.toFixed(2)}:1`,
+        ).toBeGreaterThanOrEqual(BODY_MINIMUM)
+      }
+    })
+  }
+
+  it('carries its own text on the action colour, which is what every button is', () => {
+    // White-on-orange is the primary button, the checkout button and the
+    // sign-in button. It failed at 3.81:1 before the action role moved to 700.
+    const measured = contrast(ink.onAction, ink.action)
+    expect(
+      measured,
+      `ink.onAction on ink.action is ${measured.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(BODY_MINIMUM)
+  })
+
+  it('carries light text on the inverse surface', () => {
+    expect(contrast(colors.paper, surface.inverse)).toBeGreaterThanOrEqual(BODY_MINIMUM)
+  })
+
+  /**
+   * `faint` is excluded on purpose and pinned here so the exclusion is a
+   * decision rather than an oversight: it dresses placeholders and disabled
+   * controls, which WCAG 1.4.3 exempts, and raising it would make a disabled
+   * button indistinguishable from a live one.
+   */
+  it('keeps faint below the body floor, because it marks what cannot be used', () => {
+    expect(contrast(ink.faint, surface.card)).toBeLessThan(BODY_MINIMUM)
   })
 })

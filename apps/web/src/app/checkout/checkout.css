@@ -70,8 +70,8 @@
   width: 1.75rem;
   height: 1.75rem;
   border-radius: var(--radius-full);
-  background: var(--primary-600);
-  color: #fff;
+  background: var(--ink-action);
+  color: var(--ink-onAction);
   font-size: 0.85rem;
   font-weight: 800;
 }
@@ -87,7 +87,7 @@
 }
 .checkout__hint svg {
   flex: none;
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 
 .checkout__error {
@@ -96,7 +96,7 @@
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--primary-600) 10%, var(--surface-card));
   border: 1px solid color-mix(in srgb, var(--primary-600) 35%, transparent);
-  color: var(--primary-700);
+  color: var(--ink-action);
   font-size: 0.87rem;
   line-height: 1.7;
 }
@@ -137,7 +137,7 @@
   accent-color: var(--primary-600);
 }
 .address__glyph {
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 .address__body {
   display: grid;
@@ -155,7 +155,7 @@
 }
 .address__who {
   color: var(--ink-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 
 .address-form {
@@ -186,7 +186,7 @@
 }
 .address-form__hint {
   color: var(--ink-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   line-height: 1.6;
 }
 /*
@@ -232,7 +232,7 @@
 .address-form__result-address,
 .address-form__result-distance {
   color: var(--ink-muted);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
 }
 /* The distance is a digit string inside a right-to-left row; without this the
    unit and the number swap places. */
@@ -269,7 +269,7 @@
 }
 .field label {
   color: var(--ink-muted);
-  font-size: 0.83rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 .field input,
@@ -372,7 +372,7 @@
 */
 .summary__fare-note {
   margin: -0.2rem 0 0;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   line-height: 1.5;
   color: var(--ink-muted);
 }
@@ -403,18 +403,66 @@
   cursor: not-allowed;
 }
 
+/*
+  The wallet confirmation, standing where the pay button was.
+
+  Everything here is sized for somebody who is about to spend money and may not
+  be certain they meant to. The amount is the largest type on the page —
+  deliberately larger than the total in the summary above it, because the
+  summary is a figure being read and this is a figure being agreed to.
+
+  The two buttons are full width and stacked, never side by side: a row of two
+  puts «بله» and «نه» a thumb's width apart on a phone, which is the layout that
+  produces the tap this panel exists to prevent.
+*/
+.paycheck {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.1rem;
+  border: 2px solid var(--ink-action);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  text-align: center;
+}
+.paycheck__lead {
+  color: var(--ink-base);
+  font-size: 0.95rem;
+}
+.paycheck__amount {
+  color: var(--ink-action);
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.paycheck__where {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+.paycheck__actions {
+  display: grid;
+  gap: 0.6rem;
+  margin-block-start: 0.4rem;
+}
+.paycheck__actions .an-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  inline-size: 100%;
+}
+
 .checkout__trust {
   display: flex;
   align-items: flex-start;
   gap: 0.4rem;
   color: var(--ink-muted);
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   line-height: 1.7;
 }
 .checkout__trust svg {
   flex: none;
   margin-block-start: 0.15rem;
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 
 /* ------------------------------------------------------- payment result */
@@ -422,7 +470,10 @@
 .result {
   display: grid;
   place-items: center;
-  padding: 2.5rem 1.5rem 3.5rem;
+  /* Side gutter against the notch: see `.app-frame > main` in storefront.css. */
+  padding-block: 2.5rem 3.5rem;
+  padding-left: max(1.5rem, var(--notch-start, 0px));
+  padding-right: max(1.5rem, var(--notch-end, 0px));
 }
 
 .result__card {
@@ -467,7 +518,7 @@
 }
 .result__card--wait .result__glyph {
   background: color-mix(in srgb, var(--primary-600) 12%, transparent);
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 .result__card--bad .result__glyph {
   background: var(--surface-sunken);
@@ -521,7 +572,7 @@
 }
 .promo__label {
   color: var(--ink-muted);
-  font-size: 0.83rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 .promo__row input {
@@ -549,7 +600,7 @@
 /* A refused code is information, not a failure — the basket still priced. */
 .promo__refused {
   color: var(--ink-muted);
-  font-size: 0.83rem;
+  font-size: 0.85rem;
   line-height: 1.7;
 }
 .promo__applied {
@@ -575,7 +626,7 @@
   padding: 0;
   margin-block-end: 0.5rem;
   color: var(--ink-muted);
-  font-size: 0.83rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 .window__list {
@@ -636,7 +687,7 @@
   padding: 0;
   margin-block-end: 0.5rem;
   color: var(--ink-muted);
-  font-size: 0.83rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 .method__list {
@@ -729,7 +780,7 @@
 }
 .paysource__option svg {
   flex: none;
-  color: var(--primary-600);
+  color: var(--ink-action);
 }
 .paysource__label {
   display: grid;
@@ -738,7 +789,7 @@
 }
 .paysource__balance {
   color: var(--ink-faint);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -746,11 +797,11 @@
 .paysource__short {
   margin-block-start: 0.5rem;
   color: var(--ink-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   line-height: 1.9;
 }
 .paysource__short a {
-  color: var(--primary-600);
+  color: var(--ink-action);
   font-weight: 700;
 }
 
@@ -761,7 +812,7 @@
   display: block;
   margin-block-start: 0.15rem;
   color: var(--ink-muted);
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   font-weight: 400;
   line-height: 1.6;
 }
