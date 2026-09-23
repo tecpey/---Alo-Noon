@@ -40,9 +40,26 @@ const BASE = process.env['LAUNCH_API_BASE'] ?? 'http://127.0.0.1:3001'
 const TENANT_ID = '00000000-0000-4000-8000-000000000001'
 const SMS_LOG = process.env['SMS_LOG'] ?? ''
 
-const CUSTOMER = '+989120000003'
-const OPERATOR = '+989120000001'
-const COURIER = '+989120000002'
+/*
+ * The three people this rehearsal signs in as.
+ *
+ * Overridable, because of a stall this script walks into on its second run.
+ * A number with a live sign-in challenge is answered 202 with that same
+ * challenge and no new message — correct, and the reason a gateway is not paid
+ * every time somebody taps the button twice. But it means a re-run inside the
+ * five-minute window fails at the first step with "wait and run again", and an
+ * operator rehearsing a launch is exactly the person who runs this twice in a
+ * row: once to see it fail, once to see the fix.
+ *
+ * So the numbers can be moved — but only the customer freely. The operator and
+ * the courier are *identities*: bootstrap attaches the admin grants and the
+ * courier profile to those exact numbers, so pointing them somewhere else signs
+ * in successfully and then fails at the first privileged call with a 403. On a
+ * re-run inside the window, move the customer and leave the other two alone.
+ */
+const CUSTOMER = process.env['LAUNCH_CUSTOMER_MOBILE'] ?? '+989120000003'
+const OPERATOR = process.env['LAUNCH_OPERATOR_MOBILE'] ?? '+989120000001'
+const COURIER = process.env['LAUNCH_COURIER_MOBILE'] ?? '+989120000002'
 
 let failures = 0
 const step = (name: string, ok: boolean, detail?: unknown): void => {
@@ -179,7 +196,8 @@ async function signIn(mobileE164: string, label: string): Promise<string> {
       `${label}: a fresh code was sent`,
       false,
       'The API reused a live sign-in challenge, so no new message went out. ' +
-        'Wait for the resend window on this number and run again.',
+        'Wait for the resend window on this number, or re-run with a fresh one: ' +
+        'LAUNCH_CUSTOMER_MOBILE / LAUNCH_OPERATOR_MOBILE / LAUNCH_COURIER_MOBILE.',
     )
   }
   const otp = sent?.message.match(/\d{6}/)?.[0]
@@ -352,6 +370,12 @@ async function main(): Promise<void> {
   const adminOrders = await call('GET', '/api/v1/admin/orders?page=1&pageSize=10', {
     cookie: operator,
   })
+  /*
+     A 403 here is almost never a broken panel. It is the operator number not
+     being the one bootstrap granted — see the note on the constants above —
+     and saying so is the difference between a one-line fix and an afternoon
+     spent reading the permission tables.
+  */
   step('operator: sees the order in the panel', adminOrders.status === 200, {
     status: adminOrders.status,
     count: list(at(adminOrders.body, 'data')).length,
