@@ -10,7 +10,7 @@ import type { CartSummary } from '@alo-noon/contracts'
 
 import type { ActionState } from './action-state'
 import { authPost, isUnauthenticated, sessionTokenFromSetCookie, SESSION_COOKIE } from './api-core'
-import { translateProviderError } from './admin-format'
+import { customerErrorMessage } from './customer-errors'
 import { linesFromCart, mergePlan, type BasketLine } from './basket-lines'
 import { toPersianDigits } from './persian'
 import { CITY_COOKIE, ZONE_COOKIE } from './shop-cookies'
@@ -55,7 +55,7 @@ export async function requestShopOtpAction(
   if (!response.ok || !payload?.data?.challengeId) {
     return {
       status: 'error',
-      message: translateProviderError(payload?.error?.code ?? 'UNKNOWN', 'ارسال کد ناموفق بود.'),
+      message: customerErrorMessage(payload?.error?.code ?? 'UNKNOWN', 'ارسال کد ناموفق بود.'),
     }
   }
 
@@ -92,7 +92,7 @@ export async function verifyShopOtpAction(
     } | null
     return {
       status: 'error',
-      message: translateProviderError(payload?.error?.code ?? 'UNKNOWN', 'کد تأیید پذیرفته نشد.'),
+      message: customerErrorMessage(payload?.error?.code ?? 'UNKNOWN', 'کد تأیید پذیرفته نشد.'),
     }
   }
 
@@ -160,7 +160,7 @@ export async function readBasketAction(): Promise<BasketResult> {
   const result = await readCart()
   if (result.ok) return { cart: result.data, error: null }
   if (isUnauthenticated(result.error)) return { cart: null, error: null }
-  return { cart: null, error: translateProviderError(result.error.code, 'سبد خرید خوانده نشد.') }
+  return { cart: null, error: customerErrorMessage(result.error.code, 'سبد خرید خوانده نشد.') }
 }
 
 /**
@@ -202,7 +202,7 @@ export async function setBasketQuantityAction(input: {
     return { cart: result.data, error: null }
   }
   if (isUnauthenticated(result.error)) return { cart: null, error: null }
-  return { cart: null, error: translateProviderError(result.error.code, 'سبد خرید به‌روز نشد.') }
+  return { cart: null, error: customerErrorMessage(result.error.code, 'سبد خرید به‌روز نشد.') }
 }
 
 /**
@@ -222,7 +222,7 @@ export async function mergeBasketAction(lines: readonly BasketLine[]): Promise<B
   const current = await readCart()
   if (!current.ok) {
     if (isUnauthenticated(current.error)) return { cart: null, error: null }
-    return { cart: null, error: translateProviderError(current.error.code, 'سبد خرید خوانده نشد.') }
+    return { cart: null, error: customerErrorMessage(current.error.code, 'سبد خرید خوانده نشد.') }
   }
 
   const plan = mergePlan(

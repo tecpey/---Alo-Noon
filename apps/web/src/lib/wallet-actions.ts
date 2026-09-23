@@ -15,7 +15,8 @@ import {
   withdrawalRefusalMessage,
 } from '@alo-noon/domain'
 
-import { derivedIdempotencyKey, translateProviderError } from './admin-format'
+import { derivedIdempotencyKey } from './admin-format'
+import { customerErrorMessage } from './customer-errors'
 import { normalizeMobile, normalizeOtpCode } from './shop-format'
 import {
   confirmWalletTransfer,
@@ -82,7 +83,7 @@ export async function topUpAction(amountToman: string): Promise<TopUpResult> {
     idempotencyKey: derivedIdempotencyKey('top-up', amount.toString(), hourStamp()),
   })
   if (!started.ok) {
-    return fail(translateProviderError(started.error.code, 'شارژ کیف پول باز نشد.'), true)
+    return fail(customerErrorMessage(started.error.code, 'شارژ کیف پول باز نشد.'), true)
   }
 
   const execution = await initializePayment({
@@ -90,7 +91,7 @@ export async function topUpAction(amountToman: string): Promise<TopUpResult> {
     idempotencyKey: derivedIdempotencyKey('initialize', started.data.paymentId),
   })
   if (!execution.ok) {
-    return fail(translateProviderError(execution.error.code, 'اتصال به درگاه برقرار نشد.'), true)
+    return fail(customerErrorMessage(execution.error.code, 'اتصال به درگاه برقرار نشد.'), true)
   }
 
   const url = execution.data.customerAction?.url
@@ -103,7 +104,7 @@ export async function topUpAction(amountToman: string): Promise<TopUpResult> {
   // says more than "payment failed" would.
   return fail(
     execution.data.failure
-      ? translateProviderError(execution.data.failure.code, 'درگاه پرداخت را نپذیرفت.')
+      ? customerErrorMessage(execution.data.failure.code, 'درگاه پرداخت را نپذیرفت.')
       : 'درگاه پرداخت در دسترس نیست. کمی بعد دوباره تلاش کنید.',
     true,
   )
@@ -264,7 +265,7 @@ export async function requestWithdrawalAction(input: {
   })
   if (!result.ok) {
     return fail(
-      translateProviderError(result.error.code, result.error.message),
+      customerErrorMessage(result.error.code, result.error.message),
       result.error.code === 'WITHDRAWAL_UNAVAILABLE',
     )
   }

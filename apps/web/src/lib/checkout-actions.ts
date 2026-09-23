@@ -9,7 +9,8 @@ import type {
   QuoteSummary,
 } from '@alo-noon/contracts'
 
-import { derivedIdempotencyKey, translateProviderError } from './admin-format'
+import { derivedIdempotencyKey } from './admin-format'
+import { customerErrorMessage } from './customer-errors'
 import { normalizeMobile } from './shop-format'
 import {
   createAddress,
@@ -59,7 +60,7 @@ export type PayResult =
   | CheckoutFailure
 
 function fail(code: string, fallback: string, retryable = false): CheckoutFailure {
-  return { ok: false, message: translateProviderError(code, fallback), retryable }
+  return { ok: false, message: customerErrorMessage(code, fallback), retryable }
 }
 
 /**
@@ -219,7 +220,7 @@ export async function payAction(
       ok: true,
       kind: 'unpaid',
       order: order.data,
-      message: translateProviderError(payment.error.code, 'پرداخت از کیف پول انجام نشد.'),
+      message: customerErrorMessage(payment.error.code, 'پرداخت از کیف پول انجام نشد.'),
     }
   }
   if (!payment.ok) {
@@ -227,7 +228,7 @@ export async function payAction(
       ok: true,
       kind: 'unpaid',
       order: order.data,
-      message: translateProviderError(payment.error.code, 'سفارش ثبت شد اما پرداخت باز نشد.'),
+      message: customerErrorMessage(payment.error.code, 'سفارش ثبت شد اما پرداخت باز نشد.'),
     }
   }
 
@@ -240,7 +241,7 @@ export async function payAction(
       ok: true,
       kind: 'unpaid',
       order: order.data,
-      message: translateProviderError(execution.error.code, 'اتصال به درگاه برقرار نشد.'),
+      message: customerErrorMessage(execution.error.code, 'اتصال به درگاه برقرار نشد.'),
     }
   }
 
@@ -256,7 +257,7 @@ export async function payAction(
     kind: 'unpaid',
     order: order.data,
     message: execution.data.failure
-      ? translateProviderError(execution.data.failure.code, 'درگاه پرداخت را نپذیرفت.')
+      ? customerErrorMessage(execution.data.failure.code, 'درگاه پرداخت را نپذیرفت.')
       : 'درگاه پرداخت در دسترس نیست. می‌توانید از بخش سفارش‌ها دوباره تلاش کنید.',
   }
 }
