@@ -322,4 +322,81 @@ describe('the phone the shop is held in', () => {
     const contained = files.filter(({ source }) => source.includes('overscroll-behavior'))
     expect(contained.length).toBeGreaterThan(1)
   })
+
+  it('takes the double-tap wait out of every control', () => {
+    // A touch browser holds a tap for ~300ms to see whether a second one is
+    // coming, and only then fires the click. `manipulation` says this control
+    // is not a zoom target, so the click fires at once — while pinch zoom and
+    // the page's own double-tap stay, which is what separates it from
+    // `user-scalable=no`.
+    const shared = files.find((file) => file.path === 'app/styles.css')!
+    expect(shared.source).toContain('touch-action: manipulation')
+  })
+})
+
+describe('a target is thumb-sized on both axes, not just tall', () => {
+  /*
+    The floor in `styles.css` is `min-block-size` only, so for a long time the
+    height was right and the width was whatever the component asked for. The
+    basket's quantity buttons came out 30px wide and 44px tall — the readiness
+    note meanwhile said nothing was under 44px — and a tall thin target is the
+    wrong shape for the thing that presses it: Hoober's 1,333 observations put
+    75% of one-handed use on the thumb, whose contact patch is wider than tall.
+
+    So this reads the width of anything that looks like a control, rather than
+    trusting the shared rule to have covered it.
+  */
+  const FLOOR_REM = Number.parseFloat(touch.min)
+  const CONTROL = /button|btn|clear|close|toggle|stepper|chip|icon|remove|qty|\[role=.button/i
+
+  it('declares no interactive width below the token', () => {
+    const short: string[] = []
+    for (const { path, source } of files) {
+      const overlays = new Map(
+        [...rules(source)]
+          .filter(({ selector }) => selector.endsWith('::after'))
+          .map(({ selector, body }) => [selector.slice(0, -'::after'.length), body]),
+      )
+      for (const { selector, body } of rules(source)) {
+        if (!CONTROL.test(selector) || selector.includes('::')) continue
+        // Two ways to be wider than you are drawn, both deliberate and both
+        // written down: a floor in the same rule, or an `::after` overlay that
+        // carries the target outside the drawn shape — which is how a small
+        // mark keeps a thumb-sized hit area without becoming a big mark.
+        if (/min-inline-size|min-width/.test(body)) continue
+        if (overlays.get(selector)?.includes('--touch-min')) continue
+        const declared = body.match(/(?:^|[\s;])(?:inline-size|width):\s*([\d.]+)rem/)
+        if (!declared) continue
+        const rem = Number.parseFloat(declared[1]!)
+        if (rem < FLOOR_REM) short.push(`${path} — ${selector} at ${rem}rem`)
+      }
+    }
+    expect(short).toEqual([])
+  })
+
+  it('guards the guard, so a narrow control could not slip past it', () => {
+    // The check above is only worth having if it fails on the shape it was
+    // written for. This is the basket stepper exactly as it was.
+    const offending = '.stepper button {\n  width: 1.9rem;\n  height: 1.9rem;\n}'
+    const found = [...rules(offending)].filter(({ selector, body }) => {
+      if (!CONTROL.test(selector)) return false
+      const declared = body.match(/(?:^|[\s;])(?:inline-size|width):\s*([\d.]+)rem/)
+      return declared !== null && Number.parseFloat(declared[1]!) < FLOOR_REM
+    })
+    expect(found).toHaveLength(1)
+  })
+
+  it('keeps a visible focus indicator wherever a field’s own outline is removed', () => {
+    // `outline: none` is allowed — several fields replace it with a border and
+    // a ring, which is a better indicator than the browser's. What is not
+    // allowed is removing it and replacing it with nothing, which is what the
+    // header's search box did: a keyboard user got a hue change on the icon
+    // and no outline at all.
+    const storefront = files.find((file) => file.path === 'app/storefront.css')!
+    const focusWithin = [...rules(storefront.source)].find(({ selector }) =>
+      selector.startsWith('.site-header__search:focus-within'),
+    )
+    expect(focusWithin).toBeDefined()
+    expect(focusWithin!.body).toMatch(/outline:\s*\d/)
+  })
 })

@@ -309,6 +309,7 @@
    permanently dead control. A full touch target: it is the way out of a search
    that found nothing, which is exactly when somebody is already impatient. */
 .site-header__search-clear {
+  position: relative;
   display: grid;
   place-items: center;
   flex: none;
@@ -322,14 +323,37 @@
   color: var(--ink-muted);
   cursor: pointer;
 }
+/* The circle stays 28px, because a 44px disc inside the search bar would read
+   as a second field. The *target* is 44px: the overlay carries the rest of the
+   floor outside the drawn shape, which is how a small mark keeps a thumb-sized
+   hit area. */
+.site-header__search-clear::after {
+  content: '';
+  position: absolute;
+  /* Grown outwards by the same amount on every side, in logical insets, so it
+     centres itself in both directions without a transform that would point the
+     wrong way in an RTL page. */
+  inset: calc((var(--touch-min) - 1.75rem) / -2);
+}
 .site-header__search-clear:hover {
   color: var(--ink-strong);
 }
+/*
+ * The ring moves from the field to the bar, because the bar is what is drawn.
+ *
+ * The colour shift on its own was not a focus indicator: somebody arriving
+ * here with the keyboard got a slightly different icon tint and no outline at
+ * all, since the field's own one had been removed and nothing replaced it.
+ * WCAG 2.4.7 asks for a visible indicator, and a hue change of this size is
+ * not one.
+ */
 .site-header__search input:focus {
   outline: none;
 }
 .site-header__search:focus-within {
   color: var(--ink-action);
+  outline: 2px solid var(--primary-600);
+  outline-offset: 2px;
 }
 
 .site-header__account {
@@ -1564,11 +1588,19 @@
   border-radius: var(--radius-full);
   background: var(--surface-base);
 }
+/*
+ * Square, at the floor, on both axes.
+ *
+ * These were 1.9rem — 30px — and the shared rule in `styles.css` only sets
+ * `min-block-size`, so they rendered 30 wide and 44 tall. A tall thin target
+ * is the wrong shape for the thumb that actually presses it, and these two are
+ * the most-pressed controls in the shop.
+ */
 .stepper button {
   display: grid;
   place-items: center;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: var(--touch-min);
+  height: var(--touch-min);
   border: 0;
   border-radius: var(--radius-full);
   background: transparent;

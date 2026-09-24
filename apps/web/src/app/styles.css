@@ -98,6 +98,26 @@ summary,
 }
 
 /*
+ * Take the 300ms out of every tap.
+ *
+ * A touch browser waits to find out whether a tap is the first half of a
+ * double-tap-to-zoom before it fires the click. On a control that delay reads
+ * as the shop being slow, and it is the one thing on this page that costs
+ * nothing to remove: `manipulation` disables double-tap zoom *on the control
+ * only*. Pinch zoom and the page's own double-tap are untouched, which is the
+ * difference between this and `user-scalable=no` — that one takes zoom away
+ * from someone who needs it and fails WCAG 1.4.4.
+ */
+button,
+select,
+summary,
+label,
+a,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+/*
  * Never smaller than 16px, on any field, anywhere.
  *
  * Below that iOS Safari zooms the page on focus and does not zoom back out, so
