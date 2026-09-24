@@ -888,7 +888,15 @@ export function tenantHostAliases(host: string): readonly string[] {
   return normalized.split('.').length === 2 ? [normalized, `www.${normalized}`] : [normalized]
 }
 
-function sessionTokenFromRequest(request: FastifyRequest): string | undefined {
+/**
+ * The bearer token or session cookie this request carries, if any.
+ *
+ * Exported because the rate limiter needs the same answer: a signed-in customer
+ * must be counted as themselves rather than as everyone else behind their
+ * carrier’s NAT, and the limiter runs before any route and cannot ask the
+ * database who they are.
+ */
+export function sessionTokenFromRequest(request: FastifyRequest): string | undefined {
   const authorization = request.headers.authorization
   if (authorization?.startsWith('Bearer ')) {
     const token = authorization.slice('Bearer '.length).trim()

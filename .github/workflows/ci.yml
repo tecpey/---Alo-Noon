@@ -51,3 +51,124 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  # The drives, which the suite above cannot replace.
+  #
+  # `pnpm test` exercises every unit and a great many integration paths, and all
+  # of it against pieces. What it cannot answer is whether a customer who has
+  # never used this shop can sign up, buy bread, pay at a gateway and have it
+  # delivered — that question needs a running API, a database with a real tenant
+  # in it, and the money path walked end to end.
+  #
+  # Three scripts already answer it and nothing ran them: they were run by hand,
+  # which means they were run when somebody remembered. A guard nobody runs is a
+  # guard that rots, and both of the launch-blocking defects found in this
+  # repository's QA pass — a paid customer returned to a 404, and every rate
+  # limit answering 500 — were invisible to the unit suite and obvious to a
+  # drive.
+  #
+  # Nothing here touches a real gateway or spends a real SMS credit: the SMS and
+  # Zarinpal stand-ins are local, and both drives refuse a non-loopback host.
+  drives:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: alo_noon_drive
+          POSTGRES_USER: alo_noon
+          POSTGRES_PASSWORD: alo_noon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U alo_noon -d alo_noon_drive"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: true
+      DATABASE_URL: postgresql://alo_noon:alo_noon@localhost:5432/alo_noon_drive?schema=public
+      TURBO_TELEMETRY_DISABLED: 1
+      AUTH_SMS_LIMOSMS_ENDPOINT: http://127.0.0.1:4010
+      AUTH_SMS_LIMOSMS_KEY: sandbox-not-a-real-key
+      PAYMENT_ZARINPAL_ENDPOINT: https://127.0.0.1:4443
+      PAYMENT_CALLBACK_BASE_URL: http://127.0.0.1:3001
+      PAYMENT_RESULT_REDIRECT_URL: http://127.0.0.1:3000/payments/result
+      SMS_LOG: /tmp/alo-noon-sms.log
+      QA_GATEWAY_BASE: https://127.0.0.1:4443
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm --filter @alo-noon/database exec prisma migrate deploy
+      - name: Bootstrap the launch tenant
+        run: pnpm --filter @alo-noon/api exec tsx scripts/bootstrap-launch.ts
+        env:
+          BOOTSTRAP_PUBLIC_HOST: 127.0.0.1
+
+      # The gateway stand-in speaks TLS because the domain refuses any customer
+      # action URL that is not HTTPS — sending somebody to a plaintext page to
+      # type a card number is a defect, and the rule applies to the stand-in
+      # exactly as it applies to Zarinpal.
+      - name: Make a loopback certificate for the gateway stand-in
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout /tmp/zp-key.pem -out /tmp/zp-cert.pem -days 1 \
+            -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1"
+
+      - name: Start the stand-ins and the API
+        run: |
+          KEY="$(pnpm --filter @alo-noon/api exec tsx src/provision.ts generate-encryption-key | tail -1)"
+          BLOB="$(PAYMENT_SECRET_ENCRYPTION_KEY="$KEY" pnpm --filter @alo-noon/api exec tsx src/provision.ts \
+            encrypt-payment-secret --secret '{"merchantId":"00000000-0000-4000-8000-00000000cafe"}' \
+            --encryption-key "$KEY" | tail -1)"
+          echo "PAYMENT_SECRET_ENCRYPTION_KEY=$KEY" >> "$GITHUB_ENV"
+          echo "PAYMENT_SECRET_ZARINPAL_MERCHANT=$BLOB" >> "$GITHUB_ENV"
+
+          nohup pnpm --filter @alo-noon/api exec tsx scripts/sms-sandbox.ts > /tmp/sms.log 2>&1 &
+          ZARINPAL_SANDBOX_PORT=4443 ZARINPAL_SANDBOX_CERT=/tmp/zp-cert.pem \
+            ZARINPAL_SANDBOX_KEY=/tmp/zp-key.pem \
+            nohup pnpm --filter @alo-noon/api exec tsx scripts/zarinpal-sandbox.ts > /tmp/zp.log 2>&1 &
+
+          PAYMENT_SECRET_ENCRYPTION_KEY="$KEY" PAYMENT_SECRET_ZARINPAL_MERCHANT="$BLOB" \
+            NODE_EXTRA_CA_CERTS=/tmp/zp-cert.pem \
+            nohup pnpm --filter @alo-noon/api exec tsx src/server.ts > /tmp/api.log 2>&1 &
+
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://127.0.0.1:3001/ready && exit 0
+            sleep 2
+          done
+          echo "the API never became ready" >&2
+          tail -50 /tmp/api.log >&2
+          exit 1
+
+      - name: Configure the sandbox gateway
+        run: |
+          CONFIG="$(pnpm --filter @alo-noon/api exec tsx src/provision.ts configure-payment-gateway \
+            --tenant 00000000-0000-4000-8000-000000000001 --provider ZARINPAL --environment TEST \
+            --credential-reference 'local-encrypted://ZARINPAL_MERCHANT' \
+            --merchant-reference sandbox-merchant --reason 'CI drive' \
+            | grep configurationId | awk '{print $2}')"
+          pnpm --filter @alo-noon/api exec tsx src/provision.ts set-payment-gateway-health \
+            --tenant 00000000-0000-4000-8000-000000000001 --configuration "$CONFIG" \
+            --health HEALTHY --reason 'CI drive'
+
+      # Order matters. The launch drive settles through the ledger and answers
+      # "can this shop take an order and deliver it"; the QA drive answers the
+      # other half, which is whether money works; the probe asks what one
+      # ordinary customer can reach that is not theirs.
+      - run: pnpm --filter @alo-noon/api exec tsx scripts/launch-drive.ts
+      - run: pnpm --filter @alo-noon/api exec tsx scripts/qa-drive.ts
+        env:
+          NODE_EXTRA_CA_CERTS: /tmp/zp-cert.pem
+      - run: pnpm --filter @alo-noon/api exec tsx scripts/authz-probe.ts
+
+      - name: What the API said while that happened
+        if: failure()
+        run: tail -120 /tmp/api.log

@@ -215,4 +215,57 @@ describe('every answer, including the ones no route produced', () => {
       error: { code: 'RATE_LIMIT_EXCEEDED' },
     })
   })
+
+  it('counts a signed-in customer as themselves, not as their carrier', async () => {
+    /*
+      The plugin's default key is the client address, and on a mobile network
+      that is not one person: carrier-grade NAT puts many subscribers behind one
+      public IPv4, which is how operators have coped with IPv4 exhaustion for a
+      decade. Nearly every customer of this shop is on a phone.
+
+      Under an IP key they share one budget, and the shop's busiest hour is
+      exactly the hour most of them are on the same carrier — so the limiter
+      would refuse real customers precisely when it must not, and each of them
+      would see a shop that had broken for no reason they could act on.
+
+      Both requests below arrive from the same address. Only the cookie differs.
+    */
+    const app = await buildApp()
+    apps.push(app)
+    app.get(
+      '/per-person-for-test',
+      { config: { rateLimit: { max: 1, timeWindow: '1 minute' } } },
+      async () => ({ ok: true }),
+    )
+    await app.ready()
+
+    const asPerson = (token: string) =>
+      app.inject({
+        method: 'GET',
+        url: '/per-person-for-test',
+        headers: { cookie: `alo_session=${token}` },
+      })
+
+    expect((await asPerson('session-one')).statusCode).toBe(200)
+    // The same person again: over their own budget, which is the point of a limit.
+    expect((await asPerson('session-one')).statusCode).toBe(429)
+    // Somebody else, same address. Their budget is their own.
+    expect((await asPerson('session-two')).statusCode).toBe(200)
+  })
+
+  it('still keys anonymous traffic by address, which is what an address key is for', async () => {
+    // Somebody hammering the shop before they have an account is the one case
+    // the IP key genuinely answers, and it keeps it.
+    const app = await buildApp()
+    apps.push(app)
+    app.get(
+      '/anonymous-for-test',
+      { config: { rateLimit: { max: 1, timeWindow: '1 minute' } } },
+      async () => ({ ok: true }),
+    )
+    await app.ready()
+
+    expect((await app.inject({ method: 'GET', url: '/anonymous-for-test' })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/anonymous-for-test' })).statusCode).toBe(429)
+  })
 })

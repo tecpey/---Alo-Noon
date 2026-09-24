@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
@@ -17,7 +19,11 @@ import {
   type DeliveryEstimateRepository,
   type ServiceabilityRepository,
 } from './modules/discovery.js'
-import { registerAuthRoutes, type AuthDependencies } from './modules/auth.js'
+import {
+  registerAuthRoutes,
+  sessionTokenFromRequest,
+  type AuthDependencies,
+} from './modules/auth.js'
 import {
   registerCommerceRoutes,
   type CommerceDependencies,
@@ -252,6 +258,34 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     global: true,
     max: GLOBAL_RATE_LIMIT_MAX,
     timeWindow: RATE_LIMIT_WINDOW,
+    /**
+     * A signed-in customer is counted as themselves, not as their carrier.
+     *
+     * The plugin's default key is `request.ip`, and on a mobile network that is
+     * not one person. Carrier-grade NAT puts many subscribers behind one public
+     * IPv4 address — it is how mobile operators have coped with IPv4 exhaustion
+     * for a decade, and this shop's customers are almost all on a phone. Under
+     * an IP key they share one budget: the shop's busiest hour is exactly when
+     * the most of them are on the same carrier, so the limiter would start
+     * refusing real customers precisely when it must not, and each of them
+     * would see a shop that had broken for no reason they could act on.
+     *
+     * The session cookie is the right key when there is one: it is per person,
+     * it survives a changing IP as somebody walks between cells, and it is not
+     * something a stranger can set on a victim's behalf to spend their budget.
+     * Hashed, because this value is held in the limiter's store for the length
+     * of the window and a session token is a credential — the limiter needs to
+     * tell two people apart, not to know who they are.
+     *
+     * Anonymous traffic keeps the IP key. That is the correct trade for the one
+     * case an IP key is actually for: somebody hammering the shop before they
+     * have an account.
+     */
+    keyGenerator: (request) => {
+      const token = sessionTokenFromRequest(request)
+      if (token) return `s:${createHash('sha256').update(token).digest('base64url')}`
+      return `i:${request.ip}`
+    },
     errorResponseBuilder: (_request, context) =>
       Object.assign(new Error('Too many requests. Please slow down and retry.'), {
         statusCode: context.statusCode ?? 429,

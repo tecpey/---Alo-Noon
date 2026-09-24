@@ -126,10 +126,56 @@ holding.
 **Measuring the rendered system is only worth something if the measurement is
 checked too.**
 
+## Under load
+
+`apps/api/scripts/load-drive.ts`, sweeping 5 → 40 concurrent requests, eight
+rounds each, against a **clean database with launch-shaped data** — a fresh
+migration plus `bootstrap-launch`, not the development database.
+
+p95, in milliseconds:
+
+| Surface           | 5   | 10  | 20   | 40  | criterion |
+| ----------------- | --- | --- | ---- | --- | --------- |
+| The city list     | 64  | 41  | 53   | 119 | ≤ 300     |
+| The shelf         | 54  | 54  | 90   | 233 | ≤ 1000    |
+| The fare estimate | 16  | 28  | 612¹ | 232 | ≤ 1000    |
+| `/ready`          | 9   | 8   | 162¹ | 34  | ≤ 300     |
+
+Every surface held its criterion, and the whole customer path stays an order of
+magnitude inside the 1s at which a person notices they are waiting (Miller 1968;
+Nielsen's response-time limits restate it and it has not moved). Forty at a time
+is far beyond a pilot in one district.
+
+¹ Both outliers are the first burst after the script paused a minute to stay
+under the rate limiter — a cold connection and a cold query plan, not load. It
+is worth knowing that the shape exists: the first customer after a quiet night
+pays a few hundred milliseconds that nobody pays during a busy morning.
+
+**And a warning about where you measure.** The first run of this was against the
+development database, which the integration suite had left holding 6,922
+tenants. The shelf's p95 came out at 2,654ms and the settlement sweep — which
+walks every tenant — was logging a warning per tenant and eventually took the
+API and PostgreSQL down with it. None of that is a property of the application.
+Measure against launch-shaped data or measure nothing.
+
+## Two weaknesses turned round since
+
+- **A courier's action in a dead spot is now kept and sent when the signal
+  returns**, in order, never replayed into a double report, and never held long
+  enough for its timestamp to become a lie. `apps/courier-mobile/src/outbox.ts`.
+- **The restore is rehearsed.** `deploy/restore-drill.sh` restores a real dump
+  into a throwaway database and checks that the business could be run from it —
+  row-level security still forced, tenant policy present, credential constraint
+  and immutability trigger intact, and the double-entry ledger balancing. Run
+  against a real backup: all four pass, ledger sums to zero across 6,170
+  entries, 48 migrations applied, none failed.
+
 ## Still not covered
 
 - No real user has walked any of this. Every audit is measurement against a
   criterion; NN/g's five users would find more.
-- No load test. Irrelevant at tens of orders a day, not at hundreds.
-- Courier app offline behaviour: an action taken with no signal is not queued.
-- Backup restore is not rehearsed.
+- Write throughput. The reads are measured above; placing thousands of orders to
+  measure the write path would leave thousands of orders, and the two write
+  paths that matter are already driven end to end and guarded for idempotency.
+- Sustained load over hours, rather than bursts — memory growth and connection
+  churn are not observed here.
