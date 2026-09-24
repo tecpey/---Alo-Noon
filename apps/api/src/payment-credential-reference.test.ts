@@ -32,6 +32,8 @@ import {
  */
 describe('a gateway credential reference', () => {
   const key = randomBytes(32)
+  /* The resolver takes these for its own logging; neither reaches the lookup. */
+  const TENANT = '00000000-0000-4000-8000-000000000001'
 
   /*
     Gate one: the shape allowed into the database, mirrored from the
@@ -101,9 +103,9 @@ describe('a gateway credential reference', () => {
       const resolver = createLocalEncryptedPaymentSecretResolver({}, key)
       for (let length = 1; length <= 24; length += 1) {
         const blob = encryptPaymentSecret('x'.repeat(length), key)
-        await expect(resolver.resolve(`local-encrypted://${blob}`)).rejects.toThrow(
-          'PAYMENT_PROVIDER_CREDENTIAL_UNAVAILABLE',
-        )
+        await expect(
+          resolver.resolve(`local-encrypted://${blob}`, TENANT, 'ZARINPAL'),
+        ).rejects.toThrow('PAYMENT_PROVIDER_CREDENTIAL_UNAVAILABLE')
       }
     })
 
@@ -115,8 +117,12 @@ describe('a gateway credential reference', () => {
         { PAYMENT_SECRET_ZARINPAL_MERCHANT: blob },
         key,
       )
-      const secret = await resolver.resolve('local-encrypted://ZARINPAL_MERCHANT')
-      expect(secret.material.toString('utf8')).toBe('sandbox-merchant-not-real')
+      const secret = await resolver.resolve(
+        'local-encrypted://ZARINPAL_MERCHANT',
+        TENANT,
+        'ZARINPAL',
+      )
+      expect(Buffer.from(secret.material).toString('utf8')).toBe('sandbox-merchant-not-real')
       secret.dispose()
       expect(secret.material.every((byte) => byte === 0)).toBe(true)
     })
