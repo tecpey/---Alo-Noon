@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 
 import type { DeliveryTaskView } from '@alo-noon/contracts'
-import { parseIranianMobile, parseOtpCode } from '@alo-noon/domain'
+import { parseIranianMobile, parseOtpCode, toPersianDigits } from '@alo-noon/domain'
 import { colors, ink, surface, tint } from '@alo-noon/design-tokens'
 import {
   CheckIcon,
@@ -27,6 +27,14 @@ import {
 import { createCourierApiClient, CourierApiError, type CourierReport } from './src/api'
 import { courierCopy } from './src/copy'
 import { useAppFonts } from './src/fonts'
+import {
+  createOutboxStore,
+  enqueue,
+  flushOutbox,
+  isUnreachable,
+  type OutboxEntry,
+} from './src/outbox'
+import { createFileOutboxStorage, createMemoryOutboxStorage } from './src/outbox-storage'
 import {
   courierErrorMessage,
   courierLegFor,
@@ -81,6 +89,25 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [message, setMessage] = useState<string>()
+  /*
+    What the courier has said that has not reached the shop yet.
+
+    Held here rather than only on disk so the count can be shown: a rider whose
+    taps are being queued must be able to see that they are queued. Silence is
+    the failure this whole mechanism exists to remove, and a queue nobody can
+    see is just a quieter kind of silence.
+  */
+  const [outbox, setOutbox] = useState<readonly OutboxEntry[]>([])
+  const outboxStore = useMemo(() => {
+    // The web preview has no document directory, and a courier trying the app
+    // in a browser should not meet a crash from a native module that is not
+    // there. The queue then lasts for the session, which still does its job.
+    try {
+      return createOutboxStore(createFileOutboxStorage())
+    } catch {
+      return createOutboxStore(createMemoryOutboxStorage())
+    }
+  }, [])
 
   const loadDeliveries = useCallback(async () => {
     if (!api) return
@@ -208,6 +235,41 @@ export default function App() {
     )
   }
 
+  /**
+   * Keeps what could not be sent, and says so.
+   *
+   * Only for a failure that means "I could not ask". A refusal the server
+   * actually made is the courier's to see — `isUnreachable` draws that line and
+   * is tested against every code this API returns.
+   */
+  const hold = useCallback(
+    async (entry: Omit<OutboxEntry, 'id' | 'queuedAt' | 'attempts'>) => {
+      const held = enqueue(outbox, {
+        ...entry,
+        id: `${entry.taskId}-${entry.kind}-${Date.now()}`,
+        queuedAt: Date.now(),
+        attempts: 0,
+      })
+      setOutbox(held)
+      await outboxStore.save(held)
+      setMessage(courierCopy.queuedFa)
+    },
+    [outbox, outboxStore],
+  )
+
+  /** Sends what is waiting, oldest first, and stops at whatever is still stuck. */
+  const flush = useCallback(async () => {
+    if (!api || outbox.length === 0) return
+    const result = await flushOutbox(outbox, api, Date.now())
+    setOutbox(result.remaining)
+    await outboxStore.save(result.remaining)
+    if (result.stale.length > 0) setMessage(courierCopy.staleFa)
+    else if (result.sent.length > 0 || result.settled.length > 0) setMessage(undefined)
+    if (result.sent.length > 0 || result.settled.length > 0 || result.stale.length > 0) {
+      await loadDeliveries()
+    }
+  }, [api, outbox, outboxStore, loadDeliveries])
+
   const answerOffer = async (taskId: string, accept: boolean) => {
     if (!api || busyTaskId) return
     setBusyTaskId(taskId)
@@ -218,10 +280,14 @@ export default function App() {
       if (accept) settle(updated)
       else setTasks((current) => current.filter((task) => task.taskId !== taskId))
     } catch (error) {
-      setMessage(errorMessage(error))
-      // The state this screen is showing is stale if the API refused, so the
-      // safest thing to put in front of the courier is the truth.
-      await loadDeliveries()
+      if (isUnreachable(error)) {
+        await hold({ taskId, kind: 'respond', accept })
+      } else {
+        setMessage(errorMessage(error))
+        // The state this screen is showing is stale if the API refused, so the
+        // safest thing to put in front of the courier is the truth.
+        await loadDeliveries()
+      }
     } finally {
       setBusyTaskId(undefined)
     }
@@ -235,8 +301,13 @@ export default function App() {
       settle(await api.report(taskId, to, reasonCode))
       setFailingTaskId(undefined)
     } catch (error) {
-      setMessage(errorMessage(error))
-      await loadDeliveries()
+      if (isUnreachable(error)) {
+        await hold({ taskId, kind: 'report', to, ...(reasonCode ? { reasonCode } : {}) })
+        setFailingTaskId(undefined)
+      } else {
+        setMessage(errorMessage(error))
+        await loadDeliveries()
+      }
     } finally {
       setBusyTaskId(undefined)
     }
@@ -244,9 +315,31 @@ export default function App() {
 
   const refresh = async () => {
     setRefreshing(true)
+    // What is waiting goes first. Pulling to refresh is what a courier does the
+    // moment the signal comes back, so it is the most likely moment for a held
+    // report to get through — and sending it before reloading means the list
+    // they are shown already reflects it.
+    await flush()
     await loadDeliveries()
     setRefreshing(false)
   }
+
+  // The queue is read once at startup, because the phone that queued it may
+  // have been closed and reopened since — in a lift, in a stairwell, or because
+  // it ran out of battery on the last stop of a shift.
+  useEffect(() => {
+    void outboxStore.load().then(setOutbox)
+  }, [outboxStore])
+
+  // And tried again on a timer while anything is waiting, so a courier who puts
+  // the phone in their pocket and rides on does not have to remember it. Thirty
+  // seconds: often enough to catch the signal returning mid-street, rare enough
+  // to be nothing on a battery.
+  useEffect(() => {
+    if (outbox.length === 0 || screen !== 'deliveries') return
+    const timer = setInterval(() => void flush(), 30_000)
+    return () => clearInterval(timer)
+  }, [outbox.length, screen, flush])
 
   // The same spinner the session check shows, for the same reason: both are
   // "not ready yet", and a rider watching a screen does not care which. Painting
@@ -359,6 +452,20 @@ export default function App() {
       </View>
 
       {message && <Text style={styles.errorBanner}>{message}</Text>}
+      {/*
+        What is still waiting to be sent, counted.
+
+        Separate from the message above and deliberately not red: a queued
+        report is not a failure, it is work the phone is holding. Red would
+        teach a courier to distrust a mechanism that is doing its job. It stays
+        on screen until the queue empties, because the one thing a rider must
+        never have to wonder is whether the shop knows.
+      */}
+      {outbox.length > 0 && (
+        <Text style={styles.waitingBanner}>
+          {courierCopy.waitingFa(toPersianDigits(String(outbox.length)))}
+        </Text>
+      )}
 
       <ScrollView
         contentContainerStyle={styles.list}
@@ -761,6 +868,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.error,
     marginHorizontal: 16,
     padding: 14,
+    borderRadius: 14,
+    fontSize: 15,
+    textAlign: 'right',
+    lineHeight: 26,
+  },
+  /* The warning pair, not the error one: this is work in hand, not a fault. */
+  waitingBanner: {
+    color: tint.warning.ink,
+    backgroundColor: tint.warning.surface,
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 12,
     borderRadius: 14,
     fontSize: 15,
     textAlign: 'right',
