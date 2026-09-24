@@ -160,15 +160,32 @@ const auth = {
 // fails safely with PAYMENT_PROVIDER_MISSING (503) instead of not existing.
 // Each gateway gets its own callback path so the receiving route knows which
 // provider a redirect belongs to without trusting a request parameter for it.
+//
+// It takes BOTH variables, and that is the whole point of the pair.
+// `PAYMENT_CALLBACK_BASE_URL` is what the adapter hands the gateway as the
+// address to send the customer back to; `PAYMENT_RESULT_REDIRECT_URL` is what
+// makes the route at that address exist. A deployment that sets only the first
+// sends every paying customer to a gateway, takes their money, and then returns
+// them to a 404 — no receipt recorded, nothing to settle, an order that stays
+// PENDING_CONFIRMATION while the bank has been debited. That is exactly the
+// failure the "fails safely with 503 instead of not existing" reasoning above
+// exists to prevent, so the same condition governs both.
+//
+// An end-to-end drive against a sandbox gateway is what found this: the
+// redirect was issued, the customer came back, and the callback answered 404.
+const paymentCallbackBase =
+  env.PAYMENT_CALLBACK_BASE_URL && env.PAYMENT_RESULT_REDIRECT_URL
+    ? env.PAYMENT_CALLBACK_BASE_URL
+    : undefined
 const callbackUrlFor = (providerCode: string): string | undefined =>
-  env.PAYMENT_CALLBACK_BASE_URL
+  paymentCallbackBase
     ? new URL(
         `/api/v1/payments/callback/${providerCode.toLowerCase()}`,
-        env.PAYMENT_CALLBACK_BASE_URL,
+        paymentCallbackBase,
       ).toString()
     : undefined
 const paymentProviderAdapterRegistry = createPaymentProviderAdapterRegistry(
-  env.PAYMENT_CALLBACK_BASE_URL
+  paymentCallbackBase
     ? [
         createNextPayAdapter({ callbackUrl: callbackUrlFor('NEXTPAY')! }),
         createShepaAdapter({ callbackUrl: callbackUrlFor('SHEPA')! }),
@@ -670,6 +687,20 @@ const close = async (signal: string): Promise<void> => {
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => void close(signal))
+}
+
+// Said out loud, because the safe behaviour is also the silent one: with only
+// half the pair configured the shop runs, sells bread, and answers 503 to every
+// attempt to pay — which looks like a gateway outage rather than a missing line
+// in the environment.
+if (Boolean(env.PAYMENT_CALLBACK_BASE_URL) !== Boolean(env.PAYMENT_RESULT_REDIRECT_URL)) {
+  app.log.warn(
+    {
+      PAYMENT_CALLBACK_BASE_URL: Boolean(env.PAYMENT_CALLBACK_BASE_URL),
+      PAYMENT_RESULT_REDIRECT_URL: Boolean(env.PAYMENT_RESULT_REDIRECT_URL),
+    },
+    'Online payment is disabled: PAYMENT_CALLBACK_BASE_URL and PAYMENT_RESULT_REDIRECT_URL must both be set',
+  )
 }
 
 await app.listen({ host: env.API_HOST, port: env.API_PORT })

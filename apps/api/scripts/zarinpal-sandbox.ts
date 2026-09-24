@@ -26,7 +26,9 @@
  *     pnpm --filter @alo-noon/api exec tsx scripts/zarinpal-sandbox.ts
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer as createTlsServer } from 'node:https'
 import { randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 
 /** Zarinpal's authorities are a fixed-width `A` followed by 35 characters. */
@@ -61,6 +63,18 @@ export interface StartZarinpalSandboxOptions {
    * back, and the sweep finished the payment later" gets exercised.
    */
   state?: Map<string, SandboxTransaction>
+  /**
+   * PEM certificate and key, which make this serve HTTPS instead of HTTP.
+   *
+   * Not decoration. `normalizeInitializationResult` refuses any customer action
+   * URL that is not HTTPS — sending somebody to a plaintext page to type a card
+   * number is a defect, so the domain will not let an adapter do it — and that
+   * rule applies to this stand-in exactly as it applies to Zarinpal. An
+   * end-to-end drive over plain HTTP therefore stops at the redirect with
+   * `PROVIDER_RESPONSE_INVALID`, and the only honest fix is to speak TLS here
+   * rather than to soften the rule for tests.
+   */
+  tls?: { cert: string; key: string }
 }
 
 export interface ZarinpalSandbox {
@@ -75,18 +89,21 @@ export async function startZarinpalSandbox(
   const transactions = options.state ?? new Map<string, SandboxTransaction>()
   const chargeFor = options.chargeFor ?? ((requested: number) => requested)
 
-  const server = createServer((request, response) => {
+  const route = (request: IncomingMessage, response: ServerResponse) => {
     handle(request, response, transactions, chargeFor).catch(() => {
       // Zarinpal's own "unexpected error, contact support".
       sendJson(response, 500, { data: [], errors: { code: -52, message: 'sandbox failure' } })
     })
-  })
+  }
+  const server = options.tls
+    ? createTlsServer({ cert: options.tls.cert, key: options.tls.key }, route)
+    : createServer(route)
 
   await new Promise<void>((resolve) => server.listen(options.port ?? 0, '127.0.0.1', resolve))
   const address = server.address() as AddressInfo
 
   return {
-    origin: `http://127.0.0.1:${address.port}`,
+    origin: `${options.tls ? 'https' : 'http'}://127.0.0.1:${address.port}`,
     transactions,
     close: () => closeServer(server),
   }
@@ -288,9 +305,19 @@ function closeServer(server: Server): Promise<void> {
 }
 
 // Standalone: run it, point PAYMENT_ZARINPAL_ENDPOINT at what it prints.
+//
+// Give it `ZARINPAL_SANDBOX_CERT` and `ZARINPAL_SANDBOX_KEY` — paths to a
+// self-signed pair for 127.0.0.1 — to serve HTTPS, which an end-to-end drive
+// needs, and point the API at the same certificate with `NODE_EXTRA_CA_CERTS`.
 if (process.argv[1]?.endsWith('zarinpal-sandbox.ts')) {
   const port = Number.parseInt(process.env['ZARINPAL_SANDBOX_PORT'] ?? '4180', 10)
-  startZarinpalSandbox({ port })
+  const certPath = process.env['ZARINPAL_SANDBOX_CERT']
+  const keyPath = process.env['ZARINPAL_SANDBOX_KEY']
+  const tls =
+    certPath && keyPath
+      ? { cert: readFileSync(certPath, 'utf8'), key: readFileSync(keyPath, 'utf8') }
+      : undefined
+  startZarinpalSandbox(tls ? { port, tls } : { port })
     .then((sandbox) => {
       console.log(`Zarinpal sandbox stand-in listening on ${sandbox.origin}`)
       console.log(`  PAYMENT_ZARINPAL_ENDPOINT=${sandbox.origin}`)

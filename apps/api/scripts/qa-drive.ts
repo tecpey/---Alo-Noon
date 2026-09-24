@@ -441,48 +441,75 @@ async function adversarialMoney(
     )
   }
 
-  // A callback for an authority this shop never issued. The only correct
-  // answer is to refuse; accepting one is how a shop is talked into marking
-  // an order paid by anybody who can guess a URL.
+  // A callback for an authority this shop never issued.
+  //
+  // This check asserted `status >= 400` and failed against a 303, which was the
+  // assertion being wrong rather than the route. Answering an unknown authority
+  // with an error tells whoever sent it which authorities exist — a probe
+  // oracle — and it also changes what a real customer sees when a gateway
+  // replays something stale. The route instead sends everybody, forged or not,
+  // to the same neutral "we are checking your payment" page carrying an opaque
+  // reference and no verdict.
+  //
+  // So the property is not the status code. It is that nothing moved: the
+  // payment stays where it was and the order does not become paid. That is what
+  // is asserted here, against the order from the abandoned attempt above.
   const forged = await fetch(
     `${BASE}/api/v1/payments/callback/zarinpal?Authority=A${'0'.repeat(35)}&Status=OK`,
     { redirect: 'manual' },
   )
-  step('forged: a callback for an unknown authority is refused', forged.status >= 400, {
+  step('forged: an unknown authority reveals nothing by its answer', forged.status === 303, {
     status: forged.status,
   })
+
+  const afterForged = await call('GET', `/api/v1/orders/${order.orderId}`, { cookie })
+  step(
+    'forged: it captured nothing and paid nothing',
+    at(afterForged.body, 'data', 'paymentState') !== 'PAID',
+    { paymentState: at(afterForged.body, 'data', 'paymentState') },
+  )
 }
 
 /** Operator, dispatch, courier — the part after the money. */
 async function fulfil(orderId: string): Promise<void> {
   const operator = await signIn(OPERATOR, 'operator')
+  // `reason`, not an idempotency key — the accept route takes the operator's
+  // stated reason and derives idempotency itself. Sending the wrong body got a
+  // 400 that read like a state-machine refusal, which is worth remembering:
+  // a harness that guesses a contract reports the app as broken.
   const accepted = await call('POST', `/api/v1/admin/orders/${orderId}/accept`, {
     cookie: operator,
-    body: { idempotencyKey: `qa-accept-${randomUUID()}` },
+    body: { reason: 'پذیرش سفارش پرداخت‌شده' },
   })
   step('operator: accepted a paid order', accepted.status === 200, {
     status: accepted.status,
     state: at(accepted.body, 'data', 'state'),
+    error: at(accepted.body, 'error'),
   })
 
-  const deliveries = await call('GET', `/api/v1/admin/deliveries?orderId=${orderId}`, {
-    cookie: operator,
+  const board = await call('GET', '/api/v1/admin/deliveries', { cookie: operator })
+  const opened = list(at(board.body, 'data')).find((entry) => at(entry, 'orderId') === orderId)
+  const taskId = text(at(opened, 'taskId'))
+  step('dispatch: acceptance opened a delivery', Boolean(taskId), {
+    status: board.status,
+    state: at(opened, 'state'),
   })
-  const taskId = text(at(deliveries.body, 'data', 0, 'taskId'))
-  step('dispatch: acceptance opened a delivery', Boolean(taskId), { status: deliveries.status })
   if (!taskId) return
 
-  const couriers = await call('GET', '/api/v1/admin/couriers?status=AVAILABLE', {
-    cookie: operator,
+  const couriers = await call('GET', '/api/v1/admin/couriers', { cookie: operator })
+  const rider = list(at(couriers.body, 'data')).find((entry) => at(entry, 'status') === 'AVAILABLE')
+  const courierId = text(at(rider, 'courierId'))
+  step('dispatch: an available courier exists', Boolean(courierId), {
+    roster: list(at(couriers.body, 'data')).length,
   })
-  const courierId = text(at(couriers.body, 'data', 0, 'courierId'))
-  if (!courierId) {
-    step('dispatch: an available courier exists', false, {})
-    return
-  }
-  await call('POST', `/api/v1/admin/deliveries/${taskId}/offer`, {
+  if (!courierId) return
+  const offered = await call('POST', `/api/v1/admin/deliveries/${taskId}/offer`, {
     cookie: operator,
-    body: { courierId, idempotencyKey: `qa-offer-${randomUUID()}` },
+    body: { courierId },
+  })
+  step('dispatch: offered to the courier', offered.status === 200, {
+    status: offered.status,
+    error: at(offered.body, 'error'),
   })
 
   const courier = await signIn(COURIER, 'courier')
@@ -513,11 +540,12 @@ async function fulfil(orderId: string): Promise<void> {
   ] as const) {
     const done = await call('POST', `/api/v1/courier/deliveries/${taskId}/${path}`, {
       cookie: courier,
-      body: { ...body, idempotencyKey: `qa-${path}-${randomUUID()}` },
+      body,
     })
     step(`courier: ${label}`, done.status === 200, {
       status: done.status,
       state: at(done.body, 'data', 'state'),
+      error: at(done.body, 'error'),
     })
   }
 }
