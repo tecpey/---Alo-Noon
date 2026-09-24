@@ -227,12 +227,36 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
 
   await app.register(helmet, { contentSecurityPolicy: false })
+  /**
+   * The limiter's refusal, carrying the status it means.
+   *
+   * `@fastify/rate-limit` does not send this value — it **throws** it, and the
+   * error handler below decides the status from `statusCode`. The builder used
+   * to return the response envelope, which has no `statusCode`, so every
+   * rate-limited request in this API answered **500 `INTERNAL_ERROR`** instead
+   * of 429, and every one of them was logged at error level as "Unhandled
+   * error".
+   *
+   * Three things followed, and the first is the worst: a 500 reads as "the shop
+   * is broken", and the reasonable response to that is to try again — the exact
+   * opposite of backing off, so the limiter added load instead of shedding it.
+   * A customer sending money was told the service had failed at the moment it
+   * was in fact protecting them. And genuine faults were buried in a log full
+   * of "Unhandled error" lines that were nothing of the kind.
+   *
+   * `context.statusCode` rather than a literal 429: the plugin sets 403 when a
+   * key is banned rather than merely over its limit, and that distinction is
+   * the plugin's to make.
+   */
   await app.register(rateLimit, {
     global: true,
     max: GLOBAL_RATE_LIMIT_MAX,
     timeWindow: RATE_LIMIT_WINDOW,
-    errorResponseBuilder: () =>
-      errorEnvelope('RATE_LIMIT_EXCEEDED', 'Too many requests. Please slow down and retry.'),
+    errorResponseBuilder: (_request, context) =>
+      Object.assign(new Error('Too many requests. Please slow down and retry.'), {
+        statusCode: context.statusCode ?? 429,
+        code: 'RATE_LIMIT_EXCEEDED',
+      }),
   })
   await app.register(cors, {
     origin: options.corsOrigins?.length ? options.corsOrigins : false,

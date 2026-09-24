@@ -178,4 +178,41 @@ describe('every answer, including the ones no route produced', () => {
     expect(response.body).not.toContain('db.internal')
     expect(response.json()).toMatchObject({ success: false, error: { code: 'INTERNAL_ERROR' } })
   })
+
+  it('answers a rate-limited request with 429, not with a fault of its own', async () => {
+    /*
+      Found by hammering a route on the running server, and it was not a small
+      thing. `@fastify/rate-limit` does not send what `errorResponseBuilder`
+      returns — it throws it — and this app's error handler reads `statusCode`
+      off the thrown value. The builder returned the response envelope, which
+      has no `statusCode`, so every rate-limited request in the whole API
+      answered 500 `INTERNAL_ERROR` and logged at error level as "Unhandled
+      error".
+
+      The damage is in what a client does next. A 500 says the shop is broken,
+      and the reasonable response to that is to try again — the opposite of
+      backing off, so the limiter added load instead of shedding it. On top of
+      that, every genuine 5xx was buried in a log full of "Unhandled error"
+      lines that were nothing of the kind, and somebody sending money was told
+      the service had failed at the moment it was protecting them.
+    */
+    const app = await buildApp()
+    apps.push(app)
+    app.get(
+      '/limited-for-test',
+      { config: { rateLimit: { max: 1, timeWindow: '1 minute' } } },
+      async () => ({ ok: true }),
+    )
+    await app.ready()
+
+    const first = await app.inject({ method: 'GET', url: '/limited-for-test' })
+    expect(first.statusCode).toBe(200)
+
+    const limited = await app.inject({ method: 'GET', url: '/limited-for-test' })
+    expect(limited.statusCode).toBe(429)
+    expect(limited.json()).toMatchObject({
+      success: false,
+      error: { code: 'RATE_LIMIT_EXCEEDED' },
+    })
+  })
 })
