@@ -22,11 +22,27 @@
  * stroke, and an opacity you have to look for: at the strength where the
  * pattern is legible, it has stopped being texture.
  */
-export function ArchTexture({ className }: { className?: string }) {
+export function ArchTexture({ id, className }: { id: string; className?: string }) {
+  /*
+    The pattern's id is the caller's, and it has to be, because `url(#…)`
+    resolves to the *first* matching id in the document. The id was hard-coded
+    and the home page draws this twice — behind the steps and behind the footer
+    — so the page shipped two elements with one id, and the second rectangle was
+    painted from the first's pattern rather than its own.
+
+    Nothing looks wrong today, because the two tiles are identical. It would
+    look wrong the moment somebody gave one section a different stroke or scale,
+    and it would look wrong in a way that leads straight back to the CSS rather
+    than to here. Found by reading the rendered DOM of the running page.
+
+    A `useId()` would be the React answer and is the wrong trade: this is
+    ornament, and a hook would make it a client component to solve a problem one
+    prop solves.
+  */
   return (
     <svg className={className} aria-hidden="true" focusable="false">
       <defs>
-        <pattern id="arch-tile" width="54" height="62" patternUnits="userSpaceOnUse">
+        <pattern id={id} width="54" height="62" patternUnits="userSpaceOnUse">
           <path
             d="M11 58V24a16 16 0 0 1 32 0v34"
             fill="none"
@@ -36,7 +52,7 @@ export function ArchTexture({ className }: { className?: string }) {
           />
         </pattern>
       </defs>
-      <rect width="100%" height="100%" fill="url(#arch-tile)" />
+      <rect width="100%" height="100%" fill={`url(#${id})`} />
     </svg>
   )
 }

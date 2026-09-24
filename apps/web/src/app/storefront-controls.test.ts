@@ -228,3 +228,52 @@ describe('the bottom tab bar', () => {
     }
   })
 })
+
+describe('a sheet that is closed is closed to the keyboard too', () => {
+  /*
+    Measured on the built app, not argued from the source: tabbing the home page
+    landed on «بستن», «بابل» and «دیدن نان‌ها» — buttons inside the basket
+    drawer and the city sheet, both closed and parked entirely off the right
+    edge. Focus disappeared to somewhere the customer could not see, and stayed
+    gone for several presses.
+
+    `aria-hidden` was the cause. It removes a subtree from the accessibility
+    tree and leaves every control in it focusable, which ARIA explicitly
+    forbids: the screen reader is told the region is not there while focus is
+    inside it, so it announces nothing and the person hears silence. `inert`
+    does both halves — out of the tab order and out of the tree — which is what
+    was meant all along.
+
+    After the change, 117 tab stops on the home page and none inside a closed
+    sheet.
+  */
+  for (const file of ['components/basket-drawer.tsx', 'components/city-sheet.tsx'] as const) {
+    const source = read(file)
+
+    it(`marks ${file.split('/')[1]} inert while it is closed`, () => {
+      expect(source).toMatch(/inert=\{!\w+\}/)
+    })
+
+    it(`does not hide ${file.split('/')[1]} from assistive technology while leaving it focusable`, () => {
+      // The pairing, not the attribute: `aria-hidden` on the wrapper is exactly
+      // what put focusable controls inside a hidden region.
+      expect(source).not.toMatch(/<div className=\{`drawer[^`]*`\}[^>]*aria-hidden/)
+    })
+  }
+})
+
+describe('ornament that is drawn twice', () => {
+  it('takes its pattern id from the caller, because url(#id) resolves to the first', () => {
+    // The home page draws the arch texture behind the steps and behind the
+    // footer. With a hard-coded id the second rectangle was painted from the
+    // first's pattern — invisible today because the tiles match, and a bug the
+    // moment one section wants a different scale.
+    const art = read('components/brand-art.tsx')
+    expect(art).toMatch(/ArchTexture\(\{\s*id/)
+    expect(art).not.toContain('id="arch-tile"')
+    const page = read('page.tsx')
+    const ids = [...page.matchAll(/<ArchTexture id="([^"]+)"/g)].map((match) => match[1])
+    expect(ids.length).toBeGreaterThan(1)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})

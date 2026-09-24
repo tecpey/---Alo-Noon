@@ -69,12 +69,26 @@ export function BasketDrawer() {
   )
 
   return (
-    <div className={`drawer${drawerOpen ? ' drawer--open' : ''}`} aria-hidden={!drawerOpen}>
+    /*
+      `inert` rather than `aria-hidden`, and the difference is not academic.
+
+      `aria-hidden` takes the closed sheet out of the accessibility tree and
+      leaves every button inside it in the tab order. Measured on the running
+      page: tabbing the home page landed on «بستن», «بابل» and «دیدن نان‌ها»
+      inside a sheet sitting entirely off the right edge — focus vanishing to
+      somewhere the customer cannot see, while the screen reader had been told
+      that region does not exist. ARIA forbids exactly this pairing: content
+      that is focusable must not be `aria-hidden`.
+
+      `inert` removes the subtree from the tab order *and* from the
+      accessibility tree, which is the whole intent in one attribute — so the
+      scrim's own `tabIndex` dance is no longer needed either.
+    */
+    <div className={`drawer${drawerOpen ? ' drawer--open' : ''}`} inert={!drawerOpen}>
       <button
         type="button"
         className="drawer__scrim"
         onClick={closeDrawer}
-        tabIndex={drawerOpen ? 0 : -1}
         aria-label="بستن سبد خرید"
       />
 

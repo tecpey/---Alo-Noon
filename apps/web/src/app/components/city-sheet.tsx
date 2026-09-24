@@ -46,12 +46,14 @@ export function CitySheet() {
   if (cities.length === 0) return null
 
   return (
-    <div className={`drawer${cityOpen ? ' drawer--open' : ''}`} aria-hidden={!cityOpen}>
+    /* `inert`, for the reason written out in `basket-drawer.tsx`: `aria-hidden`
+       left this sheet's buttons in the tab order while telling assistive
+       technology the sheet was not there. */
+    <div className={`drawer${cityOpen ? ' drawer--open' : ''}`} inert={!cityOpen}>
       <button
         type="button"
         className="drawer__scrim"
         onClick={closeCity}
-        tabIndex={cityOpen ? 0 : -1}
         aria-label="بستن انتخاب شهر"
       />
 

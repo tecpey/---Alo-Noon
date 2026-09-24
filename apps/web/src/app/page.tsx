@@ -253,7 +253,7 @@ export default async function HomePage() {
           <Catalog storefront={storefront} />
 
           <section className="steps" aria-labelledby="steps-title">
-            <ArchTexture className="steps__texture" />
+            <ArchTexture id="arch-tile-steps" className="steps__texture" />
             <Reveal>
               <div className="an-section-head">
                 <div className="an-section-head__title">
@@ -284,7 +284,7 @@ export default async function HomePage() {
         </main>
 
         <footer className="site-footer">
-          <ArchTexture className="site-footer__texture" />
+          <ArchTexture id="arch-tile-footer" className="site-footer__texture" />
           <div className="site-footer__inner">
             <BrandMark tone="light" />
             {/* The trust links, not decoration. A shop that a customer cannot
