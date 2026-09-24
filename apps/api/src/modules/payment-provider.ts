@@ -1096,8 +1096,32 @@ async function authorizeGovernanceActor(
   if (!authorized) throw new PaymentProviderError('PAYMENT_PROVIDER_OPERATION_FORBIDDEN')
 }
 
+/**
+ * The four schemes a gateway credential may be stored behind.
+ *
+ * A reference names *where* the secret is, never the secret. `vault://`,
+ * `aws-sm://` and `gcp-sm://` name a path in a secret manager;
+ * `local-encrypted://NAME` names the environment entry `PAYMENT_SECRET_NAME`
+ * holding an AES-GCM blob, whose key is supplied separately. That separation is
+ * the whole point of the scheme: leaking this table leaks no secret.
+ *
+ * The character class is deliberately narrow, and it is what stops somebody
+ * pasting the output of `provision encrypt-payment-secret` straight in here.
+ * That output is standard base64, so it carries `+` and `=`, and both are
+ * absent from this class on purpose — a reference that parsed as ciphertext
+ * would put the ciphertext in the database and undo the separation above.
+ *
+ * Worth stating because it reads like an oversight. It was mistaken for one
+ * here: the class was widened to admit base64, which made `configure-payment-
+ * gateway` accept a raw blob, and the resolver then rejected it anyway because
+ * it expects an environment entry's name. `payment-credential-reference.test.ts`
+ * now pins both halves so the next reader does not repeat it.
+ */
+export const CREDENTIAL_REFERENCE_PATTERN =
+  /^(vault|aws-sm|gcp-sm|local-encrypted):\/\/[A-Za-z0-9/_:.-]+$/
+
 function validateCredentialReference(reference: string): void {
-  if (!/^(vault|aws-sm|gcp-sm|local-encrypted):\/\/[A-Za-z0-9/_:.-]+$/.test(reference)) {
+  if (!CREDENTIAL_REFERENCE_PATTERN.test(reference)) {
     throw new PaymentProviderError('INVALID_PROVIDER_CREDENTIAL_REFERENCE')
   }
 }
