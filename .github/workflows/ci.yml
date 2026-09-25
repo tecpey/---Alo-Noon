@@ -107,6 +107,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
       - run: pnpm --filter @alo-noon/database exec prisma migrate deploy
+      # The drives run the bundle production runs, not the sources. For two
+      # weeks `dist/server.js` threw on its first line under plain node while
+      # every drive stayed green, because they all went through tsx.
+      - run: pnpm --filter @alo-noon/api build
       - name: Bootstrap the launch tenant
         run: pnpm --filter @alo-noon/api exec tsx scripts/bootstrap-launch.ts
         env:
@@ -138,7 +142,7 @@ jobs:
 
           PAYMENT_SECRET_ENCRYPTION_KEY="$KEY" PAYMENT_SECRET_ZARINPAL_MERCHANT="$BLOB" \
             NODE_EXTRA_CA_CERTS=/tmp/zp-cert.pem \
-            nohup pnpm --filter @alo-noon/api exec tsx src/server.ts > /tmp/api.log 2>&1 &
+            (cd apps/api && nohup node dist/server.js > /tmp/api.log 2>&1 &)
 
           for _ in $(seq 1 60); do
             curl -sf -o /dev/null http://127.0.0.1:3001/ready && exit 0
