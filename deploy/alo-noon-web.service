@@ -28,6 +28,12 @@ Group=alo-noon
 WorkingDirectory=/srv/alo-noon/current/apps/web/.next/standalone/apps/web
 EnvironmentFile=/etc/alo-noon/web.env
 ExecStart=/usr/bin/node server.js
+; The image optimiser's cache, and the one path this service writes. Under
+; ProtectSystem=strict the release is read-only, so without this every product
+; photograph was re-encoded on every request and each one logged EACCES.
+; systemd creates /var/cache/alo-noon-web owned by the service user and keeps it
+; writable; deploy/stage-web.sh links .next/cache to it.
+CacheDirectory=alo-noon-web
 
 KillSignal=SIGTERM
 TimeoutStopSec=30
@@ -45,6 +51,29 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 LockPersonality=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+; Further confinement, from `systemd-analyze security` (6.2 MEDIUM before).
+; Only what a Node service is known to tolerate: no capabilities (the user is
+; unprivileged anyway, so this states it rather than relies on it), no device
+; nodes beyond /dev/null, /dev/urandom and friends, no clock, hostname or kernel
+; log access, other users' processes invisible, and syscalls limited to the set
+; systemd curates for ordinary services — refused with EPERM rather than a kill,
+; so a surprise shows up as an error in the journal, not a crash loop.
+; Deliberately absent: MemoryDenyWriteExecute (V8's JIT needs W+X pages) and
+; ProcSubset=pid (hides /proc/cpuinfo and /proc/meminfo, which os.cpus() and
+; os.totalmem() read).
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectProc=invisible
+RestrictRealtime=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0027
 
 StandardOutput=journal
 StandardError=journal

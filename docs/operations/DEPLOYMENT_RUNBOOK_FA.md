@@ -139,9 +139,9 @@ pnpm install --frozen-lockfile
 pnpm --filter @alo-noon/database exec prisma generate
 pnpm build
 
-# خروجی standalone نکست، دو پوشه را با خود نمی‌آورد. باید دستی کپی شوند:
-cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
-cp -r apps/web/public       apps/web/.next/standalone/apps/web/public
+# خروجی standalone نکست سه چیز را خودش نمی‌آورد: .next/static، public و
+# پوشهٔ نوشتنی کش تصویر. این اسکریپت هر سه را می‌گذارد و خودش می‌سنجد.
+deploy/stage-web.sh
 
 ln -sfn "$PWD" /srv/alo-noon/current
 ```
@@ -159,11 +159,17 @@ ln -sfn "$PWD" /srv/alo-noon/current
 provision هم به همان شکل در `dist/provision.js` می‌آید، چون روی سرور هیچ dev
 dependencyای نصب نیست.
 
-**دو `cp` را جا نیندازید.** نکست در حالت standalone فقط سرور و node_modulesِ
-لازم را کپی می‌کند؛ `.next/static` و `public` را نمی‌آورد. اگر کپی نشوند سایت
-بالا می‌آید ولی **هر CSS و هر تصویر ۴۰۴ می‌شود** — صفحه‌ای بی‌قالب که شبیه
-خرابیِ سرور نیست و همین آن را گیج‌کننده می‌کند. در [تأیید استقرار](#تأیید) یک
-بررسی برای همین هست.
+**`deploy/stage-web.sh` را جا نیندازید — نه در نصب اول، نه در هیچ به‌روزرسانی.**
+نکست در حالت standalone فقط سرور و node_modulesِ لازم را کپی می‌کند؛
+`.next/static` و `public` را نمی‌آورد. اگر کپی نشوند سایت بالا می‌آید ولی **هر
+CSS و هر تصویر ۴۰۴ می‌شود** — صفحه‌ای بی‌قالب که شبیه خرابیِ سرور نیست و همین آن
+را گیج‌کننده می‌کند. این دو خط قبلاً در همین سند دو بار نوشته شده بودند و نسخهٔ
+بخش به‌روزرسانی آن‌ها را جا انداخته بود؛ حالا هر دو جا یک اسکریپت را صدا
+می‌زنند. سومین کار اسکریپت، کش تصویر است: سرویس زیر `ProtectSystem=strict` اجرا
+می‌شود و پوشهٔ نسخه برایش فقط‌خواندنی است، پس بدون `/var/cache/alo-noon-web` (که
+`CacheDirectory=` در واحد systemd می‌سازد) هر عکس محصول در هر درخواست دوباره
+فشرده می‌شد — سنجیده: ~۱۲۰ms به‌جای ~۴ms، و یک خط `EACCES` در journal برای هر
+بار.
 
 **نصب در پوشهٔ تاریخ‌دار و symlink به `current`.** [عقب‌گرد](#عقبگرد) به همین
 تکیه می‌کند: نسخهٔ قبلی هنوز روی دیسک است و برگشتن یعنی جابه‌جا کردن یک لینک.
@@ -438,6 +444,7 @@ git clone --depth 1 <repo> $(date -u +%Y%m%dT%H%M%SZ) && cd $_
 pnpm install --frozen-lockfile
 pnpm --filter @alo-noon/database exec prisma generate
 pnpm build
+deploy/stage-web.sh
 
 # ۱. پشتیبان، پیش از هر migration
 sudo -u postgres /srv/alo-noon/current/deploy/backup.sh
