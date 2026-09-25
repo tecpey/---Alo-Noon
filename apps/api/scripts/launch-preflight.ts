@@ -191,6 +191,59 @@ async function main(): Promise<void> {
     )
   })
 
+  section('Will anybody find out when something goes wrong?')
+  await asTenant(async () => {
+    /*
+      The alert sweep already detects a stuck payment, an undelivered
+      notification and a draining outbox, and already logs every one of them.
+      What decides whether that matters is whether the log has a reader.
+
+      A launch with no recipient and no email provider is a launch where a
+      customer's payment sticks at 9am and the shop finds out when the customer
+      telephones — which they mostly do not; they simply do not come back.
+    */
+    const [recipients, providers] = await Promise.all([
+      prisma.operatorAlertRecipient.count({ where: { tenantId: TENANT, enabled: true } }),
+      prisma.emailProviderConfiguration.findMany({
+        where: { tenantId: TENANT, enabled: true },
+        select: { providerCode: true, environment: true, healthStatus: true, isDefault: true },
+      }),
+    ])
+
+    if (recipients === 0) {
+      stop(
+        'no operator alert recipient is enabled',
+        'nobody is told when a payment sticks — add one under «هشدارها» in the admin panel',
+      )
+    } else {
+      ok('operator alert recipients', String(recipients))
+    }
+
+    if (providers.length === 0) {
+      stop(
+        'no email provider is configured',
+        'alerts have nothing to send through — add one under «سرویس‌دهندگان» in the admin panel',
+      )
+    } else if (!providers.some((provider) => provider.environment === 'PRODUCTION')) {
+      stop(
+        'every email provider is in TEST',
+        providers.map((p) => `${p.providerCode}: ${p.environment}`).join(', '),
+      )
+    } else {
+      ok(
+        'an email provider is live',
+        providers
+          .filter((p) => p.environment === 'PRODUCTION')
+          .map((p) => `${p.providerCode} (${p.healthStatus})`)
+          .join(', '),
+      )
+      warn(
+        'alert delivery cannot be verified from here',
+        'send yourself one alert before opening, and confirm it arrives',
+      )
+    }
+  })
+
   section('What happens if the disk dies tonight?')
   await asTenant(async () => {
     const orders = await prisma.order.count({ where: { tenantId: TENANT } })
