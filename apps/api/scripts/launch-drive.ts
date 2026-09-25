@@ -10,6 +10,15 @@
  * send. The code is read out of that message, which also proves the tenant's
  * template rendered a real code into real words. Nothing reaches a real gateway
  * and no credit is spent; every other step is the genuine article.
+ *
+ * **It buys bread, and that bread is finite.** The order it places consumes the
+ * offering's `dailyCapacity` like any customer's would — so running this
+ * repeatedly against one tenant on one day eventually answers
+ * `CAPACITY_UNAVAILABLE`, which is the capacity system working rather than a
+ * fault in the drive. Two consequences worth knowing before launch day: on the
+ * live host each run takes a loaf out of a real bakery's allowance, so run it
+ * once and tell the bakery; and a red run late in a day of testing should be
+ * read for its error code before anybody goes looking for a regression.
  */
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
