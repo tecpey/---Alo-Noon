@@ -13,6 +13,7 @@ import {
 import { isUnauthenticated, listOrders } from '../../../lib/admin-api'
 import { AdminNav } from '../admin-nav'
 import { readFailureMessage } from '../failure-message'
+import { TableScroll } from '../../components/table-scroll'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,7 +76,7 @@ export default async function AdminOrdersPage({
           {result.data.length === 0 ? (
             <p className="muted">سفارشی با این شرایط پیدا نشد.</p>
           ) : (
-            <div className="table-scroll">
+            <TableScroll label="فهرست سفارش‌ها">
               <table>
                 <thead>
                   <tr>
@@ -108,7 +109,7 @@ export default async function AdminOrdersPage({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
           )}
 
           {result.pagination && (

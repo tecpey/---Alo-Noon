@@ -74,8 +74,17 @@
   flex-direction: column;
   gap: 0.4rem;
 }
+/* Underlined, not only coloured. A link inside a sentence that differs from the
+   words around it by hue alone is invisible to anyone who cannot tell the two
+   colours apart, and on a phone in sunlight that is most people (WCAG 1.4.1;
+   axe `link-in-text-block`). These are the links that send a customer from the
+   terms to the refund policy — the one they are looking for when something
+   has gone wrong. */
 .legal__article a {
   color: var(--ink-action);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
 }
 
 .legal__updated {

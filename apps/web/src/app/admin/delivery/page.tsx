@@ -13,6 +13,7 @@ import { formatCount, formatMoney } from '../../../lib/admin-format-display'
 import { ActionForm, Field, SelectField } from '../action-form'
 import { AdminNav } from '../admin-nav'
 import { readFailureMessage } from '../failure-message'
+import { TableScroll } from '../../components/table-scroll'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,7 +116,7 @@ export default async function AdminDeliveryPage({
         {tariffList.length === 0 ? (
           <p className="muted">هنوز هیچ تعرفه‌ای ثبت نشده است.</p>
         ) : (
-          <div className="table-scroll">
+          <TableScroll label="تعرفه‌های فعلی">
             <table>
               <thead>
                 <tr>
@@ -152,7 +153,7 @@ export default async function AdminDeliveryPage({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         )}
       </section>
 

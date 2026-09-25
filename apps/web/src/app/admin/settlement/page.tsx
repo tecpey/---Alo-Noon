@@ -19,6 +19,7 @@ import { formatCount, formatDateTime, formatMoney } from '../../../lib/admin-for
 import { ActionForm, Field } from '../action-form'
 import { AdminNav } from '../admin-nav'
 import { readFailureMessage } from '../failure-message'
+import { TableScroll } from '../../components/table-scroll'
 
 export const dynamic = 'force-dynamic'
 
@@ -112,7 +113,7 @@ function OutstandingTable({ balances }: Readonly<{ balances: PartnerBalanceSumma
   }
 
   return (
-    <div className="table-scroll">
+    <TableScroll label="سهم‌های پرداخت‌نشدهٔ شرکا">
       <table>
         <thead>
           <tr>
@@ -148,7 +149,7 @@ function OutstandingTable({ balances }: Readonly<{ balances: PartnerBalanceSumma
           })}
         </tbody>
       </table>
-    </div>
+    </TableScroll>
   )
 }
 
@@ -158,7 +159,7 @@ function PayoutTable({ payouts }: Readonly<{ payouts: PartnerPayoutSummary[] }>)
   }
 
   return (
-    <div className="table-scroll">
+    <TableScroll label="برگه‌های تسویه">
       <table>
         <thead>
           <tr>
@@ -202,7 +203,7 @@ function PayoutTable({ payouts }: Readonly<{ payouts: PartnerPayoutSummary[] }>)
           ))}
         </tbody>
       </table>
-    </div>
+    </TableScroll>
   )
 }
 
@@ -212,7 +213,7 @@ function WithdrawalTable({ withdrawals }: Readonly<{ withdrawals: StaffWithdrawa
   }
 
   return (
-    <div className="table-scroll">
+    <TableScroll label="درخواست‌های برداشت در انتظار بررسی">
       <table>
         <thead>
           <tr>
@@ -274,7 +275,7 @@ function WithdrawalTable({ withdrawals }: Readonly<{ withdrawals: StaffWithdrawa
           })}
         </tbody>
       </table>
-    </div>
+    </TableScroll>
   )
 }
 

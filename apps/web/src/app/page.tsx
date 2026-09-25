@@ -269,14 +269,12 @@ export default async function HomePage() {
             </Reveal>
             <ol className="steps__list">
               {orderSteps.map((step, index) => (
-                <Reveal key={step.id} delay={index}>
-                  <li className="step">
-                    <span className="step__number" aria-hidden="true">
-                      {toPersianDigits(String(index + 1))}
-                    </span>
-                    <p className="step__title">{step.titleFa}</p>
-                    <p className="step__body">{step.bodyFa}</p>
-                  </li>
+                <Reveal as="li" className="step" key={step.id} delay={index}>
+                  <span className="step__number" aria-hidden="true">
+                    {toPersianDigits(String(index + 1))}
+                  </span>
+                  <p className="step__title">{step.titleFa}</p>
+                  <p className="step__body">{step.bodyFa}</p>
                 </Reveal>
               ))}
             </ol>

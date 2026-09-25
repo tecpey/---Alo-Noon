@@ -123,7 +123,7 @@ export function SiteHeader() {
         <div className="site-header__account">
           <Link className="site-header__link" href="/account">
             <UserIcon />
-            <span>{brandCopy.accountFa}</span>
+            <span className="site-header__label">{brandCopy.accountFa}</span>
           </Link>
           {/* A button, not a link: the basket opens over the shop rather than
               navigating away from it — and a link to a route that does not
@@ -139,7 +139,7 @@ export function SiteHeader() {
               </span>
             )}
             <CartIcon duotone={count > 0} />
-            <span>{brandCopy.basketFa}</span>
+            <span className="site-header__label">{brandCopy.basketFa}</span>
             <span className="visually-hidden">
               {count > 0 ? `${toPersianDigits(String(count))} کالا در سبد` : 'سبد خالی است'}
             </span>

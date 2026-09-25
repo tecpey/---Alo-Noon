@@ -24,6 +24,7 @@ import {
 import { ActionForm, Field, SelectField } from '../action-form'
 import { AdminNav } from '../admin-nav'
 import { readFailureMessage } from '../failure-message'
+import { TableScroll } from '../../components/table-scroll'
 
 // The catalogue changes by operator action and is read back immediately after
 // each change, so nothing here may be served from a build-time render.
@@ -251,7 +252,7 @@ function ProductRow({ product }: Readonly<{ product: AdminProduct }>) {
       </dl>
 
       {product.variants.length > 0 && (
-        <div className="table-scroll">
+        <TableScroll label="گونه‌های این محصول">
           <table>
             <thead>
               <tr>
@@ -283,7 +284,7 @@ function ProductRow({ product }: Readonly<{ product: AdminProduct }>) {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       )}
 
       <div className="row-actions">

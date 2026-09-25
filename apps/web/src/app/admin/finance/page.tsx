@@ -16,6 +16,7 @@ import {
 } from '../../../lib/admin-format-display'
 import { AdminNav } from '../admin-nav'
 import { readFailureMessage } from '../failure-message'
+import { TableScroll } from '../../components/table-scroll'
 
 export const dynamic = 'force-dynamic'
 
@@ -136,7 +137,7 @@ function FinancialSections({ report }: Readonly<{ report: FinancialReport }>) {
         {trialBalance.rows.length === 0 ? (
           <p className="muted">هنوز هیچ سندی ثبت نشده است.</p>
         ) : (
-          <div className="table-scroll">
+          <TableScroll label="تراز آزمایشی">
             <table>
               <thead>
                 <tr>
@@ -171,7 +172,7 @@ function FinancialSections({ report }: Readonly<{ report: FinancialReport }>) {
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </TableScroll>
         )}
         <p className="muted">
           حساب‌هایی که هیچ سندی نخورده‌اند نمایش داده نمی‌شوند؛ نمودار حساب‌ها ده‌ها حساب دارد که یک
@@ -266,7 +267,7 @@ function FinancialSections({ report }: Readonly<{ report: FinancialReport }>) {
         {providers.length === 0 ? (
           <p className="muted">در این بازه هیچ تلاش پرداختی ثبت نشده است.</p>
         ) : (
-          <div className="table-scroll">
+          <TableScroll label="عملکرد درگاه‌ها">
             <table>
               <thead>
                 <tr>
@@ -295,7 +296,7 @@ function FinancialSections({ report }: Readonly<{ report: FinancialReport }>) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         )}
         <p className="muted">
           «در جریان» یعنی تلاشی که شروع شده و به وضعیت نهایی نرسیده — یا هنوز در راه است، یا مشتری

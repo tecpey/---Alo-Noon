@@ -11,6 +11,7 @@ import {
 import { formatCount, formatDateTime, formatMoney } from '../../../lib/admin-format-display'
 import { BakeryNav } from '../bakery-nav'
 import { branchFailureMessage } from '../failure-message'
+import { TableScroll } from '../../components/table-scroll'
 
 export const dynamic = 'force-dynamic'
 
@@ -96,7 +97,7 @@ function Earnings({ earnings }: Readonly<{ earnings: BranchEarningsSummary }>) {
         {earnings.recent.length === 0 ? (
           <p className="muted">هنوز سفارشی تحویل نشده است.</p>
         ) : (
-          <div className="table-scroll">
+          <TableScroll label="سفارش‌های تحویل‌شدهٔ اخیر">
             <table>
               <thead>
                 <tr>
@@ -121,7 +122,7 @@ function Earnings({ earnings }: Readonly<{ earnings: BranchEarningsSummary }>) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         )}
       </section>
     </>

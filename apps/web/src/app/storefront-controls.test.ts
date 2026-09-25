@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -275,5 +275,62 @@ describe('ornament that is drawn twice', () => {
     const ids = [...page.matchAll(/<ArchTexture id="([^"]+)"/g)].map((match) => match[1])
     expect(ids.length).toBeGreaterThan(1)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('the header controls keep their names on a phone', () => {
+  /*
+    The basket button and the account link carry their only accessible names in
+    their visible words, and on a phone those words are hidden to save the row.
+    They were hidden with `display: none` — which removes them from the
+    accessibility tree too — by a rule that also caught the visually-hidden
+    count. On every storefront page axe-core reported `button-name` (critical)
+    and `link-name`: a screen reader said "button" and "link", nothing more.
+  */
+  const header = readFileSync(join(APP_ROOT, 'components', 'site-header.tsx'), 'utf8')
+  const css = readFileSync(join(APP_ROOT, 'storefront.css'), 'utf8')
+
+  it('marks both words as labels', () => {
+    expect(header).toContain('<span className="site-header__label">{brandCopy.accountFa}</span>')
+    expect(header).toContain('<span className="site-header__label">{brandCopy.basketFa}</span>')
+  })
+
+  it('clips the labels on a phone instead of removing them', () => {
+    const rule = css.match(/\n\.site-header__label \{([^}]*)\}/)?.[1] ?? ''
+    expect(rule).toContain('clip-path: inset(50%)')
+    expect(rule).not.toMatch(/display:\s*none/)
+    // And nothing else in the file takes the header's spans out of the tree.
+    expect(css).not.toMatch(/site-header__account span[^{]*\{\s*display:\s*none/)
+  })
+})
+
+describe('wide tables scroll from the keyboard', () => {
+  /*
+    A table in a sideways-scrolling box is unreachable past the edge for anyone
+    who cannot drag it — axe-core `scrollable-region-focusable` on the finance,
+    tariff and access pages. TableScroll makes the box a named, focusable
+    region; this keeps anyone from going back to the bare div.
+  */
+  const pages = readdirSync(APP_ROOT, { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.tsx'))
+    .map((entry) => join(entry.parentPath, entry.name))
+
+  it('never wraps a table in a bare scrolling div', () => {
+    const offenders = pages.filter(
+      (path) =>
+        !path.endsWith('table-scroll.tsx') &&
+        readFileSync(path, 'utf8').includes('<div className="table-scroll"'),
+    )
+    expect(offenders).toEqual([])
+  })
+
+  it('makes the box focusable, named, and visibly focused', () => {
+    const component = readFileSync(join(APP_ROOT, 'components', 'table-scroll.tsx'), 'utf8')
+    expect(component).toContain('tabIndex={0}')
+    expect(component).toContain('role="region"')
+    expect(component).toContain('aria-label={label}')
+    expect(readFileSync(join(APP_ROOT, 'admin', 'admin.css'), 'utf8')).toContain(
+      '.table-scroll:focus-visible',
+    )
   })
 })

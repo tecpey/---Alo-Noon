@@ -18,6 +18,7 @@ import { isUnauthenticated, readOrder } from '../../../../lib/admin-api'
 import { ActionForm, Field, SelectField } from '../../action-form'
 import { AdminNav } from '../../admin-nav'
 import { readFailureMessage } from '../../failure-message'
+import { TableScroll } from '../../../components/table-scroll'
 
 export const dynamic = 'force-dynamic'
 
@@ -135,7 +136,7 @@ export default async function AdminOrderDetailPage({
 
       <section>
         <h2>اقلام ({formatCount(order.itemCount)})</h2>
-        <div className="table-scroll">
+        <TableScroll label="اقلام سفارش">
           <table>
             <thead>
               <tr>
@@ -160,7 +161,7 @@ export default async function AdminOrderDetailPage({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </section>
 
       <section>

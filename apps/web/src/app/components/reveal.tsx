@@ -25,13 +25,22 @@ export function Reveal({
   children,
   delay = 0,
   className,
+  as: Element = 'div',
 }: {
   children: ReactNode
   /** Steps of one stagger unit, for items in a row. */
   delay?: number
   className?: string
+  /**
+   * The element that moves. `li` when the content is a list item: a `div`
+   * wrapped around an `<li>` inside an `<ol>` leaves the list with no items as
+   * far as assistive technology can tell — the home page's three steps were
+   * read as a list of zero and three orphans (axe `list`, `listitem`).
+   */
+  as?: 'div' | 'li'
 }) {
-  const ref = useRef<HTMLDivElement>(null)
+  // Both element types, so the one ref fits whichever `as` names.
+  const ref = useRef<HTMLDivElement & HTMLLIElement>(null)
   const [state, setState] = useState<'idle' | 'armed' | 'shown'>('idle')
 
   useEffect(() => {
@@ -65,7 +74,7 @@ export function Reveal({
   }, [])
 
   return (
-    <div
+    <Element
       ref={ref}
       className={[className, 'reveal', state === 'armed' ? 'reveal--armed' : '']
         .filter(Boolean)
@@ -73,6 +82,6 @@ export function Reveal({
       style={delay ? { transitionDelay: `calc(var(--stagger) * ${delay})` } : undefined}
     >
       {children}
-    </div>
+    </Element>
   )
 }

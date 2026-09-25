@@ -191,7 +191,7 @@
   border: 1px solid var(--bad-line);
   border-radius: 0.75rem;
   background: var(--bad-tint);
-  color: var(--bad);
+  color: var(--tint-error-ink);
   padding: 0.9rem 1.1rem;
   font-size: 0.92rem;
   line-height: 2;
@@ -252,22 +252,22 @@
 .badge.on {
   border-color: var(--ok-line);
   background: var(--ok-tint);
-  color: var(--ok);
+  color: var(--tint-success-ink);
 }
 .badge.health-healthy {
   border-color: var(--ok-line);
   background: var(--ok-tint);
-  color: var(--ok);
+  color: var(--tint-success-ink);
 }
 .badge.health-degraded {
   border-color: var(--warn-line);
   background: var(--warn-tint);
-  color: var(--warn);
+  color: var(--tint-warning-ink);
 }
 .badge.health-unhealthy {
   border-color: var(--bad-line);
   background: var(--bad-tint);
-  color: var(--bad);
+  color: var(--tint-error-ink);
 }
 
 .row-meta {
@@ -337,7 +337,10 @@
 }
 .field input:focus-visible,
 .field select:focus-visible,
-button:focus-visible {
+button:focus-visible,
+/* A scrolling table is a tab stop now (TableScroll), and a tab stop nobody can
+   see is a keyboard trap in all but name. */
+.table-scroll:focus-visible {
   outline: 2px solid var(--accent-line);
   outline-offset: 2px;
 }
@@ -397,10 +400,10 @@ button.ghost:hover:not(:disabled) {
   line-height: 1.9;
 }
 .form-message.ok {
-  color: var(--ok);
+  color: var(--tint-success-ink);
 }
 .form-message.error {
-  color: var(--bad);
+  color: var(--tint-error-ink);
 }
 
 /* Navigation and reporting surfaces. */
@@ -752,7 +755,7 @@ td a {
 
 /* Used where a number is the bad news itself, not a badge next to it. */
 .bad {
-  color: var(--bad);
+  color: var(--tint-error-ink);
 }
 
 .cash-orders {
@@ -820,7 +823,7 @@ td a {
  * in the row rather than sorted to the top: the operator reads the list by
  * partner, and re-ordering it under them would hide who else is owed. */
 .overdue {
-  color: var(--warn);
+  color: var(--tint-warning-ink);
 }
 
 /*
