@@ -462,7 +462,20 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     registerWalletRoutes(app, { ...options.wallet, auth: options.auth })
   }
 
-  app.get('/health', async (): Promise<HealthResponse> => ({
+  /**
+   * The two probes are outside the limiter.
+   *
+   * nginx only lets them in from this host, so every caller of `/ready` shares
+   * the loopback address — the monitor, systemd, an operator's curl — and so
+   * does anything else arriving without a forwarded client address. Found on
+   * the bundled server under load: once that bucket ran dry, `/ready` answered
+   * 429, and a monitor reads a 429 from a readiness probe as "down". An
+   * outage alarm caused by the limiter, at exactly the moment traffic peaked.
+   * Both are a single cheap read; there is nothing here to protect.
+   */
+  const probe = { config: { rateLimit: false } } as const
+
+  app.get('/health', probe, async (): Promise<HealthResponse> => ({
     success: true,
     data: {
       status: 'healthy',
@@ -473,7 +486,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     meta: responseMeta(),
   }))
 
-  app.get('/ready', async (_request, reply): Promise<ReadyResponse> => {
+  app.get('/ready', probe, async (_request, reply): Promise<ReadyResponse> => {
     const databaseReady = await readinessCheck().catch(() => false)
     const authenticationDeliveryReady = options.authenticationDeliveryReadinessCheck
       ? await options.authenticationDeliveryReadinessCheck().catch(() => false)

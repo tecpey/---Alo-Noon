@@ -268,4 +268,59 @@ describe('every answer, including the ones no route produced', () => {
     expect((await app.inject({ method: 'GET', url: '/anonymous-for-test' })).statusCode).toBe(200)
     expect((await app.inject({ method: 'GET', url: '/anonymous-for-test' })).statusCode).toBe(429)
   })
+
+  it('keys a shopper behind the web server by their own address, not the server’s', async () => {
+    /*
+      Every storefront call reaches the API from the web server's loopback
+      address, because the site renders on the server. Without the client's
+      address carried through, every anonymous shopper in the city is one key:
+      on the production bundle, 600 page views spent that single budget and the
+      API answered 429 to everybody.
+
+      The web server passes on the X-Forwarded-For nginx gave it. This is the
+      API half: trusting loopback, it takes the right-most address that is not
+      a trusted hop — so two shoppers are two budgets, and an address a client
+      typed into the header itself, which nginx leaves to the left of the one
+      it saw, is never the one chosen.
+    */
+    const app = await buildApp({ trustProxy: 'loopback' })
+    apps.push(app)
+    app.get(
+      '/behind-web-for-test',
+      { config: { rateLimit: { max: 1, timeWindow: '1 minute' } } },
+      async () => ({ ok: true }),
+    )
+    await app.ready()
+
+    const viaWebServer = (forwardedFor: string) =>
+      app.inject({
+        method: 'GET',
+        url: '/behind-web-for-test',
+        remoteAddress: '127.0.0.1',
+        headers: { 'x-forwarded-for': forwardedFor },
+      })
+
+    expect((await viaWebServer('203.0.113.5')).statusCode).toBe(200)
+    expect((await viaWebServer('203.0.113.5')).statusCode).toBe(429)
+    // A different shopper through the same web server: their own budget.
+    expect((await viaWebServer('203.0.113.6')).statusCode).toBe(200)
+    // Shopper .5 claiming to be a fresh address. nginx appended the one it saw,
+    // and that is the one counted — still over budget.
+    expect((await viaWebServer('198.51.100.9, 203.0.113.5')).statusCode).toBe(429)
+  })
+
+  it('never rate-limits the health and readiness probes', async () => {
+    // Every probe arrives from loopback, so they share one address. A 429 from
+    // `/ready` reads to a monitor as an outage.
+    const app = await buildApp()
+    apps.push(app)
+    await app.ready()
+
+    const overTheGlobalBudget = 650
+    for (let attempt = 0; attempt < overTheGlobalBudget; attempt += 1) {
+      await app.inject({ method: 'GET', url: '/ready' })
+    }
+    expect((await app.inject({ method: 'GET', url: '/ready' })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200)
+  })
 })

@@ -23,9 +23,21 @@ export { isUnauthenticated, isUuid } from './api-envelope'
  * upstream address.
  *
  * `X-Forwarded-Host` carries the browser's host as well. A deployment that has
- * declared its proxy hops (`API_TRUST_PROXY_HOPS`) will prefer it, which lets one
+ * declared its proxy (`API_TRUST_PROXY`) will prefer it, which lets one
  * deployment serve several tenant hosts; one that has not will fall back to the
  * base URL's host, which is why that must be right on its own.
+ *
+ * `X-Forwarded-For` is passed on exactly as nginx handed it to this server, and
+ * without it the API could not tell customers apart. Every call comes from this
+ * server's loopback address, so the API's per-address controls — the request
+ * limiter for anonymous shoppers and the abuse count on login codes — would
+ * key every visitor in Babol as one. Measured on the production bundle: 600
+ * anonymous page views spent the one shared budget and the shop answered 429
+ * to everyone, and one person requesting codes in a loop would have locked
+ * every other customer out of signing in. Forwarded unchanged, not rebuilt:
+ * nginx appends the address it actually saw, and the API trusts only loopback
+ * hops, so it takes the right-most untrusted entry — a value a client wrote
+ * into the header itself sits to the left of that and is never chosen.
  *
  * Beyond those, only `Cookie` is forwarded, restricted to the session cookie, so
  * the API authenticates the caller exactly as it would a direct request.
@@ -64,9 +76,11 @@ export async function upstreamHeaders(): Promise<Record<string, string>> {
   const [cookieStore, headerStore] = await Promise.all([cookies(), headers()])
   const session = cookieStore.get(SESSION_COOKIE)
   const browserHost = headerStore.get('x-forwarded-host') ?? headerStore.get('host')
+  const forwardedFor = headerStore.get('x-forwarded-for')
   return {
     accept: 'application/json',
     ...(browserHost && { 'x-forwarded-host': browserHost }),
+    ...(forwardedFor && { 'x-forwarded-for': forwardedFor }),
     ...(session && { cookie: `${SESSION_COOKIE}=${session.value}` }),
   }
 }
