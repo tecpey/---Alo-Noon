@@ -9,6 +9,10 @@ import { ProgressiveApp } from './components/progressive-app'
 import { AppTabs } from './components/app-tabs'
 import { loadServerBasket } from '../lib/storefront-data'
 
+const TITLE = 'الو نون | نان تازه، درب منزل'
+const DESCRIPTION =
+  'سفارش نان تازه از نانوایی‌های محله؛ پخت‌های ویژه و نان روزمرهٔ بسته‌بندی‌شده، با تحویل در زمانی که خودتان انتخاب می‌کنید.'
+
 export const metadata: Metadata = {
   /**
    * The origin every relative metadata URL resolves against — an Open Graph
@@ -17,10 +21,38 @@ export const metadata: Metadata = {
    * a shop they have not visited.
    */
   metadataBase: siteUrl(),
-  title: 'الو نون | نان تازه، درب منزل',
-  description:
-    'سفارش نان تازه از نانوایی‌های محله؛ پخت‌های ویژه و نان روزمرهٔ بسته‌بندی‌شده، با تحویل در زمانی که خودتان انتخاب می‌کنید.',
+  title: TITLE,
+  description: DESCRIPTION,
   applicationName: 'الو نون',
+  /**
+   * How a shared link introduces the shop.
+   *
+   * This comment used to sit above `metadataBase` warning about a broken share
+   * preview while there was no Open Graph image at all — so a link to the shop
+   * pasted into Telegram or WhatsApp arrived as a bare title with no picture.
+   * For a neighbourhood shop in one district, that preview *is* the first
+   * impression: word of mouth here travels as a forwarded link, not a search.
+   *
+   * The image belongs in `opengraph-image.png` beside this file, not in an
+   * `images` entry here. File-based metadata overrides this object, and
+   * naming it in both places is two things to keep in step for no gain.
+   * Until that file lands, these tags still give the preview a real title and
+   * description rather than whatever a client scrapes from the page.
+   * `fa_IR` because a preview that announces English to a Persian page gets
+   * the wrong font chosen by some clients.
+   */
+  openGraph: {
+    type: 'website',
+    locale: 'fa_IR',
+    siteName: 'الو نون',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
   /**
    * iOS installs from a different set of tags than the manifest, and ignores
    * most of it. Without these, adding الو نون to a Safari home screen gives a
