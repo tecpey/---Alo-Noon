@@ -245,7 +245,7 @@
   gap: 0.45rem;
 }
 .address-form__fix {
-  color: var(--success);
+  color: var(--tint-success-ink);
   font-size: 0.85rem;
   font-weight: 600;
 }
@@ -514,7 +514,7 @@
 }
 .result__card--good .result__glyph {
   background: color-mix(in srgb, var(--success) 15%, transparent);
-  color: var(--success);
+  color: var(--tint-success-ink);
 }
 .result__card--wait .result__glyph {
   background: color-mix(in srgb, var(--primary-600) 12%, transparent);
@@ -607,7 +607,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  color: var(--success);
+  color: var(--tint-success-ink);
   font-size: 0.85rem;
   font-weight: 600;
 }

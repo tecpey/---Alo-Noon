@@ -99,10 +99,10 @@
   line-height: 1.8;
 }
 .signin__note--ok {
-  color: var(--success);
+  color: var(--tint-success-ink);
 }
 .signin__note--error {
-  color: var(--error);
+  color: var(--tint-error-ink);
 }
 .signin__reassure {
   display: flex;
@@ -113,7 +113,7 @@
 }
 .signin__reassure svg {
   flex: none;
-  color: var(--success);
+  color: var(--tint-success-ink);
 }
 
 .account__identity {

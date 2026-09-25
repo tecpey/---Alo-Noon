@@ -178,6 +178,36 @@ describe('text contrast against real surfaces', () => {
     })
   }
 
+  /**
+   * A state's text is its `tint.*.ink`, never the raw state colour.
+   *
+   * The raw colours are for borders, icons and fills — things WCAG asks 3:1 of.
+   * Used as text they fail: measured on the page surface, `warning` is 2.57:1,
+   * `success` 3.77, `error` 4.11 and `info` 4.38. The admin panel's gateway
+   * health badges set "degraded" in raw amber on an amber tint at 2.74:1, and
+   * the wallet's "credited" line, the checkout refusal and the sign-out button
+   * on the phone all used raw colours too. The inks were already here; nothing
+   * held anyone to them, and the check above this one only asked that an ink be
+   * darker than its tint.
+   *
+   * So each ink has to carry body text on its own tint and on every surface a
+   * state message can land on outside a tinted box.
+   */
+  it('gives every state an ink that reads on its tint and on every surface', () => {
+    for (const [state, values] of Object.entries(tint)) {
+      for (const [name, background] of [
+        ['its own tint', values.surface],
+        ...readableSurfaces,
+      ] as const) {
+        const measured = contrast(values.ink, background)
+        expect(
+          measured,
+          `tint.${state}.ink (${values.ink}) on ${name} (${background}) is ${measured.toFixed(2)}:1`,
+        ).toBeGreaterThanOrEqual(BODY_MINIMUM)
+      }
+    }
+  })
+
   it('carries its own text on the action colour, which is what every button is', () => {
     // White-on-orange is the primary button, the checkout button and the
     // sign-in button. It failed at 3.81:1 before the action role moved to 700.

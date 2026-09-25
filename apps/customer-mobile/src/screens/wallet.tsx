@@ -7,7 +7,7 @@ import type {
   WalletTransferSummary,
   WalletWithdrawalSummary,
 } from '@alo-noon/contracts'
-import { colors, ink, line, surface } from '@alo-noon/design-tokens'
+import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
 import { fontFamily, Text, TextInput, touchTarget } from '@alo-noon/mobile-ui'
 
 import { formatMoney } from '../presentation'
@@ -525,8 +525,8 @@ const styles = StyleSheet.create({
   },
   confirmStrong: { color: ink.strong, fontFamily: fontFamily.extraBold },
 
-  incoming: { color: colors.success },
-  noticeOk: { color: colors.success, fontSize: 14, lineHeight: 24, textAlign: 'right' },
-  noticeError: { color: colors.error, fontSize: 14, lineHeight: 24, textAlign: 'right' },
+  incoming: { color: tint.success.ink },
+  noticeOk: { color: tint.success.ink, fontSize: 14, lineHeight: 24, textAlign: 'right' },
+  noticeError: { color: tint.error.ink, fontSize: 14, lineHeight: 24, textAlign: 'right' },
   fineprint: { color: ink.muted, fontSize: 12, lineHeight: 22, textAlign: 'right' },
 })

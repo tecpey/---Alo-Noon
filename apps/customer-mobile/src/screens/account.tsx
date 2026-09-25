@@ -1,7 +1,7 @@
 import { Pressable, View } from 'react-native'
 
 import type { AddressSummary, SessionContext } from '@alo-noon/contracts'
-import { colors } from '@alo-noon/design-tokens'
+import { tint } from '@alo-noon/design-tokens'
 import { Text, touchTarget } from '@alo-noon/mobile-ui'
 
 import { sharedStyles } from '../theme'
@@ -76,7 +76,7 @@ export function AccountScreen({
           {session ? 'با شمارهٔ موبایلتان وارد شده‌اید.' : 'وارد نشده‌اید.'}
         </Text>
         <Pressable accessibilityRole="button" onPress={onLogout} style={touchTarget.min}>
-          <Text style={[sharedStyles.linkText, { color: colors.error }]}>خروج از حساب</Text>
+          <Text style={[sharedStyles.linkText, { color: tint.error.ink }]}>خروج از حساب</Text>
         </Pressable>
       </View>
     </View>

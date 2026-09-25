@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native'
 
 import type { DeliveryWindow, QuoteSummary } from '@alo-noon/contracts'
-import { colors, ink, line, surface } from '@alo-noon/design-tokens'
+import { colors, ink, line, surface, tint } from '@alo-noon/design-tokens'
 import { fontFamily, Text, TextInput, touchTarget } from '@alo-noon/mobile-ui'
 import { formatDeliveryWindow, promotionRefusalMessage } from '@alo-noon/domain'
 
@@ -173,6 +173,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: ink.strong,
   },
-  refused: { color: colors.error, fontSize: 13, lineHeight: 22, textAlign: 'right' },
+  refused: { color: tint.error.ink, fontSize: 13, lineHeight: 22, textAlign: 'right' },
   applied: { color: colors.primary[700], fontSize: 13, lineHeight: 22, textAlign: 'right' },
 })
