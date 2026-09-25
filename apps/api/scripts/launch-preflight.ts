@@ -213,7 +213,7 @@ async function main(): Promise<void> {
     if (recipients === 0) {
       stop(
         'no operator alert recipient is enabled',
-        'nobody is told when a payment sticks — add one under «هشدارها» in the admin panel',
+        'nobody is told when a payment sticks — add one under «سرویس‌دهنده‌ها» → «گیرندگان هشدار» (/admin/providers)',
       )
     } else {
       ok('operator alert recipients', String(recipients))
@@ -222,7 +222,7 @@ async function main(): Promise<void> {
     if (providers.length === 0) {
       stop(
         'no email provider is configured',
-        'alerts have nothing to send through — add one under «سرویس‌دهندگان» in the admin panel',
+        'alerts have nothing to send through — add one under «سرویس‌دهنده‌ها» → «سرویس ایمیل» (/admin/providers)',
       )
     } else if (!providers.some((provider) => provider.environment === 'PRODUCTION')) {
       stop(

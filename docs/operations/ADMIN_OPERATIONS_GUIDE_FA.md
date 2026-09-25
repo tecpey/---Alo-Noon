@@ -286,9 +286,11 @@ PAYMENT_CALLBACK_BASE_URL=https://api.<دامنهٔ-شما>
 PAYMENT_RESULT_REDIRECT_URL=https://<اپ-شما>/payments/result
 ```
 
-بدون `PAYMENT_CALLBACK_BASE_URL` هیچ adapter پرداختی ثبت نمی‌شود. بدون
-`PAYMENT_RESULT_REDIRECT_URL` مسیر بازگشت از درگاه ثبت نمی‌شود و مشتری پس از
-پرداخت به صفحهٔ خطا می‌رسد.
+این دو **با هم** لازم‌اند: اگر هر کدام خالی باشد، هیچ adapter پرداختی ثبت
+نمی‌شود و سرور پیش از شروع در لاگ می‌نویسد
+`Online payment is disabled: PAYMENT_CALLBACK_BASE_URL and PAYMENT_RESULT_REDIRECT_URL must both be set`.
+این عمدی است: استقراری که فقط اولی را داشت، مشتری را به درگاه می‌فرستاد، پولش را
+می‌گرفت و او را به یک صفحهٔ ۴۰۴ برمی‌گرداند — کارت کسرشده، سفارش پرداخت‌نشده.
 
 <a id="گام-۳"></a>
 

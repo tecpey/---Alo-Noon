@@ -41,7 +41,7 @@ describe('a gateway credential reference', () => {
   */
   describe('the stored shape', () => {
     it('accepts the name of the environment entry, which is the documented form', () => {
-      // What `provision configure-payment-provider` is actually given on launch
+      // What `provision configure-payment-gateway` is actually given on launch
       // day: the blob goes in `PAYMENT_SECRET_ZARINPAL_MERCHANT`, and the row
       // names it.
       for (const reference of [
