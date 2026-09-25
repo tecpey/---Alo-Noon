@@ -87,6 +87,23 @@ export function isFresh(product: Pick<ProductSummary, 'fulfillmentClass'>): bool
 }
 
 /**
+ * Whether the image optimiser can take this source.
+ *
+ * It resizes files under `public/` and refuses every other origin unless it is
+ * named in `images.remotePatterns` at build time. `productImage` accepts an
+ * https `mediaRef` — a photograph on a CDN or object storage is the obvious
+ * way an operator adds one — and handing that to the optimiser rendered a
+ * broken image: measured, `/_next/image?url=https%3A…` answered 400 `"url"
+ * parameter is not allowed`, and the product card showed nothing.
+ *
+ * A remote image is shown as it is served instead. It loses resizing, so the
+ * file on the CDN should be sized for a phone; a local one keeps it.
+ */
+export function isRemoteImage(src: string): boolean {
+  return src.startsWith('https://')
+}
+
+/**
  * The image for one bread.
  *
  * A `mediaRef` is only used when it is a path or an https URL. The value comes

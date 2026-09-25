@@ -8,6 +8,7 @@ import { BreadPlaceholderArt, EmptyBasketArt } from './brand-art'
 import { CheckIcon, ChevronIcon, PlusIcon } from './icons'
 import { fareLine } from '../../lib/fare-line'
 import { useStorefront } from './storefront-state'
+import { isRemoteImage } from '../../lib/catalog-view'
 import { formatToman, sumRial, toPersianDigits } from '../../lib/persian'
 
 /**
@@ -129,6 +130,7 @@ export function BasketDrawer() {
                         alt=""
                         width={160}
                         height={120}
+                        unoptimized={isRemoteImage(product.imageUrl)}
                         aria-hidden="true"
                       />
                     ) : (

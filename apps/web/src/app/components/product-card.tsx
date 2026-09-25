@@ -6,7 +6,7 @@ import { useStorefront } from './storefront-state'
 import { BreadPlaceholderArt } from './brand-art'
 import { CheckIcon, PlusIcon } from './icons'
 import { formatToman, toPersianDigits } from '../../lib/persian'
-import type { ShelfProduct } from '../../lib/catalog-view'
+import { isRemoteImage, type ShelfProduct } from '../../lib/catalog-view'
 
 /**
  * One bread, and the shortest possible path to buying it.
@@ -48,7 +48,13 @@ export function ProductCard({
             reader announce the same bread twice; and the catalog carries no
             description of the photograph to say anything more useful with.
           */
-          <Image src={product.imageUrl} alt="" width={624} height={ratio === 'wide' ? 204 : 180} />
+          <Image
+            src={product.imageUrl}
+            alt=""
+            width={624}
+            height={ratio === 'wide' ? 204 : 180}
+            unoptimized={isRemoteImage(product.imageUrl)}
+          />
         ) : (
           <span className="product-card__placeholder">
             <BreadPlaceholderArt />

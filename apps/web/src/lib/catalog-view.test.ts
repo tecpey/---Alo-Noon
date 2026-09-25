@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import type { ProductSummary } from '@alo-noon/contracts'
 
-import { ALL_CATEGORIES, buildCatalogView, productImage, toShelfProduct } from './catalog-view'
+import {
+  ALL_CATEGORIES,
+  buildCatalogView,
+  isRemoteImage,
+  productImage,
+  toShelfProduct,
+} from './catalog-view'
 
 const CITY = '99999999-9999-4999-8999-999999999999'
 
@@ -149,5 +155,12 @@ describe('toShelfProduct', () => {
       ).fresh,
     ).toBe(true)
     expect(toShelfProduct(product(), CITY).fresh).toBe(false)
+  })
+})
+
+describe('isRemoteImage', () => {
+  it('sends only an https source around the optimiser, which refuses unlisted hosts', () => {
+    expect(isRemoteImage('https://cdn.example.com/taftoon.jpg')).toBe(true)
+    expect(isRemoteImage('/products/barbari-packaged.jpg')).toBe(false)
   })
 })

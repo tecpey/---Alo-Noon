@@ -18,7 +18,7 @@ import { RetryButton } from '../../components/retry-button'
 import { SiteHeader } from '../../components/site-header'
 import { StorefrontProvider } from '../../components/storefront-state'
 import { ChevronIcon, ClockIcon, OvenIcon, ShieldIcon, WheatIcon } from '../../components/icons'
-import { isFresh, productImage, toShelfProduct } from '../../../lib/catalog-view'
+import { isFresh, isRemoteImage, productImage, toShelfProduct } from '../../../lib/catalog-view'
 import { minutes } from '../../../lib/duration'
 import { formatToman } from '../../../lib/persian'
 import { loadProduct, loadServerBasket } from '../../../lib/storefront-data'
@@ -101,7 +101,14 @@ function Detail({ product, cityNameFa }: { product: ProductDetail; cityNameFa: s
       <article className="product">
         <div className="product__art">
           {image ? (
-            <Image src={image} alt="" width={900} height={640} priority />
+            <Image
+              src={image}
+              alt=""
+              width={900}
+              height={640}
+              priority
+              unoptimized={isRemoteImage(image)}
+            />
           ) : (
             <span className="product__placeholder">
               <BreadPlaceholderArt />
