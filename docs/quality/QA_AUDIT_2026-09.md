@@ -179,3 +179,44 @@ Measure against launch-shaped data or measure nothing.
   paths that matter are already driven end to end and guarded for idempotency.
 - Sustained load over hours, rather than bursts — memory growth and connection
   churn are not observed here.
+
+## Second pass: the artefact that actually runs
+
+The first pass tested the code. This one tested what systemd will start, and
+most of what it found was invisible to every test that was green at the time.
+
+**Method.** The API as `node dist/server.js` and the site as the standalone
+`server.js`, each as an unprivileged user on a read-only release, the API
+connected through the restricted `alo_noon_app` role. Chromium at 390×844 with
+Lighthouse's mobile profile (4× CPU, 1.6Mbps, 150ms RTT) for Core Web Vitals;
+axe-core against WCAG 2.2 AA plus best practice on public, signed-in customer,
+operator and bakery pages; `strace` for the syscall filter; `pyftsubset` and a
+pixel diff for the font.
+
+| Found                                                                       | Why nothing caught it                                            | Now                                                       |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------- |
+| `dist/server.js` and `dist/provision.js` died on line 1 (`Dynamic require`) | Tests and drives ran the sources through tsx                     | Banner fix; the build runs the bundle; CI drives run it   |
+| Every anonymous shopper shared one rate-limit and OTP-abuse key             | Only the web server's address reached the API                    | `X-Forwarded-For` forwarded; probes exempt from the limit |
+| Product photographs re-encoded on every request, `EACCES` each time         | `ProtectSystem=strict` only exists on the server                 | `CacheDirectory=` + `deploy/stage-web.sh`                 |
+| The update procedure had lost the two standalone `cp` lines                 | Written twice, drifted                                           | One script, called from both                              |
+| Basket and account controls nameless on phones (axe: critical)              | Custom detectors; the CSS comment described an aria-label absent | Labels clipped, not removed                               |
+| State text below 4.5:1 everywhere (amber 2.57, green 3.77)                  | Token test asked only "darker than the tint"                     | Inks required at 4.5:1; raw colours forbidden as text     |
+| https product images rendered broken (optimiser 400)                        | No product had one                                               | Served directly                                           |
+
+Also: the list semantics of the home steps, colour-only links on the legal
+pages, 11 keyboard-unreachable scrolling tables, systemd exposure 6.2 → 1.5, and
+the font 111KB → 81KB with zero differing pixels.
+
+**After.** 19 page loads across all four audiences: 0 axe violations, 0 console
+errors, 0 failed requests, 0 horizontal overflow. Home page on the mobile
+profile: LCP ~1.8s, CLS 0.005.
+
+**Left as measured, not fixed.** Home-page TBT on the 4× profile is 500–750ms,
+almost all of it React and the Next.js runtime evaluating and hydrating (the two
+framework chunks are 229KB and 157KB uncompressed; the app's own islands are
+~250ms of it). Worth revisiting — lazy-loading the basket and city sheets is the
+first candidate — but not a launch risk at LCP 1.8s.
+
+**Lesson, again.** A green suite proves the sources behave. It says nothing
+about the file systemd runs, the user it runs as, the filesystem it runs on, or
+the proxy in front of it. Test the artefact.
